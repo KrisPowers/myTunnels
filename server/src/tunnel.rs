@@ -20,6 +20,8 @@ const LOG_LINES: usize = 200;
 #[derive(Default)]
 struct TunnelState {
     running: bool,
+    /// Where the running cloudflared serves its metrics.
+    metrics: Option<String>,
     restarts: u32,
     last_error: Option<String>,
     logs: VecDeque<String>,
