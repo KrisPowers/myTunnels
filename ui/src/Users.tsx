@@ -428,8 +428,10 @@ function PasswordValue({ onSave }: { onSave: (password: string) => Promise<unkno
       }
     }}>
       <PasswordField label="New password" value={password} onChange={setPassword} hint="Changing it signs them out everywhere." />
-      <button type="button" className="btn text" onClick={() => setEditing(false)}>Cancel</button>
-      <button className="btn primary" disabled={busy || !strength(password).ok}>Save</button>
+      <div className="edit-actions">
+        <button type="button" className="btn text" onClick={() => setEditing(false)}>Cancel</button>
+        <button className="btn primary" disabled={busy || !strength(password).ok}>Save</button>
+      </div>
     </form>
   );
 }
