@@ -880,4 +880,45 @@ mod tests {
             .unwrap();
         assert_eq!(request_host(&req), "app1.example.com");
     }
+
+    fn verdict(
+        any: bool,
+        lan: Option<bool>,
+        device: Option<bool>,
+        password: Option<bool>,
+        login: Option<bool>,
+    ) -> Verdict {
+        Verdict {
+            any,
+            lan,
+            device,
+            password,
+            login,
+        }
+    }
+
+    #[test]
+    fn checks_combine_by_mode() {
+        assert!(verdict(false, None, None, None, None).allowed());
+        assert!(!verdict(false, Some(true), None, Some(false), None).allowed());
+        assert!(verdict(true, Some(false), None, Some(true), None).allowed());
+        assert!(!verdict(true, Some(false), Some(false), None, None).allowed());
+        assert_eq!(
+            verdict(true, None, Some(false), Some(false), Some(false)).open(),
+            ["login", "password", "device"]
+        );
+    }
+
+    #[test]
+    fn only_page_loads_get_a_key() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::ACCEPT, HeaderValue::from_static("text/html"));
+        headers.insert(header::USER_AGENT, HeaderValue::from_static("Mozilla/5.0"));
+        assert!(wants_identity(&headers));
+        headers.insert("sec-fetch-mode", HeaderValue::from_static("cors"));
+        assert!(!wants_identity(&headers));
+        headers.remove("sec-fetch-mode");
+        headers.insert(header::USER_AGENT, HeaderValue::from_static("curl/8"));
+        assert!(!wants_identity(&headers));
+    }
 }
