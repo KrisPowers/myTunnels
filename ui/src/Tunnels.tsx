@@ -153,6 +153,14 @@ const IDLE_FOR: Option<number>[] = [
 
 type AccessValue = Access & { password_set?: boolean };
 
+const ONE_LAYER = "Turn on another access layer first. Every tunnel keeps at least one on.";
+
+// True when a change would switch off every access layer.
+function leavesNoLayer(value: Access, patch: Partial<Access>) {
+  const next = { ...value, ...patch };
+  return ![next.require_lan, next.require_device, next.require_password, next.require_login].some(Boolean);
+}
+
 // AccessCard holds a tunnel's access layers. A tunnel password is asked for when
 // that layer is turned on with none set; `onPassword` stores one on its own.
 function AccessCard({ value, users, onChange, onPassword, signInElsewhere }: {
@@ -165,24 +173,28 @@ function AccessCard({ value, users, onChange, onPassword, signInElsewhere }: {
 }) {
   const layers = [value.require_lan, value.require_device, value.require_password, value.require_login].filter(Boolean).length;
   const accounts = users.filter((u) => u.enabled).length;
-  // Every tunnel keeps one layer on: the last one cannot be switched off.
-  const last = (on: boolean) => on && layers === 1;
+  const notify = useNotify();
+  // Every tunnel keeps one layer on: switching off the last one says so instead.
+  const set = (patch: Partial<Access>) => {
+    if (leavesNoLayer(value, patch)) return notify(ONE_LAYER, "bad");
+    onChange(patch);
+  };
   return (
     <Card title="Access Control">
       <Row title="Same network as this host" sub="Only visitors coming from this host's internet connection, or a trusted network.">
-        <Switch label="Same network as this host" on={value.require_lan} disabled={last(value.require_lan)} onChange={(v) => onChange({ require_lan: v })} />
+        <Switch label="Same network as this host" on={value.require_lan} onChange={(v) => set({ require_lan: v })} />
       </Row>
       <Row title="Approved devices" sub="A new device gets an ID and waits under Devices until you approve it.">
-        <Switch label="Approved devices" on={value.require_device} disabled={last(value.require_device)} onChange={(v) => onChange({ require_device: v })} />
+        <Switch label="Approved devices" on={value.require_device} onChange={(v) => set({ require_device: v })} />
       </Row>
       <Row title="Tunnel password" sub="One password for this tunnel alone, asked for before anything behind it loads.">
-        <Switch label="Tunnel password" on={value.require_password} disabled={last(value.require_password)} onChange={(v) => onChange({ require_password: v })} />
+        <Switch label="Tunnel password" on={value.require_password} onChange={(v) => set({ require_password: v })} />
       </Row>
       {value.require_password && (
         <PasswordRow set={!!value.password_set} value={value.password ?? ""} onChange={onPassword ? undefined : (password) => onChange({ password })} onSave={onPassword} />
       )}
       {!signInElsewhere && <Row title="Sign-in" sub={<>People sign in with their email and an account from <a href="#/users">Users</a>. {accounts ? `${accounts} account${accounts === 1 ? "" : "s"} so far.` : "There are none yet."}</>}>
-        <Switch label="Sign-in" on={value.require_login} disabled={last(value.require_login)} onChange={(v) => onChange({ require_login: v })} />
+        <Switch label="Sign-in" on={value.require_login} onChange={(v) => set({ require_login: v })} />
       </Row>}
       {value.require_login && (
         <>
@@ -371,6 +383,10 @@ export function TunnelPage({ route, page, devices, users, onChanged }: { route: 
   // Turning on the tunnel password waits for one to be set.
   const [asking, setAsking] = useState(false);
   const access = (patch: Partial<Access>) => {
+    if (leavesNoLayer(edit, patch)) {
+      notify(ONE_LAYER, "bad");
+      return;
+    }
     if (patch.require_password && !route.password_set) {
       setAsking(true);
       return;
@@ -449,10 +465,7 @@ export function TunnelPage({ route, page, devices, users, onChanged }: { route: 
         )}
 
         {current === "access" && (
-          <People route={route} users={users} onGrant={grantUser} signIn={edit.require_login}
-            // The last layer on stays on.
-            signInLocked={edit.require_login && [edit.require_lan, edit.require_device, edit.require_password].every((on) => !on)}
-            onSignIn={(v) => access({ require_login: v })} />
+          <People route={route} users={users} onGrant={grantUser} signIn={edit.require_login} onSignIn={(v) => access({ require_login: v })} />
         )}
 
         {current === "activity" && <TunnelLogs route={route} users={users} />}
@@ -560,19 +573,18 @@ function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () =>
 
 // People are the accounts that may sign in at this tunnel, added one by one: a
 // plus beside the heading opens a menu to find someone, then a row per person.
-function People({ route, users, onGrant, signIn, signInLocked, onSignIn }: {
+function People({ route, users, onGrant, signIn, onSignIn }: {
   route: Route;
   users: User[];
   onGrant: (user: User, on: boolean) => Promise<void>;
   signIn: boolean;
-  signInLocked: boolean;
   onSignIn: (on: boolean) => void;
 }) {
   const members = users.filter((u) => u.route_ids.includes(route.id));
   // Most active first: latest sign-in, then never signed in.
   const ranked = [...users].sort((a, b) => (b.last_login ?? 0) - (a.last_login ?? 0));
   return (
-    <Card title={<>People with access<span className="title-toggle">Require sign-in<Switch label="Require sign-in" on={signIn} disabled={signInLocked} onChange={onSignIn} /></span></>}
+    <Card title={<>People with access<span className="title-toggle">Require sign-in<Switch label="Require sign-in" on={signIn} onChange={onSignIn} /></span></>}
       sub={!route.require_login ? "Sign-in is off, so no one is asked for an account yet." : members.length ? undefined : "No one yet."}
       action={
         <AddMenu label="Add people" placeholder="Name or email"
