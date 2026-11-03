@@ -3,14 +3,9 @@ import { api, message, TOKEN_URL, type Account, type Auth, type Settings, type S
 import { Dropdown } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { loadLook, saveLook } from "./prefs";
-import { Callout, SaveMark } from "./ui";
+import { Callout, SaveMark, TextField } from "./ui";
 
-const STEPS: { label: string; icon: IconName }[] = [
-  { label: "Admin password", icon: "lock" },
-  { label: "Cloudflare", icon: "cloud" },
-  { label: "Network", icon: "router" },
-  { label: "Ready", icon: "check_circle" },
-];
+const STEPS = ["Admin password", "Cloudflare", "Network", "Ready"];
 
 const TUNNEL_NAME = "homelab";
 
