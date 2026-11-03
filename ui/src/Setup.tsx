@@ -235,7 +235,7 @@ function CloudflareStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<vo
 
   return (
     <>
-      <StepHead icon="cloud" title="Connect Cloudflare"
+      <StepHead title="Connect Cloudflare"
         sub="myTunnels creates the tunnel and the DNS records for you. It needs an API token to do that." />
 
       {phase === "connected" ? (
