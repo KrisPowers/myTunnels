@@ -152,24 +152,30 @@ export function NewUser({ devices, onAdded }: { devices: Device[]; onAdded: () =
         <a className="icon-btn" href="#/users" aria-label="All users" title="All users"><Icon name="arrow_back" /></a>
         <div className="page-head-main">
           <h1>New user</h1>
-          <div className="page-sub">They sign in with their email and this password.</div>
+          <div className="page-sub">They sign in with their email and password, from the device picked here. Add tunnels once the account exists.</div>
         </div>
       </div>
       <div className="page-body stack">
-        <Card title="Who they are">
-          <div className="card-pad form-grid">
-            <TextField label="Full name" autoFocus autoComplete="off" value={name} onChange={setName} />
-            <TextField label="Username" autoComplete="off" value={username} onChange={(v) => setUsername(v.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 40))}
+        <div className="card form-card">
+          <div className="form-grid">
+            <TextField label="Username" autoFocus autoComplete="off" value={username} onChange={(v) => setUsername(v.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 40))}
               hint="Letters, digits, dots, dashes and underscores" />
-            <TextField className="span" label="Email" type="email" autoComplete="off" value={email} onChange={setEmail} hint="What they sign in with" />
-          </div>
-        </Card>
-        <Card title="Password">
-          <div className="card-pad">
+            <TextField label="Email" type="email" autoComplete="off" value={email} onChange={setEmail} hint="What they sign in with" />
+            <div className="tf static span">
+              <div className="tf-box">
+                {choices.length ? (
+                  <Dropdown label="Device" value={device} onChange={setDevice}
+                    options={[{ value: "", label: "Pick their device" }, ...choices.map((d) => ({ value: d.id, label: deviceLabel(d), hint: `Seen ${ago(d.last_seen)}` }))]} />
+                ) : (
+                  <span className="dropdown placeholder">No devices yet. Open a tunnel on their device first.</span>
+                )}
+                <span className="tf-label">Device</span>
+              </div>
+              <div className="tf-hint">The only device they can sign in from. More can be linked later.</div>
+            </div>
             <PasswordField label="Password" value={password} onChange={setPassword} hint="Generate one, or type at least 10 characters with upper and lower case, a number and a symbol." />
           </div>
-        </Card>
-        <Grants ids={ids} routes={routes} onPick={(id, on) => setIds((had) => (on ? [...had, id] : had.filter((x) => x !== id)))} />
+        </div>
         <div className="form-foot">
           <a className="btn text" href="#/users">Cancel</a>
           <button className="btn primary" disabled={busy || !ready}>{busy && <span className="spinner small on-accent" />}Add user</button>
