@@ -562,8 +562,8 @@ function People({ route, users, onGrant }: { route: Route; users: User[]; onGran
 
   const members = users.filter((u) => u.route_ids.includes(route.id));
   const needle = q.trim().toLowerCase();
+  // Everyone matching, those with access already shown but not pickable.
   const matches = users
-    .filter((u) => !u.route_ids.includes(route.id))
     .filter((u) => !needle || [u.name, u.username, u.email].some((v) => v.toLowerCase().includes(needle)))
     // Most active first: latest sign-in, then never signed in.
     .sort((a, b) => (b.last_login ?? 0) - (a.last_login ?? 0))
