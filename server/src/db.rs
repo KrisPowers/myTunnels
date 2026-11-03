@@ -130,7 +130,8 @@ pub struct Route {
 pub struct User {
     pub id: String,
     pub username: String,
-    pub email: Option<String>,
+    /// What they sign in with, with the password.
+    pub email: String,
     pub name: String,
     #[serde(skip)]
     pub password_hash: String,
