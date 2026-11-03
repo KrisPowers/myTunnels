@@ -4,7 +4,7 @@ import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
 import { ProviderLogo } from "./ProviderLogo";
-import { AddMenu, ArmedButton, Avatar, Card, Copy, LogTable, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
+import { AddMenu, ArmedButton, Avatar, Card, Copy, Dialog, LogTable, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
 
 // Chips saying who may open a tunnel.
 export function AccessChips({ route }: { route: Route }) {
@@ -155,8 +155,9 @@ const IDLE_FOR: Option<number>[] = [
 type AccessValue = Access & { password_set?: boolean };
 
 // AccessCard holds a tunnel's access layers. A tunnel password is asked for when
-// that layer is turned on with none set; `onPassword` stores one on its own.
-function AccessCard({ value, users, providers, hostname, onChange, onPassword, signInElsewhere }: {
+// that layer is turned on with none set; `onPassword` stores one on its own, from
+// a dialog, and `onPasswordCancel` drops a password layer that never got one.
+function AccessCard({ value, users, providers, hostname, onChange, onPassword, onPasswordCancel, signInElsewhere }: {
   value: AccessValue;
   users: User[];
   // Third-party providers that are set up, to offer here.
@@ -165,6 +166,7 @@ function AccessCard({ value, users, providers, hostname, onChange, onPassword, s
   hostname?: string;
   onChange: (patch: Partial<Access>) => void;
   onPassword?: (password: string) => Promise<unknown>;
+  onPasswordCancel?: () => void;
   // On a tunnel's page the sign-in switch sits beside People with access instead.
   signInElsewhere?: boolean;
 }) {
@@ -181,9 +183,11 @@ function AccessCard({ value, users, providers, hostname, onChange, onPassword, s
       <Row title="Tunnel password" sub="One password for this tunnel alone, asked for before anything behind it loads.">
         <Switch label="Tunnel password" on={value.require_password} onChange={(v) => onChange({ require_password: v })} />
       </Row>
-      {value.require_password && (
-        <PasswordRow set={!!value.password_set} value={value.password ?? ""} onChange={onPassword ? undefined : (password) => onChange({ password })} onSave={onPassword} />
-      )}
+      {value.require_password && (onPassword ? (
+        <PasswordSetting set={!!value.password_set} onSave={onPassword} onCancel={onPasswordCancel} />
+      ) : (
+        <PasswordRow value={value.password ?? ""} onChange={(password) => onChange({ password })} />
+      ))}
       {!signInElsewhere && <Row title="Sign-in" sub={<>People sign in with their email and an account from <a href="#/users">Users</a>. {accounts ? `${accounts} account${accounts === 1 ? "" : "s"} so far.` : "There are none yet."}</>}>
         <Switch label="Sign-in" on={value.require_login} onChange={(v) => onChange({ require_login: v })} />
       </Row>}
@@ -225,47 +229,72 @@ function AccessCard({ value, users, providers, hostname, onChange, onPassword, s
   );
 }
 
-// PasswordRow sets the tunnel password: typed into the form when publishing, or
-// saved on its own for a tunnel that exists.
-function PasswordRow({ set, value, onChange, onSave }: {
-  set: boolean;
-  value: string;
-  onChange?: (password: string) => void;
-  onSave?: (password: string) => Promise<unknown>;
-}) {
-  const [draft, setDraft] = useState(value);
-  const [busy, setBusy] = useState(false);
-  const rating = strength(draft);
-  const notify = useNotify();
-  const update = (p: string) => {
-    setDraft(p);
-    onChange?.(p);
-  };
+function PasswordHint({ value, empty }: { value: string; empty: string }) {
+  if (!value) return <>{empty}</>;
+  const rating = strength(value);
+  return (
+    <>
+      <span className={"strength " + rating.level}>{LEVELS[rating.level]}</span>
+      {rating.missing.length > 0 && <span>Needs {list(rating.missing)}.</span>}
+    </>
+  );
+}
+
+// PasswordRow is the tunnel password typed into the form when publishing.
+function PasswordRow({ value, onChange }: { value: string; onChange: (password: string) => void }) {
   return (
     <div className="setting nested">
-      <TextField className="grow" label={set ? "New tunnel password" : "Tunnel password"} type="password" autoComplete="new-password"
-        value={draft} onChange={update}
-        hint={draft ? (
-          <>
-            <span className={"strength " + rating.level}>{LEVELS[rating.level]}</span>
-            {rating.missing.length > 0 && <span>Needs {list(rating.missing)}.</span>}
-          </>
-        ) : set ? "A password is set. Type a new one to replace it." : "Visitors type this before the app loads."} />
-      {onSave && (
-        <button type="button" className="btn primary" disabled={busy || !rating.ok} onClick={async () => {
-          setBusy(true);
-          try {
-            await onSave(draft);
-            setDraft("");
-            notify(set ? "Tunnel password changed" : "Tunnel password set");
-          } catch (e) {
-            notify(message(e), "bad");
-          } finally {
-            setBusy(false);
-          }
-        }}>{set ? "Change" : "Set password"}</button>
-      )}
+      <TextField className="grow" label="Tunnel password" type="password" autoComplete="new-password" value={value} onChange={onChange}
+        hint={<PasswordHint value={value} empty="Visitors type this before the app loads." />} />
     </div>
+  );
+}
+
+// PasswordSetting is the password of a tunnel that exists: set or not, with an
+// edit button that opens a dialog. Turning the layer on without one opens it
+// straight away.
+function PasswordSetting({ set, onSave, onCancel }: { set: boolean; onSave: (password: string) => Promise<unknown>; onCancel?: () => void }) {
+  const [open, setOpen] = useState(!set);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+  const close = () => {
+    setOpen(false);
+    setDraft("");
+    if (!set) onCancel?.();
+  };
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await onSave(draft);
+      notify(set ? "Tunnel password changed" : "Tunnel password set");
+      setDraft("");
+      setOpen(false);
+    } catch (err) {
+      notify(message(err), "bad");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <Row title="Password" sub={set ? "Set. Changing it signs everyone out." : "Not set"}>
+        <button type="button" className="icon-btn" aria-label="Change tunnel password" title="Change" onClick={() => setOpen(true)}><Icon name="edit" size={20} /></button>
+      </Row>
+      {open && (
+        <Dialog title={set ? "Change the tunnel password" : "Set the tunnel password"} onClose={close}>
+          <form onSubmit={save}>
+            <TextField label={set ? "New tunnel password" : "Tunnel password"} type="password" autoFocus autoComplete="new-password" value={draft} onChange={setDraft}
+              hint={<PasswordHint value={draft} empty="Visitors type this before the app loads." />} />
+            <div className="edit-actions">
+              <button type="button" className="btn text" onClick={close}>Cancel</button>
+              <button className="btn primary" disabled={busy || !strength(draft).ok}>{busy && <span className="spinner small on-accent" />}Save</button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+    </>
   );
 }
 
@@ -434,22 +463,16 @@ export function TunnelPage({ route, page, devices, users, providers, onChanged }
     <>
       <div className="page-head">
         <div className="page-head-main">
-          {editing === "address" ? (
-            <AddressEditor route={route} onDone={() => setEditing("")} onChanged={onChanged} />
-          ) : (
-            <div className="inline-edit">
-              <h1>{route.hostname}</h1>
-              <button type="button" className="icon-btn" aria-label="Change address" title="Change address" onClick={() => setEditing("address")}><Icon name="edit" size={20} /></button>
-            </div>
-          )}
-          {editing === "target" ? (
-            <TargetEditor edit={edit} onDone={() => setEditing("")} onSave={save} />
-          ) : (
-            <div className="page-sub inline-edit">
-              <span>to <span className="mono">{target(route)}</span></span>
-              <button type="button" className="icon-btn small" aria-label="Change where it goes" title="Change where it goes" onClick={() => setEditing("target")}><Icon name="edit" size={18} /></button>
-            </div>
-          )}
+          <div className="inline-edit">
+            <h1>{route.hostname}</h1>
+            <button type="button" className="icon-btn" aria-label="Change address" title="Change address" onClick={() => setEditing("address")}><Icon name="edit" size={20} /></button>
+          </div>
+          <div className="page-sub inline-edit">
+            <span>to <span className="mono">{target(route)}</span></span>
+            <button type="button" className="icon-btn small" aria-label="Change where it goes" title="Change where it goes" onClick={() => setEditing("target")}><Icon name="edit" size={18} /></button>
+          </div>
+          {editing === "address" && <AddressEditor route={route} onDone={() => setEditing("")} onChanged={onChanged} />}
+          {editing === "target" && <TargetEditor edit={edit} onDone={() => setEditing("")} onSave={save} />}
         </div>
         <div className="page-actions">
           <Switch label={edit.enabled ? "Live, switch off" : "Off, switch live"} on={edit.enabled} onChange={(v) => quietly({ enabled: v })} />
@@ -465,7 +488,8 @@ export function TunnelPage({ route, page, devices, users, providers, onChanged }
             onPassword={async (password) => {
               await save({ require_password: true, password });
               setAsking(false);
-            }} />
+            }}
+            onPasswordCancel={() => setAsking(false)} />
         )}
 
         {current === "access" && (
@@ -495,7 +519,7 @@ export function TunnelPage({ route, page, devices, users, providers, onChanged }
   );
 }
 
-// AddressEditor changes a tunnel's subdomain and domain in place of its title.
+// AddressEditor changes a tunnel's subdomain and domain, in a dialog.
 function AddressEditor({ route, onDone, onChanged }: { route: Route; onDone: () => void; onChanged: () => Promise<void> }) {
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [zone, setZone] = useState(route.zone_id);
@@ -522,27 +546,34 @@ function AddressEditor({ route, onDone, onChanged }: { route: Route; onDone: () 
   };
 
   return (
-    <form className="edit-row" onSubmit={save}>
-      <TextField className="grow" label="Subdomain" autoFocus autoComplete="off" value={sub}
-        onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
-      <span className="composer-dot">.</span>
-      <div className="tf static grow">
-        <div className="tf-box">
-          {zones ? (
-            <Dropdown label="Domain" value={zone} options={zones.map((z) => ({ value: z.id, label: z.name }))} onChange={setZone} />
-          ) : (
-            <span className="dropdown placeholder">Loading domains</span>
-          )}
-          <span className="tf-label">Domain</span>
+    <Dialog title="Change address" onClose={onDone}>
+      <form onSubmit={save}>
+        <div className="edit-row">
+          <TextField className="grow" label="Subdomain" autoFocus autoComplete="off" value={sub}
+            onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
+          <span className="composer-dot">.</span>
+          <div className="tf static grow">
+            <div className="tf-box">
+              {zones ? (
+                <Dropdown label="Domain" value={zone} options={zones.map((z) => ({ value: z.id, label: z.name }))} onChange={setZone} />
+              ) : (
+                <span className="dropdown placeholder">Loading domains</span>
+              )}
+              <span className="tf-label">Domain</span>
+            </div>
+          </div>
         </div>
-      </div>
-      <button type="button" className="btn text" onClick={onDone}>Cancel</button>
-      <button className="btn primary" disabled={busy || !sub || !zone}>{busy && <span className="spinner small on-accent" />}Save</button>
-    </form>
+        <div className="edit-actions">
+          <button type="button" className="btn text" onClick={onDone}>Cancel</button>
+          <button className="btn primary" disabled={busy || !sub || !zone}>{busy && <span className="spinner small on-accent" />}Save</button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
-// TargetEditor changes where a tunnel goes: its port, and where the app runs.
+// TargetEditor changes where a tunnel goes, its port and where the app runs,
+// in a dialog.
 function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () => void; onSave: (change: Partial<RouteEdit>) => Promise<void> }) {
   const [port, setPort] = useState(String(edit.port));
   const [where, setWhere] = useState<Target>({ target_host: edit.target_host, target_scheme: edit.target_scheme, preserve_host: edit.preserve_host });
@@ -562,16 +593,18 @@ function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () =>
   };
 
   return (
-    <form className="edit-block" onSubmit={save}>
-      <div className="edit-row">
-        <TextField className="port" label="Port" mono inputMode="numeric" autoFocus value={port} onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
-      </div>
-      <LocalApp value={where} onChange={(patch) => setWhere((w) => ({ ...w, ...patch }))} />
-      <div className="edit-actions">
-        <button type="button" className="btn text" onClick={onDone}>Cancel</button>
-        <button className="btn primary" disabled={busy || !port}>{busy && <span className="spinner small on-accent" />}Save</button>
-      </div>
-    </form>
+    <Dialog title="Change where it goes" onClose={onDone}>
+      <form className="edit-block" onSubmit={save}>
+        <div className="edit-row">
+          <TextField className="port" label="Port" mono inputMode="numeric" autoFocus value={port} onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
+        </div>
+        <LocalApp value={where} onChange={(patch) => setWhere((w) => ({ ...w, ...patch }))} />
+        <div className="edit-actions">
+          <button type="button" className="btn text" onClick={onDone}>Cancel</button>
+          <button className="btn primary" disabled={busy || !port}>{busy && <span className="spinner small on-accent" />}Save</button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
