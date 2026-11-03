@@ -526,13 +526,10 @@ function AddressEditor({ route, onDone, onChanged }: { route: Route; onDone: () 
   );
 }
 
-// TargetEditor changes where a tunnel goes: its port, and the protocol, host and
-// host name the app sees.
+// TargetEditor changes where a tunnel goes: its port, and where the app runs.
 function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () => void; onSave: (change: Partial<RouteEdit>) => Promise<void> }) {
   const [port, setPort] = useState(String(edit.port));
-  const [scheme, setScheme] = useState(edit.target_scheme);
-  const [host, setHost] = useState(edit.target_host ?? "");
-  const [preserve, setPreserve] = useState(edit.preserve_host);
+  const [where, setWhere] = useState<Target>({ target_host: edit.target_host, target_scheme: edit.target_scheme, preserve_host: edit.preserve_host });
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
 
