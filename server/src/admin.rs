@@ -380,6 +380,19 @@ fn default_mode() -> String {
     "all".into()
 }
 
+fn default_login_max() -> i64 {
+    7 * 86_400
+}
+
+/// Sign-in limits: from 0 (never) up to the longest a sign-in can last.
+fn check_limits(max: i64, idle: i64) -> ApiResult<()> {
+    let longest = 30 * 86_400;
+    if !(0..=longest).contains(&max) || !(0..=longest).contains(&idle) {
+        return Err(ApiError::bad("Sign-in limits run from never up to 30 days"));
+    }
+    Ok(())
+}
+
 #[derive(Deserialize)]
 struct NewRoute {
     subdomain: String,
