@@ -30,6 +30,7 @@ pub fn router(state: AppState) -> Router {
         .route("/settings", get(settings))
         .route("/settings/cloudflare", put(save_cloudflare))
         .route("/settings/network", put(save_network))
+        .route("/setup/finish", post(finish_setup))
         .route("/cloudflare/accounts", post(cloudflare_accounts))
         .route("/zones", get(zones))
         .route("/status", get(status))
