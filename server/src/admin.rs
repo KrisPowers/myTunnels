@@ -912,6 +912,28 @@ async fn update_user(
     Ok(Json(user))
 }
 
+/// An account's latest sign-ins, and the devices it has used.
+async fn user_activity(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Vec<SignIn>>> {
+    Ok(Json(state.db.sign_ins("user_id", &id, 100)?))
+}
+
+/// The accounts signed in from a device lately.
+async fn device_activity(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Vec<SignIn>>> {
+    Ok(Json(state.db.sign_ins("device_id", &id, 100)?))
+}
+
+/// Ends every sign-in of this account.
+async fn sign_out_user(State(state): State<AppState>, Path(id): Path<String>) -> Json<Value> {
+    lock(&state.user_sessions).retain(|_, s| s.subject != id);
+    Json(json!({ "ok": true }))
+}
+
 async fn delete_user(
     State(state): State<AppState>,
     Path(id): Path<String>,
