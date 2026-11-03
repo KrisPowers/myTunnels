@@ -379,12 +379,11 @@ a.result:hover { background: var(--hover); }
 }
 .dropdown-list.up { transform-origin: bottom; }
 .dropdown-option {
-  display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 6px 14px 6px 8px; border-radius: 10px;
+  display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 6px 14px; border-radius: 10px;
   color: var(--text); cursor: pointer;
 }
 .dropdown-option.active { background: var(--hover); }
 .dropdown-option[aria-selected="true"] { background: var(--accent-bg); color: var(--on-accent-bg); }
-.dropdown-check { display: grid; place-items: center; width: 20px; flex-shrink: 0; }
 .dropdown-icon { color: var(--text-2); }
 .dropdown-option[aria-selected="true"] .dropdown-icon { color: inherit; }
 .dropdown-text { display: grid; gap: 1px; }
