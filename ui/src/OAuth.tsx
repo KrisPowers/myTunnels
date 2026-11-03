@@ -39,7 +39,6 @@ export function OAuth() {
     api.oauth().then((s) => setProviders(s.providers)).catch((e) => notify(message(e), "bad"));
     api.zones().then((z) => setDomain(z[0]?.name ?? "")).catch(() => {});
   }, [notify]);
-  const ready = providers?.filter((p) => p.configured).length ?? 0;
   const chosen = providers?.find((p) => p.id === open);
 
   return (
@@ -47,10 +46,6 @@ export function OAuth() {
       <div className="page-head">
         <div className="page-head-main">
           <h1>Third-Party OAuth</h1>
-          <div className="page-sub">
-            <span><b>{ready}</b> set up</span>
-            <span>Switch them on per tunnel, under Access Control</span>
-          </div>
         </div>
       </div>
       <div className="page-body stack">
