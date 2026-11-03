@@ -342,6 +342,25 @@ impl Db {
              UPDATE users SET all_routes = 0 WHERE all_routes = 1;",
         )?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        // Accounts made before devices were linked take the devices they already
+        // signed in from. This runs once, so a device unlinked later stays unlinked.
+        let linked_before: Option<String> = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'devices_linked_from_history'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if linked_before.is_none() {
+            conn.execute_batch(
+                "INSERT OR IGNORE INTO user_devices (user_id, device_id)
+                     SELECT s.user_id, s.device_id FROM sign_ins s
+                     JOIN users u ON u.id = s.user_id
+                     JOIN devices d ON d.id = s.device_id
+                     WHERE s.outcome = 'ok';
+                 INSERT INTO settings (key, value) VALUES ('devices_linked_from_history', '1');",
+            )?;
+        }
         Ok(Self(Mutex::new(conn)))
     }
 
