@@ -186,6 +186,11 @@ pub async fn ready_connections(state: &AppState) -> Option<u64> {
     ready.get("readyConnections")?.as_u64()
 }
 
+fn free_local_addr() -> Option<String> {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").ok()?;
+    Some(listener.local_addr().ok()?.to_string())
+}
+
 /// Pushes the tunnel's ingress rules to Cloudflare: every published hostname goes to the gateway.
 pub async fn sync_ingress(state: &AppState) -> Result<()> {
     let cf = state.cloudflare().map_err(|e| anyhow!(e.1))?;
