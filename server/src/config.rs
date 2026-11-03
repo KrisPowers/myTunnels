@@ -27,7 +27,6 @@ impl Config {
             admin_addr: var("ADMIN_ADDR", "0.0.0.0:7070"),
             gate_service: format!("http://{}", gate_addr.replace("0.0.0.0", "127.0.0.1")),
             gate_addr,
-            metrics_addr: var("METRICS_ADDR", "127.0.0.1:20241"),
             data_dir: var("DATA_DIR", "data").into(),
             ui_dir: var("UI_DIR", "../ui/dist").into(),
             default_upstream_host: var("UPSTREAM_HOST", "127.0.0.1"),
