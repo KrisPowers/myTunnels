@@ -686,20 +686,20 @@ function line(e: TunnelEvent): [string, string] {
     };
     return [e.outcome === "network" ? "bad" : "", asked[e.outcome] ?? e.outcome];
   }
-  if (e.kind === "device") return ["", `${who} asked for approval`];
+  if (e.kind === "device") return ["", "Asked for device approval"];
   if (e.kind === "password") {
     const said: Record<string, [string, string]> = {
       ok: ["ok", "Tunnel password entered"],
       failed: ["bad", "Wrong tunnel password"],
-      locked: ["bad", "Too many password tries, locked out for 15 minutes"],
+      locked: ["bad", "Locked out after too many tries"],
     };
     return said[e.outcome] ?? ["", e.outcome];
   }
   const said: Record<string, [string, string]> = {
-    ok: ["ok", `${who} signed in`],
-    failed: ["bad", `Wrong password for ${who}`],
-    locked: ["bad", "Too many sign-in tries, locked out for 15 minutes"],
-    blocked: ["bad", `${who} held for review`],
+    ok: ["ok", "Signed in"],
+    failed: ["bad", "Wrong password"],
+    locked: ["bad", "Locked out after too many tries"],
+    blocked: ["bad", "Held for review"],
   };
   return said[e.outcome] ?? ["", e.outcome];
 }
