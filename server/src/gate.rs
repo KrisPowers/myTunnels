@@ -866,7 +866,13 @@ async fn login(
         return json_error(StatusCode::FORBIDDEN, "This account cannot open this app.");
     }
 
-    // An account signs in only from the devices linked to it.
+    // An account signs in only from the devices linked to it. One with none yet
+    // takes the device of its first sign-in.
+    if account.device_ids.is_empty() {
+        if let Some(first) = &device_id {
+            account.device_ids.push(first.clone());
+        }
+    }
     if !device_id
         .as_ref()
         .is_some_and(|d| account.device_ids.contains(d))
