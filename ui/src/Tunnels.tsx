@@ -718,12 +718,12 @@ function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
     return () => clearInterval(t);
   }, [route.id]);
   const shown = (events ?? []).filter((e) => !kind || e.kind === kind);
-  const days: [string, TunnelEvent[]][] = [];
-  for (const e of shown) {
-    const label = day(e.at);
-    if (days.at(-1)?.[0] !== label) days.push([label, []]);
-    days.at(-1)![1].push(e);
-  }
+  const entries: LogEntry[] = shown.map((e) => {
+    const user = e.user_id ? users.find((u) => u.id === e.user_id) : undefined;
+    const who = user ? user.name || user.username : e.device_id ? shortId(e.device_id) : "A visitor";
+    const [tone, text] = line(e, who);
+    return { at: e.at, tone, text, where: [e.ip, e.country].filter(Boolean).join(", ") };
+  });
 
   return (
     <>
