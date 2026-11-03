@@ -122,33 +122,13 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
           </>
         ) : undefined} />
       {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
-      <Foot>
-        <button className="btn primary" disabled={busy || short || !password}>
+      <div className="setup-foot">
+        <button className="btn primary" disabled={busy || !ready}>
           {busy && <span className="spinner small on-accent" />}{create ? "Create password" : "Sign in"}<Icon name="arrow_forward" size={18} />
         </button>
-      </Foot>
+      </div>
     </form>
   );
-}
-
-const LEVELS = { poor: "Poor", decent: "Decent", good: "Good", strong: "Strong" } as const;
-
-// strength rates a new password. It is accepted once nothing is missing:
-// 10 or more characters with upper and lower case, a number and a symbol.
-function strength(p: string) {
-  const missing = [
-    p.length < 10 && "10 or more characters",
-    !/[A-Z]/.test(p) && "an uppercase letter",
-    !/[a-z]/.test(p) && "a lowercase letter",
-    !/[0-9]/.test(p) && "a number",
-    !/[^A-Za-z0-9]/.test(p) && "a symbol such as ! or $",
-  ].filter((m): m is string => Boolean(m));
-  const level: keyof typeof LEVELS = missing.length > 2 ? "poor" : missing.length > 0 ? "decent" : p.length >= 14 ? "strong" : "good";
-  return { ok: missing.length === 0, level, missing };
-}
-
-function list(items: string[]) {
-  return items.length < 2 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
 }
 
 // ---- 2. Cloudflare: one link to make the token, paste it, done ----
@@ -157,23 +137,24 @@ type Phase = "idle" | "checking" | "pick" | "connecting" | "connected";
 
 function CloudflareStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }) {
   const [token, setToken] = useState("");
-  const [phase, setPhase] = useState<Phase>(auth.setup.cloudflare ? "connected" : "idle");
+  const [phase, setPhase] = useState<Phase>("idle");
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [connected, setConnected] = useState<Account | null>(null);
   const [problem, setProblem] = useState("");
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const finish = useRef(onDone);
-  finish.current = onDone;
 
+  // Connecting creates the tunnel and finishes setup; the dashboard opens
+  // after a moment on the confirmation.
   const connect = async (account: Account, withToken: string | null) => {
     setPhase("connecting");
     setProblem("");
     try {
       await api.connect(withToken, account.id, TUNNEL_NAME);
-      setSettings(await api.settings());
+      setConnected(account);
       setPhase("connected");
+      setTimeout(onDone, 1200);
     } catch (e) {
       setProblem(message(e));
-      setPhase("pick");
+      setPhase(accounts.length > 1 ? "pick" : "idle");
     }
   };
 
