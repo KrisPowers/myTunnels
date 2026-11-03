@@ -147,6 +147,14 @@ export const api = {
   editDevice: (id: string, patch: Partial<Pick<Device, "name" | "status" | "all_routes" | "route_ids">>) =>
     call<Device>(`/devices/${id}`, "PATCH", patch),
   forgetDevice: (id: string) => call(`/devices/${id}`, "DELETE"),
+  thisDevice: (token: string | null, info: unknown) => call<{ id: string; token: string }>("/device", "POST", { token, info }),
+
+  users: () => call<User[]>("/users"),
+  addUser: (body: { username: string; email: string | null; name: string; password: string; all_routes: boolean; route_ids: string[] }) =>
+    call<User>("/users", "POST", body),
+  editUser: (id: string, patch: Partial<Pick<User, "username" | "email" | "name" | "enabled" | "all_routes" | "route_ids">> & { password?: string }) =>
+    call<User>(`/users/${id}`, "PATCH", patch),
+  removeUser: (id: string) => call(`/users/${id}`, "DELETE"),
 };
 
 export function editOf(r: Route): RouteEdit {
