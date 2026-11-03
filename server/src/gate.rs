@@ -1,7 +1,13 @@
 //! The access gateway. cloudflared sends every published hostname here; each request is
 //! matched to its tunnel, checked against that tunnel's access rules, then forwarded.
+//!
+//! Every browser gets a device key the first time it opens any tunnel. The key lives
+//! in a cookie on the tunnel's domain; tunnels on other domains fetch the same key
+//! from the hub (the oldest tunnel's host) with a one-minute, one-use code, so one
+//! browser is one device everywhere.
 
 use std::net::IpAddr;
+use std::time::Duration;
 
 use axum::extract::{Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
