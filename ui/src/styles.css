@@ -373,7 +373,7 @@ a.result:hover { background: var(--hover); }
 .dropdown-caret { flex-shrink: 0; fill: currentColor; transition: transform .2s var(--ease); }
 .dropdown.open .dropdown-caret { transform: rotate(180deg); }
 .dropdown-list {
-  position: fixed; z-index: 100; margin: 0; padding: 8px; list-style: none; max-height: 360px; overflow-y: auto;
+  position: fixed; z-index: 100; margin: 0; padding: 8px 8px; list-style: none; max-height: 360px; overflow-y: auto;
   background: var(--raised); border-radius: 16px; box-shadow: var(--shadow);
   transform-origin: top; animation: drop .16s var(--ease) both;
 }
