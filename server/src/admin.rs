@@ -917,6 +917,9 @@ async fn update_user(
     if let Some(ids) = body.route_ids {
         user.route_ids = known_routes(&state, ids);
     }
+    if let Some(ids) = body.device_ids {
+        user.device_ids = known_devices(&state, ids);
+    }
     state.db.save_user(&user)?;
     state.reload()?;
     Ok(Json(user))
