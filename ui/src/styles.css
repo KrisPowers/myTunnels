@@ -638,6 +638,7 @@ a.result:hover { background: var(--hover); }
   .edit-row { flex-wrap: wrap; }
   .edit-row .grow { flex-basis: 100%; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .profile-grid { grid-template-columns: minmax(0, 1fr); }
   .result.user-row { grid-template-columns: 32px minmax(0, 1fr) auto; }
   .result.user-row .result-meta, .result.user-row .result-service, .result.user-row .result-what { display: none; }
   .log-table th:nth-child(4), .log-table td:nth-child(4), .log-table th:nth-child(5), .log-table td:nth-child(5) { display: none; }
