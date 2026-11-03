@@ -185,6 +185,8 @@ export function editOf(r: Route): RouteEdit {
     require_device: r.require_device,
     require_password: r.require_password,
     require_login: r.require_login,
+    login_max: r.login_max,
+    login_idle: r.login_idle,
     policy_mode: r.policy_mode,
     enabled: r.enabled,
     preserve_host: r.preserve_host,
