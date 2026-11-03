@@ -675,9 +675,8 @@ const KINDS: Option<TunnelEvent["kind"]>[] = [
   { value: "device", label: "Devices" },
 ];
 
-// line says what an event was, in a sentence, and whether it went well, badly
-// or neither.
-function line(e: TunnelEvent, who: string): [string, string] {
+// line says what an event was, and whether it went well, badly or neither.
+function line(e: TunnelEvent): [string, string] {
   if (e.kind === "visit") {
     const asked: Record<string, string> = {
       network: "Turned away, not on the home network",
