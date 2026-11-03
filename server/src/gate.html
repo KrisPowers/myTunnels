@@ -176,43 +176,32 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
       webglRenderer: g.renderer || ''
     };
   }
-
   function show(s) {
     var text = 'Waiting for approval', tone = 'warn';
     if (s.allowed) { text = 'Approved, opening'; tone = 'ok'; }
     else if (s.status === 'approved') { text = 'Approved, but not for this app'; tone = 'bad'; }
     else if (s.status === 'denied') { text = 'Access denied'; tone = 'bad'; }
     else if (s.note) { text = s.note + ', waiting for review'; }
-    $('id').textContent = s.id;
+    fullId = s.id;
+    $('id').textContent = s.id.length > 12 ? s.id.slice(0, 8) + '...' : s.id;
     $('state-text').textContent = text;
     $('state').dataset.tone = tone;
   }
-
   function check() {
-    fetch('/__gate/enroll', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: load(), info: info() })
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (s) {
-        if (s.token) save(s.token);
-        if (!s.id) throw new Error(s.error || 'unavailable');
-        show(s);
-        if (s.allowed) { location.reload(); return; }
-        if (s.status !== 'denied') setTimeout(check, 5000);
-      })
-      .catch(function (e) {
-        $('state-text').textContent = 'Could not reach the gateway (' + e.message + '), retrying';
-        setTimeout(check, 10000);
-      });
+    post('/__gate/enroll', { token: load(), info: info() }).then(function (s) {
+      if (s.token) save(s.token);
+      if (!s.id) throw new Error(s.error || 'unavailable');
+      show(s);
+      if (s.allowed) return back();
+      if (s.status !== 'denied') setTimeout(check, 5000);
+    }).catch(function (e) {
+      $('state-text').textContent = 'Could not reach the gateway (' + e.message + '), retrying';
+      setTimeout(check, 10000);
+    });
   }
-
   $('copy').addEventListener('click', function () {
-    if (navigator.clipboard) navigator.clipboard.writeText($('id').textContent);
+    if (navigator.clipboard) navigator.clipboard.writeText(fullId);
   });
-
   check();
 })();
 </script>
