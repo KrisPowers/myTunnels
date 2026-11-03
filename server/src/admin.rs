@@ -296,6 +296,7 @@ async fn save_network(
     state
         .db
         .set_setting("trusted_networks", body.trusted_networks.trim())?;
+    state.db.set_setting("network_saved", "1")?;
     state.reload()?;
     Ok(Json(json!({ "ok": true })))
 }
