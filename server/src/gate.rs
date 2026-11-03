@@ -707,7 +707,11 @@ fn register(
             }
             (device, token)
         }
-        None => new_device(state, route, ip, headers, "pending", body.info)?,
+        None => {
+            let made = new_device(state, route, ip, headers, "pending", body.info)?;
+            log(state, route, "device", "asked", None, ip, headers);
+            made
+        }
     };
 
     let allowed = may_open(&device, route);
