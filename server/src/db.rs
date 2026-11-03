@@ -629,6 +629,45 @@ impl Db {
         Ok(())
     }
 
+    /// Records a sign-in attempt, keeping 90 days of them.
+    pub fn add_sign_in(&self, s: &SignIn) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO sign_ins (user_id, device_id, ip, country, at, outcome)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![s.user_id, s.device_id, s.ip, s.country, s.at, s.outcome],
+        )?;
+        conn.execute("DELETE FROM sign_ins WHERE at < ?1", [s.at - 90 * 86_400])?;
+        Ok(())
+    }
+
+    /// The latest sign-in attempts of an account, or from a device, newest first.
+    pub fn sign_ins(&self, column: &str, value: &str, limit: i64) -> Result<Vec<SignIn>> {
+        let column = if column == "device_id" {
+            "device_id"
+        } else {
+            "user_id"
+        };
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT user_id, device_id, ip, country, at, outcome FROM sign_ins
+             WHERE {column} = ?1 ORDER BY at DESC LIMIT ?2"
+        ))?;
+        let list = stmt
+            .query_map(params![value, limit], |r| {
+                Ok(SignIn {
+                    user_id: r.get(0)?,
+                    device_id: r.get(1)?,
+                    ip: r.get(2)?,
+                    country: r.get(3)?,
+                    at: r.get(4)?,
+                    outcome: r.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(list)
+    }
+
     pub fn delete_user(&self, id: &str) -> Result<()> {
         self.conn()
             .execute("DELETE FROM users WHERE id = ?1", [id])?;
