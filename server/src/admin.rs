@@ -15,11 +15,12 @@ use tower_http::services::{ServeDir, ServeFile};
 
 use crate::cloudflare::{Account, Cloudflare, Zone};
 use crate::db::{Device, Event, Route, SignIn, User};
+use crate::mail::{self, Smtp};
 use crate::netinfo;
 use crate::oauth::{self, Provider};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
-use crate::{gate, secret, tunnel};
+use crate::{codes, gate, secret, tunnel};
 
 const ADMIN_COOKIE: &str = "admin_session";
 const ADMIN_TTL: i64 = 7 * 86_400;
@@ -29,6 +30,9 @@ pub fn router(state: AppState) -> Router {
         .route("/account", get(account).patch(edit_account))
         .route("/oauth", get(list_oauth))
         .route("/oauth/{id}", put(save_oauth).delete(delete_oauth))
+        .route("/twofactor", get(two_factor).put(save_two_factor))
+        .route("/twofactor/smtp", put(save_smtp))
+        .route("/twofactor/test", post(test_mail))
         .route("/settings", get(settings))
         .route("/settings/cloudflare", put(save_cloudflare))
         .route("/settings/network", put(save_network))
@@ -52,6 +56,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth", get(auth_state))
         .route("/auth/setup", post(setup))
         .route("/auth/login", post(login))
+        .route("/auth/code", post(login_code))
         .route("/auth/logout", post(logout))
         .merge(protected)
         .layer(middleware::from_fn_with_state(state.clone(), guard_api));
@@ -258,7 +263,39 @@ async fn login(
         ));
     }
     state.clear_failures(&key);
-    start_session(&state)
+    if !dashboard_codes(&state)? {
+        return start_session(&state);
+    }
+    let email = state.db.setting("admin_email")?.unwrap_or_default();
+    let (ticket, sent_to) =
+        codes::send(&state, "admin", &email, "", "", "the myTunnels dashboard").await?;
+    Ok(
+        Json(json!({ "code_required": true, "ticket": ticket, "sent_to": sent_to }))
+            .into_response(),
+    )
+}
+
+/// Whether every sign-in to the dashboard also asks for an emailed code.
+fn dashboard_codes(state: &AppState) -> ApiResult<bool> {
+    Ok(state.db.setting("twofactor_dashboard")?.as_deref() == Some("1"))
+}
+
+#[derive(Deserialize)]
+struct CodeBody {
+    ticket: String,
+    code: String,
+}
+
+/// The emailed code that finishes signing in to the dashboard.
+async fn login_code(
+    State(state): State<AppState>,
+    Json(body): Json<CodeBody>,
+) -> ApiResult<Response> {
+    match state.codes.redeem(&body.ticket, &body.code) {
+        Ok(p) if p.subject == "admin" && p.route_id.is_empty() => start_session(&state),
+        Ok(_) => Err(ApiError(StatusCode::UNAUTHORIZED, "Sign in again".into())),
+        Err(why) => Err(ApiError(StatusCode::UNAUTHORIZED, why.into())),
+    }
 }
 
 fn start_session(state: &AppState) -> ApiResult<Response> {
@@ -269,6 +306,7 @@ fn start_session(state: &AppState) -> ApiResult<Response> {
         &secret::tag(&hash),
         "",
         ADMIN_TTL,
+        false,
     );
     Ok((
         [(
@@ -430,6 +468,117 @@ async fn delete_oauth(
 ) -> ApiResult<Json<Value>> {
     oauth::remove(&state.db, &id)?;
     list_oauth(State(state)).await
+}
+
+// Two-factor: the mail server, and where emailed codes are asked for
+
+async fn two_factor(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    let smtp = mail::load(&state.db)?.map(|m| {
+        json!({
+            "host": m.host,
+            "port": m.port,
+            "security": m.security,
+            "username": m.username,
+            "password_set": !m.password.is_empty(),
+            "from": m.from,
+        })
+    });
+    Ok(Json(json!({
+        "smtp": smtp,
+        "dashboard": dashboard_codes(&state)?,
+        "admin_email": state.db.setting("admin_email")?,
+    })))
+}
+
+#[derive(Deserialize)]
+struct SmtpBody {
+    host: String,
+    port: u16,
+    security: String,
+    #[serde(default)]
+    username: String,
+    /// A new password; left out, the saved one stays.
+    password: Option<String>,
+    from: String,
+}
+
+/// Saves the mail server once it answers and accepts the sign-in.
+async fn save_smtp(
+    State(state): State<AppState>,
+    Json(body): Json<SmtpBody>,
+) -> ApiResult<Json<Value>> {
+    let host = body.host.trim();
+    if !valid_host(host) {
+        return Err(ApiError::bad("Enter the mail server's host name"));
+    }
+    if body.port == 0 {
+        return Err(ApiError::bad("Port must be between 1 and 65535"));
+    }
+    if !matches!(body.security.as_str(), "starttls" | "tls" | "none") {
+        return Err(ApiError::bad("Security must be STARTTLS, TLS or none"));
+    }
+    let from = body.from.trim();
+    if from.parse::<lettre::message::Mailbox>().is_err() {
+        return Err(ApiError::bad(
+            "Enter the sender, such as myTunnels <codes@example.com>",
+        ));
+    }
+    let saved = mail::load(&state.db)?.unwrap_or_default();
+    let smtp = Smtp {
+        host: host.to_owned(),
+        port: body.port,
+        security: body.security,
+        username: body.username.trim().to_owned(),
+        password: body
+            .password
+            .filter(|p| !p.is_empty())
+            .unwrap_or(saved.password),
+        from: from.to_owned(),
+    };
+    mail::check(&smtp)
+        .await
+        .map_err(|e| ApiError::bad(format!("{e:#}")))?;
+    mail::save(&state.db, &smtp)?;
+    two_factor(State(state)).await
+}
+
+/// Sends a test email to the admin.
+async fn test_mail(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    let smtp =
+        mail::load(&state.db)?.ok_or_else(|| ApiError::bad("Set up the mail server first"))?;
+    let to = state
+        .db
+        .setting("admin_email")?
+        .ok_or_else(|| ApiError::bad("Set the admin email under Settings, Account first"))?;
+    mail::send(
+        &smtp,
+        &to,
+        "myTunnels test email",
+        "Email from myTunnels works. Sign-in codes will arrive like this.",
+    )
+    .await
+    .map_err(|e| ApiError::bad(format!("{e:#}")))?;
+    Ok(Json(json!({ "ok": true, "to": to })))
+}
+
+#[derive(Deserialize)]
+struct TwoFactorBody {
+    dashboard: bool,
+}
+
+/// Turns codes for the dashboard on or off. Turning them on sends a test email
+/// first, so a mail server that does not deliver cannot lock the admin out.
+async fn save_two_factor(
+    State(state): State<AppState>,
+    Json(body): Json<TwoFactorBody>,
+) -> ApiResult<Json<Value>> {
+    if body.dashboard {
+        let _sent = test_mail(State(state.clone())).await?;
+        state.db.set_setting("twofactor_dashboard", "1")?;
+    } else {
+        state.db.delete_setting("twofactor_dashboard")?;
+    }
+    two_factor(State(state)).await
 }
 
 // Settings
@@ -684,6 +833,8 @@ struct NewRoute {
     #[serde(default)]
     login_idle: i64,
     #[serde(default)]
+    require_code: bool,
+    #[serde(default)]
     preserve_host: bool,
 }
 
@@ -772,6 +923,7 @@ async fn create_route(
         require_login: body.require_login,
         login_max: body.login_max,
         login_idle: body.login_idle,
+        require_code: body.require_code,
         preserve_host: body.preserve_host,
         dns_record_id: Some(record_id.clone()),
         created_at: now(),
@@ -810,6 +962,8 @@ struct RouteEdit {
     #[serde(default)]
     login_idle: i64,
     #[serde(default)]
+    require_code: bool,
+    #[serde(default)]
     preserve_host: bool,
 }
 
@@ -842,6 +996,7 @@ async fn update_route(
     route.require_login = body.require_login;
     route.login_max = body.login_max;
     route.login_idle = body.login_idle;
+    route.require_code = body.require_code;
     route.preserve_host = body.preserve_host;
     state.db.update_route(&route)?;
     if switched && state.cloudflare().is_ok() {
