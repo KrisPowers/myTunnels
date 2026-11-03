@@ -297,6 +297,43 @@ export function UserPage({ user, page, routes, onChanged }: { user: User; page: 
   );
 }
 
+// PasswordValue shows that a password is set, and changes it from an edit button.
+function PasswordValue({ onSave }: { onSave: (password: string) => Promise<unknown> }) {
+  const [editing, setEditing] = useState(false);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+  if (!editing) {
+    return (
+      <Row title="Password" sub="Set">
+        <button type="button" className="icon-btn" aria-label="Change password" title="Change password" onClick={() => setEditing(true)}>
+          <Icon name="edit" size={20} />
+        </button>
+      </Row>
+    );
+  }
+  return (
+    <form className="setting nested" onSubmit={async (e) => {
+      e.preventDefault();
+      setBusy(true);
+      try {
+        await onSave(password);
+        notify("Password changed. They were signed out everywhere.");
+        setPassword("");
+        setEditing(false);
+      } catch (err) {
+        notify(message(err), "bad");
+      } finally {
+        setBusy(false);
+      }
+    }}>
+      <PasswordField label="New password" value={password} onChange={setPassword} hint="Changing it signs them out everywhere." />
+      <button type="button" className="btn text" onClick={() => setEditing(false)}>Cancel</button>
+      <button className="btn primary" disabled={busy || !strength(password).ok}>Save</button>
+    </form>
+  );
+}
+
 // Activity is where an account has been used from: its devices, and its sign-ins.
 function Activity({ user }: { user: User }) {
   const [list, setList] = useState<SignIn[] | null>(null);
