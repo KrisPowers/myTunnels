@@ -86,6 +86,17 @@ and on a linked device. Every provider returns through one tunnel address,
 `https://<tunnel>/__gate/oauth-callback`, and from there to the tunnel the visitor started
 from.
 
+## Two-factor sign-in
+
+On **Two-Factor Auth**, give myTunnels an SMTP server (host, port, STARTTLS or TLS, sign-in
+and sender). Saving checks it, and **Send a test** emails the admin. Then a six digit code,
+good once for ten minutes, can be asked for after the password:
+
+- **Dashboard sign-in.** Every sign-in to the panel, sent to the admin email. Turning it on
+  sends a test email first.
+- **Tunnels.** Any tunnel with sign-in on can turn on **Email code**, sent to the account's
+  email. It also applies to sign-ins through a third-party provider.
+
 ## Configuration
 
 Settings made in the panel are stored in `/data/gateway.db`. The container reads these
