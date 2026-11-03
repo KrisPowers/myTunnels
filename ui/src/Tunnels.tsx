@@ -398,11 +398,100 @@ export function TunnelPage({ route, devices, users, onChanged }: { route: Route;
             ))}
           </Card>
         )}
-
-        <Card title="Local app" sub="Where requests to this address go.">
-          <TargetRows value={edit} onChange={() => {}} onSave={save} />
-        </Card>
       </div>
     </>
+  );
+}
+
+// AddressEditor changes a tunnel's subdomain and domain in place of its title.
+function AddressEditor({ route, onDone, onChanged }: { route: Route; onDone: () => void; onChanged: () => Promise<void> }) {
+  const [zones, setZones] = useState<Zone[] | null>(null);
+  const [zone, setZone] = useState(route.zone_id);
+  const [sub, setSub] = useState(route.subdomain);
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+
+  useEffect(() => {
+    api.zones().then(setZones).catch((e) => notify(message(e), "bad"));
+  }, [notify]);
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const moved = await api.moveRoute(route.id, sub, zone);
+      await onChanged();
+      notify(`Moved to ${moved.hostname}`);
+      onDone();
+    } catch (err) {
+      notify(message(err), "bad");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="edit-row" onSubmit={save}>
+      <TextField className="grow" label="Subdomain" autoFocus autoComplete="off" value={sub}
+        onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
+      <span className="composer-dot">.</span>
+      <div className="tf static grow">
+        <div className="tf-box">
+          {zones ? (
+            <Dropdown label="Domain" value={zone} options={zones.map((z) => ({ value: z.id, label: z.name }))} onChange={setZone} />
+          ) : (
+            <span className="dropdown placeholder">Loading domains</span>
+          )}
+          <span className="tf-label">Domain</span>
+        </div>
+      </div>
+      <button type="button" className="btn text" onClick={onDone}>Cancel</button>
+      <button className="btn primary" disabled={busy || !sub || !zone}>{busy && <span className="spinner small on-accent" />}Save</button>
+    </form>
+  );
+}
+
+// TargetEditor changes where a tunnel goes: its port, and the protocol, host and
+// host name the app sees.
+function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () => void; onSave: (change: Partial<RouteEdit>) => Promise<void> }) {
+  const [port, setPort] = useState(String(edit.port));
+  const [scheme, setScheme] = useState(edit.target_scheme);
+  const [host, setHost] = useState(edit.target_host ?? "");
+  const [preserve, setPreserve] = useState(edit.preserve_host);
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await onSave({ port: Number(port), target_scheme: scheme, target_host: host.trim() || null, preserve_host: preserve });
+      onDone();
+    } catch (err) {
+      notify(message(err), "bad");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="edit-block" onSubmit={save}>
+      <div className="edit-row">
+        <TextField className="port" label="Port" mono inputMode="numeric" autoFocus value={port} onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
+        <div className="tf static protocol">
+          <div className="tf-box">
+            <Dropdown label="Protocol" value={scheme} options={[{ value: "http", label: "http" }, { value: "https", label: "https" }]} onChange={(v) => setScheme(v as RouteEdit["target_scheme"])} />
+            <span className="tf-label">Protocol</span>
+          </div>
+        </div>
+        <TextField className="grow" label="Host" placeholder="This computer" mono value={host} onChange={setHost} />
+      </div>
+      <label className="edit-switch">
+        <Switch label="Pass the public address" on={preserve} onChange={setPreserve} />
+        <span>Pass the public address to the app, for apps set up with it</span>
+      </label>
+      <div className="edit-actions">
+        <button type="button" className="btn text" onClick={onDone}>Cancel</button>
+        <button className="btn primary" disabled={busy || !port}>{busy && <span className="spinner small on-accent" />}Save</button>
+      </div>
+    </form>
   );
 }
