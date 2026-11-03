@@ -5,6 +5,7 @@ mod db;
 mod gate;
 mod guard;
 mod netinfo;
+mod oauth;
 mod proxy;
 mod secret;
 mod state;
