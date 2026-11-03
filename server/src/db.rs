@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS users (
     created_at INTEGER NOT NULL,
     last_login INTEGER
 );
+CREATE TABLE IF NOT EXISTS sign_ins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_id TEXT,
+    ip TEXT,
+    country TEXT,
+    at INTEGER NOT NULL,
+    outcome TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sign_ins_user ON sign_ins (user_id, at);
+CREATE INDEX IF NOT EXISTS sign_ins_device ON sign_ins (device_id, at);
 CREATE TABLE IF NOT EXISTS user_routes (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
@@ -69,7 +80,7 @@ CREATE TABLE IF NOT EXISTS user_routes (
 ";
 
 /// Columns added to `routes` after its first release, with how to add each.
-const ROUTE_MIGRATIONS: [(&str, &str); 4] = [
+const ROUTE_MIGRATIONS: [(&str, &str); 6] = [
     ("preserve_host", "preserve_host INTEGER NOT NULL DEFAULT 0"),
     (
         "require_password",
@@ -77,6 +88,8 @@ const ROUTE_MIGRATIONS: [(&str, &str); 4] = [
     ),
     ("password_hash", "password_hash TEXT"),
     ("require_login", "require_login INTEGER NOT NULL DEFAULT 0"),
+    ("login_max", "login_max INTEGER NOT NULL DEFAULT 604800"),
+    ("login_idle", "login_idle INTEGER NOT NULL DEFAULT 0"),
 ];
 
 /// A published tunnel: one hostname on a Cloudflare zone pointing at one local port.
@@ -96,6 +109,10 @@ pub struct Route {
     pub require_password: bool,
     /// Sign-in with an account from Users.
     pub require_login: bool,
+    /// Seconds after signing in that a visitor must sign in again; 0 is never.
+    pub login_max: i64,
+    /// Seconds of inactivity that end a sign-in; 0 is never.
+    pub login_idle: i64,
     /// "all": every enabled check must pass. "any": one passing check is enough.
     pub policy_mode: String,
     pub enabled: bool,
@@ -113,7 +130,8 @@ pub struct Route {
 pub struct User {
     pub id: String,
     pub username: String,
-    pub email: Option<String>,
+    /// What they sign in with, with the password.
+    pub email: String,
     pub name: String,
     #[serde(skip)]
     pub password_hash: String,
@@ -122,6 +140,20 @@ pub struct User {
     pub route_ids: Vec<String>,
     pub created_at: i64,
     pub last_login: Option<i64>,
+    /// Why the account was locked, while it is.
+    pub note: Option<String>,
+}
+
+/// One attempt to sign in to an account: where from, and how it went
+/// ("ok", "failed" or "blocked").
+#[derive(Clone, Serialize)]
+pub struct SignIn {
+    pub user_id: String,
+    pub device_id: Option<String>,
+    pub ip: Option<String>,
+    pub country: Option<String>,
+    pub at: i64,
+    pub outcome: String,
 }
 
 /// A browser that has asked for access through the gateway.
@@ -147,10 +179,10 @@ pub struct Device {
 
 const ROUTE_COLS: &str = "id, subdomain, zone_id, zone_name, hostname, target_host, target_port, \
      target_scheme, require_lan, require_device, policy_mode, enabled, dns_record_id, created_at, \
-     preserve_host, require_password, password_hash, require_login";
+     preserve_host, require_password, password_hash, require_login, login_max, login_idle";
 
 const USER_COLS: &str =
-    "id, username, email, name, password_hash, enabled, all_routes, created_at, last_login";
+    "id, username, email, name, password_hash, enabled, all_routes, created_at, last_login, note";
 
 const DEVICE_COLS: &str = "id, name, status, all_routes, fingerprint, info, note, first_ip, \
      last_ip, country, first_host, created_at, last_seen";
@@ -176,6 +208,8 @@ fn route_row(r: &Row) -> rusqlite::Result<Route> {
         password_set: r.get::<_, Option<String>>(16)?.is_some(),
         password_hash: r.get(16)?,
         require_login: r.get(17)?,
+        login_max: r.get(18)?,
+        login_idle: r.get(19)?,
     })
 }
 
@@ -183,7 +217,7 @@ fn user_row(r: &Row) -> rusqlite::Result<User> {
     Ok(User {
         id: r.get(0)?,
         username: r.get(1)?,
-        email: r.get(2)?,
+        email: r.get::<_, Option<String>>(2)?.unwrap_or_default(),
         name: r.get(3)?,
         password_hash: r.get(4)?,
         enabled: r.get(5)?,
@@ -191,6 +225,7 @@ fn user_row(r: &Row) -> rusqlite::Result<User> {
         route_ids: Vec::new(),
         created_at: r.get(7)?,
         last_login: r.get(8)?,
+        note: r.get(9)?,
     })
 }
 
@@ -229,6 +264,13 @@ impl Db {
         let conn = Connection::open(path)?;
         conn.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()))?;
         conn.execute_batch(SCHEMA)?;
+        let user_columns: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('users')")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        if !user_columns.iter().any(|c| c == "note") {
+            conn.execute_batch("ALTER TABLE users ADD COLUMN note TEXT;")?;
+        }
         let have: Vec<String> = conn
             .prepare("SELECT name FROM pragma_table_info('routes')")?
             .query_map([], |r| r.get(0))?
@@ -309,7 +351,7 @@ impl Db {
         self.conn().execute(
             &format!(
                 "INSERT INTO routes ({ROUTE_COLS})
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)"
             ),
             params![
                 r.id,
@@ -330,6 +372,8 @@ impl Db {
                 r.require_password,
                 r.password_hash,
                 r.require_login,
+                r.login_max,
+                r.login_idle,
             ],
         )?;
         Ok(())
@@ -340,7 +384,7 @@ impl Db {
             "UPDATE routes SET target_host = ?2, target_port = ?3, target_scheme = ?4,
                  require_lan = ?5, require_device = ?6, policy_mode = ?7, enabled = ?8,
                  preserve_host = ?9, require_password = ?10, password_hash = ?11,
-                 require_login = ?12
+                 require_login = ?12, login_max = ?13, login_idle = ?14
              WHERE id = ?1",
             params![
                 r.id,
@@ -355,6 +399,8 @@ impl Db {
                 r.require_password,
                 r.password_hash,
                 r.require_login,
+                r.login_max,
+                r.login_idle,
             ],
         )?;
         Ok(())
@@ -538,15 +584,13 @@ impl Db {
         Ok(self.users()?.into_iter().find(|u| u.id == id))
     }
 
-    /// The account a sign-in names, by username or email.
-    pub fn user_by_login(&self, login: &str) -> Result<Option<User>> {
-        let login = login.trim();
-        Ok(self.users()?.into_iter().find(|u| {
-            u.username.eq_ignore_ascii_case(login)
-                || u.email
-                    .as_deref()
-                    .is_some_and(|e| e.eq_ignore_ascii_case(login))
-        }))
+    /// The account that signs in with this email.
+    pub fn user_by_email(&self, email: &str) -> Result<Option<User>> {
+        let email = email.trim();
+        Ok(self
+            .users()?
+            .into_iter()
+            .find(|u| !u.email.is_empty() && u.email.eq_ignore_ascii_case(email)))
     }
 
     pub fn save_user(&self, u: &User) -> Result<()> {
@@ -554,11 +598,12 @@ impl Db {
         let tx = conn.transaction()?;
         tx.execute(
             &format!(
-                "INSERT INTO users ({USER_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                "INSERT INTO users ({USER_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                  ON CONFLICT(id) DO UPDATE SET username = excluded.username,
                      email = excluded.email, name = excluded.name,
                      password_hash = excluded.password_hash, enabled = excluded.enabled,
-                     all_routes = excluded.all_routes, last_login = excluded.last_login"
+                     all_routes = excluded.all_routes, last_login = excluded.last_login,
+                     note = excluded.note"
             ),
             params![
                 u.id,
@@ -570,6 +615,7 @@ impl Db {
                 u.all_routes,
                 u.created_at,
                 u.last_login,
+                u.note,
             ],
         )?;
         tx.execute("DELETE FROM user_routes WHERE user_id = ?1", [&u.id])?;
@@ -581,6 +627,45 @@ impl Db {
         }
         tx.commit()?;
         Ok(())
+    }
+
+    /// Records a sign-in attempt, keeping 90 days of them.
+    pub fn add_sign_in(&self, s: &SignIn) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO sign_ins (user_id, device_id, ip, country, at, outcome)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![s.user_id, s.device_id, s.ip, s.country, s.at, s.outcome],
+        )?;
+        conn.execute("DELETE FROM sign_ins WHERE at < ?1", [s.at - 90 * 86_400])?;
+        Ok(())
+    }
+
+    /// The latest sign-in attempts of an account, or from a device, newest first.
+    pub fn sign_ins(&self, column: &str, value: &str, limit: i64) -> Result<Vec<SignIn>> {
+        let column = if column == "device_id" {
+            "device_id"
+        } else {
+            "user_id"
+        };
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT user_id, device_id, ip, country, at, outcome FROM sign_ins
+             WHERE {column} = ?1 ORDER BY at DESC LIMIT ?2"
+        ))?;
+        let list = stmt
+            .query_map(params![value, limit], |r| {
+                Ok(SignIn {
+                    user_id: r.get(0)?,
+                    device_id: r.get(1)?,
+                    ip: r.get(2)?,
+                    country: r.get(3)?,
+                    at: r.get(4)?,
+                    outcome: r.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(list)
     }
 
     pub fn delete_user(&self, id: &str) -> Result<()> {

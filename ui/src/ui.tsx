@@ -184,3 +184,34 @@ export function TextField({ label, value, onChange, hint, trailing, mono, classN
     </div>
   );
 }
+
+// SubNav is the bar under a page's heading, as in EPS: the way back, a short
+// rule, then the page's sub-pages, the open one underlined in the accent colour.
+export function SubNav({ back, backLabel, base, items, current }: {
+  back: string;
+  backLabel: string;
+  base: string;
+  items: [string, string, IconName][];
+  current: string;
+}) {
+  return (
+    <nav className="sub-nav" aria-label="Sub-pages">
+      <a className="sub-nav-back" href={back}><Icon name="arrow_back" size={18} />{backLabel}</a>
+      <span className="sub-nav-rule" />
+      {items.map(([key, label, icon]) => (
+        <a key={key} className={"sub-nav-item" + (current === key ? " on" : "")} href={`${base}/${key}`} aria-current={current === key ? "page" : undefined}>
+          <Icon name={icon} size={18} />
+          <span>{label}</span>
+        </a>
+      ))}
+    </nav>
+  );
+}
+
+// Avatar is a round mark with someone's initials, in a colour of their own.
+export function Avatar({ name, big }: { name: string; big?: boolean }) {
+  const initials = name.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
+  let hue = 0;
+  for (const c of name) hue = (hue * 31 + c.charCodeAt(0)) % 360;
+  return <span className={"avatar" + (big ? " big" : "")} style={{ backgroundColor: `hsl(${hue} 45% 42%)` }} aria-hidden>{initials}</span>;
+}

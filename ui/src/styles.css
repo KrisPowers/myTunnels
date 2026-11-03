@@ -92,7 +92,7 @@ kbd {
 /* The header: the search bar in the middle, help and settings on the right. */
 .header {
   position: sticky; top: 0; z-index: 20; display: grid; align-items: center; gap: 16px;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 720px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 560px) minmax(0, 1fr);
   height: var(--head); padding: 0 12px 0 var(--rail); background: var(--bg);
 }
 .header .menu-btn { display: none; }
@@ -108,7 +108,7 @@ kbd {
    level with the page's heading. */
 .sidebar {
   position: sticky; top: var(--head); align-self: start; height: calc(100vh - var(--head)); overflow-y: auto;
-  padding: 8px 0 16px; background: var(--bg);
+  padding: 24px 0 16px; background: var(--bg);
 }
 .nav-item {
   display: flex; align-items: center; gap: 16px; height: 32px; padding: 0 12px 0 20px;
@@ -629,8 +629,11 @@ a.result:hover { background: var(--hover); }
   .edit-row { flex-wrap: wrap; }
   .edit-row .grow { flex-basis: 100%; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
-  .result.user-row { grid-template-columns: 16px minmax(0, 1fr) auto; }
-  .result.user-row .result-meta { display: none; }
+  .result.user-row { grid-template-columns: 32px minmax(0, 1fr) auto; }
+  .result.user-row .result-meta, .result.user-row .result-service, .result.user-row .result-what { display: none; }
+  .result.signin-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .result.signin-row .result-service, .result.signin-row .mono.muted { display: none; }
+  .edit-row .place, .edit-row .protocol { flex: 1; width: auto; }
   .setup { padding: 16px; }
   .setup-card { padding: 22px 18px; }
   .step-label { display: none; }
@@ -663,7 +666,49 @@ a.result:hover { background: var(--hover); }
 .form-card { padding: 24px 24px 4px; overflow: visible; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 
-.result.user-row { grid-template-columns: 16px minmax(140px, 1fr) minmax(0, .8fr) 150px 24px; }
+.result.user-row { grid-template-columns: 32px minmax(160px, 1.2fr) minmax(0, .7fr) minmax(0, .7fr) auto 70px 24px; }
+.result.signin-row { grid-template-columns: 130px 150px 50px minmax(0, 1fr) 90px; }
+
+/* A page's sub-pages, as in EPS: a bar just under the heading's rule with the way
+   back, a short rule, then each page, the open one in the accent colour and underlined. */
+.page-head + .sub-nav { margin-top: -24px; }
+.sub-nav {
+  display: flex; align-items: center; gap: 4px; margin-bottom: 24px; overflow-x: auto; scrollbar-width: none;
+  border-bottom: 1px solid var(--line);
+}
+.sub-nav-back, .sub-nav-item {
+  position: relative; display: inline-flex; align-items: center; gap: 6px; height: 48px; padding: 0 14px;
+  color: var(--text-2); font-weight: 500; white-space: nowrap; transition: color .15s;
+}
+.sub-nav-back { padding-left: 0; }
+.sub-nav-back:hover, .sub-nav-item:hover { color: var(--text); text-decoration: none; }
+.sub-nav-rule { width: 1px; height: 20px; margin: 0 8px; background: var(--line-strong); flex-shrink: 0; }
+.sub-nav-item::after {
+  content: ""; position: absolute; left: 14px; right: 14px; bottom: 0; height: 3px; border-radius: 3px 3px 0 0;
+  background: var(--accent); transform: scaleX(0); transition: transform .2s var(--ease);
+}
+.sub-nav-item .icon { color: inherit; }
+.sub-nav-item.on { color: var(--accent); }
+.sub-nav-item.on::after { transform: scaleX(1); }
+
+/* Fields set straight on a card, under its heading. */
+.card-pad { padding: 0 24px 16px; }
+.form-grid .span { grid-column: 1 / -1; }
+.form-foot { display: flex; justify-content: flex-end; gap: 8px; }
+.tf.two-actions .tf-input { padding-right: 180px; }
+.tf-trailing { gap: 2px; }
+.edit-row .place { width: 220px; flex-shrink: 0; }
+
+/* People: a round mark with their initials, and their name over their email. */
+.avatar {
+  display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 50%;
+  color: #ffffff; font: 500 13px var(--font); letter-spacing: .02em;
+}
+.avatar.big { width: 56px; height: 56px; font-size: 22px; }
+.person { display: grid; min-width: 0; }
+.person small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12px; }
+.page-head-main.person-head { display: flex; align-items: center; gap: 16px; }
+.callout.held .btn { margin-left: auto; flex-shrink: 0; }
 .fold-caret { color: var(--text-3); transition: transform .2s var(--ease); }
 .fold-caret.open { transform: rotate(90deg); }
 

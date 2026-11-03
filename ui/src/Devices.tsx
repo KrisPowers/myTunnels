@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ago, api, message, shortId, type Device, type DeviceStatus, type Route } from "./api";
+import { useEffect, useState } from "react";
+import { ago, api, message, shortId, type Device, type DeviceStatus, type Route, type SignIn, type User } from "./api";
 import { Icon } from "./Icon";
 import { go } from "./route";
 import { ArmedButton, Callout, Card, Copy, Row, SaveField, Switch, useNotify } from "./ui";
@@ -103,7 +103,7 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
 
 // DevicePage is one device: what it reported, where from, and which tunnels
 // it may open.
-export function DevicePage({ device, routes, onChanged }: { device: Device; routes: Route[]; onChanged: () => Promise<void> }) {
+export function DevicePage({ device, routes, users, onChanged }: { device: Device; routes: Route[]; users: User[]; onChanged: () => Promise<void> }) {
   const notify = useNotify();
   const approve = useApprove(routes, onChanged);
   const i = device.info ?? {};
@@ -190,6 +190,8 @@ export function DevicePage({ device, routes, onChanged }: { device: Device; rout
           {!device.all_routes && gated.length === 0 && <p className="card-note muted">No tunnel needs an approved device yet.</p>}
         </Card>
 
+        <Accounts device={device} users={users} />
+
         <Card title="Hardware" sub="What the browser reported. A change in platform, touch or graphics sends an approved device back to waiting.">
           <Facts rows={hardware} />
         </Card>
@@ -211,5 +213,26 @@ function Facts({ rows }: { rows: [string, string | undefined][] }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+// Accounts are the people who signed in from this device lately.
+function Accounts({ device, users }: { device: Device; users: User[] }) {
+  const [list, setList] = useState<SignIn[] | null>(null);
+  useEffect(() => {
+    api.deviceActivity(device.id).then(setList).catch(() => setList([]));
+  }, [device.id, device.last_seen]);
+  const last = new Map<string, SignIn>();
+  for (const s of list ?? []) if (s.outcome === "ok" && !last.has(s.user_id)) last.set(s.user_id, s);
+  return (
+    <Card title="Accounts" sub={last.size ? undefined : "No one has signed in from this device."}>
+      {[...last].map(([id, s]) => {
+        const u = users.find((x) => x.id === id);
+        return (
+          <Row key={id} title={<a href={`#/users/${id}`}>{u ? u.name || u.username : "Removed account"}</a>}
+            sub={`${u?.email ?? ""}${u ? ", " : ""}last signed in ${ago(s.at)}${s.ip ? ` from ${s.ip}` : ""}`} />
+        );
+      })}
+    </Card>
   );
 }

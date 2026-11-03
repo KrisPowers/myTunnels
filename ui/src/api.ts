@@ -13,6 +13,8 @@ export interface Route {
   require_device: boolean;
   require_password: boolean;
   require_login: boolean;
+  login_max: number;
+  login_idle: number;
   password_set: boolean;
   policy_mode: PolicyMode;
   enabled: boolean;
@@ -27,6 +29,8 @@ export interface Access {
   require_device: boolean;
   require_password: boolean;
   require_login: boolean;
+  login_max: number;
+  login_idle: number;
   policy_mode: PolicyMode;
   password?: string;
 }
@@ -36,13 +40,24 @@ export type RouteEdit = Pick<Route, "target_host" | "target_scheme" | "enabled" 
 export interface User {
   id: string;
   username: string;
-  email: string | null;
+  email: string;
   name: string;
   enabled: boolean;
   all_routes: boolean;
   route_ids: string[];
   created_at: number;
   last_login: number | null;
+  // Why the account is held, while it is.
+  note: string | null;
+}
+
+export interface SignIn {
+  user_id: string;
+  device_id: string | null;
+  ip: string | null;
+  country: string | null;
+  at: number;
+  outcome: "ok" | "failed" | "blocked";
 }
 
 export type DeviceStatus = "seen" | "pending" | "approved" | "denied";
@@ -151,11 +166,14 @@ export const api = {
   thisDevice: (token: string | null, info: unknown) => call<{ id: string; token: string }>("/device", "POST", { token, info }),
 
   users: () => call<User[]>("/users"),
-  addUser: (body: { username: string; email: string | null; name: string; password: string; all_routes: boolean; route_ids: string[] }) =>
+  addUser: (body: { username: string; email: string; name: string; password: string; all_routes: boolean; route_ids: string[] }) =>
     call<User>("/users", "POST", body),
   editUser: (id: string, patch: Partial<Pick<User, "username" | "email" | "name" | "enabled" | "all_routes" | "route_ids">> & { password?: string }) =>
     call<User>(`/users/${id}`, "PATCH", patch),
   removeUser: (id: string) => call(`/users/${id}`, "DELETE"),
+  signOutUser: (id: string) => call(`/users/${id}/signout`, "POST"),
+  userActivity: (id: string) => call<SignIn[]>(`/users/${id}/activity`),
+  deviceActivity: (id: string) => call<SignIn[]>(`/devices/${id}/activity`),
 };
 
 export function editOf(r: Route): RouteEdit {
@@ -167,6 +185,8 @@ export function editOf(r: Route): RouteEdit {
     require_device: r.require_device,
     require_password: r.require_password,
     require_login: r.require_login,
+    login_max: r.login_max,
+    login_idle: r.login_idle,
     policy_mode: r.policy_mode,
     enabled: r.enabled,
     preserve_host: r.preserve_host,

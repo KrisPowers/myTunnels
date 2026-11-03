@@ -31,6 +31,11 @@ pub struct Session {
     pub subject: String,
     pub tag: String,
     pub expires: i64,
+    /// When it was opened, and when it last let a request through.
+    pub created: i64,
+    pub seen: i64,
+    /// The hash of the device key it was opened on, if it is bound to one.
+    pub device: String,
 }
 
 /// One step of sharing a device key across domains, kept for a minute.
@@ -254,6 +259,7 @@ pub fn open_session(
     sessions: &Mutex<HashMap<String, Session>>,
     subject: &str,
     tag: &str,
+    device: &str,
     ttl: i64,
 ) -> String {
     let sid = crate::util::random_hex(32);
@@ -266,16 +272,40 @@ pub fn open_session(
             subject: subject.to_owned(),
             tag: tag.to_owned(),
             expires: now + ttl,
+            created: now,
+            seen: now,
+            device: device.to_owned(),
         },
     );
     sid
 }
 
-/// The subject and tag of a live session.
-pub fn session(sessions: &Mutex<HashMap<String, Session>>, sid: &str) -> Option<(String, String)> {
+/// What a live session holds.
+pub struct SessionInfo {
+    pub subject: String,
+    pub tag: String,
+    pub created: i64,
+    pub seen: i64,
+    pub device: String,
+}
+
+pub fn session(sessions: &Mutex<HashMap<String, Session>>, sid: &str) -> Option<SessionInfo> {
     let now = now();
     lock(sessions)
         .get(sid)
         .filter(|s| s.expires > now)
-        .map(|s| (s.subject.clone(), s.tag.clone()))
+        .map(|s| SessionInfo {
+            subject: s.subject.clone(),
+            tag: s.tag.clone(),
+            created: s.created,
+            seen: s.seen,
+            device: s.device.clone(),
+        })
+}
+
+/// Marks a session as used just now.
+pub fn touch_session(sessions: &Mutex<HashMap<String, Session>>, sid: &str) {
+    if let Some(s) = lock(sessions).get_mut(sid) {
+        s.seen = now();
+    }
 }
