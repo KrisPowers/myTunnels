@@ -1,32 +1,39 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, editOf, message, type Device, type Route, type RouteEdit, type Status, type Zone } from "./api";
+import { api, editOf, LEVELS, list, message, shortId, strength, type Access, type Device, type PolicyMode, type Route, type RouteEdit, type Status, type User, type Zone } from "./api";
 import { Dropdown } from "./Dropdown";
 import { Icon } from "./Icon";
 import { go } from "./route";
 import { ArmedButton, Card, Copy, Row, SaveField, Switch, TextField, useNotify } from "./ui";
 
-// Access is who may open a tunnel, as chips.
-export function Access({ route }: { route: Route }) {
-  if (!route.require_lan && !route.require_device) return <span className="chip">Open</span>;
-  const both = route.require_lan && route.require_device;
+// Chips saying who may open a tunnel.
+export function AccessChips({ route }: { route: Route }) {
+  const parts = [
+    route.require_lan && "Home network",
+    route.require_device && "Approved device",
+    route.require_password && "Password",
+    route.require_login && "Sign-in",
+  ].filter((p): p is string => Boolean(p));
+  if (!parts.length) return <span className="chip">Open</span>;
+  const joiner = route.policy_mode === "any" ? "or" : "and";
   return (
     <span className="chips">
-      {route.require_lan && <span className="chip plain">Home network</span>}
-      {both && <span className="joiner">{route.policy_mode === "any" ? "or" : "and"}</span>}
-      {route.require_device && <span className="chip plain">Approved device</span>}
+      {parts.map((p, i) => (
+        <span key={p} className="chips">
+          {i > 0 && <span className="joiner">{joiner}</span>}
+          <span className="chip plain">{p}</span>
+        </span>
+      ))}
     </span>
   );
 }
 
-// target is where a tunnel goes: just the port on the apps host, or host and
-// port when it names its own.
 function target(route: Route) {
   const scheme = route.target_scheme === "https" ? "https://" : "";
   return route.target_host ? `${scheme}${route.target_host}:${route.target_port}` : `${scheme}port ${route.target_port}`;
 }
 
-// Tunnels is the home page: publish a port, and every tunnel published.
-export function Tunnels({ routes, status, onChanged }: { routes: Route[] | null; status: Status | null; onChanged: () => Promise<void> }) {
+// Tunnels is the home page: every tunnel published.
+export function Tunnels({ routes, status }: { routes: Route[] | null; status: Status | null }) {
   const live = routes?.filter((r) => r.enabled).length ?? 0;
   const links = status?.connections ?? 0;
   return (
