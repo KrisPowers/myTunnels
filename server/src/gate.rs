@@ -251,6 +251,15 @@ fn refuse(
             .is_some_and(|v| v.contains("text/html"));
     let open = verdict.open();
     let network_only = verdict.lan == Some(false) && (!verdict.any || open.is_empty());
+    // Page loads turned away are logged; the files a page asks for are not.
+    if html {
+        let asked = if network_only {
+            "network"
+        } else {
+            open.first().copied().unwrap_or("network")
+        };
+        log(state, route, "visit", asked, None, ip, req.headers());
+    }
     if network_only {
         return if html {
             page(
