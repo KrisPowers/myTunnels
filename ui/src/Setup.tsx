@@ -1,67 +1,46 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { api, message, TOKEN_URL, type Account, type Auth, type Settings, type Status } from "./api";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { api, message, TOKEN_URL, type Account, type Auth } from "./api";
 import { Dropdown } from "./Dropdown";
-import { Icon, type IconName } from "./Icon";
-import { loadLook, saveLook } from "./prefs";
-import { Callout, SaveMark, TextField } from "./ui";
+import { Icon } from "./Icon";
+import { Callout, TextField } from "./ui";
 
-const STEPS = ["Admin password", "Cloudflare", "Network", "Ready"];
+const STEPS = ["Admin password", "Cloudflare"];
 
 const TUNNEL_NAME = "homelab";
 
-// Setup is where the dashboard opens until it is fully set up: one step at a
-// time, each saved on the server as soon as it is done, so leaving and coming
-// back resumes at the first step still open. After setup it is the sign-in page.
+// Setup holds the dashboard until it can work: an admin password, then
+// Cloudflare. Everything else is found by the server. Each step is saved the
+// moment it is done, so leaving and coming back resumes where it was left.
+// After setup this is the sign-in page.
 export function Setup({ auth, onChange }: { auth: Auth; onChange: () => Promise<void> }) {
   const { setup } = auth;
-  const done = [setup.password && auth.authenticated, setup.cloudflare, setup.network, false];
-  const open = done.indexOf(false);
-  const [at, setAt] = useState(open);
-  // A password once set is never stepped back into.
-  const step = Math.max(Math.min(at, open), done[0] ? 1 : 0);
-  const next = async () => {
-    await onChange();
-    setAt((a) => a + 1);
-  };
 
   // Signing in is a gate in front of setup, not one of its steps.
   if (setup.password && !auth.authenticated) {
     return (
       <Frame>
         <div className="setup-card card">
-          <AdminStep auth={auth} onDone={onChange} />
+          <PasswordStep auth={auth} onDone={onChange} />
         </div>
       </Frame>
     );
   }
 
+  const step = setup.password ? 1 : 0;
   return (
     <Frame>
       <ol className="steps" aria-label="Setup steps">
-        {STEPS.map((label, i) => {
-          const state = i === step ? "now" : done[i] ? "done" : "later";
-          return (
-            <li key={label} className={"step " + state}>
-              <button type="button" disabled={i > open || (i === 0 && done[0])} onClick={() => setAt(i)} aria-current={i === step ? "step" : undefined}>
-                <span className="step-mark">{state === "done" ? <Icon name="check" size={16} /> : i + 1}</span>
-                <span className="step-label">{label}</span>
-              </button>
-            </li>
-          );
-        })}
+        {STEPS.map((label, i) => (
+          <li key={label} className={"step " + (i === step ? "now" : i < step ? "done" : "later")} aria-current={i === step ? "step" : undefined}>
+            <span className="step-mark">{i < step ? <Icon name="check" size={16} /> : i + 1}</span>
+            <span className="step-label">{label}</span>
+          </li>
+        ))}
       </ol>
       <div className="setup-card card" key={step}>
-        {step === 0 && <AdminStep auth={auth} onDone={next} />}
-        {step === 1 && <CloudflareStep auth={auth} onDone={next} />}
-        {step === 2 && <NetworkStep onBack={() => setAt(1)} onDone={next} />}
-        {step === 3 && <ReadyStep onBack={() => setAt(2)} onDone={async () => {
-          await api.finishSetup();
-          await onChange();
-        }} />}
+        {step === 0 ? <PasswordStep auth={auth} onDone={onChange} /> : <CloudflareStep auth={auth} onDone={onChange} />}
       </div>
-      {auth.authenticated && (
-        <p className="setup-note"><Icon name="cloud" size={16} />Each step saves as you go. Close this page any time and pick up where you left off.</p>
-      )}
+      <p className="setup-note"><Icon name="cloud" size={16} />Each step saves as you go. Close this page any time and pick up where you left off.</p>
     </Frame>
   );
 }
