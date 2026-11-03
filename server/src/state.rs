@@ -152,6 +152,12 @@ impl AppState {
             .into_iter()
             .map(|d| (d.id.clone(), d))
             .collect();
+        let users = self
+            .db
+            .users()?
+            .into_iter()
+            .map(|u| (u.id.clone(), u))
+            .collect();
         let upstream_host = self
             .db
             .setting("upstream_host")?
