@@ -102,12 +102,16 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const pending = devices?.filter((d) => d.status === "pending").length ?? 0;
   const route = view === "tunnels" && id ? routes?.find((r) => r.id === id) : undefined;
   const device = view === "devices" && id ? devices?.find((d) => d.id === id) : undefined;
+  const user = view === "users" && id && id !== "new" ? users?.find((u) => u.id === id) : undefined;
 
-  // A tunnel or device that is gone goes back to its list.
+  // A tunnel, device or account that is gone goes back to its list.
   useEffect(() => {
     if (view === "tunnels" && id && routes && !route) go("#/");
     if (view === "devices" && id && devices && !device) go("#/devices");
-  }, [view, id, routes, devices, route, device]);
+    if (view === "users" && id && id !== "new" && users && !user) go("#/users");
+  }, [view, id, routes, devices, users, route, device, user]);
+
+  const sections = view === "settings" ? SETTINGS : view === "docs" ? DOCS : null;
 
   return (
     <div className="app">
