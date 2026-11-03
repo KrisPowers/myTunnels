@@ -372,6 +372,8 @@ impl Db {
                 r.require_password,
                 r.password_hash,
                 r.require_login,
+                r.login_max,
+                r.login_idle,
             ],
         )?;
         Ok(())
