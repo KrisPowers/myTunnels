@@ -23,7 +23,6 @@ export function TwoFactorPage({ routes, onChanged }: { routes: Route[]; onChange
   }, [notify]);
 
   const signIn = routes.filter((r) => r.require_login);
-  const asking = signIn.filter((r) => r.require_code).length;
 
   const dashboard = async (on: boolean) => {
     setBusy(true);
@@ -44,10 +43,6 @@ export function TwoFactorPage({ routes, onChanged }: { routes: Route[]; onChange
       <div className="page-head">
         <div className="page-head-main">
           <h1>Two-Factor Auth</h1>
-          <div className="page-sub">
-            <span>{tf?.dashboard ? "On for the dashboard" : "Off for the dashboard"}</span>
-            <span><b>{asking}</b> tunnel{asking === 1 ? "" : "s"} ask for a code</span>
-          </div>
         </div>
       </div>
       {tf && (
