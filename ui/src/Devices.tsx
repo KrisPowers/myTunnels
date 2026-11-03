@@ -29,7 +29,7 @@ function useApprove(routes: Route[], onChanged: () => Promise<void>) {
     try {
       await api.editDevice(d.id, { status: "approved", route_ids });
       await onChanged();
-      notify(`Approved ${d.name || d.id}${asked && route_ids ? ` for ${asked.hostname}` : ""}`);
+      notify(`Approved ${d.name || shortId(d.id)}${asked && route_ids ? ` for ${asked.hostname}` : ""}`);
     } catch (e) {
       notify(message(e), "bad");
     }
