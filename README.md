@@ -72,6 +72,20 @@ tunnel on the same domain. If an approved key later shows up with different hard
 (platform, touch support, or GPU), the device goes back to waiting and is flagged for
 review, which stops a copied key from working on another machine.
 
+## Third-party sign-in
+
+Tunnels with sign-in on can also offer **Continue with GitHub**, Google, GitLab, or any
+OpenID Connect provider (Authentik, Authelia, Keycloak, Pocket ID and others). Set each up
+on the **Third-Party OAuth** page the way Cloudflare was set up: **Open GitHub** (or the
+provider's console), register an app with the redirect URL shown there, then paste its
+client ID and secret back.
+
+The provider vouches for an email, and the account under **Users** with that email signs
+in, held to the same rules as a password sign-in: it must be on, allowed on the tunnel,
+and on a linked device. Every provider returns through one tunnel address,
+`https://<tunnel>/__gate/oauth-callback`, and from there to the tunnel the visitor started
+from.
+
 ## Configuration
 
 Settings made in the panel are stored in `/data/gateway.db`. The container reads these
