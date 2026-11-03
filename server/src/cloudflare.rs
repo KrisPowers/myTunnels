@@ -247,3 +247,50 @@ impl<'a> Cloudflare<'a> {
         Ok(())
     }
 }
+
+fn merge_accounts(
+    mut accounts: Vec<Account>,
+    more: impl IntoIterator<Item = Account>,
+) -> Vec<Account> {
+    for account in more {
+        if !accounts.iter().any(|a| a.id == account.id) {
+            accounts.push(account);
+        }
+    }
+    accounts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn account(id: &str) -> Account {
+        Account {
+            id: id.into(),
+            name: format!("Account {id}"),
+        }
+    }
+
+    #[test]
+    fn zone_owners_fill_in_accounts_the_token_cannot_list() {
+        let merged = merge_accounts(Vec::new(), [account("a"), account("a"), account("b")]);
+        let ids: Vec<&str> = merged.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, ["a", "b"]);
+    }
+
+    #[test]
+    fn listed_accounts_come_first_without_duplicates() {
+        let merged = merge_accounts(vec![account("b")], [account("a"), account("b")]);
+        let ids: Vec<&str> = merged.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, ["b", "a"]);
+    }
+
+    #[test]
+    fn zone_owner_reads_from_a_zone() {
+        let zone: ZoneOwner = serde_json::from_str(
+            r#"{"id":"z","name":"example.com","account":{"id":"a1","name":"Home"}}"#,
+        )
+        .unwrap();
+        assert_eq!(zone.account.id, "a1");
+    }
+}
