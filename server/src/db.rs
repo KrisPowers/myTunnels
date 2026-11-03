@@ -158,6 +158,21 @@ pub struct User {
     pub note: Option<String>,
 }
 
+/// Something that happened at a tunnel's door: a sign-in or password attempt, a
+/// visitor turned away, a device asking for approval.
+#[derive(Clone, Serialize)]
+pub struct Event {
+    pub route_id: String,
+    /// "sign-in", "password", "visit" or "device".
+    pub kind: String,
+    pub outcome: String,
+    pub user_id: Option<String>,
+    pub device_id: Option<String>,
+    pub ip: Option<String>,
+    pub country: Option<String>,
+    pub at: i64,
+}
+
 /// One attempt to sign in to an account: where from, and how it went
 /// ("ok", "failed" or "blocked").
 #[derive(Clone, Serialize)]
