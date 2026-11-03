@@ -349,10 +349,22 @@ export function TunnelPage({ route, devices, users, onChanged }: { route: Route;
       <div className="page-head">
         <a className="icon-btn" href="#/" aria-label="All tunnels" title="All tunnels"><Icon name="arrow_back" /></a>
         <div className="page-head-main">
-          <h1><Copy text={route.hostname} copyText={`https://${route.hostname}`} plain /></h1>
-          <div className="page-sub">
-            <span>to <span className="mono">{target(route)}</span></span>
-          </div>
+          {editing === "address" ? (
+            <AddressEditor route={route} onDone={() => setEditing("")} onChanged={onChanged} />
+          ) : (
+            <div className="inline-edit">
+              <h1>{route.hostname}</h1>
+              <button type="button" className="icon-btn" aria-label="Change address" title="Change address" onClick={() => setEditing("address")}><Icon name="edit" size={20} /></button>
+            </div>
+          )}
+          {editing === "target" ? (
+            <TargetEditor edit={edit} onDone={() => setEditing("")} onSave={save} />
+          ) : (
+            <div className="page-sub inline-edit">
+              <span>to <span className="mono">{target(route)}</span></span>
+              <button type="button" className="icon-btn small" aria-label="Change where it goes" title="Change where it goes" onClick={() => setEditing("target")}><Icon name="edit" size={18} /></button>
+            </div>
+          )}
         </div>
         <div className="page-actions">
           <Switch label={edit.enabled ? "Live, switch off" : "Off, switch live"} on={edit.enabled} onChange={(v) => quietly({ enabled: v })} />
