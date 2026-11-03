@@ -772,13 +772,20 @@ fn valid_username(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
 }
 
-fn clean_email(email: Option<String>) -> ApiResult<Option<String>> {
-    match email.map(|e| e.trim().to_owned()).filter(|e| !e.is_empty()) {
-        Some(e) if !(e.len() <= 254 && e.contains('@') && !e.contains(char::is_whitespace)) => {
-            Err(ApiError::bad("That email address does not look right"))
-        }
-        other => Ok(other),
+/// An account's email: required, as it is what they sign in with.
+fn clean_email(email: &str) -> ApiResult<String> {
+    let email = email.trim();
+    let (local, domain) = email.split_once('@').unwrap_or_default();
+    if local.is_empty()
+        || !domain.contains('.')
+        || domain.starts_with('.')
+        || domain.ends_with('.')
+        || email.len() > 254
+        || email.contains(char::is_whitespace)
+    {
+        return Err(ApiError::bad("Enter a valid email address"));
     }
+    Ok(email.to_owned())
 }
 
 fn known_routes(state: &AppState, ids: Vec<String>) -> Vec<String> {
