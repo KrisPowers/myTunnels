@@ -3,14 +3,9 @@ import { api, message, TOKEN_URL, type Account, type Auth, type Settings, type S
 import { Dropdown } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { loadLook, saveLook } from "./prefs";
-import { Callout, SaveMark } from "./ui";
+import { Callout, SaveMark, TextField } from "./ui";
 
-const STEPS: { label: string; icon: IconName }[] = [
-  { label: "Admin password", icon: "lock" },
-  { label: "Cloudflare", icon: "cloud" },
-  { label: "Network", icon: "router" },
-  { label: "Ready", icon: "check_circle" },
-];
+const STEPS = ["Admin password", "Cloudflare", "Network", "Ready"];
 
 const TUNNEL_NAME = "homelab";
 
@@ -22,7 +17,8 @@ export function Setup({ auth, onChange }: { auth: Auth; onChange: () => Promise<
   const done = [setup.password && auth.authenticated, setup.cloudflare, setup.network, false];
   const open = done.indexOf(false);
   const [at, setAt] = useState(open);
-  const step = Math.min(at, open);
+  // A password once set is never stepped back into.
+  const step = Math.max(Math.min(at, open), done[0] ? 1 : 0);
   const next = async () => {
     await onChange();
     setAt((a) => a + 1);
@@ -42,13 +38,13 @@ export function Setup({ auth, onChange }: { auth: Auth; onChange: () => Promise<
   return (
     <Frame>
       <ol className="steps" aria-label="Setup steps">
-        {STEPS.map((s, i) => {
+        {STEPS.map((label, i) => {
           const state = i === step ? "now" : done[i] ? "done" : "later";
           return (
-            <li key={s.label} className={"step " + state}>
-              <button type="button" disabled={i > open} onClick={() => setAt(i)} aria-current={i === step ? "step" : undefined}>
+            <li key={label} className={"step " + state}>
+              <button type="button" disabled={i > open || (i === 0 && done[0])} onClick={() => setAt(i)} aria-current={i === step ? "step" : undefined}>
                 <span className="step-mark">{state === "done" ? <Icon name="check" size={16} /> : i + 1}</span>
-                <span className="step-label">{s.label}</span>
+                <span className="step-label">{label}</span>
               </button>
             </li>
           );
@@ -56,7 +52,7 @@ export function Setup({ auth, onChange }: { auth: Auth; onChange: () => Promise<
       </ol>
       <div className="setup-card card" key={step}>
         {step === 0 && <AdminStep auth={auth} onDone={next} />}
-        {step === 1 && <CloudflareStep auth={auth} onBack={() => setAt(0)} onDone={next} />}
+        {step === 1 && <CloudflareStep auth={auth} onDone={next} />}
         {step === 2 && <NetworkStep onBack={() => setAt(1)} onDone={next} />}
         {step === 3 && <ReadyStep onBack={() => setAt(2)} onDone={async () => {
           await api.finishSetup();
@@ -79,14 +75,11 @@ function Frame({ children }: { children: ReactNode }) {
   );
 }
 
-function StepHead({ icon, title, sub }: { icon: IconName; title: string; sub: ReactNode }) {
+function StepHead({ title, sub }: { title: string; sub: ReactNode }) {
   return (
     <div className="step-head">
-      <span className="badge big"><Icon name={icon} size={28} /></span>
-      <div>
-        <h1>{title}</h1>
-        <p className="muted">{sub}</p>
-      </div>
+      <h1>{title}</h1>
+      <p className="muted">{sub}</p>
     </div>
   );
 }
@@ -109,16 +102,8 @@ function AdminStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
-  const short = create && password.length < 10;
-
-  if (auth.setup.password && auth.authenticated) {
-    return (
-      <>
-        <StepHead icon="lock" title="Admin password is set" sub="It protects this dashboard." />
-        <Foot><button type="button" className="btn primary" onClick={onDone}>Continue<Icon name="arrow_forward" size={18} /></button></Foot>
-      </>
-    );
-  }
+  const rating = strength(password);
+  const short = create && !rating.ok;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -136,17 +121,17 @@ function AdminStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }
 
   return (
     <form onSubmit={submit}>
-      <StepHead icon="lock" title={create ? "Create the admin password" : "Sign in"}
-        sub={create ? "The one password for this dashboard. At least 10 characters." : auth.setup.done ? "Enter the admin password." : "Enter the admin password to carry on with setup."} />
-      <div className="field">
-        <label className="field-label" htmlFor="password">Password</label>
-        <div className="input-wrap">
-          <input id="password" className="input big" type={show ? "text" : "password"} autoFocus
-            autoComplete={create ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} />
-          <button type="button" className="input-action" onClick={() => setShow((s) => !s)}>{show ? "Hide" : "Show"}</button>
-        </div>
-        {create && <div className={"field-hint" + (password && short ? " warn" : "")}>{password.length} of 10 characters{!short && <Icon name="check" size={16} />}</div>}
-      </div>
+      <StepHead title={create ? "Create the admin password" : "Sign in"}
+        sub={create ? "The one password for this dashboard." : auth.setup.done ? "Enter the admin password." : "Enter the admin password to carry on with setup."} />
+      <TextField label="Password" type={show ? "text" : "password"} autoFocus autoComplete={create ? "new-password" : "current-password"}
+        value={password} onChange={setPassword}
+        trailing={<button type="button" className="tf-action" onClick={() => setShow((v) => !v)}>{show ? "Hide" : "Show"}</button>}
+        hint={create && password ? (
+          <>
+            <span className={"strength " + rating.level}>{LEVELS[rating.level]}</span>
+            {rating.missing.length > 0 && <span>Needs {list(rating.missing)}.</span>}
+          </>
+        ) : undefined} />
       {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
       <Foot>
         <button className="btn primary" disabled={busy || short || !password}>
@@ -157,11 +142,31 @@ function AdminStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }
   );
 }
 
+const LEVELS = { poor: "Poor", decent: "Decent", good: "Good", strong: "Strong" } as const;
+
+// strength rates a new password. It is accepted once nothing is missing:
+// 10 or more characters with upper and lower case, a number and a symbol.
+function strength(p: string) {
+  const missing = [
+    p.length < 10 && "10 or more characters",
+    !/[A-Z]/.test(p) && "an uppercase letter",
+    !/[a-z]/.test(p) && "a lowercase letter",
+    !/[0-9]/.test(p) && "a number",
+    !/[^A-Za-z0-9]/.test(p) && "a symbol such as ! or $",
+  ].filter((m): m is string => Boolean(m));
+  const level: keyof typeof LEVELS = missing.length > 2 ? "poor" : missing.length > 0 ? "decent" : p.length >= 14 ? "strong" : "good";
+  return { ok: missing.length === 0, level, missing };
+}
+
+function list(items: string[]) {
+  return items.length < 2 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
+}
+
 // ---- 2. Cloudflare: one link to make the token, paste it, done ----
 
 type Phase = "idle" | "checking" | "pick" | "connecting" | "connected";
 
-function CloudflareStep({ auth, onBack, onDone }: { auth: Auth; onBack: () => void; onDone: () => Promise<void> }) {
+function CloudflareStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }) {
   const [token, setToken] = useState("");
   const [phase, setPhase] = useState<Phase>(auth.setup.cloudflare ? "connected" : "idle");
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -230,7 +235,7 @@ function CloudflareStep({ auth, onBack, onDone }: { auth: Auth; onBack: () => vo
 
   return (
     <>
-      <StepHead icon="cloud" title="Connect Cloudflare"
+      <StepHead title="Connect Cloudflare"
         sub="myTunnels creates the tunnel and the DNS records for you. It needs an API token to do that." />
 
       {phase === "connected" ? (
@@ -251,13 +256,11 @@ function CloudflareStep({ auth, onBack, onDone }: { auth: Auth; onBack: () => vo
             <span className="how-num">2</span>
             <div className="how-body">
               <b>Paste it here</b>
-              <div className="input-wrap">
-                <input className="input big mono" type="password" aria-label="Cloudflare API token" placeholder={auth.setup.token ? "Saved. Paste a new one to replace it." : "Paste the token"}
-                  autoComplete="off" spellCheck={false} data-1p-ignore data-lpignore="true" value={token} onChange={(e) => setToken(e.target.value)} />
-                {busy && <span className="spinner small input-spin" aria-label="Checking" />}
-              </div>
-              {phase === "checking" && <span className="field-hint">Checking the token</span>}
-              {phase === "connecting" && <span className="field-hint">Creating the tunnel</span>}
+              <TextField label="API token" type="password" mono autoComplete="off" data-1p-ignore data-lpignore="true"
+                placeholder={auth.setup.token ? "Saved. Paste a new one to replace it." : undefined}
+                value={token} onChange={setToken}
+                trailing={busy ? <span className="spinner small" aria-label="Checking" /> : undefined}
+                hint={phase === "checking" ? "Checking the token" : phase === "connecting" ? "Creating the tunnel" : undefined} />
               {phase === "pick" && (
                 <div className="pick">
                   <span className="muted">This token sees more than one account. Pick the one with your domains.</span>
@@ -275,7 +278,7 @@ function CloudflareStep({ auth, onBack, onDone }: { auth: Auth; onBack: () => vo
 
       {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
 
-      <Foot onBack={onBack} note={phase === "connected" ? <SaveMark state="saved" /> : null}>
+      <Foot note={phase === "connected" ? <SaveMark state="saved" /> : null}>
         <button type="button" className="btn primary" disabled={phase !== "connected"} onClick={onDone}>Continue<Icon name="arrow_forward" size={18} /></button>
       </Foot>
     </>
@@ -330,12 +333,9 @@ function NetworkStep({ onBack, onDone }: { onBack: () => void; onDone: () => Pro
 
   return (
     <>
-      <StepHead icon="router" title="Your network" sub="The defaults suit most setups. Check them and carry on." />
-      <div className="field">
-        <label className="field-label" htmlFor="apps-host">Where your apps run</label>
-        <input id="apps-host" className="input big mono" value={host ?? ""} placeholder={fallback} onChange={(e) => setHost(e.target.value)} spellCheck={false} />
-        <span className="field-hint">The host each tunnel's port is on, as this container sees it. <code>host.docker.internal</code> is the computer running Docker.</span>
-      </div>
+      <StepHead title="Your network" sub="The defaults suit most setups. Check them and carry on." />
+      <TextField label="Where your apps run" mono value={host ?? ""} placeholder={fallback} onChange={setHost}
+        hint={<span>The host each tunnel's port is on, as this container sees it. <code>host.docker.internal</code> is the computer running Docker.</span>} />
       <div className="field">
         <span className="field-label">Home network</span>
         <div className="ip-line">
@@ -343,10 +343,8 @@ function NetworkStep({ onBack, onDone }: { onBack: () => void; onDone: () => Pro
         </div>
         <span className="field-hint">Visitors arriving from these addresses count as on the same network as this host.</span>
       </div>
-      <div className="field">
-        <label className="field-label" htmlFor="trusted">Also count as home <span className="muted">(optional)</span></label>
-        <textarea id="trusted" className="input mono" rows={2} value={trusted} placeholder="One network per line, such as a VPN range" onChange={(e) => setTrusted(e.target.value)} spellCheck={false} />
-      </div>
+      <TextField label="Also count as home (optional)" mono rows={2} value={trusted} onChange={setTrusted}
+        hint="One network per line, such as a VPN range." />
       {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
       <Foot onBack={onBack} note={<SaveMark state={saved} />}>
         <button type="button" className="btn primary" disabled={host === null} onClick={async () => (await save()) && onDone()}>Continue<Icon name="arrow_forward" size={18} /></button>
@@ -383,7 +381,7 @@ function ReadyStep({ onBack, onDone }: { onBack: () => void; onDone: () => Promi
 
   return (
     <>
-      <StepHead icon="check_circle" title="All set" sub="Everything below is saved. Pick a look and open the dashboard." />
+      <StepHead title="All set" sub="Everything below is saved. Pick a look and open the dashboard." />
       <ul className="checklist">
         <li><Icon name="check_circle" className="ok" /><span><b>Admin password</b><span className="muted">Set</span></span></li>
         <li><Icon name="check_circle" className="ok" /><span><b>Cloudflare</b><span className="muted">{cf ? `${cf.account_name}, tunnel ${cf.tunnel_name}` : "Connected"}</span></span></li>
