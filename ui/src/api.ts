@@ -29,6 +29,8 @@ export interface Access {
   require_device: boolean;
   require_password: boolean;
   require_login: boolean;
+  login_max: number;
+  login_idle: number;
   policy_mode: PolicyMode;
   password?: string;
 }
