@@ -128,34 +128,25 @@ function Grants({ all, ids, routes, onAll, onPick }: { all: boolean; ids: string
   );
 }
 
-function PasswordHint({ value }: { value: string }) {
-  if (!value) return null;
-  const rating = strength(value);
-  return (
-    <>
-      <span className={"strength " + rating.level}>{LEVELS[rating.level]}</span>
-      {rating.missing.length > 0 && <span>Needs {list(rating.missing)}.</span>}
-    </>
-  );
-}
+// ---- a new account ----
 
 export function NewUser({ routes, onAdded }: { routes: Route[]; onAdded: () => Promise<void> }) {
+  const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [all, setAll] = useState(false);
   const [ids, setIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
-  const ready = username.trim().length >= 2 && strength(password).ok;
+  const ready = username.trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && strength(password).ok;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!ready) return;
     setBusy(true);
     try {
-      const user = await api.addUser({ username, email: email || null, name, password, all_routes: all, route_ids: ids });
+      const user = await api.addUser({ username, email, name, password, all_routes: all, route_ids: ids });
       await onAdded();
       notify(`Added ${user.username}`);
       go(`#/users/${user.id}`);
