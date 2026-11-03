@@ -324,21 +324,47 @@ fn client_ip(headers: &HeaderMap) -> Option<IpAddr> {
         .and_then(|v| v.trim().parse().ok())
 }
 
-fn has_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &Route) -> bool {
-    let Some(sid) = cookie(headers, SESSION_COOKIE) else {
-        return false;
-    };
-    let device_id = match lock(&state.gate_sessions).get(sid) {
-        Some(s) if s.expires > now() => s.device_id.clone(),
-        _ => return false,
-    };
-    snap.devices
-        .get(&device_id)
-        .is_some_and(|d| may_open(d, route))
+fn query(query: Option<&str>, name: &str) -> Option<String> {
+    query?
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(key, _)| *key == name)
+        .map(|(_, value)| value.to_owned())
 }
 
-fn may_open(device: &Device, route: &Route) -> bool {
-    device.status == "approved" && (device.all_routes || device.route_ids.contains(&route.id))
+/// Cookies scoped to `domain` cover every tunnel on it; without one they stay on this host.
+fn cookie_value(
+    name: &str,
+    value: &str,
+    domain: Option<&str>,
+    max_age: i64,
+) -> Option<HeaderValue> {
+    let scope = domain.map(|d| format!("; Domain={d}")).unwrap_or_default();
+    HeaderValue::from_str(&format!(
+        "{name}={value}{scope}; Path=/; Max-Age={max_age}; HttpOnly; Secure; SameSite=Lax"
+    ))
+    .ok()
+}
+
+fn redirect(to: &str, cookies: Vec<HeaderValue>) -> Response {
+    let mut response = (StatusCode::FOUND, [(header::CACHE_CONTROL, "no-store")]).into_response();
+    if let Ok(location) = HeaderValue::from_str(to) {
+        response.headers_mut().insert(header::LOCATION, location);
+    }
+    for value in cookies {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    response
+}
+
+fn json_error(status: StatusCode, message: &str) -> Response {
+    (status, Json(json!({ "error": message }))).into_response()
+}
+
+// ---- device keys ----
+
+fn valid_token(token: &str) -> bool {
+    token.len() == TOKEN_LEN && token.bytes().all(|b| b.is_ascii_alphanumeric())
 }
 
 pub fn fingerprint(info: &Value) -> String {
