@@ -202,7 +202,7 @@ function AccessCard({ value, users, providers, hostname, onChange, onPassword, s
           {providers.length === 0 && (
             <Row title="Third-party sign-in" sub={<>Set up GitHub, Google and others under <a href="#/oauth">Third-Party OAuth</a>, then switch them on here.</>} />
           )}
-          <Row title="Email code" sub={<>After signing in, a code sent to their email. The mail server is set up under <a href="#/twofactor">Two-Factor Auth</a>.</>}>
+          <Row title="Email code" sub={<>After signing in, a code sent to their email. SMTP is set up under <a href="#/twofactor">Two-Factor Auth</a>.</>}>
             <Switch label="Email code" on={value.require_code} onChange={(v) => onChange({ require_code: v })} />
           </Row>
           <Row title="Sign in again after" sub="How long a sign-in lasts before it is asked for again.">

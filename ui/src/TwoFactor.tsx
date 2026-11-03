@@ -11,9 +11,9 @@ const SECURITY: Option<Smtp["security"]>[] = [
 ];
 const PORTS: Record<Smtp["security"], number> = { starttls: 587, tls: 465, none: 25 };
 
-// TwoFactorPage sets up emailed sign-in codes: the mail server they go out
-// through, then where they are asked for, the dashboard and each tunnel with
-// sign-in on.
+// TwoFactorPage sets up emailed sign-in codes: the SMTP credentials they are
+// sent with (Gmail, Outlook, any provider), then where they are asked for, the
+// dashboard and each tunnel with sign-in on.
 export function TwoFactorPage({ routes, onChanged }: { routes: Route[]; onChanged: () => Promise<void> }) {
   const [tf, setTf] = useState<TwoFactor | null>(null);
   const [busy, setBusy] = useState(false);
@@ -55,7 +55,7 @@ export function TwoFactorPage({ routes, onChanged }: { routes: Route[]; onChange
           <MailCard tf={tf} onSaved={setTf} />
           <Card title="Where codes are asked" sub="After the password, a code is emailed and must be entered to finish signing in.">
             <Row title="Dashboard sign-in" sub={
-              !tf.smtp ? "Set up the mail server first."
+              !tf.smtp ? "Enter your SMTP credentials first."
                 : !tf.admin_email ? <>Set the admin email under <a href="#/settings/account">Settings, Account</a> first.</>
                 : <>Every sign-in to this dashboard, with a code sent to <b>{tf.admin_email}</b>. Turning it on sends a test email first.</>
             }>
@@ -74,8 +74,8 @@ export function TwoFactorPage({ routes, onChanged }: { routes: Route[]; onChange
   );
 }
 
-// MailCard is the SMTP server: its details once saved, with an edit button
-// and a test, or a Set up button.
+// MailCard is the SMTP credentials codes are sent with: shown once saved,
+// with an edit button and a test, or a Set up button.
 function MailCard({ tf, onSaved }: { tf: TwoFactor; onSaved: (tf: TwoFactor) => void }) {
   const [open, setOpen] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -95,9 +95,9 @@ function MailCard({ tf, onSaved }: { tf: TwoFactor; onSaved: (tf: TwoFactor) => 
   };
 
   return (
-    <Card title="Mail server" sub={smtp ? "Codes go out through this SMTP server." : "Not set up. Codes go out through an SMTP server of your choice."}
+    <Card title="SMTP" sub={smtp ? "Codes are sent with these credentials." : "Not set up."}
       action={smtp ? (
-        <button type="button" className="icon-btn" aria-label="Change mail server" title="Change" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <button type="button" className="icon-btn" aria-label="Change SMTP credentials" title="Change" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           <Icon name="edit" size={20} />
         </button>
       ) : !open && <button type="button" className="btn" onClick={() => setOpen(true)}>Set up</button>}>
@@ -108,10 +108,10 @@ function MailCard({ tf, onSaved }: { tf: TwoFactor; onSaved: (tf: TwoFactor) => 
         }} onCancel={() => setOpen(false)} />
       ) : smtp && (
         <>
-          <Row title="Server"><span className="mono">{smtp.host}:{smtp.port}</span></Row>
+          <Row title="Host"><span className="mono">{smtp.host}:{smtp.port}</span></Row>
           <Row title="Security"><span>{SECURITY.find((s) => s.value === smtp.security)?.label}</span></Row>
-          <Row title="Signs in as"><span>{smtp.username || "No sign-in"}</span></Row>
-          <Row title="Sender"><span>{smtp.from}</span></Row>
+          <Row title="Username"><span>{smtp.username || "None"}</span></Row>
+          <Row title="From"><span>{smtp.from}</span></Row>
           <div className="card-foot">
             <button type="button" className="btn" disabled={testing || !tf.admin_email} onClick={test}>
               {testing && <span className="spinner small" />}Send a test
@@ -146,7 +146,7 @@ function MailForm({ smtp, onSaved, onCancel }: { smtp: Smtp | null; onSaved: (tf
     setBusy(true);
     try {
       onSaved(await api.saveSmtp({ host: host.trim(), port: Number(port), security, username: username.trim(), password: password || undefined, from: from.trim() }));
-      notify("Mail server saved");
+      notify("SMTP saved");
     } catch (err) {
       notify(message(err), "bad");
       setBusy(false);
@@ -156,7 +156,7 @@ function MailForm({ smtp, onSaved, onCancel }: { smtp: Smtp | null; onSaved: (tf
   return (
     <form className="card-steps" onSubmit={submit}>
       <div className="edit-row">
-        <TextField className="grow" label="SMTP server" mono placeholder="smtp.example.com" autoFocus autoComplete="off" value={host} onChange={setHost} />
+        <TextField className="grow" label="SMTP host" mono placeholder="smtp.gmail.com" autoFocus autoComplete="off" value={host} onChange={setHost} />
         <TextField className="port" label="Port" mono inputMode="numeric" value={port} onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
         <div className="tf static protocol">
           <div className="tf-box">
@@ -166,12 +166,13 @@ function MailForm({ smtp, onSaved, onCancel }: { smtp: Smtp | null; onSaved: (tf
         </div>
       </div>
       <div className="edit-row">
-        <TextField className="grow" label="Username" autoComplete="off" data-1p-ignore data-lpignore="true" value={username} onChange={setUsername} hint="Leave empty for a server that takes no sign-in" />
+        <TextField className="grow" label="Username" placeholder="you@gmail.com" autoComplete="off" data-1p-ignore data-lpignore="true" value={username} onChange={setUsername} />
         <TextField className="grow" label="Password" type="password" autoComplete="off" data-1p-ignore data-lpignore="true"
-          placeholder={smtp?.password_set ? "Saved. Type a new one to replace it." : undefined} value={password} onChange={setPassword} />
+          placeholder={smtp?.password_set ? "Saved. Type a new one to replace it." : undefined} value={password} onChange={setPassword}
+          hint="For Gmail, an app password" />
       </div>
-      <TextField label="Sender" placeholder="myTunnels <codes@example.com>" autoComplete="off" value={from} onChange={setFrom}
-        hint="The address codes come from. Saving signs in to the server to check it." />
+      <TextField label="From" placeholder="you@gmail.com" autoComplete="off" value={from} onChange={setFrom}
+        hint="Saving signs in with these credentials to check them." />
       <div className="edit-actions">
         <button type="button" className="btn text" onClick={onCancel}>Cancel</button>
         <button className="btn primary" disabled={busy || !ready}>{busy && <span className="spinner small on-accent" />}Save</button>
