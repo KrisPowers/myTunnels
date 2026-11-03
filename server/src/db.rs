@@ -614,7 +614,16 @@ impl Db {
         let pairs = stmt
             .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut stmt = conn.prepare("SELECT user_id, device_id FROM user_devices")?;
+        let linked = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         for user in &mut users {
+            user.device_ids = linked
+                .iter()
+                .filter(|(owner, _)| *owner == user.id)
+                .map(|(_, device)| device.clone())
+                .collect();
             user.route_ids = pairs
                 .iter()
                 .filter(|(owner, _)| *owner == user.id)
