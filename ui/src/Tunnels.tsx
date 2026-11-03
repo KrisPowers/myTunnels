@@ -733,26 +733,7 @@ function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
         ))}
       </div>
       {events && shown.length === 0 && <p className="muted">Nothing yet.</p>}
-      {days.map(([label, list]) => (
-        <section key={label} className="log-day">
-          <h3>{label}</h3>
-          <ul className="log-list">
-            {list.map((e, i) => {
-              const user = e.user_id ? users.find((u) => u.id === e.user_id) : undefined;
-              const who = user ? user.name || user.username : e.device_id ? shortId(e.device_id) : "A visitor";
-              const [tone, text] = line(e, who);
-              return (
-                <li key={i} className="log-line">
-                  <span className={"dot " + tone} />
-                  <time className="log-time">{new Date(e.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
-                  <span className="log-text">{text}</span>
-                  <span className="log-where">{[e.ip, e.country].filter(Boolean).join(", ")}</span>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
+      <LogDays entries={entries} />
     </>
   );
 }
