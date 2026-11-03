@@ -441,10 +441,21 @@ a.result:hover { background: var(--hover); }
 
 /* The header's left: the menu on narrow windows, then the name. */
 .header-start { display: flex; align-items: center; gap: 8px; min-width: 0; }
-/* The mark sits over the sidebar's icons, the name over their labels. */
-.header { padding-left: calc(var(--rail) + 4px); }
-.brand { display: inline-flex; align-items: center; gap: 12px; color: var(--text); font-size: 18px; font-weight: 400; white-space: nowrap; }
-.brand-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--accent); color: var(--on-accent); }
+.brand { display: inline-flex; align-items: center; gap: 10px; padding: 0 4px; color: var(--text-2); font-size: 22px; font-weight: 400; white-space: nowrap; }
+.brand:hover { text-decoration: none; }
+.brand-mark { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--accent); color: var(--on-accent); }
+
+/* New, raised over the sidebar as in Google's apps. */
+.fab {
+  display: inline-flex; align-items: center; gap: 12px; height: 56px; margin: 0 0 16px; padding: 0 20px 0 16px;
+  border-radius: 16px; background: var(--raised); color: var(--text); font-weight: 500; white-space: nowrap;
+  box-shadow: 0 1px 2px light-dark(rgba(60, 64, 67, .3), rgba(0, 0, 0, .6)), 0 1px 3px 1px light-dark(rgba(60, 64, 67, .15), rgba(0, 0, 0, .3));
+  transition: box-shadow .2s, background .2s;
+}
+.fab:hover {
+  text-decoration: none; background: color-mix(in srgb, var(--accent) 8%, var(--raised));
+  box-shadow: 0 1px 3px light-dark(rgba(60, 64, 67, .3), rgba(0, 0, 0, .6)), 0 4px 8px 3px light-dark(rgba(60, 64, 67, .15), rgba(0, 0, 0, .3));
+}
 
 /* A count beside a page in the sidebar; the accent when something waits. */
 .nav-count { min-width: 24px; height: 20px; padding: 0 7px; border-radius: 10px; background: var(--card-2); color: var(--text-2); font: 500 12px/20px var(--font); text-align: center; }
