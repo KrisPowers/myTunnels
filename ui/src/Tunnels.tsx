@@ -430,32 +430,50 @@ export function TunnelPage({ route, page, devices, users, onChanged }: { route: 
           <ArmedButton icon="delete" label="Remove" armedLabel="Remove for good" onConfirm={remove} />
         </div>
       </div>
-      <div className="page-body stack">
-        <AccessCard value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} onChange={access}
-          onPassword={async (password) => {
-            await save({ require_password: true, password });
-            setAsking(false);
-          }} />
+      <SubNav back="#/" backLabel="Tunnels" base={`#/tunnels/${route.id}`} items={TUNNEL_PAGES} current={current} />
 
-        {edit.require_login && (
-          <Card title="Accounts allowed" sub={users.length ? "Accounts that may sign in here." : <>No accounts yet. Add one under <a href="#/users">Users</a>.</>}>
+      <div className="page-body stack" key={current}>
+        {current === "access" && (
+          <AccessCard value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} onChange={access}
+            onPassword={async (password) => {
+              await save({ require_password: true, password });
+              setAsking(false);
+            }} />
+        )}
+
+        {current === "signin" && (!edit.require_login ? (
+          <div className="card welcome">
+            <Icon name="login" size={40} />
+            <h2>Sign-in is off</h2>
+            <p className="muted">Turn it on to ask visitors to sign in with an account.</p>
+            <button type="button" className="btn primary" onClick={() => quietly({ require_login: true })}>Turn on sign-in</button>
+          </div>
+        ) : (
+          <Card title="Accounts allowed" sub={users.length ? undefined : <>No accounts yet. Add one under <a href="#/users">Users</a>.</>}>
             {users.map((u) => (
-              <Row key={u.id} title={<a href={`#/users/${u.id}`}>{u.name || u.username}</a>} sub={u.all_routes ? "Allowed on every tunnel" : u.email ?? u.username}>
+              <Row key={u.id} title={<a href={`#/users/${u.id}`}>{u.name || u.username}</a>} sub={u.all_routes ? "Allowed on every tunnel" : u.email}>
                 <Switch label={`Allow ${u.username}`} on={u.all_routes || u.route_ids.includes(route.id)} disabled={u.all_routes} onChange={(v) => grantUser(u, v)} />
               </Row>
             ))}
           </Card>
-        )}
+        ))}
 
-        {edit.require_device && (
-          <Card title="Devices allowed" sub={approved.length ? "Approved devices that may open this tunnel." : "No device is approved yet. Open the address on a device and approve it under Devices."}>
+        {current === "devices" && (!edit.require_device ? (
+          <div className="card welcome">
+            <Icon name="devices" size={40} />
+            <h2>Device approval is off</h2>
+            <p className="muted">Turn it on to let in only devices you approve.</p>
+            <button type="button" className="btn primary" onClick={() => quietly({ require_device: true })}>Turn on device approval</button>
+          </div>
+        ) : (
+          <Card title="Devices allowed" sub={approved.length ? undefined : "No device is approved yet. Open the address on a device and approve it under Devices."}>
             {approved.map((d) => (
               <Row key={d.id} title={<a href={`#/devices/${d.id}`}>{d.name || shortId(d.id)}</a>} sub={d.all_routes ? "Allowed on every tunnel" : d.info?.platform}>
                 <Switch label={`Allow ${d.name || shortId(d.id)}`} on={d.all_routes || d.route_ids.includes(route.id)} disabled={d.all_routes} onChange={(v) => grantDevice(d, v)} />
               </Row>
             ))}
           </Card>
-        )}
+        ))}
       </div>
     </>
   );
