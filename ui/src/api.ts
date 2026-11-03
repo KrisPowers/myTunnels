@@ -13,6 +13,8 @@ export interface Route {
   require_device: boolean;
   require_password: boolean;
   require_login: boolean;
+  login_max: number;
+  login_idle: number;
   password_set: boolean;
   policy_mode: PolicyMode;
   enabled: boolean;
