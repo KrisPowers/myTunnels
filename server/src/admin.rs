@@ -71,6 +71,7 @@ async fn require_admin(State(state): State<AppState>, req: Request, next: Next) 
 }
 
 /// What first-run setup has saved so far, so the panel can resume where it was left.
+/// Setup is done once there is a password and Cloudflare is connected.
 async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let db = &state.db;
     let password = db.setting("admin_password")?.is_some();
