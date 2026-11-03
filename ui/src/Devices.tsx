@@ -51,15 +51,15 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
         <div className="page-head-main">
           <h1>Devices</h1>
           <div className="page-sub">
-            <span><b>{count("pending")}</b> waiting for approval</span>
             <span><b>{count("approved")}</b> approved</span>
+            <span><b>{count("requests")}</b> requests</span>
           </div>
         </div>
       </div>
       <div className="page-body">
         <div className="filters" role="tablist">
-          {FILTERS.map(([key, label]) => (
-            <button key={key} type="button" role="tab" className="filter" aria-selected={filter === key} onClick={() => setFilter(key)}>
+          {TABS.map(([key, label]) => (
+            <button key={key} type="button" role="tab" className="filter" aria-selected={tab === key} onClick={() => setTab(key)}>
               {label}<span>{count(key)}</span>
             </button>
           ))}
