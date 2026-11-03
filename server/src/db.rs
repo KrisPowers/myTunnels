@@ -148,6 +148,8 @@ pub struct User {
     #[serde(skip)]
     pub password_hash: String,
     pub enabled: bool,
+    /// Kept for the column; accounts are added to each tunnel, so it stays false.
+    #[serde(skip)]
     pub all_routes: bool,
     pub route_ids: Vec<String>,
     pub created_at: i64,
