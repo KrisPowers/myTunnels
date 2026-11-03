@@ -337,7 +337,7 @@ export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: 
 const TUNNEL_PAGES: [string, string, IconName][] = [
   ["access", "Access Control", "shield"],
   ["devices", "Devices", "devices"],
-  ["activity", "Activity", "history"],
+  ["logs", "Logs", "history"],
 ];
 
 // TunnelPage is one tunnel: its address and target in the heading, each with an
@@ -445,7 +445,7 @@ export function TunnelPage({ route, page, devices, users, onChanged }: { route: 
 
         {current === "access" && <People route={route} users={users} onGrant={grantUser} />}
 
-        {current === "activity" && <TunnelActivity route={route} users={users} />}
+        {current === "logs" && <TunnelLogs route={route} users={users} />}
 
         {current === "devices" && (!edit.require_device ? (
           <div className="card welcome">
@@ -676,25 +676,48 @@ const KINDS: [string, string][] = [
   ["device", "Devices"],
 ];
 
-// What each event's outcome is called, and its colour.
-function outcome(e: TunnelEvent): [string, string] {
+// line says what an event was, in a sentence, and whether it went well, badly
+// or neither.
+function line(e: TunnelEvent, who: string): [string, string] {
   if (e.kind === "visit") {
-    const asked: Record<string, string> = { network: "Not on the home network", login: "Asked to sign in", password: "Asked for the password", device: "Asked for an approved device" };
+    const asked: Record<string, string> = {
+      network: "Turned away, not on the home network",
+      login: "Asked to sign in",
+      password: "Asked for the tunnel password",
+      device: "Asked for an approved device",
+    };
     return [e.outcome === "network" ? "bad" : "", asked[e.outcome] ?? e.outcome];
   }
-  if (e.kind === "device") return ["plain", "Asked for approval"];
-  const named: Record<string, [string, string]> = {
-    ok: ["ok", e.kind === "password" ? "Right password" : "Signed in"],
-    failed: ["warn", "Wrong password"],
-    locked: ["bad", "Locked out"],
-    blocked: ["bad", "Held for review"],
+  if (e.kind === "device") return ["", `${who} asked for approval`];
+  if (e.kind === "password") {
+    const said: Record<string, [string, string]> = {
+      ok: ["ok", "Tunnel password entered"],
+      failed: ["bad", "Wrong tunnel password"],
+      locked: ["bad", "Too many password tries, locked out for 15 minutes"],
+    };
+    return said[e.outcome] ?? ["", e.outcome];
+  }
+  const said: Record<string, [string, string]> = {
+    ok: ["ok", `${who} signed in`],
+    failed: ["bad", `Wrong password for ${who}`],
+    locked: ["bad", "Too many sign-in tries, locked out for 15 minutes"],
+    blocked: ["bad", `${who} held for review`],
   };
-  return named[e.outcome] ?? ["", e.outcome];
+  return said[e.outcome] ?? ["", e.outcome];
 }
 
-// TunnelActivity is the tunnel's log: sign-ins and passwords tried, visitors turned
-// away, devices asking in. Newest first, refreshed as it runs.
-function TunnelActivity({ route, users }: { route: Route; users: User[] }) {
+function day(at: number) {
+  const d = new Date(at * 1000);
+  const today = new Date();
+  const yesterday = new Date(Date.now() - 86_400_000);
+  if (d.toDateString() === today.toDateString()) return "Today";
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+}
+
+// TunnelLogs is what happened at the tunnel's door, newest first and grouped by
+// day: one line each, refreshed as it runs.
+function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
   const [events, setEvents] = useState<TunnelEvent[] | null>(null);
   const [kind, setKind] = useState("");
   useEffect(() => {
@@ -704,42 +727,41 @@ function TunnelActivity({ route, users }: { route: Route; users: User[] }) {
     return () => clearInterval(t);
   }, [route.id]);
   const shown = (events ?? []).filter((e) => !kind || e.kind === kind);
-  const count = (k: string) => (events ?? []).filter((e) => !k || e.kind === k).length;
+  const days: [string, TunnelEvent[]][] = [];
+  for (const e of shown) {
+    const label = day(e.at);
+    if (days.at(-1)?.[0] !== label) days.push([label, []]);
+    days.at(-1)![1].push(e);
+  }
 
   return (
     <>
       <div className="filters" role="tablist">
         {KINDS.map(([key, label]) => (
-          <button key={key} type="button" role="tab" className="filter" aria-selected={kind === key} onClick={() => setKind(key)}>
-            {label}<span>{count(key)}</span>
-          </button>
+          <button key={key} type="button" role="tab" className="filter" aria-selected={kind === key} onClick={() => setKind(key)}>{label}</button>
         ))}
       </div>
-      {events && shown.length === 0 ? (
-        <p className="muted">Nothing yet.</p>
-      ) : (
-        <ul className="results">
-          {shown.map((e, i) => {
-            const [tone, label] = outcome(e);
-            const user = e.user_id ? users.find((u) => u.id === e.user_id) : undefined;
-            return (
-              <li key={i}>
-                <div className="result event-row">
-                  <span className={"chip " + tone}>{label}</span>
-                  <span className="event-who">
-                    {user ? <a href={`#/users/${user.id}`}>{user.name || user.username}</a>
-                      : e.device_id ? <a className="mono" href={`#/devices/${e.device_id}`}>{shortId(e.device_id)}</a>
-                      : <span className="muted">Unknown visitor</span>}
-                  </span>
-                  <span className="mono muted">{e.ip ?? ""}</span>
-                  <span className="result-service">{e.country ?? ""}</span>
-                  <span className="result-meta">{ago(e.at)}</span>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {events && shown.length === 0 && <p className="muted">Nothing yet.</p>}
+      {days.map(([label, list]) => (
+        <section key={label} className="log-day">
+          <h3>{label}</h3>
+          <ul className="log-list">
+            {list.map((e, i) => {
+              const user = e.user_id ? users.find((u) => u.id === e.user_id) : undefined;
+              const who = user ? user.name || user.username : e.device_id ? shortId(e.device_id) : "A visitor";
+              const [tone, text] = line(e, who);
+              return (
+                <li key={i} className="log-line">
+                  <span className={"dot " + tone} />
+                  <time className="log-time">{new Date(e.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
+                  <span className="log-text">{text}</span>
+                  <span className="log-where">{[e.ip, e.country].filter(Boolean).join(", ")}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
     </>
   );
 }

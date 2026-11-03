@@ -631,8 +631,7 @@ a.result:hover { background: var(--hover); }
   .result.user-row { grid-template-columns: 32px minmax(0, 1fr) auto; }
   .result.user-row .result-meta, .result.user-row .result-service, .result.user-row .result-what { display: none; }
   .result.signin-row { grid-template-columns: auto minmax(0, 1fr) auto; }
-  .result.event-row { grid-template-columns: auto minmax(0, 1fr) auto; }
-  .result.event-row .mono.muted, .result.event-row .result-service { display: none; }
+  .log-where { display: none; }
   .person-row .result-meta { display: none; }
   .result.signin-row .result-service, .result.signin-row .mono.muted { display: none; }
   .edit-row .place, .edit-row .protocol { flex: 1; width: auto; }
@@ -724,9 +723,15 @@ a.result:hover { background: var(--hover); }
 .page-body.plain .card-pad { padding-left: 0; padding-right: 0; }
 .page-body.plain .card-head { align-items: center; }
 
-/* A tunnel's log. */
-.result.event-row { grid-template-columns: 200px minmax(0, 1fr) 150px 50px 90px; }
-.event-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A tunnel's log: a day heading, then one quiet line per event. */
+.log-day + .log-day { margin-top: 24px; }
+.log-day h3 { margin: 0 0 4px; color: var(--text-2); font-size: 13px; font-weight: 500; }
+.log-list { list-style: none; margin: 0; padding: 0; }
+.log-line { display: flex; align-items: center; gap: 14px; min-height: 36px; border-bottom: 1px solid var(--line); }
+.log-line .dot { width: 8px; height: 8px; }
+.log-time { width: 72px; flex-shrink: 0; color: var(--text-3); font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+.log-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-where { color: var(--text-3); font: 12px var(--mono); white-space: nowrap; }
 
 /* Fields set straight on a card, under its heading. */
 .card-pad { padding: 0 24px 16px; }
