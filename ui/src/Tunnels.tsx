@@ -359,45 +359,35 @@ export function TunnelPage({ route, devices, users, onChanged }: { route: Route;
         </div>
       </div>
       <div className="page-body stack">
-        <Card title="Local app" sub="Where requests to this address go.">
-          <Row title="Port">
-            <SaveField label="Port" numeric mono width={110} value={String(edit.port)} onSave={(v) => save({ port: Number(v) })} />
-          </Row>
-          <Row title="Protocol" sub="Choose https when the app serves it itself. Self-signed certificates are fine.">
-            <Dropdown label="Protocol" value={edit.target_scheme} options={[{ value: "http", label: "http" }, { value: "https", label: "https" }]}
-              onChange={(v) => quietly({ target_scheme: v as RouteEdit["target_scheme"] })} />
-          </Row>
-          <Row title="Host" sub="Leave empty for the apps host from Settings. Or a container name, or another machine on the network.">
-            <SaveField label="Host" mono width={220} placeholder="Apps host" value={edit.target_host ?? ""} onSave={(v) => save({ target_host: v.trim() || null })} />
-          </Row>
-        </Card>
+        <AccessCard value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} onChange={access}
+          onPassword={async (password) => {
+            await save({ require_password: true, password });
+            setAsking(false);
+          }} />
 
-        <Card title="Who can open it" sub="On top of the app's own login, if it has one.">
-          <Row title="Same network as this host" sub="Only visitors coming from this host's internet connection, or a trusted network.">
-            <Switch label="Same network as this host" on={edit.require_lan} onChange={(v) => quietly({ require_lan: v })} />
-          </Row>
-          <Row title="Approved devices" sub="A new device gets an ID and waits under Devices until you approve it.">
-            <Switch label="Approved devices" on={edit.require_device} onChange={(v) => quietly({ require_device: v })} />
-          </Row>
-          {edit.require_lan && edit.require_device && (
-            <Row title="Combine" sub="Whether a visitor needs both, or either one.">
-              <Dropdown label="Combine" value={edit.policy_mode} onChange={(v) => quietly({ policy_mode: v as RouteEdit["policy_mode"] })} options={[
-                { value: "all", label: "Require both", hint: "Approved device on the home network" },
-                { value: "any", label: "Either is enough", hint: "Home network, or an approved device anywhere" },
-              ]} />
-            </Row>
-          )}
-        </Card>
-
-        {edit.require_device && (
-          <Card title="Devices allowed" sub={approved.length ? "Approved devices that may open this tunnel." : "No device is approved yet. Open the address on a device and approve it under Devices."}>
-            {approved.map((d) => (
-              <Row key={d.id} title={<a href={`#/devices/${d.id}`}>{d.name || d.id}</a>} sub={d.all_routes ? "Allowed on every tunnel" : d.info?.platform}>
-                <Switch label={`Allow ${d.name || d.id}`} on={d.all_routes || d.route_ids.includes(route.id)} disabled={d.all_routes} onChange={(v) => grant(d, v)} />
+        {edit.require_login && (
+          <Card title="Accounts allowed" sub={users.length ? "Accounts that may sign in here." : <>No accounts yet. Add one under <a href="#/users">Users</a>.</>}>
+            {users.map((u) => (
+              <Row key={u.id} title={<a href={`#/users/${u.id}`}>{u.name || u.username}</a>} sub={u.all_routes ? "Allowed on every tunnel" : u.email ?? u.username}>
+                <Switch label={`Allow ${u.username}`} on={u.all_routes || u.route_ids.includes(route.id)} disabled={u.all_routes} onChange={(v) => grantUser(u, v)} />
               </Row>
             ))}
           </Card>
         )}
+
+        {edit.require_device && (
+          <Card title="Devices allowed" sub={approved.length ? "Approved devices that may open this tunnel." : "No device is approved yet. Open the address on a device and approve it under Devices."}>
+            {approved.map((d) => (
+              <Row key={d.id} title={<a href={`#/devices/${d.id}`}>{d.name || shortId(d.id)}</a>} sub={d.all_routes ? "Allowed on every tunnel" : d.info?.platform}>
+                <Switch label={`Allow ${d.name || shortId(d.id)}`} on={d.all_routes || d.route_ids.includes(route.id)} disabled={d.all_routes} onChange={(v) => grantDevice(d, v)} />
+              </Row>
+            ))}
+          </Card>
+        )}
+
+        <Card title="Local app" sub="Where requests to this address go.">
+          <TargetRows value={edit} onChange={() => {}} onSave={save} />
+        </Card>
       </div>
     </>
   );
