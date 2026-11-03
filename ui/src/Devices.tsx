@@ -37,14 +37,13 @@ function useApprove(routes: Route[], onChanged: () => Promise<void>) {
   };
 }
 
-// Devices is every browser that asked to open a tunnel needing an approved
-// device, a filter per state.
+// Devices is every browser met so far: those approved, and requests.
 export function Devices({ devices, routes, onChanged }: { devices: Device[] | null; routes: Route[]; onChanged: () => Promise<void> }) {
   const all = devices ?? [];
-  const count = (s: DeviceStatus) => all.filter((d) => d.status === s).length;
-  const [filter, setFilter] = useState<DeviceStatus>(count("pending") || !all.length ? "pending" : "approved");
+  const count = (tab: Tab) => all.filter((d) => inTab(tab, d)).length;
+  const [tab, setTab] = useState<Tab>(all.some((d) => d.status === "pending") ? "requests" : "approved");
   const approve = useApprove(routes, onChanged);
-  const shown = all.filter((d) => d.status === filter);
+  const shown = all.filter((d) => inTab(tab, d));
 
   return (
     <>
