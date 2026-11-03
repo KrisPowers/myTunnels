@@ -709,14 +709,14 @@ function line(e: TunnelEvent, who: string): [string, string] {
 // day: one line each, refreshed as it runs.
 function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
   const [events, setEvents] = useState<TunnelEvent[] | null>(null);
-  const [kind, setKind] = useState("");
+  const [kinds, setKinds] = useState<TunnelEvent["kind"][]>([]);
   useEffect(() => {
     const load = () => api.routeActivity(route.id).then(setEvents).catch(() => setEvents((e) => e ?? []));
     load();
     const t = setInterval(load, 10_000);
     return () => clearInterval(t);
   }, [route.id]);
-  const shown = (events ?? []).filter((e) => !kind || e.kind === kind);
+  const shown = (events ?? []).filter((e) => !kinds.length || kinds.includes(e.kind));
   const entries: LogEntry[] = shown.map((e) => {
     const user = e.user_id ? users.find((u) => u.id === e.user_id) : undefined;
     const who = user ? user.name || user.username : e.device_id ? shortId(e.device_id) : "A visitor";
