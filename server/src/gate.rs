@@ -565,7 +565,7 @@ async fn action_response(
             Err(status) => status.into_response(),
         },
         ("password", true) => match body::<PasswordRequest>(req).await {
-            Ok((_, body)) => password(state, route, ip, body).await,
+            Ok((headers, body)) => password(state, route, ip, &headers, body).await,
             Err(status) => status.into_response(),
         },
         ("login", true) => match body::<LoginRequest>(req).await {
