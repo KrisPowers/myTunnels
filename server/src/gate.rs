@@ -222,7 +222,7 @@ fn user_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &
         .users
         .get(&s.subject)
         .filter(|u| secret::tag(&u.password_hash) == s.tag)
-        .is_some_and(|u| u.enabled && (u.all_routes || u.route_ids.contains(&route.id)));
+        .is_some_and(|u| u.enabled && u.route_ids.contains(&route.id));
     if ok {
         touch_session(&state.user_sessions, sid);
     }
