@@ -351,6 +351,10 @@ impl Db {
                 r.require_device,
                 r.policy_mode,
                 r.enabled,
+                r.preserve_host,
+                r.require_password,
+                r.password_hash,
+                r.require_login,
             ],
         )?;
         Ok(())
