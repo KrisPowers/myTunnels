@@ -624,6 +624,7 @@ function line(e: TunnelEvent): [string, string] {
     failed: ["bad", "Wrong password"],
     locked: ["bad", "Locked out after too many tries"],
     blocked: ["bad", "Held for review"],
+    unlinked: ["bad", "Refused, not a linked device"],
   };
   return said[e.outcome] ?? ["", e.outcome];
 }
