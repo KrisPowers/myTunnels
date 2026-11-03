@@ -849,6 +849,7 @@ async fn create_user(
         route_ids: known_routes(&state, body.route_ids),
         created_at: now(),
         last_login: None,
+        note: None,
     };
     state.db.save_user(&user)?;
     state.reload()?;
