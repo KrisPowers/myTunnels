@@ -215,60 +215,81 @@ export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: 
     }).catch((e) => notify(message(e), "bad"));
   }, [notify]);
 
+  const passwordOk = !access.require_password || strength(access.password ?? "").ok;
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!sub || !port || !zone) return;
+    if (!sub || !port || !zone || !passwordOk) return;
     setBusy(true);
     try {
-      const route = await api.publish({ subdomain: sub, zone_id: zone, port: Number(port) });
-      setSub("");
-      setPort("");
+      const route = await api.publish({ subdomain: sub, zone_id: zone, port: Number(port), ...targetOpts, ...access });
       await onPublished();
       notify(`Published ${route.hostname}`);
+      go(`#/tunnels/${route.id}`);
     } catch (err) {
       notify(message(err), "bad");
-    } finally {
       setBusy(false);
     }
   };
 
   return (
-    <form className="card composer" onSubmit={submit}>
-      <div className="composer-row">
-        <TextField className="grow" label="Subdomain" placeholder="app1" autoComplete="off" value={sub}
-          onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
-        <span className="composer-dot">.</span>
-        <div className="tf static grow">
-          <div className="tf-box">
-            {zones && zones.length > 0 ? (
-              <Dropdown label="Domain" value={zone} options={zones.map((z) => ({ value: z.id, label: z.name }))} onChange={setZone} />
-            ) : (
-              <span className="dropdown placeholder">{zones ? "No domains on this account" : "Loading domains"}</span>
-            )}
-            <span className="tf-label">Domain</span>
+    <form onSubmit={submit}>
+      <div className="page-head">
+        <a className="icon-btn" href="#/" aria-label="All tunnels" title="All tunnels"><Icon name="arrow_back" /></a>
+        <div className="page-head-main">
+          <h1>New tunnel</h1>
+          <div className="page-sub">Publish a port on one of your domains.</div>
+        </div>
+      </div>
+      <div className="page-body stack">
+        <div className="card composer">
+          <div className="composer-row">
+            <TextField className="grow" label="Subdomain" placeholder="app1" autoComplete="off" autoFocus value={sub}
+              onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
+            <span className="composer-dot">.</span>
+            <div className="tf static grow">
+              <div className="tf-box">
+                {zones && zones.length > 0 ? (
+                  <Dropdown label="Domain" value={zone} options={zones.map((z) => ({ value: z.id, label: z.name }))} onChange={setZone} />
+                ) : (
+                  <span className="dropdown placeholder">{zones ? "No domains on this account" : "Loading domains"}</span>
+                )}
+                <span className="tf-label">Domain</span>
+              </div>
+            </div>
+            <Icon name="arrow_forward" className="composer-arrow" />
+            <TextField className="port" label="Local port" placeholder="8080" mono inputMode="numeric" value={port}
+              onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
+            <button className="btn primary composer-go" disabled={busy || !sub || !port || !zone || !passwordOk}>
+              {busy ? <span className="spinner small on-accent" /> : <Icon name="add" size={18} />}Publish
+            </button>
           </div>
         </div>
-        <Icon name="arrow_forward" className="composer-arrow" />
-        <TextField className="port" label="Local port" placeholder="8080" mono inputMode="numeric" value={port}
-          onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
-        <button className="btn primary composer-go" disabled={busy || !sub || !port || !zone}>
-          {busy ? <span className="spinner small on-accent" /> : <Icon name="add" size={18} />}Publish
-        </button>
+
+        <AccessCard value={access} users={users} onChange={(patch) => setAccess((a) => ({ ...a, ...patch }))} />
+
+        <Card title="Local app" sub="Where requests go. The defaults suit an app on this computer."
+          action={<button type="button" className="icon-btn" aria-expanded={more} aria-label={more ? "Hide" : "Show"} onClick={() => setMore((m) => !m)}><Icon name="chevron_right" className={"fold-caret" + (more ? " open" : "")} /></button>}>
+          {more && <TargetRows value={{ port: Number(port) || 0, ...targetOpts }} onChange={(patch) => setTargetOpts((t) => ({ ...t, ...patch }))} />}
+        </Card>
       </div>
     </form>
   );
 }
 
-// TunnelPage is one tunnel: what it points at and who may open it, each
-// change saved as it is made.
-export function TunnelPage({ route, devices, onChanged }: { route: Route; devices: Device[]; onChanged: () => Promise<void> }) {
+// ---- one tunnel ----
+
+// TunnelPage is one tunnel: what it points at and who may open it, each change
+// saved as it is made.
+export function TunnelPage({ route, devices, users, onChanged }: { route: Route; devices: Device[]; users: User[]; onChanged: () => Promise<void> }) {
   const [edit, setEdit] = useState<RouteEdit>(() => editOf(route));
   const notify = useNotify();
   useEffect(() => setEdit(editOf(route)), [route]);
 
   const save = async (change: Partial<RouteEdit>) => {
     const next = { ...edit, ...change };
-    setEdit(next);
+    // A new tunnel password goes once; sent again, it would sign everyone out.
+    setEdit({ ...next, password: undefined });
     try {
       await api.editRoute(route.id, next);
       await onChanged();
