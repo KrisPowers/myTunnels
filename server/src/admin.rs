@@ -509,6 +509,13 @@ struct RouteEdit {
     require_device: bool,
     policy_mode: String,
     enabled: bool,
+    #[serde(default)]
+    require_password: bool,
+    password: Option<String>,
+    #[serde(default)]
+    require_login: bool,
+    #[serde(default)]
+    preserve_host: bool,
 }
 
 async fn update_route(
