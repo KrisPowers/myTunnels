@@ -48,12 +48,12 @@ export function Tunnels({ routes, status }: { routes: Route[] | null; status: St
         </div>
       </div>
       <div className="page-body stack">
-        <Publish onPublished={onChanged} />
         {routes && routes.length === 0 && (
           <div className="card welcome">
             <Icon name="public" size={40} />
             <h2>Nothing published yet</h2>
-            <p className="muted">Type a subdomain, pick a domain, enter the port your app listens on, and press Publish.</p>
+            <p className="muted">Publish a port on one of your domains, and choose who can open it.</p>
+            <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>
           </div>
         )}
         {routes && routes.length > 0 && (
