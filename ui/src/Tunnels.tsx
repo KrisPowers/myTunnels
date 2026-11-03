@@ -174,9 +174,19 @@ function AccessCard({ value, users, onChange, onPassword }: {
       {value.require_password && (
         <PasswordRow set={!!value.password_set} value={value.password ?? ""} onChange={onPassword ? undefined : (password) => onChange({ password })} onSave={onPassword} />
       )}
-      <Row title="Sign-in" sub={<>People sign in with an account from <a href="#/users">Users</a>. {accounts ? `${accounts} account${accounts === 1 ? "" : "s"} so far.` : "There are none yet."}</>}>
+      <Row title="Sign-in" sub={<>People sign in with their email and an account from <a href="#/users">Users</a>. {accounts ? `${accounts} account${accounts === 1 ? "" : "s"} so far.` : "There are none yet."}</>}>
         <Switch label="Sign-in" on={value.require_login} onChange={(v) => onChange({ require_login: v })} />
       </Row>
+      {value.require_login && (
+        <>
+          <Row title="Sign in again after" sub="How long a sign-in lasts before it is asked for again.">
+            <Dropdown label="Sign in again after" value={value.login_max} options={SIGN_IN_FOR} onChange={(v) => onChange({ login_max: v })} />
+          </Row>
+          <Row title="Sign out when idle for" sub="A sign-in left unused this long ends early.">
+            <Dropdown label="Sign out when idle for" value={value.login_idle} options={IDLE_FOR} onChange={(v) => onChange({ login_idle: v })} />
+          </Row>
+        </>
+      )}
       {layers > 1 && (
         <Row title="Combine" sub="Whether a visitor needs every layer above, or any one of them.">
           <Dropdown label="Combine" value={value.policy_mode} onChange={(v) => onChange({ policy_mode: v as PolicyMode })} options={[
