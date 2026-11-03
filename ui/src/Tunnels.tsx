@@ -1,322 +1,245 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { api, errorText, type Route, type Zone } from './api'
-import { AccessBadges, AccessFields, type AccessValue } from './Access'
+import { useEffect, useState, type FormEvent } from "react";
+import { api, editOf, message, type Device, type Route, type RouteEdit, type Status, type Zone } from "./api";
+import { Dropdown } from "./Dropdown";
+import { Icon } from "./Icon";
+import { go } from "./route";
+import { ArmedButton, Card, Copy, Row, SaveField, Switch, useNotify } from "./ui";
 
-const NO_ACCESS_RULES: AccessValue = { require_lan: false, require_device: false, policy_mode: 'all' }
-
-export default function Tunnels({ configured }: { configured: boolean | undefined }) {
-  const [routes, setRoutes] = useState<Route[] | null>(null)
-  const [zones, setZones] = useState<Zone[]>([])
-  const [error, setError] = useState('')
-  const [editing, setEditing] = useState<string | null>(null)
-
-  const load = useCallback(() => {
-    api<Route[]>('/routes')
-      .then(setRoutes)
-      .catch((e) => setError(errorText(e)))
-  }, [])
-
-  useEffect(load, [load])
-  useEffect(() => {
-    if (configured) api<Zone[]>('/zones').then(setZones).catch((e) => setError(errorText(e)))
-  }, [configured])
-
-  const remove = async (route: Route) => {
-    if (!confirm(`Remove ${route.hostname}? Its DNS record is deleted from Cloudflare.`)) return
-    try {
-      await api(`/routes/${route.id}`, 'DELETE')
-      load()
-    } catch (e) {
-      setError(errorText(e))
-    }
-  }
-
+// Access is who may open a tunnel, as chips.
+export function Access({ route }: { route: Route }) {
+  if (!route.require_lan && !route.require_device) return <span className="chip">Open</span>;
+  const both = route.require_lan && route.require_device;
   return (
-    <>
-      <header className="page-head">
-        <h1>Tunnels</h1>
-        <p>Publish a local port on one of your domains, without opening a port on the router.</p>
-      </header>
-
-      {configured === false && (
-        <div className="notice">
-          Connect your Cloudflare account in <a href="#/settings">Settings</a> before adding tunnels.
-        </div>
-      )}
-      {configured && <AddTunnel zones={zones} onAdded={load} />}
-      {error && (
-        <div className="error" role="alert">
-          {error}
-        </div>
-      )}
-
-      <section className="panel">
-        <div className="panel-head">
-          <h2>Published</h2>
-          <span className="muted">{routes ? `${routes.length} total` : ''}</span>
-        </div>
-        {routes && routes.length === 0 && <p className="empty">Nothing is published yet.</p>}
-        {routes && routes.length > 0 && (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Address</th>
-                  <th>Local target</th>
-                  <th>Access</th>
-                  <th>State</th>
-                  <th aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {routes.map((route) =>
-                  editing === route.id ? (
-                    <EditRow
-                      key={route.id}
-                      route={route}
-                      onDone={() => {
-                        setEditing(null)
-                        load()
-                      }}
-                    />
-                  ) : (
-                    <tr key={route.id}>
-                      <td>
-                        <a className="mono" href={`https://${route.hostname}`} target="_blank" rel="noreferrer">
-                          {route.hostname}
-                        </a>
-                      </td>
-                      <td className="mono muted">
-                        {route.target_scheme === 'https' ? 'https://' : ''}
-                        {route.target_host ?? 'host'}:{route.target_port}
-                      </td>
-                      <td>
-                        <AccessBadges value={route} />
-                      </td>
-                      <td>
-                        <span className={`badge ${route.enabled ? 'ok' : ''}`}>{route.enabled ? 'Live' : 'Off'}</span>
-                      </td>
-                      <td className="actions">
-                        <button className="ghost" onClick={() => setEditing(route.id)}>
-                          Edit
-                        </button>
-                        <button className="ghost danger" onClick={() => remove(route)}>
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  ),
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </>
-  )
+    <span className="chips">
+      {route.require_lan && <span className="chip plain">Home network</span>}
+      {both && <span className="joiner">{route.policy_mode === "any" ? "or" : "and"}</span>}
+      {route.require_device && <span className="chip plain">Approved device</span>}
+    </span>
+  );
 }
 
-function AddTunnel({ zones, onAdded }: { zones: Zone[]; onAdded: () => void }) {
-  const [subdomain, setSubdomain] = useState('')
-  const [zoneId, setZoneId] = useState('')
-  const [port, setPort] = useState('')
-  const [access, setAccess] = useState<AccessValue>(NO_ACCESS_RULES)
-  const [advanced, setAdvanced] = useState(false)
-  const [targetHost, setTargetHost] = useState('')
-  const [scheme, setScheme] = useState<'http' | 'https'>('http')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+function target(route: Route) {
+  return `${route.target_scheme === "https" ? "https://" : ""}${route.target_host ?? "host"}:${route.target_port}`;
+}
+
+// Tunnels is the home page: publish a port, and every tunnel published.
+export function Tunnels({ routes, status, onChanged }: { routes: Route[] | null; status: Status | null; onChanged: () => Promise<void> }) {
+  const live = routes?.filter((r) => r.enabled).length ?? 0;
+  const links = status?.connections ?? 0;
+  return (
+    <>
+      <div className="page-head">
+        <div className="page-head-main">
+          <h1>Tunnels</h1>
+          <div className="page-sub">
+            <span><b>{live}</b> live</span>
+            <span>{links > 0 ? `Connector online, ${links} links` : status?.running ? "Connector starting" : "Connector offline"}</span>
+          </div>
+        </div>
+      </div>
+      <div className="page-body stack">
+        <Publish onPublished={onChanged} />
+        {routes && routes.length === 0 && (
+          <div className="card welcome">
+            <Icon name="public" size={40} />
+            <h2>Nothing published yet</h2>
+            <p className="muted">Type a subdomain, pick a domain, enter the port your app listens on, and press Publish.</p>
+          </div>
+        )}
+        {routes && routes.length > 0 && (
+          <div className="card">
+            <ul className="results">
+              {routes.map((r) => (
+                <li key={r.id}>
+                  <a className="result tunnel-row" href={`#/tunnels/${r.id}`}>
+                    <span className={"dot " + (r.enabled ? "ok" : "")} role="img" aria-label={r.enabled ? "Live" : "Off"} title={r.enabled ? "Live" : "Off"} />
+                    <span className="scan-target">{r.hostname}</span>
+                    <span className="result-service mono">{target(r)}</span>
+                    <span className="result-what"><Access route={r} /></span>
+                    <Icon name="chevron_right" className="result-go" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// Publish is the one line that puts a port on a domain: subdomain, domain, port.
+function Publish({ onPublished }: { onPublished: () => Promise<void> }) {
+  const [zones, setZones] = useState<Zone[] | null>(null);
+  const [zone, setZone] = useState("");
+  const [sub, setSub] = useState("");
+  const [port, setPort] = useState("");
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
 
   useEffect(() => {
-    if (!zoneId && zones.length > 0) setZoneId(zones[0].id)
-  }, [zones, zoneId])
-
-  const zone = zones.find((z) => z.id === zoneId)
+    api.zones().then((z) => {
+      setZones(z);
+      setZone((current) => current || z[0]?.id || "");
+    }).catch((e) => notify(message(e), "bad"));
+  }, [notify]);
 
   const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    setBusy(true)
-    setError('')
+    e.preventDefault();
+    if (!sub || !port || !zone) return;
+    setBusy(true);
     try {
-      await api('/routes', 'POST', {
-        subdomain,
-        zone_id: zoneId,
-        port: Number(port),
-        target_host: targetHost || null,
-        target_scheme: scheme,
-        ...access,
-      })
-      setSubdomain('')
-      setPort('')
-      setAccess(NO_ACCESS_RULES)
-      setTargetHost('')
-      setScheme('http')
-      onAdded()
+      const route = await api.publish({ subdomain: sub, zone_id: zone, port: Number(port) });
+      setSub("");
+      setPort("");
+      await onPublished();
+      notify(`Published ${route.hostname}`);
     } catch (err) {
-      setError(errorText(err))
+      notify(message(err), "bad");
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
-  }
+  };
 
   return (
-    <form className="panel add" onSubmit={submit}>
-      <div className="panel-head">
-        <h2>New tunnel</h2>
-      </div>
-      <div className="address-row">
-        <label className="field grow">
+    <form className="card composer" onSubmit={submit}>
+      <div className="composer-row">
+        <label className="composer-field grow">
           <span>Subdomain</span>
-          <input
-            placeholder="app1"
-            value={subdomain}
-            onChange={(e) => setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-            required
-          />
+          <input className="input big" placeholder="app1" value={sub} autoComplete="off" spellCheck={false}
+            onChange={(e) => setSub(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
         </label>
-        <span className="dot-sep">.</span>
-        <label className="field grow">
+        <span className="composer-dot">.</span>
+        <div className="composer-field grow">
           <span>Domain</span>
-          <select value={zoneId} onChange={(e) => setZoneId(e.target.value)} required>
-            {zones.length === 0 && <option value="">Loading domains</option>}
-            {zones.map((z) => (
-              <option key={z.id} value={z.id}>
-                {z.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field port">
-          <span>Local port</span>
-          <input
-            inputMode="numeric"
-            placeholder="8080"
-            value={port}
-            onChange={(e) => setPort(e.target.value.replace(/\D/g, '').slice(0, 5))}
-            required
-          />
-        </label>
-      </div>
-      {subdomain && zone && (
-        <p className="preview mono">
-          https://{subdomain}.{zone.name} <span className="muted">to</span> {scheme}://
-          {targetHost || 'host'}:{port || '?'}
-        </p>
-      )}
-
-      <AccessFields value={access} onChange={setAccess} />
-
-      <button type="button" className="link" onClick={() => setAdvanced(!advanced)} aria-expanded={advanced}>
-        {advanced ? 'Hide' : 'Show'} target options
-      </button>
-      {advanced && <TargetFields host={targetHost} scheme={scheme} onHost={setTargetHost} onScheme={setScheme} />}
-
-      {error && (
-        <div className="error" role="alert">
-          {error}
+          {zones && zones.length > 0 ? (
+            <Dropdown label="Domain" value={zone} options={zones.map((z) => ({ value: z.id, label: z.name }))} onChange={setZone} />
+          ) : (
+            <span className="dropdown placeholder">{zones ? "No domains on this account" : "Loading domains"}</span>
+          )}
         </div>
-      )}
-      <div className="form-actions">
-        <button className="primary" disabled={busy || !subdomain || !port || !zoneId}>
-          {busy ? 'Publishing' : 'Publish'}
+        <Icon name="arrow_forward" className="composer-arrow" />
+        <label className="composer-field port">
+          <span>Local port</span>
+          <input className="input big mono" placeholder="8080" inputMode="numeric" value={port}
+            onChange={(e) => setPort(e.target.value.replace(/\D/g, "").slice(0, 5))} />
+        </label>
+        <button className="btn primary composer-go" disabled={busy || !sub || !port || !zone}>
+          {busy ? <span className="spinner small on-accent" /> : <Icon name="add" size={18} />}Publish
         </button>
       </div>
     </form>
-  )
+  );
 }
 
-function TargetFields(props: {
-  host: string
-  scheme: 'http' | 'https'
-  onHost: (v: string) => void
-  onScheme: (v: 'http' | 'https') => void
-}) {
-  return (
-    <div className="target-row">
-      <label className="field">
-        <span>Protocol</span>
-        <select value={props.scheme} onChange={(e) => props.onScheme(e.target.value as 'http' | 'https')}>
-          <option value="http">http</option>
-          <option value="https">https (self-signed allowed)</option>
-        </select>
-      </label>
-      <label className="field grow">
-        <span>Target host</span>
-        <input
-          placeholder="Default host from Settings"
-          value={props.host}
-          onChange={(e) => props.onHost(e.target.value.trim())}
-        />
-      </label>
-    </div>
-  )
-}
+// TunnelPage is one tunnel: what it points at and who may open it, each
+// change saved as it is made.
+export function TunnelPage({ route, devices, onChanged }: { route: Route; devices: Device[]; onChanged: () => Promise<void> }) {
+  const [edit, setEdit] = useState<RouteEdit>(() => editOf(route));
+  const notify = useNotify();
+  useEffect(() => setEdit(editOf(route)), [route]);
 
-function EditRow({ route, onDone }: { route: Route; onDone: () => void }) {
-  const [port, setPort] = useState(String(route.target_port))
-  const [access, setAccess] = useState<AccessValue>(route)
-  const [targetHost, setTargetHost] = useState(route.target_host ?? '')
-  const [scheme, setScheme] = useState(route.target_scheme)
-  const [enabled, setEnabled] = useState(route.enabled)
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const save = async () => {
-    setBusy(true)
-    setError('')
+  const save = async (change: Partial<RouteEdit>) => {
+    const next = { ...edit, ...change };
+    setEdit(next);
     try {
-      await api(`/routes/${route.id}`, 'PATCH', {
-        port: Number(port),
-        target_host: targetHost || null,
-        target_scheme: scheme,
-        enabled,
-        require_lan: access.require_lan,
-        require_device: access.require_device,
-        policy_mode: access.policy_mode,
-      })
-      onDone()
-    } catch (err) {
-      setError(errorText(err))
-      setBusy(false)
+      await api.editRoute(route.id, next);
+      await onChanged();
+    } catch (e) {
+      setEdit(editOf(route));
+      throw e;
     }
-  }
+  };
+  const quietly = (change: Partial<RouteEdit>) => save(change).catch((e) => notify(message(e), "bad"));
+
+  const remove = async () => {
+    try {
+      await api.removeRoute(route.id);
+      notify(`Removed ${route.hostname}`);
+      await onChanged();
+      go("#/");
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+  };
+
+  const approved = devices.filter((d) => d.status === "approved");
+  const grant = async (device: Device, on: boolean) => {
+    const ids = on ? [...device.route_ids, route.id] : device.route_ids.filter((r) => r !== route.id);
+    try {
+      await api.editDevice(device.id, { route_ids: ids });
+      await onChanged();
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+  };
 
   return (
-    <tr className="editing">
-      <td colSpan={5}>
-        <div className="edit-head">
-          <span className="mono">{route.hostname}</span>
-          <label className="check inline">
-            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-            <span>Live</span>
-          </label>
-        </div>
-        <div className="target-row">
-          <label className="field port">
-            <span>Local port</span>
-            <input
-              inputMode="numeric"
-              value={port}
-              onChange={(e) => setPort(e.target.value.replace(/\D/g, '').slice(0, 5))}
-            />
-          </label>
-        </div>
-        <TargetFields host={targetHost} scheme={scheme} onHost={setTargetHost} onScheme={setScheme} />
-        <AccessFields value={access} onChange={setAccess} />
-        {error && (
-          <div className="error" role="alert">
-            {error}
+    <>
+      <div className="page-head">
+        <a className="icon-btn" href="#/" aria-label="All tunnels" title="All tunnels"><Icon name="arrow_back" /></a>
+        <div className="page-head-main">
+          <h1>{route.hostname}</h1>
+          <div className="page-sub">
+            <span className={"chip " + (edit.enabled ? "ok" : "")}>{edit.enabled ? "Live" : "Off"}</span>
+            <span>to <span className="mono">{target(route)}</span></span>
           </div>
-        )}
-        <div className="form-actions">
-          <button className="ghost" onClick={onDone} disabled={busy}>
-            Cancel
-          </button>
-          <button className="primary" onClick={save} disabled={busy || !port}>
-            Save
-          </button>
         </div>
-      </td>
-    </tr>
-  )
+        <div className="page-actions">
+          <a className="btn" href={`https://${route.hostname}`} target="_blank" rel="noreferrer"><Icon name="open_in_new" size={18} />Open</a>
+          <ArmedButton icon="delete" label="Remove" armedLabel="Remove for good" onConfirm={remove} />
+        </div>
+      </div>
+      <div className="page-body stack">
+        <Card title="Address">
+          <Row title="Live" sub="Off answers every visitor with a short notice instead of the app.">
+            <Switch label="Live" on={edit.enabled} onChange={(v) => quietly({ enabled: v })} />
+          </Row>
+          <Row title="Public address" sub="The DNS record and tunnel route are managed for you.">
+            <Copy text={`https://${route.hostname}`} />
+          </Row>
+        </Card>
+
+        <Card title="Local app" sub="Where requests to this address go.">
+          <Row title="Port">
+            <SaveField label="Port" numeric mono width={110} value={String(edit.port)} onSave={(v) => save({ port: Number(v) })} />
+          </Row>
+          <Row title="Protocol" sub="Choose https when the app serves it itself. Self-signed certificates are fine.">
+            <Dropdown label="Protocol" value={edit.target_scheme} options={[{ value: "http", label: "http" }, { value: "https", label: "https" }]}
+              onChange={(v) => quietly({ target_scheme: v as RouteEdit["target_scheme"] })} />
+          </Row>
+          <Row title="Host" sub="Leave empty for the apps host from Settings. Or a container name, or another machine on the network.">
+            <SaveField label="Host" mono width={220} placeholder="Apps host" value={edit.target_host ?? ""} onSave={(v) => save({ target_host: v.trim() || null })} />
+          </Row>
+        </Card>
+
+        <Card title="Who can open it" sub="On top of the app's own login, if it has one.">
+          <Row title="Same network as this host" sub="Only visitors coming from this host's internet connection, or a trusted network.">
+            <Switch label="Same network as this host" on={edit.require_lan} onChange={(v) => quietly({ require_lan: v })} />
+          </Row>
+          <Row title="Approved devices" sub="A new device gets an ID and waits under Devices until you approve it.">
+            <Switch label="Approved devices" on={edit.require_device} onChange={(v) => quietly({ require_device: v })} />
+          </Row>
+          {edit.require_lan && edit.require_device && (
+            <Row title="Combine" sub="Whether a visitor needs both, or either one.">
+              <Dropdown label="Combine" value={edit.policy_mode} onChange={(v) => quietly({ policy_mode: v as RouteEdit["policy_mode"] })} options={[
+                { value: "all", label: "Require both", hint: "Approved device on the home network" },
+                { value: "any", label: "Either is enough", hint: "Home network, or an approved device anywhere" },
+              ]} />
+            </Row>
+          )}
+        </Card>
+
+        {edit.require_device && (
+          <Card title="Devices allowed" sub={approved.length ? "Approved devices that may open this tunnel." : "No device is approved yet. Open the address on a device and approve it under Devices."}>
+            {approved.map((d) => (
+              <Row key={d.id} title={<a href={`#/devices/${d.id}`}>{d.name || d.id}</a>} sub={d.all_routes ? "Allowed on every tunnel" : d.info?.platform}>
+                <Switch label={`Allow ${d.name || d.id}`} on={d.all_routes || d.route_ids.includes(route.id)} disabled={d.all_routes} onChange={(v) => grant(d, v)} />
+              </Row>
+            ))}
+          </Card>
+        )}
+      </div>
+    </>
+  );
 }
