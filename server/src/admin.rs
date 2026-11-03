@@ -844,7 +844,7 @@ async fn create_user(
         name: body.name.trim().chars().take(80).collect(),
         password_hash: secret::hash(&body.password)?,
         enabled: true,
-        all_routes: body.all_routes,
+        all_routes: false,
         route_ids: known_routes(&state, body.route_ids),
         created_at: now(),
         last_login: None,
