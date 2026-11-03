@@ -33,6 +33,7 @@ pub fn router(state: AppState) -> Router {
         .route("/routes", get(list_routes).post(create_route))
         .route("/routes/{id}", patch(update_route).delete(delete_route))
         .route("/routes/{id}/address", put(move_route))
+        .route("/routes/{id}/activity", get(route_activity))
         .route("/devices", get(list_devices))
         .route("/devices/{id}", patch(update_device).delete(delete_device))
         .route("/device", post(this_device))
