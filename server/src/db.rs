@@ -671,6 +671,13 @@ impl Db {
                 u.note,
             ],
         )?;
+        tx.execute("DELETE FROM user_devices WHERE user_id = ?1", [&u.id])?;
+        for device_id in &u.device_ids {
+            tx.execute(
+                "INSERT OR IGNORE INTO user_devices (user_id, device_id) VALUES (?1, ?2)",
+                params![u.id, device_id],
+            )?;
+        }
         tx.execute("DELETE FROM user_routes WHERE user_id = ?1", [&u.id])?;
         for route_id in &u.route_ids {
             tx.execute(
