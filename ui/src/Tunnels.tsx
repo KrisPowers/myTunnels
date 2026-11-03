@@ -706,15 +706,6 @@ function line(e: TunnelEvent, who: string): [string, string] {
   return said[e.outcome] ?? ["", e.outcome];
 }
 
-function day(at: number) {
-  const d = new Date(at * 1000);
-  const today = new Date();
-  const yesterday = new Date(Date.now() - 86_400_000);
-  if (d.toDateString() === today.toDateString()) return "Today";
-  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-}
-
 // TunnelLogs is what happened at the tunnel's door, newest first and grouped by
 // day: one line each, refreshed as it runs.
 function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
