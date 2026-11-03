@@ -13,6 +13,7 @@ export interface Route {
   require_device: boolean;
   require_password: boolean;
   require_login: boolean;
+  require_code: boolean;
   login_max: number;
   login_idle: number;
   password_set: boolean;
@@ -29,6 +30,8 @@ export interface Access {
   require_device: boolean;
   require_password: boolean;
   require_login: boolean;
+  // After signing in, a code emailed to the account.
+  require_code: boolean;
   login_max: number;
   login_idle: number;
   policy_mode: PolicyMode;
@@ -147,6 +150,21 @@ export interface OAuthProvider {
 // tunnel exists.
 export interface OAuthState { callback: string | null; providers: OAuthProvider[] }
 
+// The mail server codes go out through. Its password stays on the server.
+export interface Smtp {
+  host: string;
+  port: number;
+  security: "starttls" | "tls" | "none";
+  username: string;
+  password_set: boolean;
+  from: string;
+}
+
+export interface TwoFactor { smtp: Smtp | null; dashboard: boolean; admin_email: string | null }
+
+// A sign-in that went through, or one waiting on an emailed code.
+export interface SignedIn { ok?: boolean; code_required?: boolean; ticket?: string; sent_to?: string }
+
 export interface AdminAccount { username: string | null; email: string | null }
 
 export interface Auth {
@@ -171,7 +189,8 @@ async function call<T>(path: string, method = "GET", body?: unknown): Promise<T>
 export const api = {
   auth: () => call<Auth>("/auth"),
   createAccount: (email: string, username: string, password: string) => call("/auth/setup", "POST", { email, username, password }),
-  login: (login: string, password: string) => call("/auth/login", "POST", { login, password }),
+  login: (login: string, password: string) => call<SignedIn>("/auth/login", "POST", { login, password }),
+  loginCode: (ticket: string, code: string) => call("/auth/code", "POST", { ticket, code }),
   logout: () => call("/auth/logout", "POST"),
 
   account: () => call<AdminAccount>("/account"),
@@ -181,6 +200,11 @@ export const api = {
   saveOAuth: (id: string, body: Partial<{ client_id: string; client_secret: string; enabled: boolean; name: string; issuer: string }>) =>
     call<OAuthState>(`/oauth/${id}`, "PUT", body),
   removeOAuth: (id: string) => call<OAuthState>(`/oauth/${id}`, "DELETE"),
+
+  twoFactor: () => call<TwoFactor>("/twofactor"),
+  saveSmtp: (body: Omit<Smtp, "password_set"> & { password?: string }) => call<TwoFactor>("/twofactor/smtp", "PUT", body),
+  testMail: () => call<{ ok: boolean; to: string }>("/twofactor/test", "POST"),
+  saveTwoFactor: (dashboard: boolean) => call<TwoFactor>("/twofactor", "PUT", { dashboard }),
 
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),
@@ -225,6 +249,7 @@ export function editOf(r: Route): RouteEdit {
     require_device: r.require_device,
     require_password: r.require_password,
     require_login: r.require_login,
+    require_code: r.require_code,
     login_max: r.login_max,
     login_idle: r.login_idle,
     policy_mode: r.policy_mode,

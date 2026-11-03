@@ -70,7 +70,7 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
-<body data-mode="{{MODE}}" data-others="{{OTHERS}}" data-providers="{{PROVIDERS}}">
+<body data-mode="{{MODE}}" data-others="{{OTHERS}}" data-data="{{DATA}}">
 <main>
   <div class="host">{{HOST}}</div>
   <h1>{{TITLE}}</h1>
@@ -91,6 +91,12 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
     <div class="row"><button type="submit">Sign in</button></div>
   </form>
 
+  <form id="code" hidden>
+    <div class="tf"><input id="otp" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder=" " autocomplete="one-time-code" required><label for="otp">6-digit code</label></div>
+    <div class="error" id="code-error" role="alert"></div>
+    <div class="row"><button type="submit">Verify</button></div>
+  </form>
+
   <div id="device" hidden>
     <div class="label">Device ID</div>
     <div class="id-row"><span id="id">....-....</span><button id="copy" class="text" type="button">Copy</button></div>
@@ -101,7 +107,8 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
 </main>
 <script>
 (function () {
-  var body = document.body, mode = body.dataset.mode;
+  var body = document.body, mode = body.dataset.mode, data = {};
+  try { data = JSON.parse(body.dataset.data || '{}'); } catch (e) {}
   var $ = function (id) { return document.getElementById(id); };
   var KEY = 'gate.device';
   var LABELS = { login: 'sign in with an account', password: 'use the tunnel password', device: 'use an approved device' };
@@ -132,7 +139,8 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
       button.disabled = true;
       error.textContent = '';
       post('/__gate/' + id, build()).then(function (r) {
-        if (r.ok) return back();
+        if (r.code_required) return askCode(r.ticket, r.sent_to);
+        if (r.ok) return data.path ? location.replace(data.path) : back();
         error.textContent = r.error || 'That did not work. Try again.';
         button.disabled = false;
       }).catch(function () {
@@ -140,6 +148,15 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
         button.disabled = false;
       });
     });
+  }
+
+  // After the password, a code sent to the account's email.
+  function askCode(ticket, sentTo) {
+    ['login', 'providers', 'or', 'others'].forEach(function (id) { $(id).hidden = true; });
+    document.title = 'Check your email';
+    document.querySelector('h1').textContent = 'Check your email';
+    document.querySelector('main > p').textContent = 'Enter the code sent to ' + sentTo + '.';
+    form('code', function () { return { ticket: ticket, code: $('otp').value.trim() }; });
   }
 
   var others = (body.dataset.others || '').split(' ').filter(Boolean);
@@ -155,8 +172,7 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
   if (mode === 'password') form('password', function () { return { password: $('pw').value }; });
   if (mode === 'login') {
     // Sign-in through another service comes back here once it is done.
-    var providers = [];
-    try { providers = JSON.parse(body.dataset.providers || '[]'); } catch (e) {}
+    var providers = data.providers || [];
     if (providers.length) {
       var params = new URLSearchParams(location.search);
       params.delete('__gate');
@@ -173,6 +189,7 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
     }
     form('login', function () { return { email: $('user').value, password: $('secret').value }; });
   }
+  if (mode === 'code') form('code', function () { return { ticket: data.ticket, code: $('otp').value.trim() }; });
   if (mode !== 'device') return;
 
   $('device').hidden = false;

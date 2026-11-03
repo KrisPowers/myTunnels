@@ -7,6 +7,7 @@ use std::time::Duration;
 use anyhow::Result;
 use axum::http::StatusCode;
 
+use crate::codes::Codes;
 use crate::config::Config;
 use crate::db::{Db, Device, Route, User};
 use crate::netinfo::{self, Cidr};
@@ -67,14 +68,23 @@ pub enum Hop {
         verifier: String,
         expires: i64,
     },
-    /// How a sign-in elsewhere ended, for tunnel `host` to finish: a session token,
-    /// or why it was refused.
+    /// How a sign-in elsewhere ended, for tunnel `host` to finish.
     Signed {
         host: String,
         path: String,
-        outcome: Result<String, String>,
+        outcome: Outcome,
         expires: i64,
     },
+}
+
+/// Where a sign-in through another service ended up.
+pub enum Outcome {
+    /// Signed in: the session token.
+    Session(String),
+    /// A code was emailed: its ticket, and where it went.
+    Code { ticket: String, sent_to: String },
+    /// Refused, and why.
+    Refused(String),
 }
 
 impl Hop {
@@ -121,6 +131,8 @@ pub struct Inner {
     /// When this process started: a session's last use is never taken as earlier.
     started: i64,
     pub hops: Mutex<HashMap<String, Hop>>,
+    /// Sign-ins waiting for an emailed code.
+    pub codes: Codes,
     failures: Mutex<HashMap<String, (u32, i64)>>,
     /// Requests counted per key and window, for rate limits.
     hits: Mutex<HashMap<String, (u32, i64)>>,
@@ -184,6 +196,7 @@ impl AppState {
             revoked: Mutex::new(revoked),
             started: now(),
             hops: Mutex::new(HashMap::new()),
+            codes: Codes::default(),
             failures: Mutex::new(HashMap::new()),
             hits: Mutex::new(HashMap::new()),
             blocked: Mutex::new(HashMap::new()),
@@ -328,7 +341,8 @@ impl AppState {
         lock(&self.failures).remove(key);
     }
 
-    /// Opens a session and returns its token, the cookie value.
+    /// Opens a session and returns its token, the cookie value. `mfa` marks one
+    /// opened with an emailed code as well.
     pub fn open_session(
         &self,
         store: &Sessions,
@@ -336,6 +350,7 @@ impl AppState {
         tag: &str,
         device: &str,
         ttl: i64,
+        mfa: bool,
     ) -> String {
         let now = now();
         let claims = Claims {
@@ -344,6 +359,7 @@ impl AppState {
             sub: subject.to_owned(),
             tag: tag.to_owned(),
             dev: device.to_owned(),
+            mfa,
             iat: now,
             exp: now + ttl,
         };
@@ -380,6 +396,7 @@ impl AppState {
             created: c.iat,
             seen,
             device: c.dev,
+            mfa: c.mfa,
             expires: c.exp,
         })
     }
@@ -452,5 +469,6 @@ pub struct SessionInfo {
     pub created: i64,
     pub seen: i64,
     pub device: String,
+    pub mfa: bool,
     pub expires: i64,
 }

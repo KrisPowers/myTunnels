@@ -11,7 +11,7 @@ export function AccessChips({ route }: { route: Route }) {
     route.require_lan && "Home network",
     route.require_device && "Approved device",
     route.require_password && "Password",
-    route.require_login && "Sign-in",
+    route.require_login && (route.require_code ? "Sign-in with code" : "Sign-in"),
   ].filter((p): p is string => Boolean(p));
   if (!parts.length) return <span className="chip">Open</span>;
   const joiner = route.policy_mode === "any" ? "or" : "and";
@@ -184,6 +184,9 @@ function AccessCard({ value, users, onChange, onPassword, signInElsewhere }: {
       </Row>}
       {value.require_login && (
         <>
+          <Row title="Email code" sub={<>After signing in, a code sent to their email. The mail server is set up under <a href="#/twofactor">Two-Factor Auth</a>.</>}>
+            <Switch label="Email code" on={value.require_code} onChange={(v) => onChange({ require_code: v })} />
+          </Row>
           <Row title="Sign in again after" sub="How long a sign-in lasts before it is asked for again.">
             <Dropdown label="Sign in again after" value={value.login_max} options={SIGN_IN_FOR} onChange={(v) => onChange({ login_max: v })} />
           </Row>
@@ -258,7 +261,7 @@ export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: 
   const [sub, setSub] = useState("");
   const [port, setPort] = useState("");
   const [access, setAccess] = useState<Access>({
-    require_lan: false, require_device: false, require_password: false, require_login: false,
+    require_lan: false, require_device: false, require_password: false, require_login: false, require_code: false,
     login_max: 7 * 86_400, login_idle: 0, policy_mode: "all",
   });
   const [where, setWhere] = useState<Target>({ target_scheme: "http", target_host: null, preserve_host: false });
@@ -638,6 +641,7 @@ function line(e: TunnelEvent): [string, string] {
     locked: ["bad", "Locked out after too many tries"],
     blocked: ["bad", "Held for review"],
     unlinked: ["bad", "Refused, not a linked device"],
+    "wrong-code": ["bad", "Wrong email code"],
   };
   return said[e.outcome] ?? ["", e.outcome];
 }
