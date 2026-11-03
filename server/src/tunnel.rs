@@ -20,6 +20,8 @@ const LOG_LINES: usize = 200;
 #[derive(Default)]
 struct TunnelState {
     running: bool,
+    /// Where the running cloudflared serves its metrics.
+    metrics: Option<String>,
     restarts: u32,
     last_error: Option<String>,
     logs: VecDeque<String>,
@@ -84,9 +86,12 @@ async fn supervise(state: AppState) {
             continue;
         };
 
+        // A free port each start, so another cloudflared on this machine
+        // never makes this one fail to start.
+        let metrics = free_local_addr().unwrap_or_else(|| "127.0.0.1:20241".to_owned());
         let spawned = Command::new(&state.config.cloudflared_bin)
             .args(["tunnel", "--no-autoupdate", "--metrics"])
-            .arg(&state.config.metrics_addr)
+            .arg(&metrics)
             .arg("run")
             .env("TUNNEL_TOKEN", &token)
             .stdin(Stdio::null())
@@ -119,6 +124,7 @@ async fn supervise(state: AppState) {
         tracing::info!("cloudflared started");
         state.tunnel.update(|s| {
             s.running = true;
+            s.metrics = Some(metrics);
             s.last_error = None;
         });
 
@@ -153,6 +159,7 @@ async fn supervise(state: AppState) {
 async fn collect_logs(state: AppState, stream: impl AsyncRead + Unpin) {
     let mut lines = BufReader::new(stream).lines();
     while let Ok(Some(line)) = lines.next_line().await {
+        tracing::info!(target: "cloudflared", "{line}");
         state.tunnel.update(|s| {
             s.logs.push_back(line);
             while s.logs.len() > LOG_LINES {
@@ -164,7 +171,8 @@ async fn collect_logs(state: AppState, stream: impl AsyncRead + Unpin) {
 
 /// Number of live connections cloudflared holds to the Cloudflare edge.
 pub async fn ready_connections(state: &AppState) -> Option<u64> {
-    let url = format!("http://{}/ready", state.config.metrics_addr);
+    let addr = lock(&state.tunnel.state).metrics.clone()?;
+    let url = format!("http://{addr}/ready");
     let ready: Value = state
         .http
         .get(url)
@@ -176,6 +184,11 @@ pub async fn ready_connections(state: &AppState) -> Option<u64> {
         .await
         .ok()?;
     ready.get("readyConnections")?.as_u64()
+}
+
+fn free_local_addr() -> Option<String> {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").ok()?;
+    Some(listener.local_addr().ok()?.to_string())
 }
 
 /// Pushes the tunnel's ingress rules to Cloudflare: every published hostname goes to the gateway.

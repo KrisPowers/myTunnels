@@ -79,7 +79,7 @@ export interface Status {
 
 export interface Auth {
   authenticated: boolean;
-  setup: { password: boolean; token: boolean; cloudflare: boolean; network: boolean; done: boolean };
+  setup: { password: boolean; token: boolean; cloudflare: boolean; done: boolean };
 }
 
 async function call<T>(path: string, method = "GET", body?: unknown): Promise<T> {
@@ -100,7 +100,6 @@ export const api = {
   createPassword: (password: string) => call("/auth/setup", "POST", { password }),
   login: (password: string) => call("/auth/login", "POST", { password }),
   logout: () => call("/auth/logout", "POST"),
-  finishSetup: () => call("/setup/finish", "POST"),
 
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),

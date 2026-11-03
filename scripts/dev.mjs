@@ -9,7 +9,7 @@
 // Data lives in server/data, apart from the container's volume.
 
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, watch, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, watch, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,6 +63,15 @@ const env = {
 
 // ---- the server: build, swap in, reload pages ----
 
+// rmSync with force ignores files that are gone, but not ones still locked.
+const tidy = (fn) => (...args) => {
+  try {
+    fn(...args);
+  } catch {
+    // Still in use; the next sweep gets it.
+  }
+};
+
 let running = null;
 let slot = 0;
 let building = false;
@@ -76,13 +85,29 @@ function stop(child) {
 }
 
 function start() {
-  // Runs a copy, so the next build can replace the binary while this one serves.
-  slot = 1 - slot;
-  const copy = join(work, `server-${slot}${exe}`);
-  copyFileSync(join(target, "debug", "server" + exe), copy);
+  // Runs a copy under a new name each time, so the next build can replace the
+  // binary while this one serves, and no copy ever lands on a file Windows
+  // still holds open.
+  const copy = join(work, `server-${Date.now()}-${++slot}${exe}`);
+  try {
+    copyFileSync(join(target, "debug", "server" + exe), copy);
+  } catch (err) {
+    log(`could not stage the new server (${err.code ?? err.message}), keeping the last one`);
+    return false;
+  }
   const previous = running;
   stop(previous);
   running = spawn(copy, [], { cwd: serverDir, env, stdio: "inherit", detached: !windows });
+  if (previous) setTimeout(() => sweep(copy), 2000);
+  return true;
+}
+
+// sweep removes copies of earlier builds once they are no longer running.
+function sweep(keep) {
+  for (const name of readdirSync(work)) {
+    const file = join(work, name);
+    if (name.startsWith("server-") && file !== keep) tidy(rmSync)(file, { force: true });
+  }
 }
 
 function build(reason) {
@@ -97,9 +122,10 @@ function build(reason) {
   cargo.on("exit", (code) => {
     building = false;
     if (code === 0) {
-      start();
-      setTimeout(() => writeFileSync(reloadFile, String(Date.now())), 300);
-      log(`server live in ${((Date.now() - began) / 1000).toFixed(1)} s`);
+      if (start()) {
+        setTimeout(() => writeFileSync(reloadFile, String(Date.now())), 300);
+        log(`server live in ${((Date.now() - began) / 1000).toFixed(1)} s`);
+      }
     } else {
       log("build failed, the last good server keeps running");
     }

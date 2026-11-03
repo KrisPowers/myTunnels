@@ -23,7 +23,8 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    let config = Config::from_env();
+    let mut config = Config::from_env();
+    config.default_upstream_host = netinfo::detect_upstream(&config.default_upstream_host).await;
     std::fs::create_dir_all(&config.data_dir)
         .with_context(|| format!("cannot create {}", config.data_dir.display()))?;
     let db = Db::open(&config.data_dir.join("gateway.db"))?;

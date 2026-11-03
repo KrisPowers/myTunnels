@@ -58,6 +58,16 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
             "This app is switched off right now.",
         );
     }
+    // A tunnel aimed at the gateway itself would forward to itself forever.
+    if req.headers().contains_key(proxy::HOP_HEADER) {
+        return page(
+            StatusCode::LOOP_DETECTED,
+            "message",
+            &host,
+            "Points back at myTunnels",
+            "This tunnel's port is myTunnels' own. Point it at the app's port instead.",
+        );
+    }
     let ip = client_ip(req.headers());
 
     if route.require_device && req.method() == Method::POST && req.uri().path() == ENROLL_PATH {

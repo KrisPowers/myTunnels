@@ -98,7 +98,6 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
         </div>
         <Search routes={routes} devices={devices} />
         <div className="header-actions">
-          <Health status={status} />
           <a className={"icon-btn" + (view === "settings" ? " on" : "")} href="#/settings" aria-label="Settings" title="Settings"><Icon name="settings" /></a>
           <button type="button" className="icon-btn" aria-label="Sign out" title="Sign out" onClick={onSignOut}><Icon name="logout" /></button>
         </div>
@@ -116,7 +115,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
             </>
           ) : (
             <>
-              <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels"} count={routes?.length} />
+              <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels"} />
               <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={pending || undefined} alert={pending > 0} />
             </>
           )}
@@ -141,18 +140,6 @@ function NavItem({ to, icon, label, on, quiet, count, alert }: { to: string; ico
       <Icon name={icon} />
       <span className="nav-label">{label}</span>
       {count !== undefined && <span className={"nav-count" + (alert ? " alert" : "")}>{count}</span>}
-    </a>
-  );
-}
-
-// Health is the connector's state, which opens its page in Settings.
-function Health({ status }: { status: Status | null }) {
-  const links = status?.connections ?? 0;
-  const [tone, label] = !status ? ["", "Checking"] : links > 0 ? ["ok", "Online"] : status.running ? ["warn", "Connecting"] : ["bad", "Offline"];
-  return (
-    <a className="health" href="#/settings/connector" title={status?.last_error ?? (links ? `${links} links to Cloudflare` : undefined)}>
-      <span className={"dot " + tone} />
-      <span>{label}</span>
     </a>
   );
 }

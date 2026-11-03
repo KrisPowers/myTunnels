@@ -30,7 +30,6 @@ pub fn router(state: AppState) -> Router {
         .route("/settings", get(settings))
         .route("/settings/cloudflare", put(save_cloudflare))
         .route("/settings/network", put(save_network))
-        .route("/setup/finish", post(finish_setup))
         .route("/cloudflare/accounts", post(cloudflare_accounts))
         .route("/zones", get(zones))
         .route("/status", get(status))
@@ -72,6 +71,7 @@ async fn require_admin(State(state): State<AppState>, req: Request, next: Next) 
 }
 
 /// What first-run setup has saved so far, so the panel can resume where it was left.
+/// Setup is done once there is a password and Cloudflare is connected.
 async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let db = &state.db;
     let password = db.setting("admin_password")?.is_some();
@@ -82,16 +82,9 @@ async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
             "password": password,
             "token": db.setting("cf_token")?.is_some(),
             "cloudflare": state.cloudflare().is_ok(),
-            "network": db.setting("network_saved")?.is_some(),
-            "done": db.setting("setup_done")?.is_some(),
+            "done": password && state.cloudflare().is_ok(),
         },
     })))
-}
-
-async fn finish_setup(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    state.cloudflare()?;
-    state.db.set_setting("setup_done", "1")?;
-    Ok(Json(json!({ "ok": true })))
 }
 
 #[derive(Deserialize)]
@@ -308,7 +301,6 @@ async fn save_network(
     state
         .db
         .set_setting("trusted_networks", body.trusted_networks.trim())?;
-    state.db.set_setting("network_saved", "1")?;
     state.reload()?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -361,6 +353,29 @@ fn check_target(host: Option<String>, scheme: &str, mode: &str) -> ApiResult<Opt
     }
 }
 
+/// Refuses a tunnel aimed at one of myTunnels' own ports on this machine.
+fn check_not_self(state: &AppState, host: Option<&str>, port: u16) -> ApiResult<()> {
+    let snap = state.snapshot();
+    let host = host.unwrap_or(&snap.upstream_host);
+    let local = host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified());
+    let own = [&state.config.gate_addr, &state.config.admin_addr]
+        .iter()
+        .any(|addr| {
+            addr.rsplit_once(':')
+                .and_then(|(_, p)| p.parse::<u16>().ok())
+                == Some(port)
+        });
+    if local && own {
+        return Err(ApiError::bad(format!(
+            "Port {port} is myTunnels' own. Use the port your app listens on."
+        )));
+    }
+    Ok(())
+}
+
 async fn list_routes(State(state): State<AppState>) -> ApiResult<Json<Vec<Route>>> {
     Ok(Json(state.db.routes()?))
 }
@@ -404,6 +419,7 @@ async fn create_route(
         return Err(ApiError::bad("Port must be between 1 and 65535"));
     }
     let target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
+    check_not_self(&state, target_host.as_deref(), body.port)?;
 
     let cf = Cloudflare::new(&state.http, &cf_settings.token);
     let zone = cf
@@ -486,6 +502,7 @@ async fn update_route(
         return Err(ApiError::bad("Port must be between 1 and 65535"));
     }
     route.target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
+    check_not_self(&state, route.target_host.as_deref(), body.port)?;
     route.target_port = body.port;
     route.target_scheme = body.target_scheme;
     route.require_lan = body.require_lan;

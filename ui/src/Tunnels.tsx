@@ -18,8 +18,11 @@ export function Access({ route }: { route: Route }) {
   );
 }
 
+// target is where a tunnel goes: just the port on the apps host, or host and
+// port when it names its own.
 function target(route: Route) {
-  return `${route.target_scheme === "https" ? "https://" : ""}${route.target_host ?? "host"}:${route.target_port}`;
+  const scheme = route.target_scheme === "https" ? "https://" : "";
+  return route.target_host ? `${scheme}${route.target_host}:${route.target_port}` : `${scheme}port ${route.target_port}`;
 }
 
 // Tunnels is the home page: publish a port, and every tunnel published.
