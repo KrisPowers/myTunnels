@@ -228,8 +228,34 @@ impl Db {
     pub fn open(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
         conn.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()))?;
-        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch(SCHEMA)?;
+        let have: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('routes')")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (column, ddl) in ROUTE_MIGRATIONS {
+            if !have.iter().any(|c| c == column) {
+                conn.execute_batch(&format!("ALTER TABLE routes ADD COLUMN {ddl};"))?;
+            }
+        }
+        // Device IDs became 256 characters; earlier short ones are replaced, with
+        // their grants, before foreign keys are enforced.
+        let short: Vec<String> = conn
+            .prepare("SELECT id FROM devices WHERE length(id) != 256")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        for old in short {
+            let new = random_alnum(256);
+            conn.execute(
+                "UPDATE device_routes SET device_id = ?2 WHERE device_id = ?1",
+                params![old, new],
+            )?;
+            conn.execute(
+                "UPDATE devices SET id = ?2 WHERE id = ?1",
+                params![old, new],
+            )?;
+        }
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(Self(Mutex::new(conn)))
     }
 
