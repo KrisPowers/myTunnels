@@ -127,11 +127,11 @@ const CONTENT: Record<string, ReactNode> = {
       <Doc title="Emailed codes">
         <p>With Two-Factor Auth, signing in takes a code sent by email as well as the password. The code is six digits, works once, and lasts ten minutes; five wrong tries and it is gone, and signing in starts again.</p>
       </Doc>
-      <Doc title="The mail server">
-        <p>Codes go out through an SMTP server of your choice, such as your email provider's or a relay like Brevo or Postmark. Set it up on the <b>Two-Factor Auth</b> page; saving signs in to the server to check it, and <b>Send a test</b> emails the admin.</p>
+      <Doc title="SMTP">
+        <p>Codes are sent with SMTP credentials you enter on the <b>Two-Factor Auth</b> page: host, port, security, username, password and from address, from Gmail (with an app password), Outlook or any other provider. Saving signs in with them to check them, and <b>Send a test</b> emails the admin.</p>
       </Doc>
       <Doc title="Where codes are asked">
-        <p><b>Dashboard sign-in</b> sends every sign-in to this dashboard a code at the admin email. Turning it on sends a test email first, so a server that does not deliver cannot lock you out. Each tunnel with Sign-in on can ask for a code too, sent to the account's email, from its Access Control or from the Two-Factor Auth page. This covers sign-ins through a third-party provider as well.</p>
+        <p><b>Dashboard sign-in</b> sends every sign-in to this dashboard a code at the admin email. Turning it on sends a test email first, so credentials that do not deliver cannot lock you out. Each tunnel with Sign-in on can ask for a code too, sent to the account's email, from its Access Control or from the Two-Factor Auth page. This covers sign-ins through a third-party provider as well.</p>
       </Doc>
     </>
   ),

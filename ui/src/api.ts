@@ -154,7 +154,7 @@ export interface OAuthState { providers: OAuthProvider[] }
 // Where a provider sends people back: the tunnel they signed in at.
 export const redirectUrl = (hostname: string) => `https://${hostname}/__gate/oauth-callback`;
 
-// The mail server codes go out through. Its password stays on the server.
+// The SMTP credentials codes are sent with. The password stays on the server.
 export interface Smtp {
   host: string;
   port: number;

@@ -89,8 +89,9 @@ every tunnel on it.
 
 ## Two-factor sign-in
 
-On **Two-Factor Auth**, give myTunnels an SMTP server (host, port, STARTTLS or TLS, sign-in
-and sender). Saving checks it, and **Send a test** emails the admin. Then a six digit code,
+On **Two-Factor Auth**, enter SMTP credentials from any provider, Gmail (with an app
+password), Outlook or your own: host, port, STARTTLS or TLS, username, password and from
+address. Saving checks them, and **Send a test** emails the admin. Then a six digit code,
 good once for ten minutes, can be asked for after the password:
 
 - **Dashboard sign-in.** Every sign-in to the panel, sent to the admin email. Turning it on

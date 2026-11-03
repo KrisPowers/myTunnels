@@ -1,4 +1,5 @@
-//! Email, sent through the SMTP server set up on the Two-Factor Auth page.
+//! Email, sent with the SMTP credentials entered on the Two-Factor Auth page:
+//! Gmail, Outlook, or any other provider.
 
 use std::time::Duration;
 
@@ -22,7 +23,7 @@ pub struct Smtp {
     pub username: String,
     #[serde(default)]
     pub password: String,
-    /// The sender, such as `myTunnels <codes@example.com>`.
+    /// The from address, such as `you@gmail.com`.
     pub from: String,
 }
 
@@ -67,7 +68,7 @@ pub async fn check(smtp: &Smtp) -> Result<()> {
         .with_context(|| format!("cannot reach {}:{}", smtp.host, smtp.port))?;
     if !ok {
         bail!(
-            "{}:{} did not answer as a mail server",
+            "{}:{} did not answer as an SMTP server",
             smtp.host,
             smtp.port
         );
@@ -77,10 +78,7 @@ pub async fn check(smtp: &Smtp) -> Result<()> {
 
 /// Sends a plain text email.
 pub async fn send(smtp: &Smtp, to: &str, subject: &str, body: &str) -> Result<()> {
-    let from: Mailbox = smtp
-        .from
-        .parse()
-        .context("the sender address is not valid")?;
+    let from: Mailbox = smtp.from.parse().context("the from address is not valid")?;
     let to: Mailbox = to.parse().context("the recipient address is not valid")?;
     let message = Message::builder()
         .from(from)
