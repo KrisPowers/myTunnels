@@ -869,6 +869,15 @@ struct UserEdit {
     password: Option<String>,
     enabled: Option<bool>,
     route_ids: Option<Vec<String>>,
+    device_ids: Option<Vec<String>>,
+}
+
+/// Device IDs that exist, in the order given.
+fn known_devices(state: &AppState, ids: Vec<String>) -> Vec<String> {
+    let snap = state.snapshot();
+    ids.into_iter()
+        .filter(|id| snap.devices.contains_key(id))
+        .collect()
 }
 
 async fn update_user(
