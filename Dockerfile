@@ -29,7 +29,7 @@ RUN apt-get update \
     && mkdir -p /data \
     && chown app /data
 COPY --from=cloudflared /usr/local/bin/cloudflared /usr/local/bin/cloudflared
-COPY --from=server /server/target/release/server /usr/local/bin/server
+COPY --from=server /usr/local/bin/server /usr/local/bin/server
 COPY --from=ui /ui/dist /app/ui
 ENV DATA_DIR=/data \
     UI_DIR=/app/ui \
