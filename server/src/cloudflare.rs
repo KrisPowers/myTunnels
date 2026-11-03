@@ -44,6 +44,12 @@ pub struct Zone {
     pub status: String,
 }
 
+/// A zone's owner, which Cloudflare includes with every zone.
+#[derive(Deserialize)]
+struct ZoneOwner {
+    account: Account,
+}
+
 #[derive(Deserialize)]
 pub struct TunnelInfo {
     pub id: String,
