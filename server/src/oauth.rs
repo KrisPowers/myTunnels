@@ -1,7 +1,8 @@
 //! Signing in at tunnels through another service: GitHub, Google, GitLab, or any
 //! OpenID Connect provider (Authentik, Authelia, Keycloak, Pocket ID and others).
-//! The provider vouches for an email, and the account in Users with that email
-//! signs in, held to the same rules as signing in with its password.
+//! Credentials are saved once; each tunnel picks the providers it offers and is
+//! its own redirect. The provider vouches for an email, and the account in Users
+//! with that email signs in, held to the same rules as signing in with its password.
 
 use anyhow::{anyhow, bail, Context, Result};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
@@ -12,12 +13,11 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::db::Db;
-use crate::state::Snapshot;
 
 /// Every provider that can be set up, in the order they are shown.
 pub const PROVIDERS: [&str; 4] = ["github", "google", "gitlab", "oidc"];
 
-/// Where the provider sends the browser back, on the callback tunnel.
+/// Where the provider sends the browser back, on the tunnel it left from.
 pub const CALLBACK_PATH: &str = "/__gate/oauth-callback";
 
 /// One provider as saved. The secret never leaves the server.
@@ -33,8 +33,6 @@ pub struct Provider {
     pub issuer: String,
     pub client_id: String,
     pub client_secret: String,
-    #[serde(default)]
-    pub enabled: bool,
 }
 
 impl Provider {
@@ -91,16 +89,6 @@ pub fn save(db: &Db, p: &Provider) -> Result<()> {
 
 pub fn remove(db: &Db, id: &str) -> Result<()> {
     db.delete_setting(&key(id))
-}
-
-/// The tunnel address every provider returns to: the one pinned when the first
-/// provider was saved, or the oldest tunnel's while that one is gone.
-pub fn callback_host(db: &Db, snap: &Snapshot) -> Option<String> {
-    db.setting("oauth_host")
-        .ok()
-        .flatten()
-        .filter(|h| snap.routes.contains_key(h))
-        .or_else(|| snap.hub.clone())
 }
 
 pub fn redirect_uri(host: &str) -> String {
