@@ -193,11 +193,12 @@ const USER_PAGES: [string, string, IconName][] = [
   ["activity", "Activity", "history"],
 ];
 
-export function UserPage({ user, page, routes, onChanged }: { user: User; page: string; routes: Route[]; onChanged: () => Promise<void> }) {
+export function UserPage({ user, page, routes, devices, onChanged }: { user: User; page: string; routes: Route[]; devices: Device[]; onChanged: () => Promise<void> }) {
   const notify = useNotify();
   const current = USER_PAGES.some(([k]) => k === page) ? page : "profile";
   const [tone, label] = state(user);
   const theirs = routes.filter((r) => user.route_ids.includes(r.id));
+  const linked = devices.filter((d) => user.device_ids.includes(d.id));
 
   const edit = async (patch: Parameters<typeof api.editUser>[1]) => {
     await api.editUser(user.id, patch);
