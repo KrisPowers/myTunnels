@@ -106,8 +106,10 @@ async fn setup(
     if state.db.setting("admin_password")?.is_some() {
         return Err(ApiError::conflict("A password is already set"));
     }
-    if body.password.chars().count() < 10 {
-        return Err(ApiError::bad("Use at least 10 characters"));
+    if !strong_password(&body.password) {
+        return Err(ApiError::bad(
+            "Use 10 or more characters with upper and lower case, a number and a symbol",
+        ));
     }
     let salt = SaltString::generate(&mut OsRng);
     let hash = Argon2::default()
@@ -116,6 +118,16 @@ async fn setup(
         .to_string();
     state.db.set_setting("admin_password", &hash)?;
     Ok(start_session(&state))
+}
+
+/// The panel's own rule, matched by the setup page: 10 or more characters with
+/// upper and lower case, a number and a symbol.
+fn strong_password(p: &str) -> bool {
+    p.chars().count() >= 10
+        && p.chars().any(|c| c.is_uppercase())
+        && p.chars().any(|c| c.is_lowercase())
+        && p.chars().any(|c| c.is_ascii_digit())
+        && p.chars().any(|c| !c.is_ascii_alphanumeric())
 }
 
 async fn login(
@@ -570,7 +582,17 @@ async fn delete_device(
 
 #[cfg(test)]
 mod tests {
-    use super::valid_label;
+    use super::{strong_password, valid_label};
+
+    #[test]
+    fn passwords_need_length_case_number_and_symbol() {
+        assert!(strong_password("Homelab-2026"));
+        assert!(!strong_password("Homelab2026"));
+        assert!(!strong_password("homelab-2026"));
+        assert!(!strong_password("HOMELAB-2026"));
+        assert!(!strong_password("Homelab-ab"));
+        assert!(!strong_password("Hl-2026"));
+    }
 
     #[test]
     fn subdomain_labels() {
