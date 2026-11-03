@@ -215,3 +215,53 @@ export function Avatar({ name, big }: { name: string; big?: boolean }) {
   for (const c of name) hue = (hue * 31 + c.charCodeAt(0)) % 360;
   return <span className={"avatar" + (big ? " big" : "")} style={{ backgroundColor: `hsl(${hue} 45% 42%)` }} aria-hidden>{initials}</span>;
 }
+
+export interface LogEntry {
+  at: number;
+  // "ok", "bad", or "" for neither.
+  tone: string;
+  event: string;
+  who?: ReactNode;
+  ip?: string | null;
+  country?: string | null;
+}
+
+// When something happened: the time today, the date and time before that.
+function when(at: number) {
+  const d = new Date(at * 1000);
+  if (d.toDateString() === new Date().toDateString()) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+  return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+// LogTable is a log as a table: when, what happened, who, and where from,
+// newest first.
+export function LogTable({ entries, who = "Who" }: { entries: LogEntry[]; who?: string }) {
+  return (
+    <div className="table-wrap">
+      <table className="table log-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th className="grow">Event</th>
+            <th>{who}</th>
+            <th>Address</th>
+            <th>Country</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((e, i) => (
+            <tr key={i}>
+              <td className="log-time">{when(e.at)}</td>
+              <td><span className="log-event"><span className={"dot " + e.tone} />{e.event}</span></td>
+              <td>{e.who ?? <span className="muted">Unknown</span>}</td>
+              <td className="mono muted">{e.ip ?? ""}</td>
+              <td className="muted">{e.country ?? ""}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

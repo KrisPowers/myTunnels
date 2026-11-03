@@ -2,10 +2,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEve
 import { createPortal } from "react-dom";
 import { ago, api, editOf, LEVELS, list, message, shortId, strength, type Access, type Device, type PolicyMode, type Route, type RouteEdit, type Status, type TunnelEvent, type User, type Zone } from "./api";
 import { useDismiss } from "./dismiss";
-import { Dropdown, type Option } from "./Dropdown";
+import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Avatar, Card, Row, SubNav, Switch, TextField, useNotify } from "./ui";
+import { ArmedButton, Avatar, Card, LogTable, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
 
 // Chips saying who may open a tunnel.
 export function AccessChips({ route }: { route: Route }) {
@@ -445,7 +445,7 @@ export function TunnelPage({ route, page, devices, users, onChanged }: { route: 
 
         {current === "access" && <People route={route} users={users} onGrant={grantUser} />}
 
-        {current === "activity" && <TunnelActivity route={route} users={users} />}
+        {current === "activity" && <TunnelLogs route={route} users={users} />}
 
         {current === "devices" && (!edit.require_device ? (
           <div className="card welcome">
@@ -668,78 +668,71 @@ function People({ route, users, onGrant }: { route: Route; users: User[]; onGran
   );
 }
 
-const KINDS: [string, string][] = [
-  ["", "All"],
-  ["sign-in", "Sign-ins"],
-  ["password", "Passwords"],
-  ["visit", "Turned away"],
-  ["device", "Devices"],
+const KINDS: Option<TunnelEvent["kind"]>[] = [
+  { value: "sign-in", label: "Sign-ins" },
+  { value: "password", label: "Passwords" },
+  { value: "visit", label: "Turned away" },
+  { value: "device", label: "Devices" },
 ];
 
-// What each event's outcome is called, and its colour.
-function outcome(e: TunnelEvent): [string, string] {
+// line says what an event was, and whether it went well, badly or neither.
+function line(e: TunnelEvent): [string, string] {
   if (e.kind === "visit") {
-    const asked: Record<string, string> = { network: "Not on the home network", login: "Asked to sign in", password: "Asked for the password", device: "Asked for an approved device" };
+    const asked: Record<string, string> = {
+      network: "Turned away, not on the home network",
+      login: "Asked to sign in",
+      password: "Asked for the tunnel password",
+      device: "Asked for an approved device",
+    };
     return [e.outcome === "network" ? "bad" : "", asked[e.outcome] ?? e.outcome];
   }
-  if (e.kind === "device") return ["plain", "Asked for approval"];
-  const named: Record<string, [string, string]> = {
-    ok: ["ok", e.kind === "password" ? "Right password" : "Signed in"],
-    failed: ["warn", "Wrong password"],
-    locked: ["bad", "Locked out"],
+  if (e.kind === "device") return ["", "Asked for device approval"];
+  if (e.kind === "password") {
+    const said: Record<string, [string, string]> = {
+      ok: ["ok", "Tunnel password entered"],
+      failed: ["bad", "Wrong tunnel password"],
+      locked: ["bad", "Locked out after too many tries"],
+    };
+    return said[e.outcome] ?? ["", e.outcome];
+  }
+  const said: Record<string, [string, string]> = {
+    ok: ["ok", "Signed in"],
+    failed: ["bad", "Wrong password"],
+    locked: ["bad", "Locked out after too many tries"],
     blocked: ["bad", "Held for review"],
   };
-  return named[e.outcome] ?? ["", e.outcome];
+  return said[e.outcome] ?? ["", e.outcome];
 }
 
-// TunnelActivity is the tunnel's log: sign-ins and passwords tried, visitors turned
-// away, devices asking in. Newest first, refreshed as it runs.
-function TunnelActivity({ route, users }: { route: Route; users: User[] }) {
+// TunnelLogs is what happened at the tunnel's door, newest first and grouped by
+// day: one line each, refreshed as it runs.
+function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
   const [events, setEvents] = useState<TunnelEvent[] | null>(null);
-  const [kind, setKind] = useState("");
+  const [kinds, setKinds] = useState<TunnelEvent["kind"][]>([]);
   useEffect(() => {
     const load = () => api.routeActivity(route.id).then(setEvents).catch(() => setEvents((e) => e ?? []));
     load();
     const t = setInterval(load, 10_000);
     return () => clearInterval(t);
   }, [route.id]);
-  const shown = (events ?? []).filter((e) => !kind || e.kind === kind);
-  const count = (k: string) => (events ?? []).filter((e) => !k || e.kind === k).length;
+  const shown = (events ?? []).filter((e) => !kinds.length || kinds.includes(e.kind));
+  const entries: LogEntry[] = shown.map((e) => {
+    const user = e.user_id ? users.find((u) => u.id === e.user_id) : undefined;
+    const [tone, event] = line(e);
+    const who = user ? <a href={`#/users/${user.id}`}>{user.name || user.username}</a>
+      : e.device_id ? <a className="mono" href={`#/devices/${e.device_id}`}>{shortId(e.device_id)}</a> : undefined;
+    return { at: e.at, tone, event, who, ip: e.ip, country: e.country };
+  });
 
   return (
     <>
-      <div className="filters" role="tablist">
-        {KINDS.map(([key, label]) => (
-          <button key={key} type="button" role="tab" className="filter" aria-selected={kind === key} onClick={() => setKind(key)}>
-            {label}<span>{count(key)}</span>
-          </button>
-        ))}
+      <div className="log-bar">
+        <MultiDropdown label="Show" values={kinds} options={KINDS} allLabel="All events" onChange={setKinds} />
+        <button type="button" className="btn text" onClick={() => setKinds([])}>
+          <Icon name="refresh" size={18} />Reset
+        </button>
       </div>
-      {events && shown.length === 0 ? (
-        <p className="muted">Nothing yet.</p>
-      ) : (
-        <ul className="results">
-          {shown.map((e, i) => {
-            const [tone, label] = outcome(e);
-            const user = e.user_id ? users.find((u) => u.id === e.user_id) : undefined;
-            return (
-              <li key={i}>
-                <div className="result event-row">
-                  <span className={"chip " + tone}>{label}</span>
-                  <span className="event-who">
-                    {user ? <a href={`#/users/${user.id}`}>{user.name || user.username}</a>
-                      : e.device_id ? <a className="mono" href={`#/devices/${e.device_id}`}>{shortId(e.device_id)}</a>
-                      : <span className="muted">Unknown visitor</span>}
-                  </span>
-                  <span className="mono muted">{e.ip ?? ""}</span>
-                  <span className="result-service">{e.country ?? ""}</span>
-                  <span className="result-meta">{ago(e.at)}</span>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {events && entries.length === 0 ? <p className="muted">Nothing yet.</p> : <LogTable entries={entries} />}
     </>
   );
 }

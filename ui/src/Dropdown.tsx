@@ -99,3 +99,64 @@ export function Dropdown<T extends string | number>({ label, value, options, onC
     </>
   );
 }
+
+// MultiDropdown picks any number of `options`: a field naming what is picked
+// that opens the list over the page, where each click adds or removes one and
+// the list stays open. Nothing picked means everything.
+export function MultiDropdown<T extends string>({ label, values, options, allLabel, onChange }: {
+  label: string;
+  values: T[];
+  options: Option<T>[];
+  allLabel: string;
+  onChange: (values: T[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState({ left: 0, top: 0, width: 0 });
+  const field = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLUListElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useDismiss(open, close, field, list);
+
+  useLayoutEffect(() => {
+    if (!open || !field.current) return;
+    const r = field.current.getBoundingClientRect();
+    setAt({ left: r.left, top: r.bottom + 4, width: Math.max(r.width, 220) });
+    addEventListener("scroll", close, true);
+    addEventListener("resize", close);
+    return () => {
+      removeEventListener("scroll", close, true);
+      removeEventListener("resize", close);
+    };
+  }, [open, close]);
+
+  const picked = options.filter((o) => values.includes(o.value));
+  const shown = picked.length === 0 || picked.length === options.length ? allLabel : picked.map((o) => o.label).join(", ");
+  const toggle = (v: T) => onChange(values.includes(v) ? values.filter((x) => x !== v) : [...values, v]);
+
+  return (
+    <>
+      <button ref={field} type="button" className={"dropdown" + (open ? " open" : "")} aria-haspopup="listbox" aria-expanded={open} aria-label={label}
+        onClick={() => setOpen((o) => !o)}>
+        <span className="dropdown-value">{shown}</span>
+        <svg className="dropdown-caret" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z" /></svg>
+      </button>
+      {open && createPortal(
+        <ul ref={list} className="dropdown-list multi" role="listbox" aria-multiselectable="true" aria-label={label}
+          style={{ left: at.left, top: at.top, minWidth: at.width }}>
+          {options.map((o) => (
+            <li key={o.value} role="option" aria-selected={values.includes(o.value)} className="dropdown-option"
+              onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(o.value)}>
+              <span className="check-box" aria-hidden>{values.includes(o.value) && <Icon name="check" size={16} />}</span>
+              {o.icon && <Icon name={o.icon} size={20} className="dropdown-icon" />}
+              <span className="dropdown-text">
+                <span>{o.label}</span>
+                {o.hint && <small>{o.hint}</small>}
+              </span>
+            </li>
+          ))}
+        </ul>,
+        document.body,
+      )}
+    </>
+  );
+}
