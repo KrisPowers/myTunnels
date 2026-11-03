@@ -333,12 +333,9 @@ function NetworkStep({ onBack, onDone }: { onBack: () => void; onDone: () => Pro
 
   return (
     <>
-      <StepHead icon="router" title="Your network" sub="The defaults suit most setups. Check them and carry on." />
-      <div className="field">
-        <label className="field-label" htmlFor="apps-host">Where your apps run</label>
-        <input id="apps-host" className="input big mono" value={host ?? ""} placeholder={fallback} onChange={(e) => setHost(e.target.value)} spellCheck={false} />
-        <span className="field-hint">The host each tunnel's port is on, as this container sees it. <code>host.docker.internal</code> is the computer running Docker.</span>
-      </div>
+      <StepHead title="Your network" sub="The defaults suit most setups. Check them and carry on." />
+      <TextField label="Where your apps run" mono value={host ?? ""} placeholder={fallback} onChange={setHost}
+        hint={<span>The host each tunnel's port is on, as this container sees it. <code>host.docker.internal</code> is the computer running Docker.</span>} />
       <div className="field">
         <span className="field-label">Home network</span>
         <div className="ip-line">
