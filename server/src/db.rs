@@ -6,7 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::util::lock;
+use crate::util::{lock, random_alnum};
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS settings (
