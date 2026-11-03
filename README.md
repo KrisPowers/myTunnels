@@ -74,15 +74,16 @@ review, which stops a copied key from working on another machine.
 
 ## Third-party sign-in
 
-Tunnels with sign-in on can also offer **Continue with GitHub**, Google, GitLab, or any
-OpenID Connect provider (Authentik, Authelia, Keycloak, Pocket ID and others). Set each up
+Tunnels with sign-in on can also offer **Continue with** GitHub, Google, GitLab, Discord,
+Slack or Codeberg; a self-hosted Authentik, Authelia, Keycloak, Pocket ID, Zitadel, Kanidm,
+Gitea or Forgejo; Auth0 or Okta; or any other OpenID Connect provider. Set each up
 once on the **Third-Party OAuth** page the way Cloudflare was set up: **Open GitHub** (or
 the provider's console), register an app, then paste its client ID and secret back. Each
 tunnel then switches on the providers it offers, under **Access Control**.
 
 The provider vouches for an email, and the account under **Users** with that email signs
 in, held to the same rules as a password sign-in: it must be on, allowed on the tunnel,
-and on a linked device. A provider sends the visitor back to the tunnel they signed in at,
+and on a linked device. Only an email the provider marks as verified counts. A provider sends the visitor back to the tunnel they signed in at,
 `https://<tunnel>/__gate/oauth-callback`, which the tunnel shows once the provider is on
 there. GitHub's one callback URL covers a whole domain, so `https://example.com` covers
 every tunnel on it.

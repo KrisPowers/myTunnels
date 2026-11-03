@@ -5,8 +5,10 @@ import { ProviderLogo } from "./ProviderLogo";
 import { ArmedButton, Dialog, TextField, useNotify } from "./ui";
 
 // Where each provider registers an app, and what to do there. Redirect URLs
-// belong to tunnels: each one that offers a provider shows its own.
-const GUIDE: Record<string, { link?: (domain: string) => string; how: string }> = {
+// belong to tunnels: each one that offers a provider shows its own. `issuer` is
+// what a self-hosted or tenant provider's issuer URL looks like.
+const OWN = "make a confidential OpenID Connect client with the openid and email scopes and each tunnel's redirect URL, then enter its issuer URL.";
+const GUIDE: Record<string, { link?: (domain: string) => string; how: string; issuer?: string }> = {
   github: {
     link: (domain) => "https://github.com/settings/applications/new?" + new URLSearchParams({
       "oauth_application[name]": "myTunnels",
@@ -23,9 +25,29 @@ const GUIDE: Record<string, { link?: (domain: string) => string; how: string }> 
     link: () => "https://gitlab.com/-/user_settings/applications",
     how: "Add a new application, keep it Confidential, tick the openid and email scopes, and list each tunnel's redirect URL.",
   },
-  oidc: {
-    how: "In Authentik, Authelia, Keycloak, Pocket ID or any OpenID Connect provider, make a confidential client with the openid and email scopes, and list each tunnel's redirect URL.",
+  discord: {
+    link: () => "https://discord.com/developers/applications",
+    how: "Make a new application, open OAuth2, copy the client ID, reset the secret, and add each tunnel's redirect URL under Redirects.",
   },
+  slack: {
+    link: () => "https://api.slack.com/apps",
+    how: "Create an app, add the openid and email user scopes and each tunnel's redirect URL under OAuth & Permissions, then copy the keys from Basic Information.",
+  },
+  codeberg: {
+    link: () => "https://codeberg.org/user/settings/applications",
+    how: "Add an OAuth2 application with each tunnel's redirect URL and keep it confidential.",
+  },
+  authentik: { how: "In Authentik, make an OAuth2/OpenID provider and application; " + OWN, issuer: "https://auth.example.com/application/o/mytunnels/" },
+  authelia: { how: "In Authelia's configuration, add an OpenID Connect client; " + OWN, issuer: "https://auth.example.com" },
+  keycloak: { how: "In your Keycloak realm, " + OWN, issuer: "https://keycloak.example.com/realms/home" },
+  pocketid: { how: "In Pocket ID, add an OIDC client; " + OWN, issuer: "https://id.example.com" },
+  zitadel: { how: "In a Zitadel project, add a web application; " + OWN, issuer: "https://example.zitadel.cloud" },
+  kanidm: { how: "In Kanidm, make an OAuth2 resource server; " + OWN, issuer: "https://idm.example.com/oauth2/openid/mytunnels" },
+  gitea: { how: "Under Settings, Applications in Gitea, add an OAuth2 application with each tunnel's redirect URL, then enter your Gitea address.", issuer: "https://gitea.example.com" },
+  forgejo: { how: "Under Settings, Applications in Forgejo, add an OAuth2 application with each tunnel's redirect URL, then enter your Forgejo address.", issuer: "https://git.example.com" },
+  auth0: { how: "In Auth0, create a Regular Web Application with each tunnel's redirect URL as an allowed callback, then enter your tenant's address.", issuer: "https://example.us.auth0.com/" },
+  okta: { how: "In Okta, create an OIDC Web Application with each tunnel's redirect URL as a sign-in redirect, then enter its authorization server.", issuer: "https://example.okta.com/oauth2/default" },
+  oidc: { how: "In any OpenID Connect provider, " + OWN, issuer: "https://auth.example.com" },
 };
 
 // OAuth holds the credentials for signing in through other services, one tile
@@ -76,14 +98,14 @@ export function OAuth() {
 // in a dialog over the page.
 function ProviderForm({ p, domain, onSaved, onCancel }: { p: OAuthProvider; domain: string; onSaved: (list: OAuthProvider[]) => void; onCancel: () => void }) {
   const oidc = p.id === "oidc";
-  const guide = GUIDE[p.id];
+  const guide = GUIDE[p.id] ?? GUIDE.oidc;
   const [name, setName] = useState(p.name);
   const [issuer, setIssuer] = useState(p.issuer);
   const [clientId, setClientId] = useState(p.client_id);
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
-  const ready = clientId.trim() !== "" && (secret.trim() !== "" || p.secret_set) && (!oidc || issuer.trim() !== "");
+  const ready = clientId.trim() !== "" && (secret.trim() !== "" || p.secret_set) && (!p.needs_issuer || issuer.trim() !== "");
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -93,7 +115,8 @@ function ProviderForm({ p, domain, onSaved, onCancel }: { p: OAuthProvider; doma
       const saved = await api.saveOAuth(p.id, {
         client_id: clientId.trim(),
         client_secret: secret.trim() || undefined,
-        ...(oidc ? { name: name.trim(), issuer: issuer.trim() } : {}),
+        ...(oidc ? { name: name.trim() } : {}),
+        ...(p.needs_issuer ? { issuer: issuer.trim() } : {}),
       });
       notify(`${oidc && name.trim() ? name.trim() : p.label} saved`);
       onSaved(saved.providers);
@@ -132,7 +155,7 @@ function ProviderForm({ p, domain, onSaved, onCancel }: { p: OAuthProvider; doma
             <div className="how-body">
               <b>Paste its keys here</b>
               {oidc && <TextField label="Name on the button" placeholder="Authentik" autoComplete="off" value={name} onChange={setName} />}
-              {oidc && <TextField label="Issuer URL" mono placeholder="https://auth.example.com/application/o/mytunnels/" autoComplete="off" value={issuer} onChange={setIssuer} />}
+              {p.needs_issuer && <TextField label="Issuer URL" mono placeholder={guide.issuer} autoComplete="off" value={issuer} onChange={setIssuer} />}
               <TextField label="Client ID" mono autoComplete="off" data-1p-ignore data-lpignore="true" value={clientId} onChange={setClientId} />
               <TextField label="Client secret" type="password" mono autoComplete="off" data-1p-ignore data-lpignore="true"
                 placeholder={p.secret_set ? "Saved. Paste a new one to replace it." : undefined} value={secret} onChange={setSecret} />

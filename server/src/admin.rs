@@ -369,7 +369,8 @@ async fn edit_account(
 /// Every provider, set up or not. Tunnels pick from the ones set up.
 async fn list_oauth(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let mut providers = Vec::new();
-    for id in oauth::PROVIDERS {
+    for spec in &oauth::SPECS {
+        let id = spec.id;
         let saved = oauth::load(&state.db, id)?;
         let p = saved.clone().unwrap_or_else(|| Provider {
             id: id.to_owned(),
@@ -382,6 +383,7 @@ async fn list_oauth(State(state): State<AppState>) -> ApiResult<Json<Value>> {
             "issuer": p.issuer,
             "client_id": p.client_id,
             "secret_set": !p.client_secret.is_empty(),
+            "needs_issuer": spec.needs_issuer(),
             "configured": saved.is_some(),
         }));
     }
@@ -402,9 +404,9 @@ async fn save_oauth(
     Path(id): Path<String>,
     Json(body): Json<ProviderBody>,
 ) -> ApiResult<Json<Value>> {
-    if !oauth::PROVIDERS.contains(&id.as_str()) {
+    let Some(spec) = oauth::spec(&id) else {
         return Err(ApiError::not_found());
-    }
+    };
     let mut p = oauth::load(&state.db, &id)?.unwrap_or_else(|| Provider {
         id: id.clone(),
         ..Provider::default()
@@ -429,7 +431,8 @@ async fn save_oauth(
     if p.client_id.is_empty() || p.client_secret.is_empty() {
         return Err(ApiError::bad("Enter the client ID and the client secret"));
     }
-    if id == "oidc" && !(p.issuer.starts_with("https://") || p.issuer.starts_with("http://")) {
+    if spec.needs_issuer() && !(p.issuer.starts_with("https://") || p.issuer.starts_with("http://"))
+    {
         return Err(ApiError::bad(
             "Enter the issuer URL, starting with https://",
         ));
@@ -825,7 +828,7 @@ struct NewRoute {
 fn known_providers(ids: Vec<String>) -> Vec<String> {
     let mut known: Vec<String> = Vec::new();
     for id in ids {
-        if oauth::PROVIDERS.contains(&id.as_str()) && !known.contains(&id) {
+        if oauth::spec(&id).is_some() && !known.contains(&id) {
             known.push(id);
         }
     }

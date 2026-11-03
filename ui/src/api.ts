@@ -140,12 +140,14 @@ export interface Status {
 // by the tunnels that switch it on. The secret stays on the server;
 // `secret_set` says one is saved.
 export interface OAuthProvider {
-  id: "github" | "google" | "gitlab" | "oidc";
+  id: string;
   label: string;
   name: string;
   issuer: string;
   client_id: string;
   secret_set: boolean;
+  // Self-hosted and tenant providers are found at an issuer URL of your own.
+  needs_issuer: boolean;
   configured: boolean;
 }
 
