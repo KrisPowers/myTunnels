@@ -73,8 +73,15 @@ pub struct Inner {
     pub proxy: reqwest::Client,
     pub tunnel: Tunnel,
     pub public_ips: RwLock<Vec<IpAddr>>,
-    pub gate_sessions: Mutex<HashMap<String, GateSession>>,
+    /// Approved devices, by session cookie.
+    pub device_sessions: Mutex<HashMap<String, Session>>,
+    /// Tunnel passwords entered, by session cookie.
+    pub pass_sessions: Mutex<HashMap<String, Session>>,
+    /// Accounts signed in, by session cookie.
+    pub user_sessions: Mutex<HashMap<String, Session>>,
     pub admin_sessions: Mutex<HashMap<String, i64>>,
+    pub hops: Mutex<HashMap<String, Hop>>,
+    failures: Mutex<HashMap<String, (u32, i64)>>,
     snapshot: RwLock<Arc<Snapshot>>,
 }
 
