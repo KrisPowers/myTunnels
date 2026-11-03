@@ -318,12 +318,13 @@ export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: 
           </div>
         </div>
 
-        <AccessCard value={access} users={users} onChange={(patch) => setAccess((a) => ({ ...a, ...patch }))} />
-
-        <Card title="Local app" sub="Where requests go. The defaults suit an app on this computer."
-          action={<button type="button" className="icon-btn" aria-expanded={more} aria-label={more ? "Hide" : "Show"} onClick={() => setMore((m) => !m)}><Icon name="chevron_right" className={"fold-caret" + (more ? " open" : "")} /></button>}>
-          {more && <TargetRows value={{ port: Number(port) || 0, ...targetOpts }} onChange={(patch) => setTargetOpts((t) => ({ ...t, ...patch }))} />}
+        <Card title="Local app">
+          <div className="card-pad">
+            <LocalApp value={where} onChange={(patch) => setWhere((w) => ({ ...w, ...patch }))} />
+          </div>
         </Card>
+
+        <AccessCard value={access} users={users} onChange={(patch) => setAccess((a) => ({ ...a, ...patch }))} />
       </div>
     </form>
   );
