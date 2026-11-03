@@ -1,0 +1,14 @@
+services:
+  gateway:
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      - "7070:7070"
+    volumes:
+      - data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  data:
