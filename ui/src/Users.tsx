@@ -162,30 +162,46 @@ export function NewUser({ routes, onAdded }: { routes: Route[]; onAdded: () => P
         <a className="icon-btn" href="#/users" aria-label="All users" title="All users"><Icon name="arrow_back" /></a>
         <div className="page-head-main">
           <h1>New user</h1>
-          <div className="page-sub">They sign in with the username or the email, and this password.</div>
-        </div>
-        <div className="page-actions">
-          <button className="btn primary" disabled={busy || !ready}>{busy && <span className="spinner small on-accent" />}Add user</button>
+          <div className="page-sub">They sign in with their email and this password.</div>
         </div>
       </div>
       <div className="page-body stack">
-        <div className="card form-card">
-          <div className="form-grid">
-            <TextField label="Username" autoFocus autoComplete="off" value={username} onChange={(v) => setUsername(v.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 40))} />
-            <TextField label="Email (optional)" type="email" autoComplete="off" value={email} onChange={setEmail} />
-            <TextField label="Name (optional)" autoComplete="off" value={name} onChange={setName} />
-            <TextField label="Password" type="password" autoComplete="new-password" value={password} onChange={setPassword} hint={<PasswordHint value={password} />} />
+        <Card title="Who they are">
+          <div className="card-pad form-grid">
+            <TextField label="Full name" autoFocus autoComplete="off" value={name} onChange={setName} />
+            <TextField label="Username" autoComplete="off" value={username} onChange={(v) => setUsername(v.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 40))}
+              hint="Letters, digits, dots, dashes and underscores" />
+            <TextField className="span" label="Email" type="email" autoComplete="off" value={email} onChange={setEmail} hint="What they sign in with" />
           </div>
+        </Card>
+        <Card title="Password">
+          <div className="card-pad">
+            <PasswordField label="Password" value={password} onChange={setPassword} hint="Generate one, or type at least 10 characters with upper and lower case, a number and a symbol." />
+          </div>
+        </Card>
+        <Grants all={all} ids={ids} routes={routes} onAll={setAll} onPick={(id, on) => setIds((had) => (on ? [...had, id] : had.filter((x) => x !== id)))} />
+        <div className="form-foot">
+          <a className="btn text" href="#/users">Cancel</a>
+          <button className="btn primary" disabled={busy || !ready}>{busy && <span className="spinner small on-accent" />}Add user</button>
         </div>
-        <Grants all={all} ids={ids} routes={routes} onAll={setAll} onPick={(id, on) => setIds((list) => (on ? [...list, id] : list.filter((x) => x !== id)))} />
       </div>
     </form>
   );
 }
 
-export function UserPage({ user, routes, onChanged }: { user: User; routes: Route[]; onChanged: () => Promise<void> }) {
+// ---- one account ----
+
+const USER_PAGES: [string, string, IconName][] = [
+  ["profile", "Profile", "person"],
+  ["access", "Access", "shield"],
+  ["activity", "Activity", "history"],
+];
+
+export function UserPage({ user, page, routes, onChanged }: { user: User; page: string; routes: Route[]; onChanged: () => Promise<void> }) {
   const notify = useNotify();
   const [password, setPassword] = useState("");
+  const current = USER_PAGES.some(([k]) => k === page) ? page : "profile";
+  const [tone, label] = state(user);
 
   const edit = async (patch: Parameters<typeof api.editUser>[1]) => {
     try {
