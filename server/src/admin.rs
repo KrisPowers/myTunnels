@@ -819,11 +819,9 @@ fn check_unique(state: &AppState, id: &str, username: &str, email: &str) -> ApiR
 struct NewUser {
     username: String,
     email: String,
-    #[serde(default)]
-    name: String,
     password: String,
-    #[serde(default)]
-    route_ids: Vec<String>,
+    /// The device the account signs in from; more can be linked later.
+    device_id: String,
 }
 
 async fn create_user(
