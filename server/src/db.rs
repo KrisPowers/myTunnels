@@ -92,11 +92,36 @@ pub struct Route {
     pub target_scheme: String,
     pub require_lan: bool,
     pub require_device: bool,
+    /// A password shared for this tunnel alone.
+    pub require_password: bool,
+    /// Sign-in with an account from Users.
+    pub require_login: bool,
     /// "all": every enabled check must pass. "any": one passing check is enough.
     pub policy_mode: String,
     pub enabled: bool,
+    /// Send the app the public name as Host instead of its own address.
+    pub preserve_host: bool,
+    #[serde(skip)]
+    pub password_hash: Option<String>,
+    pub password_set: bool,
     pub dns_record_id: Option<String>,
     pub created_at: i64,
+}
+
+/// Someone who can sign in at tunnels that ask for an account.
+#[derive(Clone, Serialize)]
+pub struct User {
+    pub id: String,
+    pub username: String,
+    pub email: Option<String>,
+    pub name: String,
+    #[serde(skip)]
+    pub password_hash: String,
+    pub enabled: bool,
+    pub all_routes: bool,
+    pub route_ids: Vec<String>,
+    pub created_at: i64,
+    pub last_login: Option<i64>,
 }
 
 /// A browser that has asked for access through the gateway.
@@ -104,7 +129,7 @@ pub struct Route {
 pub struct Device {
     pub id: String,
     pub name: String,
-    /// "pending", "approved" or "denied".
+    /// "seen" (identified, never asked), "pending", "approved" or "denied".
     pub status: String,
     pub all_routes: bool,
     pub route_ids: Vec<String>,
