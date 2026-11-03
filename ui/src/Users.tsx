@@ -251,50 +251,147 @@ export function UserPage({ user, page, routes, devices, onChanged }: { user: Use
           </div>
         )}
 
-        {current === "profile" && (
-          <>
-            <Card title="Details">
-              <ValueRow title="Full name" value={user.name} onSave={(v) => edit({ name: v })} />
-              <ValueRow title="Username" value={user.username} onSave={(v) => edit({ username: v })} />
-              <ValueRow title="Email" value={user.email} type="email" hint="What they sign in with" onSave={(v) => edit({ email: v })} />
-            </Card>
-            <Card title="Security">
-              <PasswordValue onSave={(password) => edit({ password })} />
-              <Row title="Last signed in" sub={user.last_login ? ago(user.last_login) : "Never"} />
-            </Card>
-          </>
-        )}
+        {current === "profile" && <Profile user={user} edit={edit} />}
 
         {current === "access" && (
-          <Card title="Tunnels" sub={theirs.length ? undefined : "None yet. Add the tunnels this account may sign in at."}
-            action={
-              <AddMenu label="Add a tunnel" placeholder="Find a tunnel" onPick={(id) => quietly({ route_ids: [...user.route_ids, id] })}
-                empty={<div className="menu-note">There are no tunnels yet</div>}
-                items={routes.map((r) => ({ id: r.id, label: r.hostname, sub: r.require_login ? undefined : "Sign-in is off here", disabled: user.route_ids.includes(r.id), note: "Already added" }))} />
-            }>
-            {theirs.length > 0 && (
-              <ul className="people">
-                {theirs.map((r) => (
-                  <li key={r.id} className="person-row">
-                    <span className={"dot " + (r.enabled ? "ok" : "")} />
-                    <a className="person" href={`#/tunnels/${r.id}`}>
-                      <span className="scan-target">{r.hostname}</span>
-                      <small>{r.require_login ? "Asks for sign-in" : "Sign-in is off"}</small>
-                    </a>
-                    <button type="button" className="icon-btn danger" aria-label={`Remove ${r.hostname}`} title="Remove"
-                      onClick={() => quietly({ route_ids: user.route_ids.filter((x) => x !== r.id) })}>
-                      <Icon name="close" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+          <>
+            <Card title="Tunnels" sub={theirs.length ? undefined : "None yet. Add the tunnels this account may sign in at."}
+              action={
+                <AddMenu label="Add a tunnel" placeholder="Find a tunnel" onPick={(id) => quietly({ route_ids: [...user.route_ids, id] })}
+                  empty={<div className="menu-note">There are no tunnels yet</div>}
+                  items={routes.map((r) => ({ id: r.id, label: r.hostname, sub: r.require_login ? undefined : "Sign-in is off here", disabled: user.route_ids.includes(r.id), note: "Already added" }))} />
+              }>
+              {theirs.length > 0 && (
+                <ul className="people">
+                  {theirs.map((r) => (
+                    <li key={r.id} className="person-row">
+                      <span className={"dot " + (r.enabled ? "ok" : "")} />
+                      <a className="person" href={`#/tunnels/${r.id}`}>
+                        <span className="scan-target">{r.hostname}</span>
+                        <small>{r.require_login ? "Asks for sign-in" : "Sign-in is off"}</small>
+                      </a>
+                      <button type="button" className="icon-btn danger" aria-label={`Remove ${r.hostname}`} title="Remove"
+                        onClick={() => quietly({ route_ids: user.route_ids.filter((x) => x !== r.id) })}>
+                        <Icon name="close" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+            <Card title="Devices" sub={linked.length ? undefined : "None linked. They cannot sign in until a device is."}
+              action={
+                <AddMenu label="Link a device" placeholder="Find a device" onPick={(id) => quietly({ device_ids: [...user.device_ids, id] })}
+                  empty={<div className="menu-note">There are no devices yet</div>}
+                  items={[...devices].sort((a, b) => b.last_seen - a.last_seen).map((d) => ({ id: d.id, label: d.name || shortId(d.id), sub: [d.info?.platform, d.country, `seen ${ago(d.last_seen)}`].filter(Boolean).join(", "), disabled: user.device_ids.includes(d.id), note: "Already linked" }))} />
+              }>
+              {linked.length > 0 && (
+                <ul className="people">
+                  {linked.map((d) => (
+                    <li key={d.id} className="person-row">
+                      <Icon name="devices" />
+                      <a className="person" href={`#/devices/${d.id}`}>
+                        <span className="scan-target">{d.name || shortId(d.id)}</span>
+                        <small>{[d.info?.platform, d.country].filter(Boolean).join(", ") || "Unknown hardware"}</small>
+                      </a>
+                      <span className="result-meta">Seen {ago(d.last_seen)}</span>
+                      <button type="button" className="icon-btn danger" aria-label={`Unlink ${d.name || shortId(d.id)}`} title="Unlink"
+                        onClick={() => quietly({ device_ids: user.device_ids.filter((x) => x !== d.id) })}>
+                        <Icon name="close" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </>
         )}
 
         {current === "activity" && <Activity user={user} />}
       </div>
     </>
+  );
+}
+
+// Profile is an account at a glance: four figures, then its details and its
+// security side by side, each value beside its label with an edit button.
+function Profile({ user, edit }: { user: User; edit: (patch: Parameters<typeof api.editUser>[1]) => Promise<void> }) {
+  const [list, setList] = useState<SignIn[] | null>(null);
+  useEffect(() => {
+    api.userActivity(user.id).then(setList).catch(() => setList([]));
+  }, [user.id, user.last_login]);
+  const month = Date.now() / 1000 - 30 * 86_400;
+  const wrong = (list ?? []).filter((s) => s.at > month && s.outcome !== "ok").length;
+  const [tone, label] = state(user);
+
+  return (
+    <>
+      <div className="tally four">
+        <div className="tally-item plain"><b>{user.route_ids.length}</b><span>Tunnels</span></div>
+        <div className="tally-item plain"><b>{user.device_ids.length}</b><span>Devices</span></div>
+        <div className="tally-item"><b>{user.last_login ? ago(user.last_login) : "Never"}</b><span>Last sign-in</span></div>
+        <div className={"tally-item " + (wrong ? "bad" : "ok")}><b>{list ? wrong : "..."}</b><span>Refused, 30 days</span></div>
+      </div>
+      <div className="profile-grid">
+        <section>
+          <h3 className="section-title">Details</h3>
+          <KeyValue label="Username" value={user.username} onSave={(v) => edit({ username: v })} />
+          <KeyValue label="Email" value={user.email} type="email" onSave={(v) => edit({ email: v })} />
+          <KeyValue label="Name" value={user.name} onSave={(v) => edit({ name: v })} />
+        </section>
+        <section>
+          <h3 className="section-title">Security</h3>
+          <PasswordValue onSave={(password) => edit({ password })} />
+          <div className="kv"><span className="kv-label">Status</span><span className="kv-value"><span className={"chip " + tone}>{label}</span></span></div>
+          <div className="kv"><span className="kv-label">Added</span><span className="kv-value">{new Date(user.created_at * 1000).toLocaleDateString()}</span></div>
+        </section>
+      </div>
+    </>
+  );
+}
+
+// KeyValue is a label, its value right beside it, and an edit button that turns
+// the value into a field.
+function KeyValue({ label, value, type, onSave }: { label: string; value: string; type?: string; onSave: (v: string) => Promise<unknown> }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+  if (editing) {
+    return (
+      <form className="kv" onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        try {
+          await onSave(draft.trim());
+          setEditing(false);
+        } catch (err) {
+          notify(message(err), "bad");
+        } finally {
+          setBusy(false);
+        }
+      }}>
+        <span className="kv-label">{label}</span>
+        <input className="input kv-input" type={type ?? "text"} autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} aria-label={label} />
+        <span className="kv-actions">
+          <button type="button" className="icon-btn small" aria-label="Cancel" title="Cancel" onClick={() => setEditing(false)}><Icon name="close" size={18} /></button>
+          <button className="icon-btn small" aria-label="Save" title="Save" disabled={busy}><Icon name="check" size={18} /></button>
+        </span>
+      </form>
+    );
+  }
+  return (
+    <div className="kv">
+      <span className="kv-label">{label}</span>
+      <span className={"kv-value" + (value ? "" : " muted")}>{value || "None"}</span>
+      <button type="button" className="icon-btn small" aria-label={`Change ${label.toLowerCase()}`} title={`Change ${label.toLowerCase()}`}
+        onClick={() => {
+          setDraft(value);
+          setEditing(true);
+        }}>
+        <Icon name="edit" size={18} />
+      </button>
+    </div>
   );
 }
 
