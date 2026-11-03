@@ -10,6 +10,9 @@ use crate::db::Route;
 use crate::gate;
 use crate::state::{AppState, Snapshot};
 
+/// Marks a request the gateway has already forwarded once.
+pub const HOP_HEADER: &str = "x-gateway-hop";
+
 const HOP_BY_HOP: [&str; 8] = [
     "connection",
     "keep-alive",
@@ -59,6 +62,7 @@ pub async fn forward(
         headers.insert("x-real-ip", ip);
     }
     headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+    headers.insert(HOP_HEADER, HeaderValue::from_static("1"));
     if let Some(original_host) = original_host {
         headers.insert("x-forwarded-host", original_host);
     }
