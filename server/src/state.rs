@@ -102,6 +102,10 @@ pub struct Inner {
     failures: Mutex<HashMap<String, (u32, i64)>>,
     /// Requests counted per key and window, for rate limits.
     hits: Mutex<HashMap<String, (u32, i64)>>,
+    /// Keys refused until a time, such as a device that tried several accounts.
+    blocked: Mutex<HashMap<String, i64>>,
+    /// Distinct values seen per key, with when, such as the emails a device tried.
+    distinct: Mutex<HashMap<String, Vec<(String, i64)>>>,
     snapshot: RwLock<Arc<Snapshot>>,
 }
 
@@ -160,6 +164,8 @@ impl AppState {
             hops: Mutex::new(HashMap::new()),
             failures: Mutex::new(HashMap::new()),
             hits: Mutex::new(HashMap::new()),
+            blocked: Mutex::new(HashMap::new()),
+            distinct: Mutex::new(HashMap::new()),
             snapshot: RwLock::new(Arc::new(Snapshot {
                 routes: HashMap::new(),
                 devices: HashMap::new(),
@@ -264,6 +270,36 @@ impl AppState {
         }
         entry.0 += 1;
         entry.0 <= max
+    }
+
+    /// Refuses `key` for `seconds`.
+    pub fn block(&self, key: &str, seconds: i64) {
+        let now = now();
+        let mut blocked = lock(&self.blocked);
+        blocked.retain(|_, until| *until > now);
+        blocked.insert(key.to_owned(), now + seconds);
+    }
+
+    pub fn is_blocked(&self, key: &str) -> bool {
+        lock(&self.blocked)
+            .get(key)
+            .is_some_and(|until| *until > now())
+    }
+
+    /// Notes `value` under `key` and returns how many different values it has had
+    /// in the last `window` seconds.
+    pub fn distinct(&self, key: &str, value: &str, window: i64) -> usize {
+        let now = now();
+        let mut all = lock(&self.distinct);
+        if all.len() > 50_000 {
+            all.retain(|_, seen| seen.iter().any(|(_, at)| now - at < window));
+        }
+        let seen = all.entry(key.to_owned()).or_default();
+        seen.retain(|(_, at)| now - at < window);
+        if !seen.iter().any(|(v, _)| v == value) {
+            seen.push((value.to_owned(), now));
+        }
+        seen.len()
     }
 
     pub fn clear_failures(&self, key: &str) {
