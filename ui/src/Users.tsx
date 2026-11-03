@@ -34,25 +34,31 @@ export function Users({ users, routes }: { users: User[] | null; routes: Route[]
             <Icon name="group" size={40} />
             <h2>No accounts yet</h2>
             <p className="muted">Add an account, then turn on Sign-in for the tunnels it should open.</p>
+            <a className="btn primary" href="#/users/new"><Icon name="add" size={18} />New user</a>
           </div>
         )}
         {users && users.length > 0 && (
           <div className="card">
             <ul className="results">
-              {users.map((u) => (
-                <li key={u.id}>
-                  <a className="result user-row" href={`#/users/${u.id}`}>
-                    <span className={"dot " + (u.enabled ? "ok" : "")} role="img" aria-label={u.enabled ? "Active" : "Turned off"} />
-                    <span className="device-name">
-                      <span className="scan-target">{u.name || u.username}</span>
-                      <small>{u.email ?? u.username}</small>
-                    </span>
-                    <span className="result-service">{u.all_routes ? "Every tunnel" : `${u.route_ids.length} tunnel${u.route_ids.length === 1 ? "" : "s"}`}</span>
-                    <span className="result-meta">{u.last_login ? `Signed in ${ago(u.last_login)}` : "Never signed in"}</span>
-                    <Icon name="chevron_right" className="result-go" />
-                  </a>
-                </li>
-              ))}
+              {users.map((u) => {
+                const [tone, label] = state(u);
+                return (
+                  <li key={u.id}>
+                    <a className="result user-row" href={`#/users/${u.id}`}>
+                      <Avatar name={u.name || u.username} />
+                      <span className="person">
+                        <span className="scan-target">{u.name || u.username}</span>
+                        <small>{u.email}</small>
+                      </span>
+                      <span className="result-service mono">{u.username}</span>
+                      <span className="result-what">{u.all_routes ? "Every tunnel" : `${u.route_ids.length} tunnel${u.route_ids.length === 1 ? "" : "s"}`}</span>
+                      <span className={"chip " + tone}>{label}</span>
+                      <span className="result-meta">{u.last_login ? ago(u.last_login) : "Never"}</span>
+                      <Icon name="chevron_right" className="result-go" />
+                    </a>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
