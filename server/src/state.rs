@@ -8,22 +8,50 @@ use anyhow::Result;
 use axum::http::StatusCode;
 
 use crate::config::Config;
-use crate::db::{Db, Device, Route};
+use crate::db::{Db, Device, Route, User};
 use crate::netinfo::{self, Cidr};
 use crate::tunnel::Tunnel;
-use crate::util::ApiError;
+use crate::util::{lock, now, ApiError};
 
 /// Everything the gateway needs per request, rebuilt from the database after every change.
 pub struct Snapshot {
     pub routes: HashMap<String, Route>,
     pub devices: HashMap<String, Device>,
+    pub users: HashMap<String, User>,
+    /// The hostname that keeps every browser's device key, so tunnels on other domains
+    /// can share it: the oldest tunnel's.
+    pub hub: Option<String>,
     pub upstream_host: String,
     pub trusted: Vec<Cidr>,
 }
 
-pub struct GateSession {
-    pub device_id: String,
+/// A signed-in visitor: whose session it is (a device, tunnel or account id), and a
+/// tag that stops it working once what it was granted on changes.
+pub struct Session {
+    pub subject: String,
+    pub tag: String,
     pub expires: i64,
+}
+
+/// One step of sharing a device key across domains, kept for a minute.
+pub enum Hop {
+    /// A tunnel sent the browser to the hub for its key and wants it back here.
+    Return { url: String, expires: i64 },
+    /// The hub hands a key to this host, which then goes on to `path`.
+    Claim {
+        host: String,
+        path: String,
+        token: String,
+        expires: i64,
+    },
+}
+
+impl Hop {
+    fn expires(&self) -> i64 {
+        match self {
+            Hop::Return { expires, .. } | Hop::Claim { expires, .. } => *expires,
+        }
+    }
 }
 
 pub struct CfSettings {
@@ -31,6 +59,10 @@ pub struct CfSettings {
     pub account_id: String,
     pub tunnel_id: String,
 }
+
+/// Failed password and sign-in attempts allowed per window before refusing.
+const MAX_FAILURES: u32 = 5;
+const FAILURE_WINDOW: i64 = 15 * 60;
 
 pub struct Inner {
     pub config: Config,
