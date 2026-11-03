@@ -627,23 +627,190 @@ async fn delete_device(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     state.db.delete_device(&id)?;
-    lock(&state.gate_sessions).retain(|_, s| s.device_id != id);
+    lock(&state.device_sessions).retain(|_, s| s.subject != id);
+    state.reload()?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+struct ThisDevice {
+    token: Option<String>,
+    #[serde(default)]
+    info: Value,
+}
+
+/// The browser the admin is using: given a device key the first time, approved for
+/// every tunnel, so the host's own browser is never stopped at its own tunnels.
+async fn this_device(
+    State(state): State<AppState>,
+    Json(body): Json<ThisDevice>,
+) -> ApiResult<Json<Value>> {
+    let (device, token) = gate::dashboard_device(&state, body.token, body.info)?;
+    Ok(Json(json!({ "id": device.id, "token": token })))
+}
+
+// Users: accounts that sign in at tunnels asking for one
+
+async fn list_users(State(state): State<AppState>) -> ApiResult<Json<Vec<User>>> {
+    Ok(Json(state.db.users()?))
+}
+
+fn valid_username(name: &str) -> bool {
+    (2..=40).contains(&name.len())
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
+}
+
+fn clean_email(email: Option<String>) -> ApiResult<Option<String>> {
+    match email.map(|e| e.trim().to_owned()).filter(|e| !e.is_empty()) {
+        Some(e) if !(e.len() <= 254 && e.contains('@') && !e.contains(char::is_whitespace)) => {
+            Err(ApiError::bad("That email address does not look right"))
+        }
+        other => Ok(other),
+    }
+}
+
+fn known_routes(state: &AppState, ids: Vec<String>) -> Vec<String> {
+    let snap = state.snapshot();
+    ids.into_iter()
+        .filter(|id| snap.routes.values().any(|r| &r.id == id))
+        .collect()
+}
+
+/// Usernames and emails both sign in, so neither may belong to another account.
+fn check_unique(state: &AppState, id: &str, username: &str, email: Option<&str>) -> ApiResult<()> {
+    for other in state.db.users()?.iter().filter(|u| u.id != id) {
+        let names = [Some(other.username.as_str()), other.email.as_deref()];
+        for taken in names.into_iter().flatten() {
+            if taken.eq_ignore_ascii_case(username)
+                || email.is_some_and(|e| taken.eq_ignore_ascii_case(e))
+            {
+                return Err(ApiError::conflict(
+                    "Another account already uses that name or email",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct NewUser {
+    username: String,
+    email: Option<String>,
+    #[serde(default)]
+    name: String,
+    password: String,
+    #[serde(default)]
+    all_routes: bool,
+    #[serde(default)]
+    route_ids: Vec<String>,
+}
+
+async fn create_user(
+    State(state): State<AppState>,
+    Json(body): Json<NewUser>,
+) -> ApiResult<Json<User>> {
+    let username = body.username.trim().to_owned();
+    if !valid_username(&username) {
+        return Err(ApiError::bad(
+            "Username: 2 to 40 letters, digits, '.', '-' or '_'",
+        ));
+    }
+    let email = clean_email(body.email)?;
+    check_unique(&state, "", &username, email.as_deref())?;
+    if !secret::strong(&body.password) {
+        return Err(ApiError::bad(secret::RULE));
+    }
+    let user = User {
+        id: random_hex(8),
+        username,
+        email,
+        name: body.name.trim().chars().take(80).collect(),
+        password_hash: secret::hash(&body.password)?,
+        enabled: true,
+        all_routes: body.all_routes,
+        route_ids: known_routes(&state, body.route_ids),
+        created_at: now(),
+        last_login: None,
+    };
+    state.db.save_user(&user)?;
+    state.reload()?;
+    Ok(Json(user))
+}
+
+#[derive(Deserialize)]
+struct UserEdit {
+    username: Option<String>,
+    email: Option<String>,
+    name: Option<String>,
+    password: Option<String>,
+    enabled: Option<bool>,
+    all_routes: Option<bool>,
+    route_ids: Option<Vec<String>>,
+}
+
+async fn update_user(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<UserEdit>,
+) -> ApiResult<Json<User>> {
+    let mut user = state.db.user(&id)?.ok_or_else(ApiError::not_found)?;
+    if let Some(username) = body.username.map(|u| u.trim().to_owned()) {
+        if !valid_username(&username) {
+            return Err(ApiError::bad(
+                "Username: 2 to 40 letters, digits, '.', '-' or '_'",
+            ));
+        }
+        user.username = username;
+    }
+    if body.email.is_some() {
+        user.email = clean_email(body.email)?;
+    }
+    check_unique(&state, &user.id, &user.username, user.email.as_deref())?;
+    if let Some(name) = body.name {
+        user.name = name.trim().chars().take(80).collect();
+    }
+    if let Some(password) = body.password.filter(|p| !p.is_empty()) {
+        if !secret::strong(&password) {
+            return Err(ApiError::bad(secret::RULE));
+        }
+        user.password_hash = secret::hash(&password)?;
+    }
+    if let Some(enabled) = body.enabled {
+        user.enabled = enabled;
+    }
+    if let Some(all) = body.all_routes {
+        user.all_routes = all;
+    }
+    if let Some(ids) = body.route_ids {
+        user.route_ids = known_routes(&state, ids);
+    }
+    state.db.save_user(&user)?;
+    state.reload()?;
+    Ok(Json(user))
+}
+
+async fn delete_user(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    state.db.delete_user(&id)?;
+    lock(&state.user_sessions).retain(|_, s| s.subject != id);
     state.reload()?;
     Ok(Json(json!({ "ok": true })))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{strong_password, valid_label};
+    use super::{valid_label, valid_username};
 
     #[test]
-    fn passwords_need_length_case_number_and_symbol() {
-        assert!(strong_password("Homelab-2026"));
-        assert!(!strong_password("Homelab2026"));
-        assert!(!strong_password("homelab-2026"));
-        assert!(!strong_password("HOMELAB-2026"));
-        assert!(!strong_password("Homelab-ab"));
-        assert!(!strong_password("Hl-2026"));
+    fn usernames() {
+        assert!(valid_username("kris.p"));
+        assert!(!valid_username("k"));
+        assert!(!valid_username("kris p"));
     }
 
     #[test]
