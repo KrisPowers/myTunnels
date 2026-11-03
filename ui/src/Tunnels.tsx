@@ -555,11 +555,31 @@ function People({ route, users, onGrant }: { route: Route; users: User[]; onGran
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
   const wrap = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState({ top: 0, left: 0 });
   const close = useCallback(() => {
     setOpen(false);
     setQ("");
   }, []);
-  useDismiss(open, close, wrap);
+  useDismiss(open, close, wrap, panel);
+
+  // The menu is drawn over the page, under the plus, so no card or scroll area
+  // cuts it off; scrolling or resizing closes it.
+  useLayoutEffect(() => {
+    if (!open || !wrap.current) return;
+    const r = wrap.current.getBoundingClientRect();
+    setAt({ top: r.bottom + 4, left: Math.max(8, Math.min(r.right - 300, innerWidth - 308)) });
+    // Scrolling the menu's own list keeps it open.
+    const away = (e: Event) => {
+      if (!panel.current?.contains(e.target as Node)) close();
+    };
+    addEventListener("scroll", away, true);
+    addEventListener("resize", close);
+    return () => {
+      removeEventListener("scroll", away, true);
+      removeEventListener("resize", close);
+    };
+  }, [open, close]);
 
   const members = users.filter((u) => u.route_ids.includes(route.id));
   const needle = q.trim().toLowerCase();
