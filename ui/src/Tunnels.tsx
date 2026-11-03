@@ -332,6 +332,15 @@ export function TunnelPage({ route, devices, users, onChanged }: { route: Route;
       notify(message(e), "bad");
     }
   };
+  const grantUser = async (user: User, on: boolean) => {
+    const ids = on ? [...user.route_ids, route.id] : user.route_ids.filter((r) => r !== route.id);
+    try {
+      await api.editUser(user.id, { route_ids: ids });
+      await onChanged();
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+  };
 
   return (
     <>
