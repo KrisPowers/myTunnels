@@ -75,14 +75,11 @@ function Frame({ children }: { children: ReactNode }) {
   );
 }
 
-function StepHead({ icon, title, sub }: { icon: IconName; title: string; sub: ReactNode }) {
+function StepHead({ title, sub }: { title: string; sub: ReactNode }) {
   return (
     <div className="step-head">
-      <span className="badge big"><Icon name={icon} size={28} /></span>
-      <div>
-        <h1>{title}</h1>
-        <p className="muted">{sub}</p>
-      </div>
+      <h1>{title}</h1>
+      <p className="muted">{sub}</p>
     </div>
   );
 }
