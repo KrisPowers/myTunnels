@@ -623,7 +623,7 @@ a.result:hover { background: var(--hover); }
   .setup { padding: 16px; }
   .setup-card { padding: 22px 18px; }
   .step-label { display: none; }
-  .step button { justify-content: center; }
+  .step { justify-content: center; }
 }
 
 /* Compact density, picked in Settings. */
