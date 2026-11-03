@@ -477,6 +477,11 @@ async fn create_route(
         require_device: body.require_device,
         policy_mode: body.policy_mode,
         enabled: true,
+        require_password: body.require_password,
+        password_set: password_hash.is_some(),
+        password_hash,
+        require_login: body.require_login,
+        preserve_host: body.preserve_host,
         dns_record_id: Some(record_id.clone()),
         created_at: now(),
     };
