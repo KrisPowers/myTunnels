@@ -68,7 +68,7 @@ export interface SignIn {
   ip: string | null;
   country: string | null;
   at: number;
-  outcome: "ok" | "failed" | "blocked";
+  outcome: "ok" | "failed" | "blocked" | "unlinked";
 }
 
 export type DeviceStatus = "seen" | "pending" | "approved" | "denied";
