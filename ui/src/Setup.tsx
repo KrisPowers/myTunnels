@@ -63,30 +63,40 @@ function StepHead({ title, sub }: { title: string; sub: ReactNode }) {
   );
 }
 
-function Foot({ onBack, children, note }: { onBack?: () => void; children: ReactNode; note?: ReactNode }) {
-  return (
-    <div className="setup-foot">
-      {onBack && <button type="button" className="btn text" onClick={onBack}><Icon name="arrow_back" size={18} />Back</button>}
-      <span className="setup-foot-note">{note}</span>
-      {children}
-    </div>
-  );
+// ---- 1. Admin password: create it, or sign in ----
+
+const LEVELS = { poor: "Poor", decent: "Decent", good: "Good", strong: "Strong" } as const;
+
+// strength rates a new password. It is accepted once nothing is missing:
+// 10 or more characters with upper and lower case, a number and a symbol.
+function strength(p: string) {
+  const missing = [
+    p.length < 10 && "10 or more characters",
+    !/[A-Z]/.test(p) && "an uppercase letter",
+    !/[a-z]/.test(p) && "a lowercase letter",
+    !/[0-9]/.test(p) && "a number",
+    !/[^A-Za-z0-9]/.test(p) && "a symbol such as ! or $",
+  ].filter((m): m is string => Boolean(m));
+  const level: keyof typeof LEVELS = missing.length > 2 ? "poor" : missing.length > 0 ? "decent" : p.length >= 14 ? "strong" : "good";
+  return { ok: missing.length === 0, level, missing };
 }
 
-// ---- 1. Admin password: create it, or sign in to carry on ----
+function list(items: string[]) {
+  return items.length < 2 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
+}
 
-function AdminStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }) {
+function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }) {
   const create = !auth.setup.password;
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   const rating = strength(password);
-  const short = create && !rating.ok;
+  const ready = password !== "" && (!create || rating.ok);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (short || !password) return;
+    if (!ready) return;
     setBusy(true);
     setProblem("");
     try {
