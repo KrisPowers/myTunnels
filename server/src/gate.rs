@@ -714,7 +714,13 @@ fn register(
         .map(|v| (header::SET_COOKIE, v)),
     );
     if allowed {
-        let sid = open_session(&state.device_sessions, &device.id, "", DEVICE_SESSION_TTL);
+        let sid = open_session(
+            &state.device_sessions,
+            &device.id,
+            "",
+            "",
+            DEVICE_SESSION_TTL,
+        );
         out.extend(
             cookie_value(
                 SESSION_COOKIE,
