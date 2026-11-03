@@ -98,7 +98,6 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
         </div>
         <Search routes={routes} devices={devices} />
         <div className="header-actions">
-          <Health status={status} />
           <a className={"icon-btn" + (view === "settings" ? " on" : "")} href="#/settings" aria-label="Settings" title="Settings"><Icon name="settings" /></a>
           <button type="button" className="icon-btn" aria-label="Sign out" title="Sign out" onClick={onSignOut}><Icon name="logout" /></button>
         </div>
