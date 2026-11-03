@@ -326,6 +326,10 @@ impl Db {
                 r.enabled,
                 r.dns_record_id,
                 r.created_at,
+                r.preserve_host,
+                r.require_password,
+                r.password_hash,
+                r.require_login,
             ],
         )?;
         Ok(())
