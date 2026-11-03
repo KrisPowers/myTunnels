@@ -63,6 +63,21 @@ pub async fn forward(
     }
     headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
     headers.insert(HOP_HEADER, HeaderValue::from_static("1"));
+    // The app sees the request as if opened on this machine, which apps that
+    // only answer to localhost need; the public name travels as X-Forwarded-Host.
+    let local = format!(
+        "{}:{}",
+        route.target_host.as_deref().unwrap_or("localhost"),
+        route.target_port
+    );
+    let local_origin = format!("{}://{local}", route.target_scheme);
+    let public_origin = format!("https://{}", route.hostname);
+    if let Ok(value) = HeaderValue::from_str(&local) {
+        headers.insert(header::HOST, value);
+    }
+    for name in [header::ORIGIN, header::REFERER] {
+        swap_origin(&mut headers, name, &public_origin, &local_origin);
+    }
     if let Some(original_host) = original_host {
         headers.insert("x-forwarded-host", original_host);
     }
