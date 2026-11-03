@@ -51,7 +51,7 @@ export function Users({ users, routes }: { users: User[] | null; routes: Route[]
                         <small>{u.email}</small>
                       </span>
                       <span className="result-service mono">{u.username}</span>
-                      <span className="result-what">{u.all_routes ? "Every tunnel" : `${u.route_ids.length} tunnel${u.route_ids.length === 1 ? "" : "s"}`}</span>
+                      <span className="result-what">{`${u.route_ids.length} tunnel${u.route_ids.length === 1 ? "" : "s"}`}</span>
                       <span className={"chip " + tone}>{label}</span>
                       <span className="result-meta">{u.last_login ? ago(u.last_login) : "Never"}</span>
                       <Icon name="chevron_right" className="result-go" />
