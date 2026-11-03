@@ -13,11 +13,11 @@ use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::cloudflare::{Account, Cloudflare, Zone};
-use crate::db::{Device, Route};
+use crate::db::{Device, Route, User};
 use crate::netinfo;
 use crate::state::AppState;
 use crate::util::{cookie, lock, now, random_hex, valid_host, ApiError, ApiResult};
-use crate::{gate, tunnel};
+use crate::{gate, secret, tunnel};
 
 const ADMIN_COOKIE: &str = "admin_session";
 const ADMIN_TTL: i64 = 7 * 86_400;
