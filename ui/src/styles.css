@@ -539,18 +539,13 @@ textarea.tf-input { height: auto; min-height: 88px; padding: 18px 16px 12px; res
 }
 
 /* ---- publishing: subdomain, domain, port, on one line ---- */
-.composer { padding: 20px 24px; overflow: visible; }
-.composer-row { display: flex; align-items: flex-end; gap: 12px; }
-.composer-field { display: grid; gap: 6px; min-width: 0; }
-.composer-field > span:first-child { color: var(--text-2); font-size: 12px; font-weight: 500; }
-.composer-field.grow { flex: 1; }
-.composer-field.port { width: 120px; flex-shrink: 0; }
-.composer-field .dropdown { width: 100%; height: 48px; border-radius: var(--round); background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); font-size: 16px; font-weight: 400; }
-.composer-field .dropdown.open { box-shadow: inset 0 0 0 2px var(--accent); }
-.dropdown.placeholder { color: var(--text-3); cursor: default; }
-.composer-dot { padding-bottom: 10px; color: var(--text-3); font-size: 22px; }
-.composer-arrow { margin-bottom: 14px; color: var(--text-3); }
-.composer-go { height: 48px; padding: 0 24px; }
+.composer { padding: 24px 24px 4px; overflow: visible; }
+.composer-row { display: flex; align-items: flex-start; gap: 12px; }
+.composer-row .grow { flex: 1; }
+.composer-row .port { width: 132px; flex-shrink: 0; }
+.composer-dot { padding-top: 12px; color: var(--text-3); font-size: 22px; }
+.composer-arrow { margin-top: 18px; color: var(--text-3); }
+.composer-go { height: 56px; padding: 0 24px; border-radius: var(--radius); }
 
 /* Rows in the tunnel and device lists. */
 .result.tunnel-row { grid-template-columns: 16px minmax(0, 1.2fr) minmax(0, .8fr) minmax(0, 1fr) 24px; }
