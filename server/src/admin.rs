@@ -538,6 +538,10 @@ struct RouteEdit {
     password: Option<String>,
     #[serde(default)]
     require_login: bool,
+    #[serde(default = "default_login_max")]
+    login_max: i64,
+    #[serde(default)]
+    login_idle: i64,
     #[serde(default)]
     preserve_host: bool,
 }
