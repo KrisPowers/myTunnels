@@ -866,6 +866,18 @@ async fn login(
         return json_error(StatusCode::FORBIDDEN, "This account cannot open this app.");
     }
 
+    // An account signs in only from the devices linked to it.
+    if !device_id
+        .as_ref()
+        .is_some_and(|d| account.device_ids.contains(d))
+    {
+        record(&account.id, "unlinked");
+        return json_error(
+            StatusCode::FORBIDDEN,
+            "This device is not linked to the account. Ask the administrator to link it.",
+        );
+    }
+
     // A sign-in that looks like the account is in other hands holds it for review.
     let history = state
         .db
