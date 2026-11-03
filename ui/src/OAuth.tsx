@@ -28,7 +28,7 @@ const GUIDE: Record<string, { link?: (domain: string) => string; how: string }> 
   },
 };
 
-// OAuth holds the credentials for signing in through other services, one pill
+// OAuth holds the credentials for signing in through other services, one tile
 // each. Tunnels switch on the ones they offer under Access Control.
 export function OAuth() {
   const [providers, setProviders] = useState<OAuthProvider[] | null>(null);
@@ -56,14 +56,11 @@ export function OAuth() {
       <div className="page-body stack">
         <div className="provider-grid">
           {providers?.map((p) => (
-            <button key={p.id} type="button" className={"provider-pill" + (open === p.id ? " on" : "")} aria-expanded={open === p.id}
+            <button key={p.id} type="button" className={"provider-tile" + (open === p.id ? " on" : "")} aria-expanded={open === p.id}
               onClick={() => setOpen((o) => (o === p.id ? "" : p.id))}>
-              <ProviderLogo id={p.id} />
-              <span className="pill-text">
-                <b>{p.label}</b>
-                <small>{p.configured ? "Ready" : "Set up"}</small>
-              </span>
-              <span className={"dot" + (p.configured ? " ok" : "")} />
+              <ProviderLogo id={p.id} size={48} />
+              <b>{p.label}</b>
+              <span className={"chip" + (p.configured ? " ok" : "")}>{p.configured ? "Ready" : "Not set up"}</span>
             </button>
           ))}
         </div>
