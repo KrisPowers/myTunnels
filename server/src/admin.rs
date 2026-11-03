@@ -819,8 +819,6 @@ struct NewUser {
     name: String,
     password: String,
     #[serde(default)]
-    all_routes: bool,
-    #[serde(default)]
     route_ids: Vec<String>,
 }
 
