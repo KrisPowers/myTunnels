@@ -84,6 +84,11 @@ CREATE TABLE IF NOT EXISTS events (
     at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS events_route ON events (route_id, at);
+CREATE TABLE IF NOT EXISTS user_devices (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, device_id)
+);
 CREATE TABLE IF NOT EXISTS user_routes (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
