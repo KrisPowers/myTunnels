@@ -637,20 +637,14 @@ fn register(
                 .filter(|t| valid_token(t))
                 .map(str::to_owned)
         })
-        .unwrap_or_else(|| random_alnum(TOKEN_LEN));
-    let token_hash = sha256_hex(&token);
-    let print = fingerprint(&body.info);
-    let now = now();
-    let ip = ip.map(|ip| ip.to_string());
-    let country = headers
-        .get("cf-ipcountry")
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_owned);
-
-    let device = match state.db.device_by_token(&token_hash)? {
-        Some(mut device) => {
+        .and_then(|token| Some((state.db.device_by_token(&sha256_hex(&token)).ok()??, token)));
+    let (device, token) = match known {
+        Some((mut device, token)) => {
             let was = device.status.clone();
-            if device.status == "approved" && device.fingerprint != print {
+            let print = fingerprint(&body.info);
+            if device.fingerprint.is_empty() && has_hardware(&body.info) {
+                device.fingerprint = print;
+            } else if device.status == "approved" && device.fingerprint != print {
                 tracing::warn!(
                     "device {} presented different hardware, holding for review",
                     device.id
