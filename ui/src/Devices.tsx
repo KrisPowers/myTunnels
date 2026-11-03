@@ -67,8 +67,8 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
         {devices && shown.length === 0 && (
           <div className="card welcome">
             <Icon name="devices" size={40} />
-            <h2>{filter === "pending" ? "No device is waiting" : `No ${LABEL[filter].toLowerCase()} devices`}</h2>
-            {filter === "pending" && <p className="muted">Turn on Approved devices for a tunnel, then open its address on the device you want to add. Its ID shows up here.</p>}
+            <h2>{tab === "requests" ? "No requests" : "No approved devices"}</h2>
+            {tab === "requests" && <p className="muted">A device shows up here the first time it opens one of your tunnels.</p>}
           </div>
         )}
         {shown.length > 0 && (
