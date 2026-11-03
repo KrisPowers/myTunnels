@@ -98,7 +98,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
     return () => removeEventListener("hashchange", onHash);
   }, []);
 
-  const { view, id } = place;
+  const { view, id, page } = place;
   const pending = devices?.filter((d) => d.status === "pending").length ?? 0;
   const route = view === "tunnels" && id ? routes?.find((r) => r.id === id) : undefined;
   const device = view === "devices" && id ? devices?.find((d) => d.id === id) : undefined;
@@ -153,12 +153,12 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
         <main className="page" key={view + id}>
           {view === "tunnels" && !id && <Tunnels routes={routes} status={status} />}
           {view === "new" && <NewTunnel users={users ?? []} onPublished={load} />}
-          {route && <TunnelPage route={route} devices={devices ?? []} users={users ?? []} onChanged={load} />}
+          {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} onChanged={load} />}
           {view === "devices" && !id && <Devices devices={devices} routes={routes ?? []} onChanged={load} />}
-          {device && <DevicePage device={device} routes={routes ?? []} onChanged={load} />}
+          {device && <DevicePage device={device} routes={routes ?? []} users={users ?? []} onChanged={load} />}
           {view === "users" && !id && <Users users={users} routes={routes ?? []} />}
           {view === "users" && id === "new" && <NewUser routes={routes ?? []} onAdded={load} />}
-          {user && <UserPage user={user} routes={routes ?? []} onChanged={load} />}
+          {user && <UserPage user={user} page={page} routes={routes ?? []} onChanged={load} />}
           {view === "settings" && <Settings section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
           {view === "docs" && <Docs section={id} />}
         </main>
