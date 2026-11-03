@@ -728,6 +728,9 @@ function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
     <>
       <div className="log-bar">
         <MultiDropdown label="Show" values={kinds} options={KINDS} allLabel="All events" onChange={setKinds} />
+        <button type="button" className="btn text" disabled={!kinds.length} onClick={() => setKinds([])}>
+          <Icon name="refresh" size={18} />Reset
+        </button>
       </div>
       {events && shown.length === 0 && <p className="muted">Nothing yet.</p>}
       <LogDays entries={entries} />
