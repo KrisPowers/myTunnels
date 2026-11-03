@@ -142,7 +142,7 @@ export function NewUser({ routes, onAdded }: { routes: Route[]; onAdded: () => P
     if (!ready) return;
     setBusy(true);
     try {
-      const user = await api.addUser({ username, email, name, password, all_routes: all, route_ids: ids });
+      const user = await api.addUser({ username, email, name, password, route_ids: ids });
       await onAdded();
       notify(`Added ${user.username}`);
       go(`#/users/${user.id}`);
