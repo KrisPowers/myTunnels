@@ -601,7 +601,7 @@ async fn update_device(
                 device.fingerprint = gate::fingerprint(&device.info);
                 device.note = None;
             }
-            "pending" | "denied" => {}
+            "seen" | "pending" | "denied" => {}
             _ => return Err(ApiError::bad("Status must be approved, pending or denied")),
         }
         device.status = status;
