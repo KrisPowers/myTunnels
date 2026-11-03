@@ -601,8 +601,8 @@ function People({ route, users, onGrant }: { route: Route; users: User[]; onGran
         onClick={() => (open ? close() : setOpen(true))}>
         <Icon name="add" />
       </button>
-      {open && (
-        <div className="menu people-menu">
+      {open && createPortal(
+        <div ref={panel} className="menu people-menu" style={{ top: at.top, left: at.left }}>
           {users.length === 0 ? (
             <a className="menu-item" href="#/users/new"><Icon name="add" size={18} />New user</a>
           ) : (
