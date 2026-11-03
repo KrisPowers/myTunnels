@@ -704,7 +704,7 @@ a.result:hover { background: var(--hover); }
 /* Adding people, as in Google's sharing: a field with suggestions, then a row per
    person with access. */
 /* The menu a plus opens to add someone: a small search, then matches. */
-.people-menu { width: 300px; max-height: 420px; padding: 8px 0; overflow-y: auto; }
+.people-menu { position: fixed; right: auto; z-index: 100; width: 300px; max-height: 420px; padding: 8px 0; overflow-y: auto; }
 .menu-search {
   display: block; width: calc(100% - 16px); height: 36px; margin: 0 8px 4px; padding: 0 12px; border: 0;
   border-radius: var(--radius); background: transparent; color: var(--text); font: inherit;

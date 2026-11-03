@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { ago, api, editOf, LEVELS, list, message, shortId, strength, type Access, type Device, type PolicyMode, type Route, type RouteEdit, type Status, type TunnelEvent, type User, type Zone } from "./api";
 import { useDismiss } from "./dismiss";
 import { Dropdown, type Option } from "./Dropdown";
@@ -554,11 +555,31 @@ function People({ route, users, onGrant }: { route: Route; users: User[]; onGran
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
   const wrap = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState({ top: 0, left: 0 });
   const close = useCallback(() => {
     setOpen(false);
     setQ("");
   }, []);
-  useDismiss(open, close, wrap);
+  useDismiss(open, close, wrap, panel);
+
+  // The menu is drawn over the page, under the plus, so no card or scroll area
+  // cuts it off; scrolling or resizing closes it.
+  useLayoutEffect(() => {
+    if (!open || !wrap.current) return;
+    const r = wrap.current.getBoundingClientRect();
+    setAt({ top: r.bottom + 4, left: Math.max(8, Math.min(r.right - 300, innerWidth - 308)) });
+    // Scrolling the menu's own list keeps it open.
+    const away = (e: Event) => {
+      if (!panel.current?.contains(e.target as Node)) close();
+    };
+    addEventListener("scroll", away, true);
+    addEventListener("resize", close);
+    return () => {
+      removeEventListener("scroll", away, true);
+      removeEventListener("resize", close);
+    };
+  }, [open, close]);
 
   const members = users.filter((u) => u.route_ids.includes(route.id));
   const needle = q.trim().toLowerCase();
@@ -580,8 +601,8 @@ function People({ route, users, onGrant }: { route: Route; users: User[]; onGran
         onClick={() => (open ? close() : setOpen(true))}>
         <Icon name="add" />
       </button>
-      {open && (
-        <div className="menu people-menu">
+      {open && createPortal(
+        <div ref={panel} className="menu people-menu" style={{ top: at.top, left: at.left }}>
           {users.length === 0 ? (
             <a className="menu-item" href="#/users/new"><Icon name="add" size={18} />New user</a>
           ) : (
@@ -617,7 +638,8 @@ function People({ route, users, onGrant }: { route: Route; users: User[]; onGran
               })}
             </>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
