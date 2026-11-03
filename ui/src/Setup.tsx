@@ -102,16 +102,8 @@ function AdminStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
-  const short = create && password.length < 10;
-
-  if (auth.setup.password && auth.authenticated) {
-    return (
-      <>
-        <StepHead icon="lock" title="Admin password is set" sub="It protects this dashboard." />
-        <Foot><button type="button" className="btn primary" onClick={onDone}>Continue<Icon name="arrow_forward" size={18} /></button></Foot>
-      </>
-    );
-  }
+  const rating = strength(password);
+  const short = create && !rating.ok;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
