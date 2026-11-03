@@ -130,9 +130,11 @@ export interface Status {
   public_ips: string[];
 }
 
+export interface AdminAccount { username: string | null; email: string | null }
+
 export interface Auth {
   authenticated: boolean;
-  setup: { password: boolean; token: boolean; cloudflare: boolean; done: boolean };
+  setup: { password: boolean; account: boolean; token: boolean; cloudflare: boolean; done: boolean };
 }
 
 async function call<T>(path: string, method = "GET", body?: unknown): Promise<T> {
@@ -151,9 +153,12 @@ async function call<T>(path: string, method = "GET", body?: unknown): Promise<T>
 
 export const api = {
   auth: () => call<Auth>("/auth"),
-  createPassword: (password: string) => call("/auth/setup", "POST", { password }),
-  login: (password: string) => call("/auth/login", "POST", { password }),
+  createAccount: (email: string, username: string, password: string) => call("/auth/setup", "POST", { email, username, password }),
+  login: (login: string, password: string) => call("/auth/login", "POST", { login, password }),
   logout: () => call("/auth/logout", "POST"),
+
+  account: () => call<AdminAccount>("/account"),
+  editAccount: (patch: Partial<{ username: string; email: string }>) => call<AdminAccount>("/account", "PATCH", patch),
 
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),

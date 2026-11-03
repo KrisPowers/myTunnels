@@ -31,7 +31,8 @@ docker compose up -d --build
 Open `http://<host>:7070`. Until everything is in place the panel is a short setup, one
 step at a time, each saved as soon as it is done, so it can be left and resumed:
 
-1. **Admin password.** The one password for the panel.
+1. **Admin account.** An email, a username and a password for the panel. Either the email
+   or the username signs in, and both can be changed under **Settings, Account**.
 2. **Cloudflare.** **Open Cloudflare** goes to the token page with the permissions already
    picked (Account, Cloudflare Tunnel, Edit; Zone, DNS, Edit; Zone, Zone, Read). Create the
    token, paste it back, and the tunnel is created and the connector started. A token that

@@ -25,6 +25,7 @@ const ADMIN_TTL: i64 = 7 * 86_400;
 
 pub fn router(state: AppState) -> Router {
     let protected = Router::new()
+        .route("/account", get(account).patch(edit_account))
         .route("/settings", get(settings))
         .route("/settings/cloudflare", put(save_cloudflare))
         .route("/settings/network", put(save_network))
@@ -150,7 +151,7 @@ async fn require_admin(State(state): State<AppState>, req: Request, next: Next) 
 }
 
 /// What first-run setup has saved so far, so the panel can resume where it was left.
-/// Setup is done once there is a password and Cloudflare is connected.
+/// Setup is done once there is an admin account and Cloudflare is connected.
 async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let db = &state.db;
     let password = db.setting("admin_password")?.is_some();
@@ -159,6 +160,7 @@ async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
         "authenticated": is_admin(&state, &headers),
         "setup": {
             "password": password,
+            "account": db.setting("admin_username")?.is_some(),
             "token": db.setting("cf_token")?.is_some(),
             "cloudflare": state.cloudflare().is_ok(),
             "done": password && state.cloudflare().is_ok(),
@@ -167,33 +169,73 @@ async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
 }
 
 #[derive(Deserialize)]
-struct PasswordBody {
+struct AccountBody {
+    email: String,
+    username: String,
     password: String,
 }
 
+/// Creates the admin account: an email, a username and a password.
 async fn setup(
     State(state): State<AppState>,
-    Json(body): Json<PasswordBody>,
+    Json(body): Json<AccountBody>,
 ) -> ApiResult<Response> {
     if state.db.setting("admin_password")?.is_some() {
-        return Err(ApiError::conflict("A password is already set"));
+        return Err(ApiError::conflict("The admin account already exists"));
     }
+    let username = admin_username(&body.username)?;
+    let email = clean_email(&body.email)?;
     if !secret::strong(&body.password) {
         return Err(ApiError::bad(secret::RULE));
     }
+    state.db.set_setting("admin_username", &username)?;
+    state.db.set_setting("admin_email", &email)?;
     state
         .db
         .set_setting("admin_password", &secret::hash(&body.password)?)?;
     start_session(&state)
 }
 
+fn admin_username(name: &str) -> ApiResult<String> {
+    let name = name.trim();
+    if !valid_username(name) {
+        return Err(ApiError::bad(
+            "Username: 2 to 40 letters, digits, '.', '-' or '_'",
+        ));
+    }
+    Ok(name.to_owned())
+}
+
+#[derive(Deserialize)]
+struct LoginBody {
+    /// The admin's email or username. Installs made before the admin account
+    /// existed sign in with the password alone until one is set.
+    #[serde(default)]
+    login: String,
+    password: String,
+}
+
+/// True when `login` names the admin account, or when there is no account to name.
+fn names_admin(state: &AppState, login: &str) -> ApiResult<bool> {
+    let login = login.trim();
+    let username = state.db.setting("admin_username")?;
+    let email = state.db.setting("admin_email")?;
+    if username.is_none() && email.is_none() {
+        return Ok(true);
+    }
+    Ok([username, email]
+        .into_iter()
+        .flatten()
+        .any(|v| !login.is_empty() && v.eq_ignore_ascii_case(login)))
+}
+
 async fn login(
     State(state): State<AppState>,
     Extension(Peer(ip)): Extension<Peer>,
-    Json(body): Json<PasswordBody>,
+    Json(body): Json<LoginBody>,
 ) -> ApiResult<Response> {
     let Some(hash) = state.db.setting("admin_password")? else {
-        return Err(ApiError::bad("Set a password first"));
+        return Err(ApiError::bad("Create the admin account first"));
     };
     let key = format!("admin:{ip}");
     if state.locked_out(&key) {
@@ -202,10 +244,15 @@ async fn login(
             "Too many wrong tries. Wait 15 minutes and try again.".into(),
         ));
     }
-    if !secret::verify(&body.password, &hash) {
+    // The password is checked either way, so a wrong name takes as long to refuse.
+    let password_ok = secret::verify(&body.password, &hash);
+    if !(password_ok && names_admin(&state, &body.login)?) {
         state.record_failure(&key);
         tokio::time::sleep(Duration::from_millis(800)).await;
-        return Err(ApiError(StatusCode::UNAUTHORIZED, "Wrong password".into()));
+        return Err(ApiError(
+            StatusCode::UNAUTHORIZED,
+            "Those details are not right".into(),
+        ));
     }
     state.clear_failures(&key);
     start_session(&state)
@@ -244,6 +291,36 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
         Json(json!({ "ok": true })),
     )
         .into_response()
+}
+
+// The admin account
+
+async fn account(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    Ok(Json(json!({
+        "username": state.db.setting("admin_username")?,
+        "email": state.db.setting("admin_email")?,
+    })))
+}
+
+#[derive(Deserialize)]
+struct AccountEdit {
+    username: Option<String>,
+    email: Option<String>,
+}
+
+async fn edit_account(
+    State(state): State<AppState>,
+    Json(body): Json<AccountEdit>,
+) -> ApiResult<Json<Value>> {
+    if let Some(username) = body.username {
+        state
+            .db
+            .set_setting("admin_username", &admin_username(&username)?)?;
+    }
+    if let Some(email) = body.email {
+        state.db.set_setting("admin_email", &clean_email(&email)?)?;
+    }
+    account(State(state)).await
 }
 
 // Settings
