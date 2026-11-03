@@ -72,6 +72,23 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
     return () => clearInterval(t);
   }, [load]);
 
+  // The browser the admin uses gets its device key here, the first time.
+  useEffect(() => {
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem("gate.device");
+    } catch {
+      // Kept for this visit only.
+    }
+    api.thisDevice(token, deviceInfo()).then((d) => {
+      try {
+        localStorage.setItem("gate.device", d.token);
+      } catch {
+        // As above.
+      }
+    }).catch(() => {});
+  }, []);
+
   useEffect(() => {
     const onHash = () => {
       setPlace(readHash());
