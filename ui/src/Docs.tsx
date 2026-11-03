@@ -8,6 +8,7 @@ export const DOCS: [string, string, IconName][] = [
   ["access", "Access Control", "shield"],
   ["devices", "Devices", "devices"],
   ["users", "Users", "group"],
+  ["oauth", "Third-Party OAuth", "key"],
   ["trouble", "When something is off", "help"],
 ];
 
@@ -104,6 +105,19 @@ const CONTENT: Record<string, ReactNode> = {
       </Doc>
       <Doc title="What an account opens">
         <p>An account opens every tunnel, or only those picked. One sign-in covers every tunnel on the same domain that the account may open. Turning an account off, or removing it, ends its sessions at once.</p>
+      </Doc>
+    </>
+  ),
+  oauth: (
+    <>
+      <Doc title="Other ways to sign in">
+        <p>Tunnels with Sign-in on can also offer <b>Continue with GitHub</b>, Google, GitLab, or an OpenID Connect provider of your own such as Authentik, Authelia, Keycloak or Pocket ID. Each is set up on the <b>Third-Party OAuth</b> page: register an app with the provider, give it the redirect URL shown there, and paste its client ID and secret back.</p>
+      </Doc>
+      <Doc title="Who it lets in">
+        <p>The provider vouches for an email. The account in Users with that email signs in, held to the same rules as signing in with its password: it must be on, may open the tunnel, and be on a device linked to it.</p>
+      </Doc>
+      <Doc title="The redirect URL">
+        <p>Every provider sends people back to one tunnel address, the oldest tunnel's when the first provider is saved, and from there to the tunnel they started from. If that tunnel is removed the redirect URL moves to another one, and the page shows the new one to give the providers.</p>
       </Doc>
     </>
   ),

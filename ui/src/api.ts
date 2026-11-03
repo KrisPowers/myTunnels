@@ -130,6 +130,23 @@ export interface Status {
   public_ips: string[];
 }
 
+// A way to sign in at tunnels through another service. The secret stays on
+// the server; `secret_set` says one is saved.
+export interface OAuthProvider {
+  id: "github" | "google" | "gitlab" | "oidc";
+  label: string;
+  name: string;
+  issuer: string;
+  client_id: string;
+  secret_set: boolean;
+  enabled: boolean;
+  configured: boolean;
+}
+
+// Every provider, and the address they send people back to; none until a
+// tunnel exists.
+export interface OAuthState { callback: string | null; providers: OAuthProvider[] }
+
 export interface AdminAccount { username: string | null; email: string | null }
 
 export interface Auth {
@@ -159,6 +176,11 @@ export const api = {
 
   account: () => call<AdminAccount>("/account"),
   editAccount: (patch: Partial<{ username: string; email: string }>) => call<AdminAccount>("/account", "PATCH", patch),
+
+  oauth: () => call<OAuthState>("/oauth"),
+  saveOAuth: (id: string, body: Partial<{ client_id: string; client_secret: string; enabled: boolean; name: string; issuer: string }>) =>
+    call<OAuthState>(`/oauth/${id}`, "PUT", body),
+  removeOAuth: (id: string) => call<OAuthState>(`/oauth/${id}`, "DELETE"),
 
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),

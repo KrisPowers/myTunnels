@@ -8,6 +8,7 @@ import { Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
 import { NewTunnel, TunnelPage, Tunnels } from "./Tunnels";
 import { NewUser, UserPage, Users } from "./Users";
+import { OAuth } from "./OAuth";
 import { Callout, Notices } from "./ui";
 
 export function App() {
@@ -145,6 +146,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
               <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels" || view === "new"} />
               <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={pending || undefined} />
               <NavItem to="#/users" icon="group" label="Users" on={view === "users"} />
+              <NavItem to="#/oauth" icon="key" label="Third-Party OAuth" on={view === "oauth"} />
             </>
           )}
         </nav>
@@ -159,6 +161,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           {view === "users" && !id && <Users users={users} routes={routes ?? []} />}
           {view === "users" && id === "new" && <NewUser devices={devices ?? []} onAdded={load} />}
           {user && <UserPage user={user} page={page} routes={routes ?? []} devices={devices ?? []} onChanged={load} />}
+          {view === "oauth" && <OAuth />}
           {view === "settings" && <Settings section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
           {view === "docs" && <Docs section={id} />}
         </main>

@@ -16,6 +16,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::cloudflare::{Account, Cloudflare, Zone};
 use crate::db::{Device, Event, Route, SignIn, User};
 use crate::netinfo;
+use crate::oauth::{self, Provider};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
 use crate::{gate, secret, tunnel};
@@ -26,6 +27,8 @@ const ADMIN_TTL: i64 = 7 * 86_400;
 pub fn router(state: AppState) -> Router {
     let protected = Router::new()
         .route("/account", get(account).patch(edit_account))
+        .route("/oauth", get(list_oauth))
+        .route("/oauth/{id}", put(save_oauth).delete(delete_oauth))
         .route("/settings", get(settings))
         .route("/settings/cloudflare", put(save_cloudflare))
         .route("/settings/network", put(save_network))
@@ -321,6 +324,112 @@ async fn edit_account(
         state.db.set_setting("admin_email", &clean_email(&email)?)?;
     }
     account(State(state)).await
+}
+
+// Third-party sign-in
+
+/// Every provider, set up or not, and the address each must send visitors back to.
+async fn list_oauth(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    let callback =
+        oauth::callback_host(&state.db, &state.snapshot()).map(|h| oauth::redirect_uri(&h));
+    let mut providers = Vec::new();
+    for id in oauth::PROVIDERS {
+        let saved = oauth::load(&state.db, id)?;
+        let p = saved.clone().unwrap_or_else(|| Provider {
+            id: id.to_owned(),
+            ..Provider::default()
+        });
+        providers.push(json!({
+            "id": id,
+            "label": p.label(),
+            "name": p.name,
+            "issuer": p.issuer,
+            "client_id": p.client_id,
+            "secret_set": !p.client_secret.is_empty(),
+            "enabled": p.enabled,
+            "configured": saved.is_some(),
+        }));
+    }
+    Ok(Json(
+        json!({ "callback": callback, "providers": providers }),
+    ))
+}
+
+#[derive(Deserialize)]
+struct ProviderBody {
+    client_id: Option<String>,
+    /// A new secret; left out, the saved one stays.
+    client_secret: Option<String>,
+    enabled: Option<bool>,
+    name: Option<String>,
+    issuer: Option<String>,
+}
+
+async fn save_oauth(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<ProviderBody>,
+) -> ApiResult<Json<Value>> {
+    if !oauth::PROVIDERS.contains(&id.as_str()) {
+        return Err(ApiError::not_found());
+    }
+    let mut p = oauth::load(&state.db, &id)?.unwrap_or_else(|| Provider {
+        id: id.clone(),
+        enabled: true,
+        ..Provider::default()
+    });
+    let changed = body.client_id.is_some() || body.issuer.is_some();
+    if let Some(v) = body.client_id {
+        p.client_id = v.trim().to_owned();
+    }
+    if let Some(v) = body
+        .client_secret
+        .map(|v| v.trim().to_owned())
+        .filter(|v| !v.is_empty())
+    {
+        p.client_secret = v;
+    }
+    if let Some(v) = body.name {
+        p.name = v.trim().chars().take(40).collect();
+    }
+    if let Some(v) = body.issuer {
+        p.issuer = v.trim().trim_end_matches('/').to_owned();
+    }
+    if let Some(v) = body.enabled {
+        p.enabled = v;
+    }
+    if p.client_id.is_empty() || p.client_secret.is_empty() {
+        return Err(ApiError::bad("Enter the client ID and the client secret"));
+    }
+    if id == "oidc" && !(p.issuer.starts_with("https://") || p.issuer.starts_with("http://")) {
+        return Err(ApiError::bad(
+            "Enter the issuer URL, starting with https://",
+        ));
+    }
+    if changed {
+        oauth::check(&state.http, &p)
+            .await
+            .map_err(|e| ApiError::bad(format!("{e:#}")))?;
+    }
+    // Providers keep one callback address, so it stays put as tunnels come and go.
+    let snap = state.snapshot();
+    let pinned = state
+        .db
+        .setting("oauth_host")?
+        .is_some_and(|h| snap.routes.contains_key(&h));
+    if let (false, Some(hub)) = (pinned, &snap.hub) {
+        state.db.set_setting("oauth_host", hub)?;
+    }
+    oauth::save(&state.db, &p)?;
+    list_oauth(State(state)).await
+}
+
+async fn delete_oauth(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    oauth::remove(&state.db, &id)?;
+    list_oauth(State(state)).await
 }
 
 // Settings

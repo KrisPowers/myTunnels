@@ -671,6 +671,14 @@ a.result:hover { background: var(--hover); }
 .edit-block { display: grid; gap: 4px; padding-top: 8px; }
 .edit-switch { display: flex; align-items: center; gap: 12px; color: var(--text-2); cursor: pointer; }
 .edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.edit-actions-start { margin-right: auto; }
+
+/* Actions at a card's right, and steps that open inside it. */
+.card-actions { display: flex; align-items: center; gap: 8px; }
+.card-steps { padding: 20px 24px; border-top: 1px solid var(--line); }
+.redirect-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
+.redirect-line .copy, .card-head + .setting .copy { min-width: 0; text-align: left; }
+.redirect-line .copy-text, .card-head + .setting .copy-text { overflow-wrap: anywhere; }
 
 /* A field that sits under the setting it belongs to, with its button beside it. */
 .setting.nested { align-items: flex-start; padding-top: 4px; }
