@@ -144,18 +144,6 @@ function NavItem({ to, icon, label, on, quiet, count, alert }: { to: string; ico
   );
 }
 
-// Health is the connector's state, which opens its page in Settings.
-function Health({ status }: { status: Status | null }) {
-  const links = status?.connections ?? 0;
-  const [tone, label] = !status ? ["", "Checking"] : links > 0 ? ["ok", "Online"] : status.running ? ["warn", "Connecting"] : ["bad", "Offline"];
-  return (
-    <a className="health" href="#/settings/connector" title={status?.last_error ?? (links ? `${links} links to Cloudflare` : undefined)}>
-      <span className={"dot " + tone} />
-      <span>{label}</span>
-    </a>
-  );
-}
-
 // Search finds a tunnel or a device by any part of its name and opens it.
 // Ctrl+K focuses it.
 function Search({ routes, devices }: { routes: Route[] | null; devices: Device[] | null }) {
