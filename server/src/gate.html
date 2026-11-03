@@ -142,7 +142,7 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
   }
 
   if (mode === 'password') form('password', function () { return { password: $('pw').value }; });
-  if (mode === 'login') form('login', function () { return { login: $('user').value, password: $('secret').value }; });
+  if (mode === 'login') form('login', function () { return { email: $('user').value, password: $('secret').value }; });
   if (mode !== 'device') return;
 
   $('device').hidden = false;
