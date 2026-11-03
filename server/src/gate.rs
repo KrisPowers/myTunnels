@@ -67,15 +67,6 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
             "No app is published at this address.",
         );
     };
-    if !route.enabled {
-        return page(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "message",
-            &host,
-            "Switched off",
-            "This app is switched off right now.",
-        );
-    }
     // A tunnel aimed at the gateway itself would forward to itself forever.
     if req.headers().contains_key(proxy::HOP_HEADER) {
         return page(
