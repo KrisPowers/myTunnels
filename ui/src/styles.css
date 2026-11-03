@@ -703,20 +703,25 @@ a.result:hover { background: var(--hover); }
 
 /* Adding people, as in Google's sharing: a field with suggestions, then a row per
    person with access. */
-.people-search { max-width: 360px; }
-.people-search input {
-  height: 40px; padding: 0 12px 0 40px; border-radius: var(--radius); background: transparent;
-  box-shadow: inset 0 0 0 1px var(--line-strong); font-size: 14px;
+/* The menu a plus opens to add someone: a small search, then matches. */
+.people-menu { width: 300px; padding: 8px 0; }
+.menu-search {
+  display: block; width: calc(100% - 16px); height: 36px; margin: 0 8px 4px; padding: 0 12px; border: 0;
+  border-radius: var(--radius); background: transparent; color: var(--text); font: inherit;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
-.people-search input:hover { box-shadow: inset 0 0 0 1px var(--text); }
-.people-search input:focus { background: transparent; box-shadow: inset 0 0 0 2px var(--accent); }
-.people-search .search-icon { left: 12px; width: 18px; height: 18px; }
+.menu-search:focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+.menu-note { padding: 8px 16px; color: var(--text-2); font-size: 13px; }
+.menu-item { gap: 12px; }
+.menu-item.active { background: var(--hover); }
+.person-item { height: 52px; }
 .people { list-style: none; margin: 0; padding: 0 0 8px; }
 .person-row { display: flex; align-items: center; gap: 16px; min-height: 56px; padding: 0 8px 0 0; }
 .person-row .person { flex: 1; color: var(--text); }
 .person-row .person:hover { text-decoration: none; }
 .person-row .person:hover .scan-target { text-decoration: underline; }
 .page-body.plain .card-pad { padding-left: 0; padding-right: 0; }
+.page-body.plain .card-head { align-items: center; }
 
 /* A tunnel's log. */
 .result.event-row { grid-template-columns: 200px minmax(0, 1fr) 150px 50px 90px; }
