@@ -3,7 +3,7 @@ import { api, editOf, LEVELS, list, message, shortId, strength, type Access, typ
 import { Dropdown } from "./Dropdown";
 import { Icon } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Card, Copy, Row, SaveField, Switch, TextField, useNotify } from "./ui";
+import { ArmedButton, Card, Row, SaveField, Switch, TextField, useNotify } from "./ui";
 
 // Chips saying who may open a tunnel.
 export function AccessChips({ route }: { route: Route }) {
