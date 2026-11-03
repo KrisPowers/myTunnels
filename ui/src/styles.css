@@ -748,6 +748,17 @@ a.result:hover { background: var(--hover); }
 .log-event .dot { width: 8px; height: 8px; }
 .card .table-wrap { padding: 0 12px 12px; }
 
+/* An account at a glance: figures on top, then two columns of label and value. */
+.profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 48px; }
+.section-title { margin: 0 0 8px; font-size: 16px; font-weight: 500; }
+.kv { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 44px; }
+.kv-label { color: var(--text-2); font-size: 13px; }
+.kv-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv-value.muted { color: var(--text-3); }
+.kv-input { width: 100%; }
+.kv-actions { display: flex; gap: 2px; }
+.kv-block { display: grid; gap: 4px; padding: 8px 0; }
+
 /* Fields set straight on a card, under its heading. */
 .card-pad { padding: 0 24px 16px; }
 .form-grid .span { grid-column: 1 / -1; }
