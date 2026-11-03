@@ -4,11 +4,11 @@ import { Dropdown } from "./Dropdown";
 import { Icon } from "./Icon";
 import { Callout, TextField } from "./ui";
 
-const STEPS = ["Admin password", "Cloudflare"];
+const STEPS = ["Admin account", "Cloudflare"];
 
 const TUNNEL_NAME = "homelab";
 
-// Setup holds the dashboard until it can work: an admin password, then
+// Setup holds the dashboard until it can work: an admin account, then
 // Cloudflare. Everything else is found by the server. Each step is saved the
 // moment it is done, so leaving and coming back resumes where it was left.
 // After setup this is the sign-in page.
@@ -63,16 +63,23 @@ function StepHead({ title, sub }: { title: string; sub: ReactNode }) {
   );
 }
 
-// ---- 1. Admin password: create it, or sign in ----
+// ---- 1. Admin account: create it, or sign in ----
 
 function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }) {
   const create = !auth.setup.password;
+  // Installs from before the admin account sign in with the password alone.
+  const named = create || auth.setup.account;
+  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   const rating = strength(password);
-  const ready = password !== "" && (!create || rating.ok);
+  const ready = create
+    ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && username.trim().length >= 2 && rating.ok
+    : password !== "" && (!named || login.trim() !== "");
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -80,7 +87,7 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
     setBusy(true);
     setProblem("");
     try {
-      await (create ? api.createPassword(password) : api.login(password));
+      await (create ? api.createAccount(email.trim(), username.trim(), password) : api.login(login.trim(), password));
       await onDone();
     } catch (err) {
       setProblem(message(err));
@@ -90,9 +97,20 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
 
   return (
     <form onSubmit={submit}>
-      <StepHead title={create ? "Create the admin password" : "Sign in"}
-        sub={create ? "The one password for this dashboard." : auth.setup.cloudflare ? "Enter the admin password." : "Enter the admin password to carry on with setup."} />
-      <TextField label="Password" type={show ? "text" : "password"} autoFocus autoComplete={create ? "new-password" : "current-password"}
+      <StepHead title={create ? "Create the admin account" : "Sign in"}
+        sub={create ? "The account that runs this dashboard." : auth.setup.cloudflare ? "Sign in with the admin account." : "Sign in with the admin account to carry on with setup."} />
+      {create && (
+        <>
+          <TextField label="Email" type="email" autoFocus autoComplete="email" value={email} onChange={setEmail} />
+          <TextField label="Username" autoComplete="username" value={username}
+            onChange={(v) => setUsername(v.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 40))}
+            hint="Letters, digits, dots, dashes and underscores" />
+        </>
+      )}
+      {!create && named && (
+        <TextField label="Email or username" autoFocus autoComplete="username" value={login} onChange={setLogin} />
+      )}
+      <TextField label="Password" type={show ? "text" : "password"} autoFocus={!named} autoComplete={create ? "new-password" : "current-password"}
         value={password} onChange={setPassword}
         trailing={<button type="button" className="tf-action" onClick={() => setShow((v) => !v)}>{show ? "Hide" : "Show"}</button>}
         hint={create && password ? (
@@ -104,7 +122,7 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
       {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
       <div className="setup-foot">
         <button className="btn primary" disabled={busy || !ready}>
-          {busy && <span className="spinner small on-accent" />}{create ? "Create password" : "Sign in"}<Icon name="arrow_forward" size={18} />
+          {busy && <span className="spinner small on-accent" />}{create ? "Create account" : "Sign in"}<Icon name="arrow_forward" size={18} />
         </button>
       </div>
     </form>
