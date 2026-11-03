@@ -48,7 +48,8 @@
   --side: 256px;
   --head: 64px;
   /* The sidebar's distance from the window's edge, and from the page. */
-  --rail: 40px;
+  --rail: 16px;
+  --search: light-dark(#e9eef6, #282a2c);
   --ease: cubic-bezier(.2, .8, .2, 1);
   --font: "Roboto", "Segoe UI", system-ui, -apple-system, sans-serif;
   --mono: "Roboto Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
