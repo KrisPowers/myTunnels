@@ -115,15 +115,18 @@ async fn login(
     let Some(hash) = state.db.setting("admin_password")? else {
         return Err(ApiError::bad("Set a password first"));
     };
-    let valid = PasswordHash::new(&hash).is_ok_and(|parsed| {
-        Argon2::default()
-            .verify_password(body.password.as_bytes(), &parsed)
-            .is_ok()
-    });
-    if !valid {
+    if state.locked_out("admin") {
+        return Err(ApiError(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many wrong tries. Wait 15 minutes and try again.".into(),
+        ));
+    }
+    if !secret::verify(&body.password, &hash) {
+        state.record_failure("admin");
         tokio::time::sleep(Duration::from_millis(800)).await;
         return Err(ApiError(StatusCode::UNAUTHORIZED, "Wrong password".into()));
     }
+    state.clear_failures("admin");
     Ok(start_session(&state))
 }
 
