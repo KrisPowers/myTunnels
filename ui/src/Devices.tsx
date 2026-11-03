@@ -215,3 +215,24 @@ function Facts({ rows }: { rows: [string, string | undefined][] }) {
     </dl>
   );
 }
+
+// Accounts are the people who signed in from this device lately.
+function Accounts({ device, users }: { device: Device; users: User[] }) {
+  const [list, setList] = useState<SignIn[] | null>(null);
+  useEffect(() => {
+    api.deviceActivity(device.id).then(setList).catch(() => setList([]));
+  }, [device.id, device.last_seen]);
+  const last = new Map<string, SignIn>();
+  for (const s of list ?? []) if (s.outcome === "ok" && !last.has(s.user_id)) last.set(s.user_id, s);
+  return (
+    <Card title="Accounts" sub={last.size ? undefined : "No one has signed in from this device."}>
+      {[...last].map(([id, s]) => {
+        const u = users.find((x) => x.id === id);
+        return (
+          <Row key={id} title={<a href={`#/users/${id}`}>{u ? u.name || u.username : "Removed account"}</a>}
+            sub={`${u?.email ?? ""}${u ? ", " : ""}last signed in ${ago(s.at)}${s.ip ? ` from ${s.ip}` : ""}`} />
+        );
+      })}
+    </Card>
+  );
+}
