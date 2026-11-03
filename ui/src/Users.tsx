@@ -3,7 +3,7 @@ import { ago, api, LEVELS, list, message, shortId, strength, type Device, type R
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
 import { Dropdown } from "./Dropdown";
-import { AddMenu, Avatar, Card, LogTable, MoreMenu, Row, SubNav, TextField, useNotify, type LogEntry } from "./ui";
+import { AddMenu, Avatar, LogTable, MoreMenu, SubNav, TextField, useNotify, type LogEntry } from "./ui";
 
 function state(u: User): [string, string] {
   if (u.note) return ["bad", "Held for review"];
