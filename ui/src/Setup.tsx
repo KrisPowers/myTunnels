@@ -278,7 +278,7 @@ function CloudflareStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<vo
 
       {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
 
-      <Foot onBack={onBack} note={phase === "connected" ? <SaveMark state="saved" /> : null}>
+      <Foot note={phase === "connected" ? <SaveMark state="saved" /> : null}>
         <button type="button" className="btn primary" disabled={phase !== "connected"} onClick={onDone}>Continue<Icon name="arrow_forward" size={18} /></button>
       </Foot>
     </>
