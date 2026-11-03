@@ -28,7 +28,8 @@ export function Setup({ auth, onChange }: { auth: Auth; onChange: () => Promise<
     setAt((a) => a + 1);
   };
 
-  if (setup.done && !auth.authenticated) {
+  // Signing in is a gate in front of setup, not one of its steps.
+  if (setup.password && !auth.authenticated) {
     return (
       <Frame>
         <div className="setup-card card">
