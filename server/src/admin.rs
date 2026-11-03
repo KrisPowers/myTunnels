@@ -106,8 +106,10 @@ async fn setup(
     if state.db.setting("admin_password")?.is_some() {
         return Err(ApiError::conflict("A password is already set"));
     }
-    if body.password.chars().count() < 10 {
-        return Err(ApiError::bad("Use at least 10 characters"));
+    if !strong_password(&body.password) {
+        return Err(ApiError::bad(
+            "Use 10 or more characters with upper and lower case, a number and a symbol",
+        ));
     }
     let salt = SaltString::generate(&mut OsRng);
     let hash = Argon2::default()
