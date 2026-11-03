@@ -139,8 +139,9 @@ function AdminStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }
       <StepHead icon="lock" title={create ? "Create the admin password" : "Sign in"}
         sub={create ? "The one password for this dashboard. At least 10 characters." : auth.setup.done ? "Enter the admin password." : "Enter the admin password to carry on with setup."} />
       <div className="field">
+        <label className="field-label" htmlFor="password">Password</label>
         <div className="input-wrap">
-          <input className="input big" type={show ? "text" : "password"} autoFocus aria-label="Password"
+          <input id="password" className="input big" type={show ? "text" : "password"} autoFocus
             autoComplete={create ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} />
           <button type="button" className="input-action" onClick={() => setShow((s) => !s)}>{show ? "Hide" : "Show"}</button>
         </div>
