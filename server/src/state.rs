@@ -259,6 +259,7 @@ pub fn open_session(
     sessions: &Mutex<HashMap<String, Session>>,
     subject: &str,
     tag: &str,
+    device: &str,
     ttl: i64,
 ) -> String {
     let sid = crate::util::random_hex(32);
