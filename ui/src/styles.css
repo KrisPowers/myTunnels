@@ -637,11 +637,36 @@ a.result:hover { background: var(--hover); }
   .result.tunnel-row .result-service, .result.device-row .result-meta { display: none; }
   .result.tunnel-row .result-what, .result.device-row .result-service { grid-column: 2; grid-row: 2; }
   .tally.three { grid-template-columns: minmax(0, 1fr); }
+  .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .result.user-row { grid-template-columns: 16px minmax(0, 1fr) auto; }
+  .result.user-row .result-meta { display: none; }
   .setup { padding: 16px; }
   .setup-card { padding: 22px 18px; }
   .step-label { display: none; }
   .step { justify-content: center; }
 }
+
+/* A field that sits under the setting it belongs to, with its button beside it. */
+.setting.nested { align-items: flex-start; padding-top: 4px; }
+.setting.nested .tf { margin: 0; }
+.setting.nested .btn { margin-top: 8px; }
+
+/* A form of fields on a card, two to a row. */
+.form-card { padding: 24px 24px 4px; overflow: visible; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+
+.result.user-row { grid-template-columns: 16px minmax(140px, 1fr) minmax(0, .8fr) 150px 24px; }
+.fold-caret { color: var(--text-3); transition: transform .2s var(--ease); }
+.fold-caret.open { transform: rotate(90deg); }
+
+/* Help: headings, then paragraphs and lists at a reading measure. */
+.flow .doc { display: grid; gap: 14px; padding: 28px 0; }
+.flow .doc + .doc { border-top: 1px solid var(--line); }
+.flow .doc h3 { margin: 0; font-size: 16px; font-weight: 500; line-height: 1.4; }
+.flow .doc p { line-height: 1.65; color: var(--text-2); }
+.flow .doc p b, .flow .doc li b { color: var(--text); font-weight: 500; }
+.bullets { display: grid; gap: 10px; margin: 0; padding-left: 20px; color: var(--text-2); line-height: 1.6; }
+.flow p code, .flow li code { padding: 2px 6px; border-radius: 3px; background: var(--code); font-size: 12.5px; }
 
 /* Compact density, picked in Settings. */
 :root[data-density="compact"] .result { min-height: 44px; }
