@@ -92,8 +92,8 @@ kbd {
 /* The header: the search bar in the middle, help and settings on the right. */
 .header {
   position: sticky; top: 0; z-index: 20; display: grid; align-items: center; gap: 16px;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 540px) minmax(0, 1fr);
-  height: var(--head); padding: 0 16px; background: var(--bg);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 720px) minmax(0, 1fr);
+  height: var(--head); padding: 0 12px 0 var(--rail); background: var(--bg);
 }
 .header .menu-btn { display: none; }
 .header .search { grid-column: 2; }
