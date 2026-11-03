@@ -563,6 +563,7 @@ async fn update_route(
     route.require_lan = body.require_lan;
     route.require_device = body.require_device;
     route.policy_mode = body.policy_mode;
+    let switched = route.enabled != body.enabled;
     route.enabled = body.enabled;
     route.password_hash = tunnel_password(
         body.require_password,
