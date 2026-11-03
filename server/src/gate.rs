@@ -60,13 +60,7 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
     let host = request_host(&req);
     let snap = state.snapshot();
     let Some(route) = snap.routes.get(&host).cloned() else {
-        return page(
-            StatusCode::NOT_FOUND,
-            "message",
-            &host,
-            "Nothing here",
-            "No app is published at this address.",
-        );
+        return StatusCode::NOT_FOUND.into_response();
     };
     // A tunnel aimed at the gateway itself would forward to itself forever.
     if req.headers().contains_key(proxy::HOP_HEADER) {
