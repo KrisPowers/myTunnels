@@ -403,15 +403,17 @@ function PasswordValue({ onSave }: { onSave: (password: string) => Promise<unkno
   const notify = useNotify();
   if (!editing) {
     return (
-      <Row title="Password" sub="Set">
-        <button type="button" className="icon-btn" aria-label="Change password" title="Change password" onClick={() => setEditing(true)}>
-          <Icon name="edit" size={20} />
+      <div className="kv">
+        <span className="kv-label">Password</span>
+        <span className="kv-value">Set</span>
+        <button type="button" className="icon-btn small" aria-label="Change password" title="Change password" onClick={() => setEditing(true)}>
+          <Icon name="edit" size={18} />
         </button>
-      </Row>
+      </div>
     );
   }
   return (
-    <form className="setting nested" onSubmit={async (e) => {
+    <form className="kv-block" onSubmit={async (e) => {
       e.preventDefault();
       setBusy(true);
       try {
