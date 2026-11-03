@@ -215,3 +215,48 @@ export function Avatar({ name, big }: { name: string; big?: boolean }) {
   for (const c of name) hue = (hue * 31 + c.charCodeAt(0)) % 360;
   return <span className={"avatar" + (big ? " big" : "")} style={{ backgroundColor: `hsl(${hue} 45% 42%)` }} aria-hidden>{initials}</span>;
 }
+
+export interface LogEntry {
+  at: number;
+  // "ok", "bad", or "" for neither.
+  tone: string;
+  text: ReactNode;
+  where?: string;
+}
+
+function dayOf(at: number) {
+  const d = new Date(at * 1000);
+  if (d.toDateString() === new Date().toDateString()) return "Today";
+  if (d.toDateString() === new Date(Date.now() - 86_400_000).toDateString()) return "Yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+}
+
+// LogDays is a log: a heading per day, then one quiet line per entry with a dot,
+// the time, what happened, and where from.
+export function LogDays({ entries }: { entries: LogEntry[] }) {
+  const days: [string, LogEntry[]][] = [];
+  for (const e of entries) {
+    const label = dayOf(e.at);
+    if (days.at(-1)?.[0] !== label) days.push([label, []]);
+    days.at(-1)![1].push(e);
+  }
+  return (
+    <>
+      {days.map(([label, list]) => (
+        <section key={label} className="log-day">
+          <h3>{label}</h3>
+          <ul className="log-list">
+            {list.map((e, i) => (
+              <li key={i} className="log-line">
+                <span className={"dot " + e.tone} />
+                <time className="log-time">{new Date(e.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
+                <span className="log-text">{e.text}</span>
+                {e.where && <span className="log-where">{e.where}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </>
+  );
+}
