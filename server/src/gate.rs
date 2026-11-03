@@ -16,11 +16,11 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::db::{Device, Route};
+use crate::db::{Device, Route, SignIn};
 use crate::proxy;
-use crate::secret;
-use crate::state::{open_session, session, AppState, Hop, Snapshot};
+use crate::state::{open_session, session, touch_session, AppState, Hop, Snapshot};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
+use crate::{guard, secret};
 
 pub const DEVICE_COOKIE: &str = "__gate_device";
 const SESSION_COOKIE: &str = "__gate_session";
