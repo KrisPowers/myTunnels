@@ -786,7 +786,7 @@ async fn password(
 
 #[derive(Deserialize)]
 struct LoginRequest {
-    login: String,
+    email: String,
     password: String,
 }
 
