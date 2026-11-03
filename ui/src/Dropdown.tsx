@@ -86,7 +86,6 @@ export function Dropdown<T extends string | number>({ label, value, options, onC
             <li key={String(o.value)} role="option" aria-selected={o.value === value}
               className={"dropdown-option" + (i === active ? " active" : "")}
               onMouseEnter={() => setActive(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(o.value)}>
-              <span className="dropdown-check">{o.value === value && <Icon name="check" size={18} />}</span>
               {o.icon && <Icon name={o.icon} size={20} className="dropdown-icon" />}
               <span className="dropdown-text">
                 <span>{o.label}</span>
