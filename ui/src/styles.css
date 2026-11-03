@@ -631,6 +631,9 @@ a.result:hover { background: var(--hover); }
   .result.user-row { grid-template-columns: 32px minmax(0, 1fr) auto; }
   .result.user-row .result-meta, .result.user-row .result-service, .result.user-row .result-what { display: none; }
   .result.signin-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .result.event-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .result.event-row .mono.muted, .result.event-row .result-service { display: none; }
+  .person-row .result-meta { display: none; }
   .result.signin-row .result-service, .result.signin-row .mono.muted { display: none; }
   .edit-row .place, .edit-row .protocol { flex: 1; width: auto; }
   .setup { padding: 16px; }
@@ -695,8 +698,35 @@ a.result:hover { background: var(--hover); }
 .page-body.plain .card-head, .page-body.plain .setting { padding-left: 0; padding-right: 0; }
 .page-body.plain .setting { border-top: 0; }
 /* The sub-nav names the page, so sections print no title of their own. */
-.page-body.plain .card-head h2 { display: none; }
-.page-body.plain .card-head:not(:has(p)) { display: none; }
+.page-body.plain > .card:first-child .card-head h2 { display: none; }
+.page-body.plain > .card:first-child .card-head:not(:has(p)) { display: none; }
+
+/* Adding people, as in Google's sharing: a field with suggestions, then a row per
+   person with access. */
+/* The menu a plus opens to add someone: a small search, then matches. */
+.people-menu { position: fixed; right: auto; z-index: 100; width: 300px; max-height: 420px; padding: 8px 0; overflow-y: auto; }
+.menu-search {
+  display: block; width: calc(100% - 16px); height: 36px; margin: 0 8px 4px; padding: 0 12px; border: 0;
+  border-radius: var(--radius); background: transparent; color: var(--text); font: inherit;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.menu-search:focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+.menu-note { padding: 8px 16px; color: var(--text-2); font-size: 13px; }
+.menu-item { gap: 12px; }
+.menu-item.active { background: var(--hover); }
+.person-item { height: 52px; }
+.menu-item:disabled { opacity: .45; cursor: default; background: none; }
+.people { list-style: none; margin: 0; padding: 0 0 8px; }
+.person-row { display: flex; align-items: center; gap: 16px; min-height: 56px; padding: 0 8px 0 0; }
+.person-row .person { flex: 1; color: var(--text); }
+.person-row .person:hover { text-decoration: none; }
+.person-row .person:hover .scan-target { text-decoration: underline; }
+.page-body.plain .card-pad { padding-left: 0; padding-right: 0; }
+.page-body.plain .card-head { align-items: center; }
+
+/* A tunnel's log. */
+.result.event-row { grid-template-columns: 200px minmax(0, 1fr) 150px 50px 90px; }
+.event-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Fields set straight on a card, under its heading. */
 .card-pad { padding: 0 24px 16px; }

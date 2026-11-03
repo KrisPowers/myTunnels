@@ -51,7 +51,7 @@ export function Users({ users, routes }: { users: User[] | null; routes: Route[]
                         <small>{u.email}</small>
                       </span>
                       <span className="result-service mono">{u.username}</span>
-                      <span className="result-what">{u.all_routes ? "Every tunnel" : `${u.route_ids.length} tunnel${u.route_ids.length === 1 ? "" : "s"}`}</span>
+                      <span className="result-what">{`${u.route_ids.length} tunnel${u.route_ids.length === 1 ? "" : "s"}`}</span>
                       <span className={"chip " + tone}>{label}</span>
                       <span className="result-meta">{u.last_login ? ago(u.last_login) : "Never"}</span>
                       <Icon name="chevron_right" className="result-go" />
@@ -112,14 +112,11 @@ function PasswordField({ label, value, onChange, hint }: { label: string; value:
   );
 }
 
-// Grants are the tunnels an account may open: every one, or those picked.
-function Grants({ all, ids, routes, onAll, onPick }: { all: boolean; ids: string[]; routes: Route[]; onAll: (v: boolean) => void; onPick: (id: string, on: boolean) => void }) {
+// Grants are the tunnels an account may open, each added on its own.
+function Grants({ ids, routes, onPick }: { ids: string[]; routes: Route[]; onPick: (id: string, on: boolean) => void }) {
   return (
-    <Card title="Tunnels">
-      <Row title="Every tunnel" sub="Including tunnels added later.">
-        <Switch label="Every tunnel" on={all} onChange={onAll} />
-      </Row>
-      {!all && routes.map((r) => (
+    <Card title="Tunnels" sub={routes.length ? undefined : "There are no tunnels yet."}>
+      {routes.map((r) => (
         <Row key={r.id} title={<span className="mono">{r.hostname}</span>} sub={r.require_login ? undefined : "Does not ask for sign-in"}>
           <Switch label={`Allow ${r.hostname}`} on={ids.includes(r.id)} onChange={(v) => onPick(r.id, v)} />
         </Row>
@@ -135,7 +132,6 @@ export function NewUser({ routes, onAdded }: { routes: Route[]; onAdded: () => P
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [all, setAll] = useState(false);
   const [ids, setIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
@@ -146,7 +142,7 @@ export function NewUser({ routes, onAdded }: { routes: Route[]; onAdded: () => P
     if (!ready) return;
     setBusy(true);
     try {
-      const user = await api.addUser({ username, email, name, password, all_routes: all, route_ids: ids });
+      const user = await api.addUser({ username, email, name, password, route_ids: ids });
       await onAdded();
       notify(`Added ${user.username}`);
       go(`#/users/${user.id}`);
@@ -179,7 +175,7 @@ export function NewUser({ routes, onAdded }: { routes: Route[]; onAdded: () => P
             <PasswordField label="Password" value={password} onChange={setPassword} hint="Generate one, or type at least 10 characters with upper and lower case, a number and a symbol." />
           </div>
         </Card>
-        <Grants all={all} ids={ids} routes={routes} onAll={setAll} onPick={(id, on) => setIds((had) => (on ? [...had, id] : had.filter((x) => x !== id)))} />
+        <Grants ids={ids} routes={routes} onPick={(id, on) => setIds((had) => (on ? [...had, id] : had.filter((x) => x !== id)))} />
         <div className="form-foot">
           <a className="btn text" href="#/users">Cancel</a>
           <button className="btn primary" disabled={busy || !ready}>{busy && <span className="spinner small on-accent" />}Add user</button>
@@ -280,7 +276,7 @@ export function UserPage({ user, page, routes, onChanged }: { user: User; page: 
         )}
 
         {current === "access" && (
-          <Grants all={user.all_routes} ids={user.route_ids} routes={routes} onAll={(v) => edit({ all_routes: v }).catch(() => {})}
+          <Grants ids={user.route_ids} routes={routes}
             onPick={(id, on) => edit({ route_ids: on ? [...user.route_ids, id] : user.route_ids.filter((x) => x !== id) }).catch(() => {})} />
         )}
 

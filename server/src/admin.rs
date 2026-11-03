@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::cloudflare::{Account, Cloudflare, Zone};
-use crate::db::{Device, Route, SignIn, User};
+use crate::db::{Device, Event, Route, SignIn, User};
 use crate::netinfo;
 use crate::state::AppState;
 use crate::util::{cookie, lock, now, random_hex, valid_host, ApiError, ApiResult};
@@ -33,6 +33,7 @@ pub fn router(state: AppState) -> Router {
         .route("/routes", get(list_routes).post(create_route))
         .route("/routes/{id}", patch(update_route).delete(delete_route))
         .route("/routes/{id}/address", put(move_route))
+        .route("/routes/{id}/activity", get(route_activity))
         .route("/devices", get(list_devices))
         .route("/devices/{id}", patch(update_device).delete(delete_device))
         .route("/device", post(this_device))
@@ -562,6 +563,7 @@ async fn update_route(
     route.require_lan = body.require_lan;
     route.require_device = body.require_device;
     route.policy_mode = body.policy_mode;
+    let switched = route.enabled != body.enabled;
     route.enabled = body.enabled;
     route.password_hash = tunnel_password(
         body.require_password,
@@ -576,6 +578,9 @@ async fn update_route(
     route.login_idle = body.login_idle;
     route.preserve_host = body.preserve_host;
     state.db.update_route(&route)?;
+    if switched && state.cloudflare().is_ok() {
+        tunnel::sync_ingress(&state).await?;
+    }
     state.reload()?;
     Ok(Json(route))
 }
@@ -818,8 +823,6 @@ struct NewUser {
     name: String,
     password: String,
     #[serde(default)]
-    all_routes: bool,
-    #[serde(default)]
     route_ids: Vec<String>,
 }
 
@@ -845,7 +848,7 @@ async fn create_user(
         name: body.name.trim().chars().take(80).collect(),
         password_hash: secret::hash(&body.password)?,
         enabled: true,
-        all_routes: body.all_routes,
+        all_routes: false,
         route_ids: known_routes(&state, body.route_ids),
         created_at: now(),
         last_login: None,
@@ -863,7 +866,6 @@ struct UserEdit {
     name: Option<String>,
     password: Option<String>,
     enabled: Option<bool>,
-    all_routes: Option<bool>,
     route_ids: Option<Vec<String>>,
 }
 
@@ -901,15 +903,20 @@ async fn update_user(
             user.note = None;
         }
     }
-    if let Some(all) = body.all_routes {
-        user.all_routes = all;
-    }
     if let Some(ids) = body.route_ids {
         user.route_ids = known_routes(&state, ids);
     }
     state.db.save_user(&user)?;
     state.reload()?;
     Ok(Json(user))
+}
+
+/// What happened at a tunnel lately: sign-ins, passwords, visitors turned away.
+async fn route_activity(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Vec<Event>>> {
+    Ok(Json(state.db.events(&id, 300)?))
 }
 
 /// An account's latest sign-ins, and the devices it has used.

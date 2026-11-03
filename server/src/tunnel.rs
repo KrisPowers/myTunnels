@@ -198,6 +198,8 @@ pub async fn sync_ingress(state: &AppState) -> Result<()> {
         .db
         .routes()?
         .iter()
+        // A tunnel switched off leaves the tunnel's routing, as if it did not exist.
+        .filter(|r| r.enabled)
         .map(|r| json!({ "hostname": r.hostname, "service": state.config.gate_service }))
         .collect();
     ingress.push(json!({ "service": "http_status:404" }));

@@ -43,12 +43,22 @@ export interface User {
   email: string;
   name: string;
   enabled: boolean;
-  all_routes: boolean;
   route_ids: string[];
   created_at: number;
   last_login: number | null;
   // Why the account is held, while it is.
   note: string | null;
+}
+
+export interface TunnelEvent {
+  route_id: string;
+  kind: "sign-in" | "password" | "visit" | "device";
+  outcome: string;
+  user_id: string | null;
+  device_id: string | null;
+  ip: string | null;
+  country: string | null;
+  at: number;
 }
 
 export interface SignIn {
@@ -157,6 +167,7 @@ export const api = {
     call<Route>("/routes", "POST", body),
   editRoute: (id: string, edit: RouteEdit) => call<Route>(`/routes/${id}`, "PATCH", edit),
   removeRoute: (id: string) => call(`/routes/${id}`, "DELETE"),
+  routeActivity: (id: string) => call<TunnelEvent[]>(`/routes/${id}/activity`),
   moveRoute: (id: string, subdomain: string, zone_id: string) => call<Route>(`/routes/${id}/address`, "PUT", { subdomain, zone_id }),
 
   devices: () => call<Device[]>("/devices"),
@@ -166,9 +177,9 @@ export const api = {
   thisDevice: (token: string | null, info: unknown) => call<{ id: string; token: string }>("/device", "POST", { token, info }),
 
   users: () => call<User[]>("/users"),
-  addUser: (body: { username: string; email: string; name: string; password: string; all_routes: boolean; route_ids: string[] }) =>
+  addUser: (body: { username: string; email: string; name: string; password: string; route_ids: string[] }) =>
     call<User>("/users", "POST", body),
-  editUser: (id: string, patch: Partial<Pick<User, "username" | "email" | "name" | "enabled" | "all_routes" | "route_ids">> & { password?: string }) =>
+  editUser: (id: string, patch: Partial<Pick<User, "username" | "email" | "name" | "enabled" | "route_ids">> & { password?: string }) =>
     call<User>(`/users/${id}`, "PATCH", patch),
   removeUser: (id: string) => call(`/users/${id}`, "DELETE"),
   signOutUser: (id: string) => call(`/users/${id}/signout`, "POST"),
