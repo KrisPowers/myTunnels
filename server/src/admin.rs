@@ -455,6 +455,7 @@ async fn create_route(
     let target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
     check_not_self(&state, target_host.as_deref(), body.port)?;
     let password_hash = tunnel_password(body.require_password, body.password, None)?;
+    check_limits(body.login_max, body.login_idle)?;
 
     let cf = Cloudflare::new(&state.http, &cf_settings.token);
     let zone = cf
