@@ -44,6 +44,7 @@ export interface User {
   name: string;
   enabled: boolean;
   route_ids: string[];
+  device_ids: string[];
   created_at: number;
   last_login: number | null;
   // Why the account is held, while it is.
