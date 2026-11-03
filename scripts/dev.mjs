@@ -122,9 +122,10 @@ function build(reason) {
   cargo.on("exit", (code) => {
     building = false;
     if (code === 0) {
-      start();
-      setTimeout(() => writeFileSync(reloadFile, String(Date.now())), 300);
-      log(`server live in ${((Date.now() - began) / 1000).toFixed(1)} s`);
+      if (start()) {
+        setTimeout(() => writeFileSync(reloadFile, String(Date.now())), 300);
+        log(`server live in ${((Date.now() - began) / 1000).toFixed(1)} s`);
+      }
     } else {
       log("build failed, the last good server keeps running");
     }
