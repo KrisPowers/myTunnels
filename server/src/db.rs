@@ -217,7 +217,7 @@ fn user_row(r: &Row) -> rusqlite::Result<User> {
     Ok(User {
         id: r.get(0)?,
         username: r.get(1)?,
-        email: r.get(2)?,
+        email: r.get::<_, Option<String>>(2)?.unwrap_or_default(),
         name: r.get(3)?,
         password_hash: r.get(4)?,
         enabled: r.get(5)?,
