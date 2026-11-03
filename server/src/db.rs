@@ -225,6 +225,7 @@ fn user_row(r: &Row) -> rusqlite::Result<User> {
         route_ids: Vec::new(),
         created_at: r.get(7)?,
         last_login: r.get(8)?,
+        note: r.get(9)?,
     })
 }
 
