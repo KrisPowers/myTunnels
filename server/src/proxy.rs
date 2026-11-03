@@ -223,6 +223,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn origins_swap_only_on_a_whole_origin() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::LOCATION,
+            HeaderValue::from_static("http://localhost:8090/login?x=1"),
+        );
+        swap_origin(
+            &mut headers,
+            header::LOCATION,
+            "http://localhost:8090",
+            "https://app.example.com",
+        );
+        assert_eq!(
+            headers.get(header::LOCATION).unwrap(),
+            "https://app.example.com/login?x=1"
+        );
+
+        headers.insert(
+            header::LOCATION,
+            HeaderValue::from_static("http://localhost:80901/x"),
+        );
+        swap_origin(
+            &mut headers,
+            header::LOCATION,
+            "http://localhost:8090",
+            "https://app.example.com",
+        );
+        assert_eq!(
+            headers.get(header::LOCATION).unwrap(),
+            "http://localhost:80901/x"
+        );
+    }
+
+    #[test]
     fn gate_cookies_never_reach_the_app() {
         let mut headers = HeaderMap::new();
         headers.insert(
