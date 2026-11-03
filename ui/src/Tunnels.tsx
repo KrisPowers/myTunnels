@@ -432,7 +432,7 @@ export function TunnelPage({ route, page, devices, users, onChanged }: { route: 
       </div>
       <SubNav back="#/" backLabel="Tunnels" base={`#/tunnels/${route.id}`} items={TUNNEL_PAGES} current={current} />
 
-      <div className="page-body stack flow" key={current}>
+      <div className="page-body stack plain" key={current}>
         {current === "access" && (
           <AccessCard value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} onChange={access}
             onPassword={async (password) => {
