@@ -4,15 +4,16 @@ import { Icon } from "./Icon";
 import { go } from "./route";
 import { ArmedButton, Callout, Card, Copy, Row, SaveField, Switch, useNotify } from "./ui";
 
-const FILTERS: [DeviceStatus, string][] = [
-  ["pending", "Waiting"],
+// Two lists: devices let in, and every other device met, waiting to be decided.
+type Tab = "approved" | "requests";
+const TABS: [Tab, string][] = [
   ["approved", "Approved"],
-  ["seen", "Seen"],
-  ["denied", "Denied"],
+  ["requests", "Requests"],
 ];
+const inTab = (tab: Tab, d: Device) => (tab === "approved") === (d.status === "approved");
 
 const TONE: Record<DeviceStatus, string> = { seen: "", pending: "warn", approved: "ok", denied: "bad" };
-const LABEL: Record<DeviceStatus, string> = { seen: "Seen", pending: "Waiting", approved: "Approved", denied: "Denied" };
+const LABEL: Record<DeviceStatus, string> = { seen: "Request", pending: "Request", approved: "Approved", denied: "Denied" };
 
 function summary(d: Device) {
   const i = d.info ?? {};
