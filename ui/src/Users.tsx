@@ -3,7 +3,7 @@ import { ago, api, LEVELS, list, message, shortId, strength, type Device, type R
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
 import { Dropdown } from "./Dropdown";
-import { AddMenu, Avatar, LogTable, MoreMenu, SubNav, TextField, useNotify, type LogEntry } from "./ui";
+import { AddMenu, Avatar, Dialog, LogTable, MoreMenu, SubNav, TextField, useNotify, type LogEntry } from "./ui";
 
 function state(u: User): [string, string] {
   if (u.note) return ["bad", "Held for review"];
@@ -396,44 +396,45 @@ function KeyValue({ label, value, type, onSave }: { label: string; value: string
   );
 }
 
-// PasswordValue shows that a password is set, and changes it from an edit button.
+// PasswordValue shows that a password is set, and changes it in a dialog from
+// an edit button.
 function PasswordValue({ onSave }: { onSave: (password: string) => Promise<unknown> }) {
   const [editing, setEditing] = useState(false);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
-  if (!editing) {
-    return (
-      <div className="kv">
-        <span className="kv-label">Password</span>
-        <span className="kv-value">Set</span>
-        <button type="button" className="icon-btn small" aria-label="Change password" title="Change password" onClick={() => setEditing(true)}>
-          <Icon name="edit" size={18} />
-        </button>
-      </div>
-    );
-  }
   return (
-    <form className="kv-block" onSubmit={async (e) => {
-      e.preventDefault();
-      setBusy(true);
-      try {
-        await onSave(password);
-        notify("Password changed. They were signed out everywhere.");
-        setPassword("");
-        setEditing(false);
-      } catch (err) {
-        notify(message(err), "bad");
-      } finally {
-        setBusy(false);
-      }
-    }}>
-      <PasswordField label="New password" value={password} onChange={setPassword} hint="Changing it signs them out everywhere." />
-      <div className="edit-actions">
-        <button type="button" className="btn text" onClick={() => setEditing(false)}>Cancel</button>
-        <button className="btn primary" disabled={busy || !strength(password).ok}>Save</button>
-      </div>
-    </form>
+    <div className="kv">
+      <span className="kv-label">Password</span>
+      <span className="kv-value">Set</span>
+      <button type="button" className="icon-btn small" aria-label="Change password" title="Change password" onClick={() => setEditing(true)}>
+        <Icon name="edit" size={18} />
+      </button>
+      {editing && (
+        <Dialog title="Change password" onClose={() => setEditing(false)}>
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            try {
+              await onSave(password);
+              notify("Password changed. They were signed out everywhere.");
+              setPassword("");
+              setEditing(false);
+            } catch (err) {
+              notify(message(err), "bad");
+            } finally {
+              setBusy(false);
+            }
+          }}>
+            <PasswordField label="New password" value={password} onChange={setPassword} hint="Changing it signs them out everywhere." />
+            <div className="edit-actions">
+              <button type="button" className="btn text" onClick={() => setEditing(false)}>Cancel</button>
+              <button className="btn primary" disabled={busy || !strength(password).ok}>Save</button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+    </div>
   );
 }
 

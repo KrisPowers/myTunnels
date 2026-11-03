@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, editOf, message, type Route, type Smtp, type TwoFactor } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon } from "./Icon";
-import { Card, Row, Switch, TextField, useNotify } from "./ui";
+import { Card, Dialog, Row, Switch, TextField, useNotify } from "./ui";
 
 const SECURITY: Option<Smtp["security"]>[] = [
   { value: "starttls", label: "STARTTLS", hint: "Usually port 587" },
@@ -70,7 +70,7 @@ export function TwoFactorPage({ routes, onChanged }: { routes: Route[]; onChange
 }
 
 // MailCard is the SMTP credentials codes are sent with: shown once saved,
-// with an edit button and a test, or a Set up button.
+// with an edit button and a test, or a Set up button. Either opens a dialog.
 function MailCard({ tf, onSaved }: { tf: TwoFactor; onSaved: (tf: TwoFactor) => void }) {
   const [open, setOpen] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -92,16 +92,19 @@ function MailCard({ tf, onSaved }: { tf: TwoFactor; onSaved: (tf: TwoFactor) => 
   return (
     <Card title="SMTP" sub={smtp ? "Codes are sent with these credentials." : "Not set up."}
       action={smtp ? (
-        <button type="button" className="icon-btn" aria-label="Change SMTP credentials" title="Change" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <button type="button" className="icon-btn" aria-label="Change SMTP credentials" title="Change" onClick={() => setOpen(true)}>
           <Icon name="edit" size={20} />
         </button>
-      ) : !open && <button type="button" className="btn" onClick={() => setOpen(true)}>Set up</button>}>
-      {open ? (
-        <MailForm smtp={smtp} onSaved={(next) => {
-          onSaved(next);
-          setOpen(false);
-        }} onCancel={() => setOpen(false)} />
-      ) : smtp && (
+      ) : <button type="button" className="btn" onClick={() => setOpen(true)}>Set up</button>}>
+      {open && (
+        <Dialog title="SMTP" onClose={() => setOpen(false)}>
+          <MailForm smtp={smtp} onSaved={(next) => {
+            onSaved(next);
+            setOpen(false);
+          }} onCancel={() => setOpen(false)} />
+        </Dialog>
+      )}
+      {smtp && (
         <>
           <Row title="Host"><span className="mono">{smtp.host}:{smtp.port}</span></Row>
           <Row title="Security"><span>{SECURITY.find((s) => s.value === smtp.security)?.label}</span></Row>
@@ -149,7 +152,7 @@ function MailForm({ smtp, onSaved, onCancel }: { smtp: Smtp | null; onSaved: (tf
   };
 
   return (
-    <form className="card-steps" onSubmit={submit}>
+    <form onSubmit={submit}>
       <div className="edit-row">
         <TextField className="grow" label="SMTP host" mono placeholder="smtp.gmail.com" autoFocus autoComplete="off" value={host} onChange={setHost} />
         <TextField className="port" label="Port" mono inputMode="numeric" value={port} onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />

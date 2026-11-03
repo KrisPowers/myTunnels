@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, message, type OAuthProvider } from "./api";
 import { Icon } from "./Icon";
 import { ProviderLogo } from "./ProviderLogo";
-import { ArmedButton, Card, TextField, useNotify } from "./ui";
+import { ArmedButton, Dialog, TextField, useNotify } from "./ui";
 
 // Where each provider registers an app, and what to do there. Redirect URLs
 // belong to tunnels: each one that offers a provider shows its own.
@@ -72,7 +72,8 @@ export function OAuth() {
   );
 }
 
-// ProviderForm sets a provider up in two steps, as setup did for Cloudflare.
+// ProviderForm sets a provider up in two steps, as setup did for Cloudflare,
+// in a dialog over the page.
 function ProviderForm({ p, domain, onSaved, onCancel }: { p: OAuthProvider; domain: string; onSaved: (list: OAuthProvider[]) => void; onCancel: () => void }) {
   const oidc = p.id === "oidc";
   const guide = GUIDE[p.id];
@@ -113,8 +114,8 @@ function ProviderForm({ p, domain, onSaved, onCancel }: { p: OAuthProvider; doma
   };
 
   return (
-    <Card title={<><ProviderLogo id={p.id} size={24} />{p.label}</>}>
-      <form className="card-steps" onSubmit={submit}>
+    <Dialog title={<><ProviderLogo id={p.id} size={28} />{p.label}</>} onClose={onCancel}>
+      <form onSubmit={submit}>
         <ol className="how">
           <li>
             <span className="how-num">1</span>
@@ -144,6 +145,6 @@ function ProviderForm({ p, domain, onSaved, onCancel }: { p: OAuthProvider; doma
           <button className="btn primary" disabled={busy || !ready}>{busy && <span className="spinner small on-accent" />}Save</button>
         </div>
       </form>
-    </Card>
+    </Dialog>
   );
 }
