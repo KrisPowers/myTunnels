@@ -32,7 +32,8 @@ const TRIED_COOKIE: &str = "__gate_tried";
 const DEVICE_COOKIE_TTL: i64 = 400 * 86_400;
 const DEVICE_SESSION_TTL: i64 = 30 * 86_400;
 const PASS_TTL: i64 = 7 * 86_400;
-const USER_TTL: i64 = 7 * 86_400;
+/// The longest any sign-in lasts; each tunnel can ask for less.
+const USER_TTL: i64 = 30 * 86_400;
 const HOP_TTL: i64 = 60;
 const TOKEN_LEN: usize = 256;
 /// A device's ID: 256 letters and numbers, apart from its secret key, so the
