@@ -502,6 +502,7 @@ async fn update_route(
         return Err(ApiError::bad("Port must be between 1 and 65535"));
     }
     route.target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
+    check_not_self(&state, route.target_host.as_deref(), body.port)?;
     route.target_port = body.port;
     route.target_scheme = body.target_scheme;
     route.require_lan = body.require_lan;
