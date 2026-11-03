@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS users (
     created_at INTEGER NOT NULL,
     last_login INTEGER
 );
+CREATE TABLE IF NOT EXISTS sign_ins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_id TEXT,
+    ip TEXT,
+    country TEXT,
+    at INTEGER NOT NULL,
+    outcome TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sign_ins_user ON sign_ins (user_id, at);
+CREATE INDEX IF NOT EXISTS sign_ins_device ON sign_ins (device_id, at);
 CREATE TABLE IF NOT EXISTS user_routes (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
