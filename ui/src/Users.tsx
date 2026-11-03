@@ -308,21 +308,15 @@ function Activity({ user }: { user: User }) {
             sub={`${count} sign-in${count === 1 ? "" : "s"}, last ${ago(last.at)}${last.ip ? ` from ${last.ip}` : ""}${last.country ? ` (${last.country})` : ""}`} />
         ))}
       </Card>
-      <Card title="Recent sign-ins">
+      <Card title="Sign-ins">
         {list && list.length > 0 ? (
-          <ul className="results">
-            {list.slice(0, 50).map((s, i) => (
-              <li key={i}>
-                <div className="result signin-row">
-                  <span className={"chip " + OUTCOME[s.outcome][0]}>{OUTCOME[s.outcome][1]}</span>
-                  <span className="mono">{s.ip ?? "Unknown address"}</span>
-                  <span className="result-service">{s.country ?? ""}</span>
-                  <span className="mono muted">{s.device_id ? shortId(s.device_id) : "No device key"}</span>
-                  <span className="result-meta">{ago(s.at)}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <LogDays entries={list.slice(0, 100).map((s): LogEntry => ({
+            at: s.at,
+            tone: s.outcome === "ok" ? "ok" : "bad",
+            text: s.outcome === "ok" ? `Signed in${s.device_id ? ` on ${shortId(s.device_id)}` : ""}`
+              : s.outcome === "failed" ? "Wrong password" : "Blocked and held for review",
+            where: [s.ip, s.country].filter(Boolean).join(", "),
+          }))} />
         ) : <p className="card-note muted">Nothing yet.</p>}
       </Card>
     </>
