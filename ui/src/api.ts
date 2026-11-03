@@ -167,6 +167,7 @@ export const api = {
     call<Route>("/routes", "POST", body),
   editRoute: (id: string, edit: RouteEdit) => call<Route>(`/routes/${id}`, "PATCH", edit),
   removeRoute: (id: string) => call(`/routes/${id}`, "DELETE"),
+  routeActivity: (id: string) => call<TunnelEvent[]>(`/routes/${id}/activity`),
   moveRoute: (id: string, subdomain: string, zone_id: string) => call<Route>(`/routes/${id}/address`, "PUT", { subdomain, zone_id }),
 
   devices: () => call<Device[]>("/devices"),
