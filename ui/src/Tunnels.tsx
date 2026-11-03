@@ -5,7 +5,7 @@ import { useDismiss } from "./dismiss";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Avatar, Card, Row, SubNav, Switch, TextField, useNotify } from "./ui";
+import { ArmedButton, Avatar, Card, LogDays, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
 
 // Chips saying who may open a tunnel.
 export function AccessChips({ route }: { route: Route }) {
