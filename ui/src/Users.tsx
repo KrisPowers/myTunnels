@@ -469,8 +469,8 @@ function Activity({ user }: { user: User }) {
             ip: s.ip,
             country: s.country,
           }))} />
-        ) : <p className="card-note muted">Nothing yet.</p>}
-      </Card>
+        ) : <p className="empty-note">{list ? "No sign-ins yet" : "Loading"}</p>}
+      </section>
     </>
   );
 }
