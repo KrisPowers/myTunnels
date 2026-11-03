@@ -88,6 +88,8 @@ const ROUTE_MIGRATIONS: [(&str, &str); 6] = [
     ),
     ("password_hash", "password_hash TEXT"),
     ("require_login", "require_login INTEGER NOT NULL DEFAULT 0"),
+    ("login_max", "login_max INTEGER NOT NULL DEFAULT 604800"),
+    ("login_idle", "login_idle INTEGER NOT NULL DEFAULT 0"),
 ];
 
 /// A published tunnel: one hostname on a Cloudflare zone pointing at one local port.
