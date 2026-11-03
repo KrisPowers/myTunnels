@@ -1,9 +1,16 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
+// Builds into dist, which the server serves. `npm run dev` proxies the API
+// to a server on the default port.
 export default defineConfig({
   plugins: [react()],
-  server: {
-    proxy: { '/api': 'http://127.0.0.1:7070' },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    modulePreload: { polyfill: false },
   },
-})
+  server: {
+    proxy: { "/api": { target: "http://127.0.0.1:7070", changeOrigin: true } },
+  },
+});
