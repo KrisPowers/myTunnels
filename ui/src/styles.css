@@ -298,10 +298,14 @@ a.result:hover { background: var(--hover); }
   display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none;
   color: inherit; font: inherit; cursor: pointer; transition: color .15s;
 }
-.copy-text { text-decoration: underline dotted currentColor 1px; text-underline-offset: 3px; }
+/* Long dashes under the value; one solid line on hover, in the success colour once copied. */
+.copy-text {
+  padding-bottom: 3px;
+  background: linear-gradient(to right, currentColor 65%, transparent 0) left bottom / 10px 1px repeat-x;
+}
+.copy:hover .copy-text, .copy.done .copy-text { background: linear-gradient(currentColor, currentColor) left bottom / 100% 1px no-repeat; }
 .copy-icon { opacity: .65; }
 .copy:hover { color: var(--text); }
-.copy:hover .copy-text { font-weight: 600; }
 .copy:hover .copy-icon { opacity: 1; }
 .copy.done { color: var(--ok); }
 
