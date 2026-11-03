@@ -194,18 +194,39 @@ fn password_session(state: &AppState, headers: &HeaderMap, route: &Route) -> boo
     };
     cookie(headers, PASS_COOKIE)
         .and_then(|sid| session(&state.pass_sessions, sid))
-        .is_some_and(|(route_id, tag)| route_id == route.id && tag == secret::tag(hash))
+        .is_some_and(|s| s.subject == route.id && s.tag == secret::tag(hash))
 }
 
+/// A signed-in account that may open this tunnel, within the tunnel's limits on how
+/// long ago it signed in and how long it has been idle.
 fn user_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &Route) -> bool {
-    cookie(headers, USER_COOKIE)
-        .and_then(|sid| session(&state.user_sessions, sid))
-        .and_then(|(user_id, tag)| {
-            snap.users
-                .get(&user_id)
-                .filter(|u| secret::tag(&u.password_hash) == tag)
-        })
-        .is_some_and(|u| u.enabled && (u.all_routes || u.route_ids.contains(&route.id)))
+    let Some(sid) = cookie(headers, USER_COOKIE) else {
+        return false;
+    };
+    let Some(s) = session(&state.user_sessions, sid) else {
+        return false;
+    };
+    let here = cookie(headers, DEVICE_COOKIE)
+        .map(sha256_hex)
+        .unwrap_or_default();
+    if !s.device.is_empty() && s.device != here {
+        return false;
+    }
+    let now = now();
+    if (route.login_max > 0 && now - s.created > route.login_max)
+        || (route.login_idle > 0 && now - s.seen > route.login_idle)
+    {
+        return false;
+    }
+    let ok = snap
+        .users
+        .get(&s.subject)
+        .filter(|u| secret::tag(&u.password_hash) == s.tag)
+        .is_some_and(|u| u.enabled && (u.all_routes || u.route_ids.contains(&route.id)));
+    if ok {
+        touch_session(&state.user_sessions, sid);
+    }
+    ok
 }
 
 fn may_open(device: &Device, route: &Route) -> bool {
