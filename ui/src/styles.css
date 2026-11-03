@@ -637,6 +637,23 @@ a.result:hover { background: var(--hover); }
   .step { justify-content: center; }
 }
 
+/* New tunnel, in the header beside help and settings. */
+.header-new { height: 40px; margin-right: 8px; padding: 0 20px 0 16px; }
+.header-new:hover { text-decoration: none; }
+
+/* A title or line with its edit button beside it, and the form that replaces it. */
+.inline-edit { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.icon-btn.small { width: 32px; height: 32px; }
+.edit-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.edit-row .tf { margin-bottom: 8px; }
+.edit-row .grow { flex: 1; }
+.edit-row .port { width: 120px; flex-shrink: 0; }
+.edit-row .protocol { width: 140px; flex-shrink: 0; }
+.edit-row > .btn { margin-top: 8px; }
+.edit-block { display: grid; gap: 4px; padding-top: 8px; }
+.edit-switch { display: flex; align-items: center; gap: 12px; color: var(--text-2); cursor: pointer; }
+.edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
 /* A field that sits under the setting it belongs to, with its button beside it. */
 .setting.nested { align-items: flex-start; padding-top: 4px; }
 .setting.nested .tf { margin: 0; }
