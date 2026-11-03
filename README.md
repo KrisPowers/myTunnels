@@ -100,9 +100,19 @@ under **Show target options**.
 ## Development
 
 ```sh
-cd server && cargo run          # admin on :7070, reads ../ui/dist
-cd ui && npm install && npm run dev   # Vite dev server, proxies /api to :7070
+node scripts/dev.mjs
 ```
+
+The whole app on `http://localhost:7070`, live as you save, with no image build:
+
+- A change under `server/` is rebuilt incrementally and swapped in while the old build keeps
+  serving, then every open page reloads. Only the first run compiles the dependencies.
+- A change under `ui/` shows straight away through hot reload.
+- cloudflared runs under the server as it does in the container, so tunnels work too. It is
+  used from `PATH`, or fetched once.
+
+Dev data lives in `server/data`, apart from the container's volume. Stop the container
+first, since both use port 7070.
 
 ## License
 
