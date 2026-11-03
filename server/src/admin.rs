@@ -899,9 +899,6 @@ async fn update_user(
             user.note = None;
         }
     }
-    if let Some(all) = body.all_routes {
-        user.all_routes = all;
-    }
     if let Some(ids) = body.route_ids {
         user.route_ids = known_routes(&state, ids);
     }
