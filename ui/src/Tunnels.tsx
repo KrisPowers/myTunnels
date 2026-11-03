@@ -78,7 +78,75 @@ export function Tunnels({ routes, status }: { routes: Route[] | null; status: St
   );
 }
 
+// ---- where requests go ----
+
+type Place = "here" | "machine" | "container";
+
+const PLACES: Option<Place>[] = [
+  { value: "here", label: "This computer", hint: "The app runs on the machine myTunnels runs on", icon: "devices" },
+  { value: "machine", label: "Another machine", hint: "A computer or device on your network", icon: "router" },
+  { value: "container", label: "A container", hint: "A container on the same Docker network", icon: "dns" },
+];
+
+type Target = Pick<RouteEdit, "target_host" | "target_scheme" | "preserve_host">;
+
+// LocalApp picks where the app runs, in one row like the address row: this
+// computer, another machine on the network, or a container; then its protocol.
+function LocalApp({ value, onChange }: { value: Target; onChange: (patch: Partial<Target>) => void }) {
+  const [place, setPlace] = useState<Place>(value.target_host ? "machine" : "here");
+  const pick = (p: Place) => {
+    setPlace(p);
+    if (p === "here") onChange({ target_host: null });
+  };
+  return (
+    <>
+      <div className="edit-row">
+        <div className="tf static place">
+          <div className="tf-box">
+            <Dropdown label="Runs on" value={place} options={PLACES} onChange={pick} />
+            <span className="tf-label">Runs on</span>
+          </div>
+        </div>
+        {place !== "here" && (
+          <TextField className="grow" mono autoComplete="off" value={value.target_host ?? ""}
+            label={place === "container" ? "Container name" : "IP address or host name"}
+            placeholder={place === "container" ? "jellyfin" : "192.168.1.20"}
+            onChange={(v) => onChange({ target_host: v.trim() || null })} />
+        )}
+        <div className="tf static protocol">
+          <div className="tf-box">
+            <Dropdown label="Protocol" value={value.target_scheme} onChange={(v) => onChange({ target_scheme: v as RouteEdit["target_scheme"] })}
+              options={[{ value: "http", label: "http" }, { value: "https", label: "https", hint: "Self-signed certificates are fine" }]} />
+            <span className="tf-label">Protocol</span>
+          </div>
+        </div>
+      </div>
+      <label className="edit-switch">
+        <Switch label="Pass the public address" on={value.preserve_host} onChange={(v) => onChange({ preserve_host: v })} />
+        <span>Pass the public address to the app, for apps set up with it</span>
+      </label>
+    </>
+  );
+}
+
 // ---- who may open it ----
+
+const SIGN_IN_FOR: Option<number>[] = [
+  { value: 3_600, label: "1 hour" },
+  { value: 4 * 3_600, label: "4 hours" },
+  { value: 12 * 3_600, label: "12 hours" },
+  { value: 86_400, label: "1 day" },
+  { value: 7 * 86_400, label: "7 days" },
+  { value: 30 * 86_400, label: "30 days" },
+];
+
+const IDLE_FOR: Option<number>[] = [
+  { value: 0, label: "Never" },
+  { value: 15 * 60, label: "15 minutes" },
+  { value: 3_600, label: "1 hour" },
+  { value: 4 * 3_600, label: "4 hours" },
+  { value: 86_400, label: "1 day" },
+];
 
 type AccessValue = Access & { password_set?: boolean };
 
