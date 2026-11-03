@@ -44,6 +44,12 @@ pub struct Zone {
     pub status: String,
 }
 
+/// A zone's owner, which Cloudflare includes with every zone.
+#[derive(Deserialize)]
+struct ZoneOwner {
+    account: Account,
+}
+
 #[derive(Deserialize)]
 pub struct TunnelInfo {
     pub id: String,
@@ -120,8 +126,19 @@ impl<'a> Cloudflare<'a> {
         Ok(out)
     }
 
+    /// The accounts this token works on. Listing accounts needs Account Settings Read,
+    /// which a token made just for tunnels does not have, so the owners of the zones
+    /// it can see are counted too.
     pub async fn accounts(&self) -> Result<Vec<Account>> {
-        self.all("/accounts").await
+        let listed = self.all::<Account>("/accounts").await;
+        let owners = self.all::<ZoneOwner>("/zones").await;
+        match (listed, owners) {
+            (Err(err), Err(_)) => Err(err),
+            (listed, owners) => Ok(merge_accounts(
+                listed.unwrap_or_default(),
+                owners.unwrap_or_default().into_iter().map(|z| z.account),
+            )),
+        }
     }
 
     pub async fn zones(&self, account_id: &str) -> Result<Vec<Zone>> {
@@ -228,5 +245,52 @@ impl<'a> Cloudflare<'a> {
             )
             .await?;
         Ok(())
+    }
+}
+
+fn merge_accounts(
+    mut accounts: Vec<Account>,
+    more: impl IntoIterator<Item = Account>,
+) -> Vec<Account> {
+    for account in more {
+        if !accounts.iter().any(|a| a.id == account.id) {
+            accounts.push(account);
+        }
+    }
+    accounts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn account(id: &str) -> Account {
+        Account {
+            id: id.into(),
+            name: format!("Account {id}"),
+        }
+    }
+
+    #[test]
+    fn zone_owners_fill_in_accounts_the_token_cannot_list() {
+        let merged = merge_accounts(Vec::new(), [account("a"), account("a"), account("b")]);
+        let ids: Vec<&str> = merged.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, ["a", "b"]);
+    }
+
+    #[test]
+    fn listed_accounts_come_first_without_duplicates() {
+        let merged = merge_accounts(vec![account("b")], [account("a"), account("b")]);
+        let ids: Vec<&str> = merged.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, ["b", "a"]);
+    }
+
+    #[test]
+    fn zone_owner_reads_from_a_zone() {
+        let zone: ZoneOwner = serde_json::from_str(
+            r#"{"id":"z","name":"example.com","account":{"id":"a1","name":"Home"}}"#,
+        )
+        .unwrap();
+        assert_eq!(zone.account.id, "a1");
     }
 }
