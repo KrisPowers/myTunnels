@@ -326,6 +326,13 @@ impl Db {
                 params![old, new],
             )?;
         }
+        // Accounts are added to each tunnel; any that could open every tunnel keep
+        // exactly the tunnels there are now.
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO user_routes (user_id, route_id)
+                 SELECT u.id, r.id FROM users u, routes r WHERE u.all_routes = 1;
+             UPDATE users SET all_routes = 0 WHERE all_routes = 1;",
+        )?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(Self(Mutex::new(conn)))
     }
