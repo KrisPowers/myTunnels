@@ -18,16 +18,28 @@ use serde_json::{json, Value};
 
 use crate::db::{Device, Route};
 use crate::proxy;
-use crate::state::{AppState, GateSession, Snapshot};
-use crate::util::{cookie, lock, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
+use crate::secret;
+use crate::state::{open_session, session, AppState, Hop, Snapshot};
+use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
 
 pub const DEVICE_COOKIE: &str = "__gate_device";
-pub const SESSION_COOKIE: &str = "__gate_session";
+const SESSION_COOKIE: &str = "__gate_session";
+const PASS_COOKIE: &str = "__gate_pass";
+const USER_COOKIE: &str = "__gate_user";
+/// Set while a browser is away fetching its key, so one that keeps no cookies is not
+/// sent round in circles.
+const TRIED_COOKIE: &str = "__gate_tried";
 const DEVICE_COOKIE_TTL: i64 = 400 * 86_400;
-const SESSION_TTL: i64 = 30 * 86_400;
+const DEVICE_SESSION_TTL: i64 = 30 * 86_400;
+const PASS_TTL: i64 = 7 * 86_400;
+const USER_TTL: i64 = 7 * 86_400;
+const HOP_TTL: i64 = 60;
 const TOKEN_LEN: usize = 256;
+/// A device's ID: 256 letters and numbers, apart from its secret key, so the
+/// dashboard can show and link it without the key ever leaving the browser.
+pub const DEVICE_ID_LEN: usize = 256;
 const MAX_PENDING: i64 = 100;
-const ENROLL_PATH: &str = "/__gate/enroll";
+const MAX_SEEN: i64 = 500;
 const TEMPLATE: &str = include_str!("gate.html");
 
 /// Browser properties that should not change for the life of a device.
