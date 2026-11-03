@@ -695,6 +695,9 @@ a.result:hover { background: var(--hover); }
 .page-body.plain .card { background: none; border-radius: 0; }
 .page-body.plain .card-head, .page-body.plain .setting { padding-left: 0; padding-right: 0; }
 .page-body.plain .setting { border-top: 0; }
+/* The sub-nav names the page, so sections print no title of their own. */
+.page-body.plain .card-head h2 { display: none; }
+.page-body.plain .card-head:not(:has(p)) { display: none; }
 
 /* Fields set straight on a card, under its heading. */
 .card-pad { padding: 0 24px 16px; }
