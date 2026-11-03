@@ -5,6 +5,7 @@ mod db;
 mod gate;
 mod netinfo;
 mod proxy;
+mod secret;
 mod state;
 mod tunnel;
 mod util;
