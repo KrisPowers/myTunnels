@@ -381,7 +381,7 @@ function ReadyStep({ onBack, onDone }: { onBack: () => void; onDone: () => Promi
 
   return (
     <>
-      <StepHead icon="check_circle" title="All set" sub="Everything below is saved. Pick a look and open the dashboard." />
+      <StepHead title="All set" sub="Everything below is saved. Pick a look and open the dashboard." />
       <ul className="checklist">
         <li><Icon name="check_circle" className="ok" /><span><b>Admin password</b><span className="muted">Set</span></span></li>
         <li><Icon name="check_circle" className="ok" /><span><b>Cloudflare</b><span className="muted">{cf ? `${cf.account_name}, tunnel ${cf.tunnel_name}` : "Connected"}</span></span></li>
