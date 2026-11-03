@@ -463,7 +463,8 @@ function Activity({ user }: { user: User }) {
           <LogTable who="Device" entries={list.slice(0, 100).map((s): LogEntry => ({
             at: s.at,
             tone: s.outcome === "ok" ? "ok" : "bad",
-            event: s.outcome === "ok" ? "Signed in" : s.outcome === "failed" ? "Wrong password" : "Blocked and held for review",
+            event: s.outcome === "ok" ? "Signed in" : s.outcome === "failed" ? "Wrong password"
+              : s.outcome === "unlinked" ? "Refused, not a linked device" : "Blocked and held for review",
             who: s.device_id ? <a className="mono" href={`#/devices/${s.device_id}`}>{shortId(s.device_id)}</a> : undefined,
             ip: s.ip,
             country: s.country,
