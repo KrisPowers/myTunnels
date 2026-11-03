@@ -124,6 +124,7 @@ async fn supervise(state: AppState) {
         tracing::info!("cloudflared started");
         state.tunnel.update(|s| {
             s.running = true;
+            s.metrics = Some(metrics);
             s.last_error = None;
         });
 
