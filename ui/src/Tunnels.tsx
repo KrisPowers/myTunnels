@@ -3,7 +3,7 @@ import { api, editOf, message, type Device, type Route, type RouteEdit, type Sta
 import { Dropdown } from "./Dropdown";
 import { Icon } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Card, Copy, Row, SaveField, Switch, useNotify } from "./ui";
+import { ArmedButton, Card, Copy, Row, SaveField, Switch, TextField, useNotify } from "./ui";
 
 // Access is who may open a tunnel, as chips.
 export function Access({ route }: { route: Route }) {
@@ -104,26 +104,22 @@ function Publish({ onPublished }: { onPublished: () => Promise<void> }) {
   return (
     <form className="card composer" onSubmit={submit}>
       <div className="composer-row">
-        <label className="composer-field grow">
-          <span>Subdomain</span>
-          <input className="input big" placeholder="app1" value={sub} autoComplete="off" spellCheck={false}
-            onChange={(e) => setSub(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
-        </label>
+        <TextField className="grow" label="Subdomain" placeholder="app1" autoComplete="off" value={sub}
+          onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
         <span className="composer-dot">.</span>
-        <div className="composer-field grow">
-          <span>Domain</span>
-          {zones && zones.length > 0 ? (
-            <Dropdown label="Domain" value={zone} options={zones.map((z) => ({ value: z.id, label: z.name }))} onChange={setZone} />
-          ) : (
-            <span className="dropdown placeholder">{zones ? "No domains on this account" : "Loading domains"}</span>
-          )}
+        <div className="tf static grow">
+          <div className="tf-box">
+            {zones && zones.length > 0 ? (
+              <Dropdown label="Domain" value={zone} options={zones.map((z) => ({ value: z.id, label: z.name }))} onChange={setZone} />
+            ) : (
+              <span className="dropdown placeholder">{zones ? "No domains on this account" : "Loading domains"}</span>
+            )}
+            <span className="tf-label">Domain</span>
+          </div>
         </div>
         <Icon name="arrow_forward" className="composer-arrow" />
-        <label className="composer-field port">
-          <span>Local port</span>
-          <input className="input big mono" placeholder="8080" inputMode="numeric" value={port}
-            onChange={(e) => setPort(e.target.value.replace(/\D/g, "").slice(0, 5))} />
-        </label>
+        <TextField className="port" label="Local port" placeholder="8080" mono inputMode="numeric" value={port}
+          onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
         <button className="btn primary composer-go" disabled={busy || !sub || !port || !zone}>
           {busy ? <span className="spinner small on-accent" /> : <Icon name="add" size={18} />}Publish
         </button>

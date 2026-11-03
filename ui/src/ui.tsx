@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useState, type InputHTMLAttributes, type ReactNode } from "react";
 import { message } from "./api";
 import { Icon, type IconName } from "./Icon";
 
@@ -156,5 +156,37 @@ export function Copy({ text }: { text: string }) {
       <span className="copy-text mono">{text}</span>
       <Icon name={done ? "check" : "content_copy"} size={16} className="copy-icon" />
     </button>
+  );
+}
+
+// TextField is an outlined field whose label rests inside it and floats onto
+// the outline once it has focus or a value. `trailing` sits at its right end,
+// such as a Show button or a spinner; `hint` is the line under it.
+export function TextField({ label, value, onChange, hint, trailing, mono, rows, className, ...rest }: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  hint?: ReactNode;
+  trailing?: ReactNode;
+  mono?: boolean;
+  rows?: number;
+} & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
+  const id = useId();
+  const input = "tf-input" + (mono ? " mono" : "");
+  return (
+    <div className={"tf" + (trailing ? " has-trailing" : "") + (className ? " " + className : "")}>
+      <div className="tf-box">
+        {rows ? (
+          <textarea id={id} className={input} rows={rows} value={value} placeholder={rest.placeholder ?? " "} spellCheck={false}
+            onChange={(e) => onChange(e.target.value)} />
+        ) : (
+          <input id={id} className={input} value={value} spellCheck={false} {...rest} placeholder={rest.placeholder ?? " "}
+            onChange={(e) => onChange(e.target.value)} />
+        )}
+        <label className="tf-label" htmlFor={id}>{label}</label>
+        {trailing && <span className="tf-trailing">{trailing}</span>}
+      </div>
+      {hint && <div className="tf-hint">{hint}</div>}
+    </div>
   );
 }
