@@ -652,49 +652,24 @@ fn register(
                 device.status = "pending".into();
                 device.note = Some("Hardware changed since approval".into());
             }
+            if device.status == "seen" {
+                device.status = "pending".into();
+            }
             device.info = body.info;
-            device.last_ip = ip.or(device.last_ip);
-            device.country = country.or(device.country);
-            device.last_seen = now;
+            device.last_ip = ip.map(|ip| ip.to_string()).or(device.last_ip);
+            device.country = headers
+                .get("cf-ipcountry")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned)
+                .or(device.country);
+            device.last_seen = now();
             state.db.save_device(&device)?;
             if device.status != was {
                 state.reload()?;
             }
-            device
+            (device, token)
         }
-        None => {
-            if state.db.pending_count()? >= MAX_PENDING {
-                return Err(ApiError(
-                    StatusCode::TOO_MANY_REQUESTS,
-                    "Too many devices are waiting for approval".into(),
-                ));
-            }
-            let code = random_hex(4).to_uppercase();
-            let device = Device {
-                id: format!("{}-{}", &code[..4], &code[4..]),
-                name: String::new(),
-                status: "pending".into(),
-                all_routes: false,
-                route_ids: Vec::new(),
-                fingerprint: print,
-                info: body.info,
-                note: None,
-                first_ip: ip.clone(),
-                last_ip: ip,
-                country,
-                first_host: Some(route.hostname.clone()),
-                created_at: now,
-                last_seen: now,
-            };
-            state.db.insert_device(&device, &token_hash)?;
-            state.reload()?;
-            tracing::info!(
-                "device {} asked for access to {}",
-                device.id,
-                route.hostname
-            );
-            device
-        }
+        None => new_device(state, route, ip, headers, "pending", body.info)?,
     };
 
     let allowed = may_open(&device, route);
