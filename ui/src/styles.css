@@ -649,10 +649,6 @@ a.result:hover { background: var(--hover); }
   .step { justify-content: center; }
 }
 
-/* New tunnel, in the header beside help and settings. */
-.header-new { height: 40px; margin-right: 8px; padding: 0 20px 0 16px; }
-.header-new:hover { text-decoration: none; }
-
 /* A title or line with its edit button beside it, and the form that replaces it. */
 .inline-edit { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .icon-btn.small { width: 32px; height: 32px; }
