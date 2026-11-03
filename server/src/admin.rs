@@ -32,6 +32,7 @@ pub fn router(state: AppState) -> Router {
         .route("/status", get(status))
         .route("/routes", get(list_routes).post(create_route))
         .route("/routes/{id}", patch(update_route).delete(delete_route))
+        .route("/routes/{id}/address", put(move_route))
         .route("/devices", get(list_devices))
         .route("/devices/{id}", patch(update_device).delete(delete_device))
         .route("/device", post(this_device))
@@ -546,6 +547,85 @@ async fn update_route(
     route.preserve_host = body.preserve_host;
     state.db.update_route(&route)?;
     state.reload()?;
+    Ok(Json(route))
+}
+
+#[derive(Deserialize)]
+struct AddressEdit {
+    subdomain: String,
+    zone_id: String,
+}
+
+/// Moves a tunnel to another subdomain or domain: the new DNS record first, then the
+/// route, then the old record goes. Anything that fails puts things back.
+async fn move_route(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<AddressEdit>,
+) -> ApiResult<Json<Route>> {
+    let cf_settings = state.cloudflare()?;
+    let mut route = state.db.route(&id)?.ok_or_else(ApiError::not_found)?;
+    let subdomain = body.subdomain.trim().to_ascii_lowercase();
+    if !valid_label(&subdomain) {
+        return Err(ApiError::bad(
+            "Subdomain: lowercase letters, digits and '-', up to 63 characters",
+        ));
+    }
+    let cf = Cloudflare::new(&state.http, &cf_settings.token);
+    let zone = cf
+        .zones(&cf_settings.account_id)
+        .await?
+        .into_iter()
+        .find(|z| z.id == body.zone_id)
+        .ok_or_else(|| ApiError::bad("That domain is not on this Cloudflare account"))?;
+    let hostname = format!("{subdomain}.{}", zone.name);
+    if hostname == route.hostname {
+        return Ok(Json(route));
+    }
+    if state.snapshot().routes.contains_key(&hostname) {
+        return Err(ApiError::conflict(format!(
+            "{hostname} is already published"
+        )));
+    }
+
+    let target = format!("{}.cfargotunnel.com", cf_settings.tunnel_id);
+    let (record_id, created) = match cf.find_dns(&zone.id, &hostname).await? {
+        Some(record) if record.content == target => (record.id, false),
+        Some(record) => {
+            return Err(ApiError::conflict(format!(
+                "{hostname} already has a {} record in Cloudflare. Remove it first.",
+                record.kind
+            )))
+        }
+        None => (
+            cf.create_cname(&zone.id, &hostname, &target).await?.id,
+            true,
+        ),
+    };
+
+    let before = route.clone();
+    route.subdomain = subdomain;
+    route.zone_id = zone.id.clone();
+    route.zone_name = zone.name;
+    route.hostname = hostname;
+    route.dns_record_id = Some(record_id.clone());
+    state.db.move_route(&route)?;
+    if let Err(err) = tunnel::sync_ingress(&state).await {
+        state.db.move_route(&before)?;
+        if created {
+            if let Err(e) = cf.delete_dns(&zone.id, &record_id).await {
+                tracing::warn!("could not roll back DNS for {}: {e:#}", route.hostname);
+            }
+        }
+        return Err(err.into());
+    }
+    if let Some(old) = &before.dns_record_id {
+        if let Err(e) = cf.delete_dns(&before.zone_id, old).await {
+            tracing::warn!("could not delete DNS for {}: {e:#}", before.hostname);
+        }
+    }
+    state.reload()?;
+    tracing::info!("moved {} to {}", before.hostname, route.hostname);
     Ok(Json(route))
 }
 

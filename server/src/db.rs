@@ -360,6 +360,24 @@ impl Db {
         Ok(())
     }
 
+    /// Moves a tunnel to another address.
+    pub fn move_route(&self, r: &Route) -> Result<()> {
+        self.conn().execute(
+            "UPDATE routes SET subdomain = ?2, zone_id = ?3, zone_name = ?4, hostname = ?5,
+                 dns_record_id = ?6
+             WHERE id = ?1",
+            params![
+                r.id,
+                r.subdomain,
+                r.zone_id,
+                r.zone_name,
+                r.hostname,
+                r.dns_record_id,
+            ],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_route(&self, id: &str) -> Result<()> {
         self.conn()
             .execute("DELETE FROM routes WHERE id = ?1", [id])?;

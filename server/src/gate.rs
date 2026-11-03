@@ -524,27 +524,26 @@ async fn action_response(
         ("enroll", true) => match body::<EnrollRequest>(req).await {
             Ok((headers, body)) => register(state, route, ip, &headers, body)
                 .unwrap_or_else(IntoResponse::into_response),
-            Err(response) => response,
+            Err(status) => status.into_response(),
         },
         ("password", true) => match body::<PasswordRequest>(req).await {
             Ok((_, body)) => password(state, route, ip, body).await,
-            Err(response) => response,
+            Err(status) => status.into_response(),
         },
         ("login", true) => match body::<LoginRequest>(req).await {
             Ok((_, body)) => login(state, route, ip, body).await,
-            Err(response) => response,
+            Err(status) => status.into_response(),
         },
         _ => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
-async fn body<T: serde::de::DeserializeOwned>(req: Request) -> Result<(HeaderMap, T), Response> {
+async fn body<T: serde::de::DeserializeOwned>(req: Request) -> Result<(HeaderMap, T), StatusCode> {
     let headers = req.headers().clone();
     let bytes = axum::body::to_bytes(req.into_body(), 16 * 1024)
         .await
-        .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE.into_response())?;
-    let body =
-        serde_json::from_slice(&bytes).map_err(|_| StatusCode::BAD_REQUEST.into_response())?;
+        .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
+    let body = serde_json::from_slice(&bytes).map_err(|_| StatusCode::BAD_REQUEST)?;
     Ok((headers, body))
 }
 
