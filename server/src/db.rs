@@ -140,6 +140,20 @@ pub struct User {
     pub route_ids: Vec<String>,
     pub created_at: i64,
     pub last_login: Option<i64>,
+    /// Why the account was locked, while it is.
+    pub note: Option<String>,
+}
+
+/// One attempt to sign in to an account: where from, and how it went
+/// ("ok", "failed" or "blocked").
+#[derive(Clone, Serialize)]
+pub struct SignIn {
+    pub user_id: String,
+    pub device_id: Option<String>,
+    pub ip: Option<String>,
+    pub country: Option<String>,
+    pub at: i64,
+    pub outcome: String,
 }
 
 /// A browser that has asked for access through the gateway.
