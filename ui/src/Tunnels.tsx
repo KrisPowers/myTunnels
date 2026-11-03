@@ -676,25 +676,48 @@ const KINDS: [string, string][] = [
   ["device", "Devices"],
 ];
 
-// What each event's outcome is called, and its colour.
-function outcome(e: TunnelEvent): [string, string] {
+// line says what an event was, in a sentence, and whether it went well, badly
+// or neither.
+function line(e: TunnelEvent, who: string): [string, string] {
   if (e.kind === "visit") {
-    const asked: Record<string, string> = { network: "Not on the home network", login: "Asked to sign in", password: "Asked for the password", device: "Asked for an approved device" };
+    const asked: Record<string, string> = {
+      network: "Turned away, not on the home network",
+      login: "Asked to sign in",
+      password: "Asked for the tunnel password",
+      device: "Asked for an approved device",
+    };
     return [e.outcome === "network" ? "bad" : "", asked[e.outcome] ?? e.outcome];
   }
-  if (e.kind === "device") return ["plain", "Asked for approval"];
-  const named: Record<string, [string, string]> = {
-    ok: ["ok", e.kind === "password" ? "Right password" : "Signed in"],
-    failed: ["warn", "Wrong password"],
-    locked: ["bad", "Locked out"],
-    blocked: ["bad", "Held for review"],
+  if (e.kind === "device") return ["", `${who} asked for approval`];
+  if (e.kind === "password") {
+    const said: Record<string, [string, string]> = {
+      ok: ["ok", "Tunnel password entered"],
+      failed: ["bad", "Wrong tunnel password"],
+      locked: ["bad", "Too many password tries, locked out for 15 minutes"],
+    };
+    return said[e.outcome] ?? ["", e.outcome];
+  }
+  const said: Record<string, [string, string]> = {
+    ok: ["ok", `${who} signed in`],
+    failed: ["bad", `Wrong password for ${who}`],
+    locked: ["bad", "Too many sign-in tries, locked out for 15 minutes"],
+    blocked: ["bad", `${who} held for review`],
   };
-  return named[e.outcome] ?? ["", e.outcome];
+  return said[e.outcome] ?? ["", e.outcome];
 }
 
-// TunnelActivity is the tunnel's log: sign-ins and passwords tried, visitors turned
-// away, devices asking in. Newest first, refreshed as it runs.
-function TunnelActivity({ route, users }: { route: Route; users: User[] }) {
+function day(at: number) {
+  const d = new Date(at * 1000);
+  const today = new Date();
+  const yesterday = new Date(Date.now() - 86_400_000);
+  if (d.toDateString() === today.toDateString()) return "Today";
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+}
+
+// TunnelLogs is what happened at the tunnel's door, newest first and grouped by
+// day: one line each, refreshed as it runs.
+function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
   const [events, setEvents] = useState<TunnelEvent[] | null>(null);
   const [kind, setKind] = useState("");
   useEffect(() => {
