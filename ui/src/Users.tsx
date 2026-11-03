@@ -242,23 +242,99 @@ export function UserPage({ user, page, routes, onChanged }: { user: User; page: 
           <ArmedButton icon="delete" label="Remove" armedLabel="Remove for good" onConfirm={remove} />
         </div>
       </div>
-      <div className="page-body stack">
-        <Card title="Account">
-          <Row title="Username"><SaveField label="Username" width={240} value={user.username} onSave={(v) => edit({ username: v })} /></Row>
-          <Row title="Email" sub="Signs in too."><SaveField label="Email" width={240} placeholder="None" value={user.email ?? ""} onSave={(v) => edit({ email: v })} /></Row>
-          <Row title="Name"><SaveField label="Name" width={240} placeholder="None" value={user.name} onSave={(v) => edit({ name: v })} /></Row>
-          <div className="setting nested">
-            <TextField className="grow" label="New password" type="password" autoComplete="new-password" value={password} onChange={setPassword}
-              hint={password ? <PasswordHint value={password} /> : "Changing it signs them out everywhere."} />
-            <button type="button" className="btn primary" disabled={!strength(password).ok} onClick={() => edit({ password }).then(() => {
-              setPassword("");
-              notify("Password changed");
-            }).catch(() => {})}>Change</button>
+      <SubNav back="#/users" backLabel="Users" base={`#/users/${user.id}`} items={USER_PAGES} current={current} />
+
+      <div className="page-body stack" key={current}>
+        {user.note && (
+          <div className="callout bad held">
+            <Icon name="warning" />
+            <span><b>Held for review.</b> {user.note}. Its sign-ins ended. Check Activity, then unlock it if it was them.</span>
+            <button type="button" className="btn" onClick={() => edit({ enabled: true }).then(() => notify("Unlocked")).catch(() => {})}>Unlock</button>
           </div>
-        </Card>
-        <Grants all={user.all_routes} ids={user.route_ids} routes={routes} onAll={(v) => edit({ all_routes: v }).catch(() => {})}
-          onPick={(id, on) => edit({ route_ids: on ? [...user.route_ids, id] : user.route_ids.filter((x) => x !== id) }).catch(() => {})} />
+        )}
+
+        {current === "profile" && (
+          <>
+            <Card title="Who they are">
+              <Row title="Full name"><SaveField label="Full name" width={260} placeholder="None" value={user.name} onSave={(v) => edit({ name: v })} /></Row>
+              <Row title="Username"><SaveField label="Username" width={260} value={user.username} onSave={(v) => edit({ username: v })} /></Row>
+              <Row title="Email" sub="What they sign in with."><SaveField label="Email" width={260} value={user.email} onSave={(v) => edit({ email: v })} /></Row>
+            </Card>
+            <Card title="Password">
+              <div className="setting nested">
+                <PasswordField label="New password" value={password} onChange={setPassword} hint="Changing it signs them out everywhere." />
+                <button type="button" className="btn primary" disabled={!strength(password).ok} onClick={() => edit({ password }).then(() => {
+                  setPassword("");
+                  notify("Password changed");
+                }).catch(() => {})}>Change</button>
+              </div>
+            </Card>
+            <Card title="Sessions">
+              <Row title="Sign out everywhere" sub="Ends every sign-in of this account. The password stays.">
+                <button type="button" className="btn" onClick={() => api.signOutUser(user.id).then(() => notify("Signed out everywhere")).catch((e) => notify(message(e), "bad"))}>
+                  <Icon name="logout" size={18} />Sign out
+                </button>
+              </Row>
+            </Card>
+          </>
+        )}
+
+        {current === "access" && (
+          <Grants all={user.all_routes} ids={user.route_ids} routes={routes} onAll={(v) => edit({ all_routes: v }).catch(() => {})}
+            onPick={(id, on) => edit({ route_ids: on ? [...user.route_ids, id] : user.route_ids.filter((x) => x !== id) }).catch(() => {})} />
+        )}
+
+        {current === "activity" && <Activity user={user} />}
       </div>
+    </>
+  );
+}
+
+const OUTCOME: Record<SignIn["outcome"], [string, string]> = {
+  ok: ["ok", "Signed in"],
+  failed: ["warn", "Wrong password"],
+  blocked: ["bad", "Blocked"],
+};
+
+// Activity is where an account has been used from: its devices, and its sign-ins.
+function Activity({ user }: { user: User }) {
+  const [list, setList] = useState<SignIn[] | null>(null);
+  useEffect(() => {
+    api.userActivity(user.id).then(setList).catch(() => setList([]));
+  }, [user.id, user.last_login, user.note]);
+
+  const devices = new Map<string, { count: number; last: SignIn }>();
+  for (const s of list ?? []) {
+    if (s.outcome !== "ok" || !s.device_id) continue;
+    const seen = devices.get(s.device_id);
+    devices.set(s.device_id, { count: (seen?.count ?? 0) + 1, last: seen?.last ?? s });
+  }
+
+  return (
+    <>
+      <Card title="Devices" sub={devices.size ? undefined : "No sign-ins yet."}>
+        {[...devices].map(([id, { count, last }]) => (
+          <Row key={id} title={<a className="mono" href={`#/devices/${id}`}>{shortId(id)}</a>}
+            sub={`${count} sign-in${count === 1 ? "" : "s"}, last ${ago(last.at)}${last.ip ? ` from ${last.ip}` : ""}${last.country ? ` (${last.country})` : ""}`} />
+        ))}
+      </Card>
+      <Card title="Recent sign-ins">
+        {list && list.length > 0 ? (
+          <ul className="results">
+            {list.slice(0, 50).map((s, i) => (
+              <li key={i}>
+                <div className="result signin-row">
+                  <span className={"chip " + OUTCOME[s.outcome][0]}>{OUTCOME[s.outcome][1]}</span>
+                  <span className="mono">{s.ip ?? "Unknown address"}</span>
+                  <span className="result-service">{s.country ?? ""}</span>
+                  <span className="mono muted">{s.device_id ? shortId(s.device_id) : "No device key"}</span>
+                  <span className="result-meta">{ago(s.at)}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="card-note muted">Nothing yet.</p>}
+      </Card>
     </>
   );
 }
