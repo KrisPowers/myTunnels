@@ -72,11 +72,14 @@ pub async fn forward(
     );
     let local_origin = format!("{}://{local}", route.target_scheme);
     let public_origin = format!("https://{}", route.hostname);
-    if let Ok(value) = HeaderValue::from_str(&local) {
-        headers.insert(header::HOST, value);
-    }
-    for name in [header::ORIGIN, header::REFERER] {
-        swap_origin(&mut headers, name, &public_origin, &local_origin);
+    // Unless the tunnel passes the public name on, for apps set up with it.
+    if !route.preserve_host {
+        if let Ok(value) = HeaderValue::from_str(&local) {
+            headers.insert(header::HOST, value);
+        }
+        for name in [header::ORIGIN, header::REFERER] {
+            swap_origin(&mut headers, name, &public_origin, &local_origin);
+        }
     }
     if let Some(original_host) = original_host {
         headers.insert("x-forwarded-host", original_host);
