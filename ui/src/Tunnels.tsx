@@ -406,7 +406,6 @@ export function TunnelPage({ route, page, devices, users, onChanged }: { route: 
   return (
     <>
       <div className="page-head">
-        <a className="icon-btn" href="#/" aria-label="All tunnels" title="All tunnels"><Icon name="arrow_back" /></a>
         <div className="page-head-main">
           {editing === "address" ? (
             <AddressEditor route={route} onDone={() => setEditing("")} onChanged={onChanged} />
