@@ -693,6 +693,8 @@ a.result:hover { background: var(--hover); }
 
 /* Sections with no fill behind them, at full size. */
 .page-body.plain .card { background: none; border-radius: 0; }
+.page-body.plain .card-head, .page-body.plain .setting { padding-left: 0; padding-right: 0; }
+.page-body.plain .setting { border-top: 0; }
 
 /* Fields set straight on a card, under its heading. */
 .card-pad { padding: 0 24px 16px; }
