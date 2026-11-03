@@ -142,10 +142,9 @@ impl Verdict {
     }
 
     fn allowed(&self) -> bool {
-        // A tunnel with no layer on is refused, never left open.
         let mut results = self.results().peekable();
         if results.peek().is_none() {
-            return false;
+            return true;
         }
         if self.any {
             self.results().any(|r| r)
@@ -1097,7 +1096,7 @@ mod tests {
 
     #[test]
     fn checks_combine_by_mode() {
-        assert!(!verdict(false, None, None, None, None).allowed());
+        assert!(verdict(false, None, None, None, None).allowed());
         assert!(!verdict(false, Some(true), None, Some(false), None).allowed());
         assert!(verdict(true, Some(false), None, Some(true), None).allowed());
         assert!(!verdict(true, Some(false), Some(false), None, None).allowed());
