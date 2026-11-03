@@ -562,8 +562,8 @@ function People({ route, users, onGrant }: { route: Route; users: User[]; onGran
 
   const members = users.filter((u) => u.route_ids.includes(route.id));
   const needle = q.trim().toLowerCase();
+  // Everyone matching, those with access already shown but not pickable.
   const matches = users
-    .filter((u) => !u.route_ids.includes(route.id))
     .filter((u) => !needle || [u.name, u.username, u.email].some((v) => v.toLowerCase().includes(needle)))
     // Most active first: latest sign-in, then never signed in.
     .sort((a, b) => (b.last_login ?? 0) - (a.last_login ?? 0))
@@ -596,22 +596,25 @@ function People({ route, users, onGrant }: { route: Route; users: User[]; onGran
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
                     setActive((i) => Math.max(0, Math.min(matches.length - 1, i + (e.key === "ArrowDown" ? 1 : -1))));
-                  } else if (e.key === "Enter" && matches[active]) {
+                  } else if (e.key === "Enter" && matches[active] && !matches[active].route_ids.includes(route.id)) {
                     e.preventDefault();
                     add(matches[active]);
                   }
                 }} />
-              {matches.length === 0 && <div className="menu-note">{needle ? "No one by that name" : "Everyone already has access"}</div>}
-              {matches.map((u, i) => (
-                <button key={u.id} type="button" className={"menu-item person-item" + (i === active ? " active" : "")}
-                  onMouseEnter={() => setActive(i)} onClick={() => add(u)}>
-                  <Avatar name={u.name || u.username} />
-                  <span className="person">
-                    <span>{u.name || u.username}</span>
-                    <small>{u.email}</small>
-                  </span>
-                </button>
-              ))}
+              {matches.length === 0 && <div className="menu-note">No one by that name</div>}
+              {matches.map((u, i) => {
+                const has = u.route_ids.includes(route.id);
+                return (
+                  <button key={u.id} type="button" className={"menu-item person-item" + (i === active ? " active" : "")} disabled={has}
+                    onMouseEnter={() => setActive(i)} onClick={() => add(u)}>
+                    <Avatar name={u.name || u.username} />
+                    <span className="person">
+                      <span>{u.name || u.username}</span>
+                      <small>{has ? "Has access" : u.email}</small>
+                    </span>
+                  </button>
+                );
+              })}
             </>
           )}
         </div>
