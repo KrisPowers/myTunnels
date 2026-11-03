@@ -113,37 +113,30 @@ function PasswordField({ label, value, onChange, hint }: { label: string; value:
   );
 }
 
-// Grants are the tunnels an account may open, each added on its own.
-function Grants({ ids, routes, onPick }: { ids: string[]; routes: Route[]; onPick: (id: string, on: boolean) => void }) {
-  return (
-    <Card title="Tunnels" sub={routes.length ? undefined : "There are no tunnels yet."}>
-      {routes.map((r) => (
-        <Row key={r.id} title={<span className="mono">{r.hostname}</span>} sub={r.require_login ? undefined : "Does not ask for sign-in"}>
-          <Switch label={`Allow ${r.hostname}`} on={ids.includes(r.id)} onChange={(v) => onPick(r.id, v)} />
-        </Row>
-      ))}
-    </Card>
-  );
-}
-
 // ---- a new account ----
 
-export function NewUser({ routes, onAdded }: { routes: Route[]; onAdded: () => Promise<void> }) {
-  const [name, setName] = useState("");
+function deviceLabel(d: Device) {
+  const where = [d.info?.platform, d.country].filter(Boolean).join(", ");
+  return `${d.name || shortId(d.id)}${where ? `, ${where}` : ""}`;
+}
+
+export function NewUser({ devices, onAdded }: { devices: Device[]; onAdded: () => Promise<void> }) {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
+  const [device, setDevice] = useState("");
   const [password, setPassword] = useState("");
-  const [ids, setIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
-  const ready = username.trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && strength(password).ok;
+  const ready = username.trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && device !== "" && strength(password).ok;
+  // Devices seen most recently first.
+  const choices = [...devices].sort((a, b) => b.last_seen - a.last_seen);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!ready) return;
     setBusy(true);
     try {
-      const user = await api.addUser({ username, email, name, password, route_ids: ids });
+      const user = await api.addUser({ username, email, password, device_id: device });
       await onAdded();
       notify(`Added ${user.username}`);
       go(`#/users/${user.id}`);
