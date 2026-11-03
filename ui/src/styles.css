@@ -477,7 +477,7 @@ a.result:hover { background: var(--hover); }
   color: var(--accent); font: 500 14px var(--font); cursor: pointer;
 }
 .tf-action:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.tf-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 16px; color: var(--text-2); font-size: 12px; line-height: 1.5; }
+.tf-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0; color: var(--text-2); font-size: 12px; line-height: 1.5; }
 .tf-hint code { padding: 1px 6px; border-radius: 3px; background: var(--code); }
 .tf .dropdown {
   width: 100%; height: 56px; padding: 0 12px 0 16px; border-radius: var(--radius); background: transparent;
