@@ -629,7 +629,7 @@ fn register(
     headers: &HeaderMap,
     body: EnrollRequest,
 ) -> ApiResult<Response> {
-    let token = body
+    let known = body
         .token
         .filter(|t| valid_token(t))
         .or_else(|| {
