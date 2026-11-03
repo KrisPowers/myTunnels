@@ -164,8 +164,11 @@ export function editOf(r: Route): RouteEdit {
     target_scheme: r.target_scheme,
     require_lan: r.require_lan,
     require_device: r.require_device,
+    require_password: r.require_password,
+    require_login: r.require_login,
     policy_mode: r.policy_mode,
     enabled: r.enabled,
+    preserve_host: r.preserve_host,
   };
 }
 
