@@ -248,3 +248,34 @@ impl AppState {
         }
     }
 }
+
+/// Opens a session and returns its cookie value. Expired sessions are dropped on the way.
+pub fn open_session(
+    sessions: &Mutex<HashMap<String, Session>>,
+    subject: &str,
+    tag: &str,
+    ttl: i64,
+) -> String {
+    let sid = crate::util::random_hex(32);
+    let now = now();
+    let mut map = lock(sessions);
+    map.retain(|_, s| s.expires > now);
+    map.insert(
+        sid.clone(),
+        Session {
+            subject: subject.to_owned(),
+            tag: tag.to_owned(),
+            expires: now + ttl,
+        },
+    );
+    sid
+}
+
+/// The subject and tag of a live session.
+pub fn session(sessions: &Mutex<HashMap<String, Session>>, sid: &str) -> Option<(String, String)> {
+    let now = now();
+    lock(sessions)
+        .get(sid)
+        .filter(|s| s.expires > now)
+        .map(|s| (s.subject.clone(), s.tag.clone()))
+}
