@@ -103,7 +103,7 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
 
 // DevicePage is one device: what it reported, where from, and which tunnels
 // it may open.
-export function DevicePage({ device, routes, onChanged }: { device: Device; routes: Route[]; onChanged: () => Promise<void> }) {
+export function DevicePage({ device, routes, users, onChanged }: { device: Device; routes: Route[]; users: User[]; onChanged: () => Promise<void> }) {
   const notify = useNotify();
   const approve = useApprove(routes, onChanged);
   const i = device.info ?? {};
