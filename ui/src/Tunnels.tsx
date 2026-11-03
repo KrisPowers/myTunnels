@@ -300,6 +300,17 @@ export function TunnelPage({ route, devices, users, onChanged }: { route: Route;
   };
   const quietly = (change: Partial<RouteEdit>) => save(change).catch((e) => notify(message(e), "bad"));
 
+  // Turning on the tunnel password waits for one to be set.
+  const [asking, setAsking] = useState(false);
+  const access = (patch: Partial<Access>) => {
+    if (patch.require_password && !route.password_set) {
+      setAsking(true);
+      return;
+    }
+    if (patch.require_password === false) setAsking(false);
+    quietly(patch);
+  };
+
   const remove = async () => {
     try {
       await api.removeRoute(route.id);
