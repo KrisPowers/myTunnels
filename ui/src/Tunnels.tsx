@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEve
 import { createPortal } from "react-dom";
 import { ago, api, editOf, LEVELS, list, message, shortId, strength, type Access, type Device, type PolicyMode, type Route, type RouteEdit, type Status, type TunnelEvent, type User, type Zone } from "./api";
 import { useDismiss } from "./dismiss";
-import { Dropdown, type Option } from "./Dropdown";
+import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
 import { ArmedButton, Avatar, Card, LogDays, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
@@ -668,12 +668,11 @@ function People({ route, users, onGrant }: { route: Route; users: User[]; onGran
   );
 }
 
-const KINDS: [string, string][] = [
-  ["", "All"],
-  ["sign-in", "Sign-ins"],
-  ["password", "Passwords"],
-  ["visit", "Turned away"],
-  ["device", "Devices"],
+const KINDS: Option<TunnelEvent["kind"]>[] = [
+  { value: "sign-in", label: "Sign-ins" },
+  { value: "password", label: "Passwords" },
+  { value: "visit", label: "Turned away" },
+  { value: "device", label: "Devices" },
 ];
 
 // line says what an event was, in a sentence, and whether it went well, badly
@@ -710,14 +709,14 @@ function line(e: TunnelEvent, who: string): [string, string] {
 // day: one line each, refreshed as it runs.
 function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
   const [events, setEvents] = useState<TunnelEvent[] | null>(null);
-  const [kind, setKind] = useState("");
+  const [kinds, setKinds] = useState<TunnelEvent["kind"][]>([]);
   useEffect(() => {
     const load = () => api.routeActivity(route.id).then(setEvents).catch(() => setEvents((e) => e ?? []));
     load();
     const t = setInterval(load, 10_000);
     return () => clearInterval(t);
   }, [route.id]);
-  const shown = (events ?? []).filter((e) => !kind || e.kind === kind);
+  const shown = (events ?? []).filter((e) => !kinds.length || kinds.includes(e.kind));
   const entries: LogEntry[] = shown.map((e) => {
     const user = e.user_id ? users.find((u) => u.id === e.user_id) : undefined;
     const who = user ? user.name || user.username : e.device_id ? shortId(e.device_id) : "A visitor";
@@ -727,10 +726,8 @@ function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
 
   return (
     <>
-      <div className="filters" role="tablist">
-        {KINDS.map(([key, label]) => (
-          <button key={key} type="button" role="tab" className="filter" aria-selected={kind === key} onClick={() => setKind(key)}>{label}</button>
-        ))}
+      <div className="log-bar">
+        <MultiDropdown label="Show" values={kinds} options={KINDS} allLabel="All events" onChange={setKinds} />
       </div>
       {events && shown.length === 0 && <p className="muted">Nothing yet.</p>}
       <LogDays entries={entries} />
