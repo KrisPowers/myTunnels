@@ -353,6 +353,29 @@ fn check_target(host: Option<String>, scheme: &str, mode: &str) -> ApiResult<Opt
     }
 }
 
+/// Refuses a tunnel aimed at one of myTunnels' own ports on this machine.
+fn check_not_self(state: &AppState, host: Option<&str>, port: u16) -> ApiResult<()> {
+    let snap = state.snapshot();
+    let host = host.unwrap_or(&snap.upstream_host);
+    let local = host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified());
+    let own = [&state.config.gate_addr, &state.config.admin_addr]
+        .iter()
+        .any(|addr| {
+            addr.rsplit_once(':')
+                .and_then(|(_, p)| p.parse::<u16>().ok())
+                == Some(port)
+        });
+    if local && own {
+        return Err(ApiError::bad(format!(
+            "Port {port} is myTunnels' own. Use the port your app listens on."
+        )));
+    }
+    Ok(())
+}
+
 async fn list_routes(State(state): State<AppState>) -> ApiResult<Json<Vec<Route>>> {
     Ok(Json(state.db.routes()?))
 }
