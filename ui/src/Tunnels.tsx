@@ -243,46 +243,20 @@ function PasswordRow({ set, value, onChange, onSave }: {
   );
 }
 
-// TargetRows are where requests go: port, protocol, host, and the host name the app sees.
-function TargetRows({ value, onChange, onSave }: {
-  value: Pick<RouteEdit, "port" | "target_scheme" | "target_host" | "preserve_host">;
-  onChange: (patch: Partial<RouteEdit>) => void;
-  onSave?: (patch: Partial<RouteEdit>) => Promise<unknown>;
-}) {
-  const write = (patch: Partial<RouteEdit>) => (onSave ? onSave(patch) : Promise.resolve(onChange(patch)));
-  return (
-    <>
-      {onSave && (
-        <Row title="Port">
-          <SaveField label="Port" numeric mono width={110} value={String(value.port)} onSave={(v) => write({ port: Number(v) })} />
-        </Row>
-      )}
-      <Row title="Protocol" sub="Choose https when the app serves it itself. Self-signed certificates are fine.">
-        <Dropdown label="Protocol" value={value.target_scheme} options={[{ value: "http", label: "http" }, { value: "https", label: "https" }]}
-          onChange={(v) => write({ target_scheme: v as RouteEdit["target_scheme"] })} />
-      </Row>
-      <Row title="Host" sub="Leave empty for this computer. Or a container name, or another machine on the network.">
-        <SaveField label="Host" mono width={220} placeholder="This computer" value={value.target_host ?? ""} onSave={(v) => write({ target_host: v.trim() || null })} />
-      </Row>
-      <Row title="Pass the public address" sub="Off, the app sees itself opened on this computer, which apps that only answer to localhost need. On, it sees the public address, for apps set up with it.">
-        <Switch label="Pass the public address" on={value.preserve_host} onChange={(v) => write({ preserve_host: v })} />
-      </Row>
-    </>
-  );
-}
-
 // ---- publishing ----
 
-// NewTunnel publishes a port: the address on top, then who can open it and,
-// folded away, where requests go.
+// NewTunnel publishes a port: the address on top, then where the app runs, then
+// who can open it.
 export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: () => Promise<void> }) {
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [zone, setZone] = useState("");
   const [sub, setSub] = useState("");
   const [port, setPort] = useState("");
-  const [access, setAccess] = useState<Access>({ require_lan: false, require_device: false, require_password: false, require_login: false, policy_mode: "all" });
-  const [targetOpts, setTargetOpts] = useState({ target_scheme: "http" as RouteEdit["target_scheme"], target_host: null as string | null, preserve_host: false });
-  const [more, setMore] = useState(false);
+  const [access, setAccess] = useState<Access>({
+    require_lan: false, require_device: false, require_password: false, require_login: false,
+    login_max: 7 * 86_400, login_idle: 0, policy_mode: "all",
+  });
+  const [where, setWhere] = useState<Target>({ target_scheme: "http", target_host: null, preserve_host: false });
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
 
