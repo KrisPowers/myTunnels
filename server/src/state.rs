@@ -137,9 +137,12 @@ impl AppState {
     }
 
     pub fn reload(&self) -> Result<()> {
-        let routes = self
-            .db
-            .routes()?
+        let routes = self.db.routes()?;
+        let hub = routes
+            .iter()
+            .min_by_key(|r| (r.created_at, r.id.clone()))
+            .map(|r| r.hostname.clone());
+        let routes = routes
             .into_iter()
             .map(|r| (r.hostname.clone(), r))
             .collect();
