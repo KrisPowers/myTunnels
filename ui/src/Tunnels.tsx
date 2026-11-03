@@ -5,7 +5,7 @@ import { useDismiss } from "./dismiss";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Avatar, Card, Row, SubNav, Switch, TextField, useNotify } from "./ui";
+import { ArmedButton, Avatar, Card, LogDays, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
 
 // Chips saying who may open a tunnel.
 export function AccessChips({ route }: { route: Route }) {
@@ -706,15 +706,6 @@ function line(e: TunnelEvent, who: string): [string, string] {
   return said[e.outcome] ?? ["", e.outcome];
 }
 
-function day(at: number) {
-  const d = new Date(at * 1000);
-  const today = new Date();
-  const yesterday = new Date(Date.now() - 86_400_000);
-  if (d.toDateString() === today.toDateString()) return "Today";
-  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-}
-
 // TunnelLogs is what happened at the tunnel's door, newest first and grouped by
 // day: one line each, refreshed as it runs.
 function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
@@ -727,12 +718,12 @@ function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
     return () => clearInterval(t);
   }, [route.id]);
   const shown = (events ?? []).filter((e) => !kind || e.kind === kind);
-  const days: [string, TunnelEvent[]][] = [];
-  for (const e of shown) {
-    const label = day(e.at);
-    if (days.at(-1)?.[0] !== label) days.push([label, []]);
-    days.at(-1)![1].push(e);
-  }
+  const entries: LogEntry[] = shown.map((e) => {
+    const user = e.user_id ? users.find((u) => u.id === e.user_id) : undefined;
+    const who = user ? user.name || user.username : e.device_id ? shortId(e.device_id) : "A visitor";
+    const [tone, text] = line(e, who);
+    return { at: e.at, tone, text, where: [e.ip, e.country].filter(Boolean).join(", ") };
+  });
 
   return (
     <>
@@ -742,26 +733,7 @@ function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
         ))}
       </div>
       {events && shown.length === 0 && <p className="muted">Nothing yet.</p>}
-      {days.map(([label, list]) => (
-        <section key={label} className="log-day">
-          <h3>{label}</h3>
-          <ul className="log-list">
-            {list.map((e, i) => {
-              const user = e.user_id ? users.find((u) => u.id === e.user_id) : undefined;
-              const who = user ? user.name || user.username : e.device_id ? shortId(e.device_id) : "A visitor";
-              const [tone, text] = line(e, who);
-              return (
-                <li key={i} className="log-line">
-                  <span className={"dot " + tone} />
-                  <time className="log-time">{new Date(e.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
-                  <span className="log-text">{text}</span>
-                  <span className="log-where">{[e.ip, e.country].filter(Boolean).join(", ")}</span>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
+      <LogDays entries={entries} />
     </>
   );
 }

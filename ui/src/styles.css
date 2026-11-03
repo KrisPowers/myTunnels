@@ -630,10 +630,8 @@ a.result:hover { background: var(--hover); }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
   .result.user-row { grid-template-columns: 32px minmax(0, 1fr) auto; }
   .result.user-row .result-meta, .result.user-row .result-service, .result.user-row .result-what { display: none; }
-  .result.signin-row { grid-template-columns: auto minmax(0, 1fr) auto; }
   .log-where { display: none; }
   .person-row .result-meta { display: none; }
-  .result.signin-row .result-service, .result.signin-row .mono.muted { display: none; }
   .edit-row .place, .edit-row .protocol { flex: 1; width: auto; }
   .setup { padding: 16px; }
   .setup-card { padding: 22px 18px; }
@@ -668,7 +666,6 @@ a.result:hover { background: var(--hover); }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 
 .result.user-row { grid-template-columns: 32px minmax(160px, 1.2fr) minmax(0, .7fr) minmax(0, .7fr) auto 70px 24px; }
-.result.signin-row { grid-template-columns: 130px 150px 50px minmax(0, 1fr) 90px; }
 
 /* A page's sub-pages, as in EPS: a bar just under the heading's rule with the way
    back, a short rule, then each page, the open one in the accent colour and underlined. */
