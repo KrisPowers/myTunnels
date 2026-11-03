@@ -907,6 +907,14 @@ async fn update_user(
     Ok(Json(user))
 }
 
+/// What happened at a tunnel lately: sign-ins, passwords, visitors turned away.
+async fn route_activity(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Vec<Event>>> {
+    Ok(Json(state.db.events(&id, 300)?))
+}
+
 /// An account's latest sign-ins, and the devices it has used.
 async fn user_activity(
     State(state): State<AppState>,
