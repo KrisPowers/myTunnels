@@ -11,14 +11,41 @@ export interface Route {
   target_scheme: "http" | "https";
   require_lan: boolean;
   require_device: boolean;
+  require_password: boolean;
+  require_login: boolean;
+  password_set: boolean;
   policy_mode: PolicyMode;
   enabled: boolean;
+  preserve_host: boolean;
   created_at: number;
 }
 
-export type RouteEdit = Pick<Route, "target_host" | "target_scheme" | "require_lan" | "require_device" | "policy_mode" | "enabled"> & { port: number };
+// Who may open a tunnel, as sent when publishing or editing one. `password` is a
+// new tunnel password; left out, the one set stays.
+export interface Access {
+  require_lan: boolean;
+  require_device: boolean;
+  require_password: boolean;
+  require_login: boolean;
+  policy_mode: PolicyMode;
+  password?: string;
+}
 
-export type DeviceStatus = "pending" | "approved" | "denied";
+export type RouteEdit = Pick<Route, "target_host" | "target_scheme" | "enabled" | "preserve_host"> & Access & { port: number };
+
+export interface User {
+  id: string;
+  username: string;
+  email: string | null;
+  name: string;
+  enabled: boolean;
+  all_routes: boolean;
+  route_ids: string[];
+  created_at: number;
+  last_login: number | null;
+}
+
+export type DeviceStatus = "seen" | "pending" | "approved" | "denied";
 
 export interface DeviceInfo {
   userAgent?: string;
@@ -111,7 +138,8 @@ export const api = {
   zones: () => call<Zone[]>("/zones"),
 
   routes: () => call<Route[]>("/routes"),
-  publish: (body: { subdomain: string; zone_id: string; port: number }) => call<Route>("/routes", "POST", body),
+  publish: (body: { subdomain: string; zone_id: string; port: number; target_host: string | null; target_scheme: string; preserve_host: boolean } & Access) =>
+    call<Route>("/routes", "POST", body),
   editRoute: (id: string, edit: RouteEdit) => call<Route>(`/routes/${id}`, "PATCH", edit),
   removeRoute: (id: string) => call(`/routes/${id}`, "DELETE"),
 
@@ -119,6 +147,14 @@ export const api = {
   editDevice: (id: string, patch: Partial<Pick<Device, "name" | "status" | "all_routes" | "route_ids">>) =>
     call<Device>(`/devices/${id}`, "PATCH", patch),
   forgetDevice: (id: string) => call(`/devices/${id}`, "DELETE"),
+  thisDevice: (token: string | null, info: unknown) => call<{ id: string; token: string }>("/device", "POST", { token, info }),
+
+  users: () => call<User[]>("/users"),
+  addUser: (body: { username: string; email: string | null; name: string; password: string; all_routes: boolean; route_ids: string[] }) =>
+    call<User>("/users", "POST", body),
+  editUser: (id: string, patch: Partial<Pick<User, "username" | "email" | "name" | "enabled" | "all_routes" | "route_ids">> & { password?: string }) =>
+    call<User>(`/users/${id}`, "PATCH", patch),
+  removeUser: (id: string) => call(`/users/${id}`, "DELETE"),
 };
 
 export function editOf(r: Route): RouteEdit {
@@ -128,8 +164,11 @@ export function editOf(r: Route): RouteEdit {
     target_scheme: r.target_scheme,
     require_lan: r.require_lan,
     require_device: r.require_device,
+    require_password: r.require_password,
+    require_login: r.require_login,
     policy_mode: r.policy_mode,
     enabled: r.enabled,
+    preserve_host: r.preserve_host,
   };
 }
 
@@ -152,6 +191,61 @@ export function ago(seconds: number) {
   return new Date(seconds * 1000).toLocaleDateString();
 }
 
+// A device ID is 256 characters; the dashboard shows its start.
+export function shortId(id: string) {
+  return id.length > 12 ? id.slice(0, 8) + "..." : id;
+}
+
 export function message(e: unknown) {
   return e instanceof Error ? e.message : String(e);
+}
+
+// What this browser reports about its hardware, as the gateway's device page sends it.
+export function deviceInfo() {
+  const n = navigator as Navigator & { userAgentData?: { platform?: string; mobile?: boolean }; deviceMemory?: number };
+  let vendor = "";
+  let renderer = "";
+  try {
+    const gl = document.createElement("canvas").getContext("webgl");
+    const ext = gl?.getExtension("WEBGL_debug_renderer_info");
+    if (gl) {
+      vendor = String(gl.getParameter(ext ? ext.UNMASKED_VENDOR_WEBGL : gl.VENDOR));
+      renderer = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+    }
+  } catch {
+    // No graphics information, then.
+  }
+  return {
+    userAgent: n.userAgent,
+    platform: n.userAgentData?.platform || n.platform || "",
+    mobile: n.userAgentData ? !!n.userAgentData.mobile : null,
+    languages: [...(n.languages ?? [n.language])],
+    hardwareConcurrency: n.hardwareConcurrency || null,
+    deviceMemory: n.deviceMemory || null,
+    maxTouchPoints: n.maxTouchPoints || 0,
+    screen: { width: screen.width, height: screen.height, colorDepth: screen.colorDepth, pixelRatio: devicePixelRatio },
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    webglVendor: vendor,
+    webglRenderer: renderer,
+  };
+}
+
+// The rating every password here is held to: 10 or more characters with upper
+// and lower case, a number and a symbol.
+export const LEVELS = { poor: "Poor", decent: "Decent", good: "Good", strong: "Strong" } as const;
+
+export function strength(p: string) {
+  const missing = [
+    p.length < 10 && "10 or more characters",
+    !/[A-Z]/.test(p) && "an uppercase letter",
+    !/[a-z]/.test(p) && "a lowercase letter",
+    !/[0-9]/.test(p) && "a number",
+    !/[^A-Za-z0-9]/.test(p) && "a symbol such as ! or $",
+  ].filter((m): m is string => Boolean(m));
+  const level: keyof typeof LEVELS = missing.length > 2 ? "poor" : missing.length > 0 ? "decent" : p.length >= 14 ? "strong" : "good";
+  return { ok: missing.length === 0, level, missing };
+}
+
+export function list(items: string[]) {
+  return items.length < 2 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
 }

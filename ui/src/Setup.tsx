@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { api, message, TOKEN_URL, type Account, type Auth } from "./api";
+import { api, LEVELS, list, message, strength, TOKEN_URL, type Account, type Auth } from "./api";
 import { Dropdown } from "./Dropdown";
 import { Icon } from "./Icon";
 import { Callout, TextField } from "./ui";
@@ -64,26 +64,6 @@ function StepHead({ title, sub }: { title: string; sub: ReactNode }) {
 }
 
 // ---- 1. Admin password: create it, or sign in ----
-
-const LEVELS = { poor: "Poor", decent: "Decent", good: "Good", strong: "Strong" } as const;
-
-// strength rates a new password. It is accepted once nothing is missing:
-// 10 or more characters with upper and lower case, a number and a symbol.
-function strength(p: string) {
-  const missing = [
-    p.length < 10 && "10 or more characters",
-    !/[A-Z]/.test(p) && "an uppercase letter",
-    !/[a-z]/.test(p) && "a lowercase letter",
-    !/[0-9]/.test(p) && "a number",
-    !/[^A-Za-z0-9]/.test(p) && "a symbol such as ! or $",
-  ].filter((m): m is string => Boolean(m));
-  const level: keyof typeof LEVELS = missing.length > 2 ? "poor" : missing.length > 0 ? "decent" : p.length >= 14 ? "strong" : "good";
-  return { ok: missing.length === 0, level, missing };
-}
-
-function list(items: string[]) {
-  return items.length < 2 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
-}
 
 function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }) {
   const create = !auth.setup.password;

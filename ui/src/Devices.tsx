@@ -1,17 +1,18 @@
 import { useState } from "react";
-import { ago, api, message, type Device, type DeviceStatus, type Route } from "./api";
+import { ago, api, message, shortId, type Device, type DeviceStatus, type Route } from "./api";
 import { Icon } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Callout, Card, Row, SaveField, Switch, useNotify } from "./ui";
+import { ArmedButton, Callout, Card, Copy, Row, SaveField, Switch, useNotify } from "./ui";
 
 const FILTERS: [DeviceStatus, string][] = [
   ["pending", "Waiting"],
   ["approved", "Approved"],
+  ["seen", "Seen"],
   ["denied", "Denied"],
 ];
 
-const TONE: Record<DeviceStatus, string> = { pending: "warn", approved: "ok", denied: "bad" };
-const LABEL: Record<DeviceStatus, string> = { pending: "Waiting", approved: "Approved", denied: "Denied" };
+const TONE: Record<DeviceStatus, string> = { seen: "", pending: "warn", approved: "ok", denied: "bad" };
+const LABEL: Record<DeviceStatus, string> = { seen: "Seen", pending: "Waiting", approved: "Approved", denied: "Denied" };
 
 function summary(d: Device) {
   const i = d.info ?? {};
@@ -28,7 +29,7 @@ function useApprove(routes: Route[], onChanged: () => Promise<void>) {
     try {
       await api.editDevice(d.id, { status: "approved", route_ids });
       await onChanged();
-      notify(`Approved ${d.name || d.id}${asked && route_ids ? ` for ${asked.hostname}` : ""}`);
+      notify(`Approved ${d.name || shortId(d.id)}${asked && route_ids ? ` for ${asked.hostname}` : ""}`);
     } catch (e) {
       notify(message(e), "bad");
     }
@@ -78,12 +79,12 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
                   <a className="result device-row" href={`#/devices/${d.id}`}>
                     <span className={"dot " + TONE[d.status]} role="img" aria-label={LABEL[d.status]} title={LABEL[d.status]} />
                     <span className="device-name">
-                      <span className="scan-target mono">{d.id}</span>
+                      <span className="scan-target mono">{shortId(d.id)}</span>
                       {d.name && <small>{d.name}</small>}
                     </span>
                     <span className="result-service">{summary(d)}</span>
                     <span className="result-meta">{ago(d.last_seen)}</span>
-                    {d.status === "pending" ? (
+                    {d.status === "pending" || d.status === "seen" ? (
                       <button type="button" className="btn primary small" onClick={(e) => {
                         e.preventDefault();
                         approve(d);
@@ -120,7 +121,7 @@ export function DevicePage({ device, routes, onChanged }: { device: Device; rout
   const forget = async () => {
     try {
       await api.forgetDevice(device.id);
-      notify(`Forgot ${device.name || device.id}`);
+      notify(`Forgot ${device.name || shortId(device.id)}`);
       await onChanged();
       go("#/devices");
     } catch (e) {
@@ -152,7 +153,7 @@ export function DevicePage({ device, routes, onChanged }: { device: Device; rout
       <div className="page-head">
         <a className="icon-btn" href="#/devices" aria-label="All devices" title="All devices"><Icon name="arrow_back" /></a>
         <div className="page-head-main">
-          <h1 className="mono">{device.id}</h1>
+          <h1 className="mono"><Copy text={shortId(device.id)} copyText={device.id} plain /></h1>
           <div className="page-sub">
             <span className={"chip " + TONE[device.status]}>{LABEL[device.status]}</span>
             {device.name && <b>{device.name}</b>}

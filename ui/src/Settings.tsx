@@ -11,10 +11,11 @@ export const SETTINGS: [string, string, IconName][] = [
   ["network", "Network", "router"],
   ["connector", "Connector", "dns"],
   ["appearance", "Appearance", "brightness_auto"],
+  ["account", "Account", "person"],
   ["about", "About", "info"],
 ];
 
-export function Settings({ section, status, routes, onChanged }: { section: string; status: Status | null; routes: Route[]; onChanged: () => Promise<void> }) {
+export function Settings({ section, status, routes, onChanged, onSignOut }: { section: string; status: Status | null; routes: Route[]; onChanged: () => Promise<void>; onSignOut: () => void }) {
   const [key, title] = SETTINGS.find(([k]) => k === section) ?? SETTINGS[0];
   const [saved, setSaved] = useState<Saved | null>(null);
   const reload = () => api.settings().then(setSaved).catch(() => {});
@@ -39,6 +40,13 @@ export function Settings({ section, status, routes, onChanged }: { section: stri
         {key === "network" && saved && <Network saved={saved} status={status} onSaved={reload} />}
         {key === "connector" && <Connector status={status} />}
         {key === "appearance" && <Appearance />}
+        {key === "account" && (
+          <Card title="Session">
+            <Row title="Sign out" sub="Ends this browser's admin session. Tunnels keep running.">
+              <button type="button" className="btn" onClick={onSignOut}><Icon name="logout" size={18} />Sign out</button>
+            </Row>
+          </Card>
+        )}
         {key === "about" && <About />}
       </div>
     </>
