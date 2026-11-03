@@ -615,6 +615,7 @@ impl Db {
                 u.all_routes,
                 u.created_at,
                 u.last_login,
+                u.note,
             ],
         )?;
         tx.execute("DELETE FROM user_routes WHERE user_id = ?1", [&u.id])?;
