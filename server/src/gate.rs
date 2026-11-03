@@ -873,7 +873,7 @@ async fn login(
     };
     state.clear_failures(&by_address);
     state.clear_failures(&by_account);
-    if !(account.all_routes || account.route_ids.contains(&route.id)) {
+    if !account.route_ids.contains(&route.id) {
         return json_error(StatusCode::FORBIDDEN, "This account cannot open this app.");
     }
 
