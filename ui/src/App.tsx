@@ -120,52 +120,59 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           <button type="button" className="icon-btn menu-btn" aria-label="Menu" aria-expanded={drawer} onClick={() => setDrawer((d) => !d)}>
             <Icon name="menu" />
           </button>
-          <a className="brand" href="#/"><span className="brand-mark"><Icon name="public" size={18} /></span><span className="brand-name">myTunnels</span></a>
+          <a className="brand" href="#/"><span className="brand-mark"><Icon name="public" size={20} /></span><span className="brand-name">myTunnels</span></a>
         </div>
         <Search routes={routes} devices={devices} />
         <div className="header-actions">
+          <a className={"icon-btn" + (view === "docs" ? " on" : "")} href="#/docs" aria-label="Help" title="Help"><Icon name="help" /></a>
           <a className={"icon-btn" + (view === "settings" ? " on" : "")} href="#/settings" aria-label="Settings" title="Settings"><Icon name="settings" /></a>
-          <button type="button" className="icon-btn" aria-label="Sign out" title="Sign out" onClick={onSignOut}><Icon name="logout" /></button>
         </div>
       </header>
 
       <div className="shell">
         <nav className={"sidebar" + (drawer ? " open" : "")} aria-label="Pages">
-          {view === "settings" ? (
+          {sections ? (
             <>
               <a className="nav-back" href="#/"><Icon name="arrow_back" /><span>Dashboard</span></a>
               <hr className="nav-rule" />
-              {SETTINGS.map(([key, label, icon], i) => (
-                <NavItem key={key} to={`#/settings/${key}`} icon={icon} label={label} on={id === key || (!id && i === 0)} quiet />
+              {sections.map(([key, label, icon], i) => (
+                <NavItem key={key} to={`#/${view}/${key}`} icon={icon} label={label} on={id === key || (!id && i === 0)} quiet />
               ))}
             </>
           ) : (
             <>
-              <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels"} />
-              <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={pending || undefined} alert={pending > 0} />
+              <a className="fab" href="#/new"><Icon name="add" size={24} />New tunnel</a>
+              <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels" || view === "new"} />
+              <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={pending || undefined} />
+              <NavItem to="#/users" icon="group" label="Users" on={view === "users"} />
             </>
           )}
         </nav>
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
 
         <main className="page" key={view + id}>
-          {view === "tunnels" && !id && <Tunnels routes={routes} status={status} onChanged={load} />}
-          {route && <TunnelPage route={route} devices={devices ?? []} onChanged={load} />}
+          {view === "tunnels" && !id && <Tunnels routes={routes} status={status} />}
+          {view === "new" && <NewTunnel users={users ?? []} onPublished={load} />}
+          {route && <TunnelPage route={route} devices={devices ?? []} users={users ?? []} onChanged={load} />}
           {view === "devices" && !id && <Devices devices={devices} routes={routes ?? []} onChanged={load} />}
           {device && <DevicePage device={device} routes={routes ?? []} onChanged={load} />}
-          {view === "settings" && <Settings section={id} status={status} routes={routes ?? []} onChanged={load} />}
+          {view === "users" && !id && <Users users={users} routes={routes ?? []} />}
+          {view === "users" && id === "new" && <NewUser routes={routes ?? []} onAdded={load} />}
+          {user && <UserPage user={user} routes={routes ?? []} onChanged={load} />}
+          {view === "settings" && <Settings section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
+          {view === "docs" && <Docs section={id} />}
         </main>
       </div>
     </div>
   );
 }
 
-function NavItem({ to, icon, label, on, quiet, count, alert }: { to: string; icon: IconName; label: string; on: boolean; quiet?: boolean; count?: number; alert?: boolean }) {
+function NavItem({ to, icon, label, on, quiet, count }: { to: string; icon: IconName; label: string; on: boolean; quiet?: boolean; count?: number }) {
   return (
     <a className={"nav-item" + (quiet ? " quiet" : "") + (on ? " on" : "")} href={to} aria-current={on ? "page" : undefined}>
       <Icon name={icon} />
       <span className="nav-label">{label}</span>
-      {count !== undefined && <span className={"nav-count" + (alert ? " alert" : "")}>{count}</span>}
+      {count !== undefined && <span className="nav-count">{count}</span>}
     </a>
   );
 }
