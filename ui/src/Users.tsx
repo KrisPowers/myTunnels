@@ -67,10 +67,55 @@ export function Users({ users, routes }: { users: User[] | null; routes: Route[]
   );
 }
 
+// ---- pieces ----
+
+function Rating({ value }: { value: string }) {
+  if (!value) return null;
+  const rating = strength(value);
+  return (
+    <>
+      <span className={"strength " + rating.level}>{LEVELS[rating.level]}</span>
+      {rating.missing.length > 0 && <span>Needs {list(rating.missing)}.</span>}
+    </>
+  );
+}
+
+// A strong password from the browser's own random source.
+function generate() {
+  const sets = ["ABCDEFGHJKLMNPQRSTUVWXYZ", "abcdefghijkmnopqrstuvwxyz", "23456789", "!$%&*+-=?@#"];
+  const all = sets.join("");
+  const pick = (chars: string) => chars[crypto.getRandomValues(new Uint32Array(1))[0] % chars.length];
+  const chars = [...sets.map(pick), ...Array.from({ length: 14 }, () => pick(all))];
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
+
+// PasswordField is a password with its rating and a button that makes a strong one.
+function PasswordField({ label, value, onChange, hint }: { label: string; value: string; onChange: (v: string) => void; hint?: string }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <TextField className="grow two-actions" label={label} type={shown ? "text" : "password"} autoComplete="new-password" mono={shown}
+      value={value} onChange={onChange}
+      trailing={
+        <>
+          <button type="button" className="tf-action" onClick={() => setShown((s) => !s)}>{shown ? "Hide" : "Show"}</button>
+          <button type="button" className="tf-action" onClick={() => {
+            onChange(generate());
+            setShown(true);
+          }}>Generate</button>
+        </>
+      }
+      hint={value ? <Rating value={value} /> : hint} />
+  );
+}
+
 // Grants are the tunnels an account may open: every one, or those picked.
 function Grants({ all, ids, routes, onAll, onPick }: { all: boolean; ids: string[]; routes: Route[]; onAll: (v: boolean) => void; onPick: (id: string, on: boolean) => void }) {
   return (
-    <Card title="Can open" sub="Only tunnels with Sign-in turned on ask for an account.">
+    <Card title="Tunnels">
       <Row title="Every tunnel" sub="Including tunnels added later.">
         <Switch label="Every tunnel" on={all} onChange={onAll} />
       </Row>
