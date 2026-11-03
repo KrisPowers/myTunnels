@@ -99,28 +99,13 @@ async fn setup(
     if state.db.setting("admin_password")?.is_some() {
         return Err(ApiError::conflict("A password is already set"));
     }
-    if !strong_password(&body.password) {
-        return Err(ApiError::bad(
-            "Use 10 or more characters with upper and lower case, a number and a symbol",
-        ));
+    if !secret::strong(&body.password) {
+        return Err(ApiError::bad(secret::RULE));
     }
-    let salt = SaltString::generate(&mut OsRng);
-    let hash = Argon2::default()
-        .hash_password(body.password.as_bytes(), &salt)
-        .map_err(|e| anyhow::anyhow!("could not hash password: {e}"))?
-        .to_string();
-    state.db.set_setting("admin_password", &hash)?;
+    state
+        .db
+        .set_setting("admin_password", &secret::hash(&body.password)?)?;
     Ok(start_session(&state))
-}
-
-/// The panel's own rule, matched by the setup page: 10 or more characters with
-/// upper and lower case, a number and a symbol.
-fn strong_password(p: &str) -> bool {
-    p.chars().count() >= 10
-        && p.chars().any(|c| c.is_uppercase())
-        && p.chars().any(|c| c.is_lowercase())
-        && p.chars().any(|c| c.is_ascii_digit())
-        && p.chars().any(|c| !c.is_ascii_alphanumeric())
 }
 
 async fn login(
