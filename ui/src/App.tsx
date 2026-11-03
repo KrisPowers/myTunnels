@@ -157,8 +157,8 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           {view === "devices" && !id && <Devices devices={devices} routes={routes ?? []} onChanged={load} />}
           {device && <DevicePage device={device} routes={routes ?? []} users={users ?? []} onChanged={load} />}
           {view === "users" && !id && <Users users={users} routes={routes ?? []} />}
-          {view === "users" && id === "new" && <NewUser routes={routes ?? []} onAdded={load} />}
-          {user && <UserPage user={user} page={page} routes={routes ?? []} onChanged={load} />}
+          {view === "users" && id === "new" && <NewUser devices={devices ?? []} onAdded={load} />}
+          {user && <UserPage user={user} page={page} routes={routes ?? []} devices={devices ?? []} onChanged={load} />}
           {view === "settings" && <Settings section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
           {view === "docs" && <Docs section={id} />}
         </main>

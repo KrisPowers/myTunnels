@@ -84,6 +84,11 @@ CREATE TABLE IF NOT EXISTS events (
     at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS events_route ON events (route_id, at);
+CREATE TABLE IF NOT EXISTS user_devices (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, device_id)
+);
 CREATE TABLE IF NOT EXISTS user_routes (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
@@ -152,6 +157,8 @@ pub struct User {
     #[serde(skip)]
     pub all_routes: bool,
     pub route_ids: Vec<String>,
+    /// The devices this account may sign in from.
+    pub device_ids: Vec<String>,
     pub created_at: i64,
     pub last_login: Option<i64>,
     /// Why the account was locked, while it is.
@@ -252,6 +259,7 @@ fn user_row(r: &Row) -> rusqlite::Result<User> {
         enabled: r.get(5)?,
         all_routes: r.get(6)?,
         route_ids: Vec::new(),
+        device_ids: Vec::new(),
         created_at: r.get(7)?,
         last_login: r.get(8)?,
         note: r.get(9)?,
@@ -334,6 +342,25 @@ impl Db {
              UPDATE users SET all_routes = 0 WHERE all_routes = 1;",
         )?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        // Accounts made before devices were linked take the devices they already
+        // signed in from. This runs once, so a device unlinked later stays unlinked.
+        let linked_before: Option<String> = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'devices_linked_from_history'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if linked_before.is_none() {
+            conn.execute_batch(
+                "INSERT OR IGNORE INTO user_devices (user_id, device_id)
+                     SELECT s.user_id, s.device_id FROM sign_ins s
+                     JOIN users u ON u.id = s.user_id
+                     JOIN devices d ON d.id = s.device_id
+                     WHERE s.outcome = 'ok';
+                 INSERT INTO settings (key, value) VALUES ('devices_linked_from_history', '1');",
+            )?;
+        }
         Ok(Self(Mutex::new(conn)))
     }
 
@@ -606,7 +633,16 @@ impl Db {
         let pairs = stmt
             .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut stmt = conn.prepare("SELECT user_id, device_id FROM user_devices")?;
+        let linked = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         for user in &mut users {
+            user.device_ids = linked
+                .iter()
+                .filter(|(owner, _)| *owner == user.id)
+                .map(|(_, device)| device.clone())
+                .collect();
             user.route_ids = pairs
                 .iter()
                 .filter(|(owner, _)| *owner == user.id)
@@ -654,6 +690,13 @@ impl Db {
                 u.note,
             ],
         )?;
+        tx.execute("DELETE FROM user_devices WHERE user_id = ?1", [&u.id])?;
+        for device_id in &u.device_ids {
+            tx.execute(
+                "INSERT OR IGNORE INTO user_devices (user_id, device_id) VALUES (?1, ?2)",
+                params![u.id, device_id],
+            )?;
+        }
         tx.execute("DELETE FROM user_routes WHERE user_id = ?1", [&u.id])?;
         for route_id in &u.route_ids {
             tx.execute(

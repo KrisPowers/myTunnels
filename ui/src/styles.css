@@ -638,6 +638,7 @@ a.result:hover { background: var(--hover); }
   .edit-row { flex-wrap: wrap; }
   .edit-row .grow { flex-basis: 100%; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .profile-grid { grid-template-columns: minmax(0, 1fr); }
   .result.user-row { grid-template-columns: 32px minmax(0, 1fr) auto; }
   .result.user-row .result-meta, .result.user-row .result-service, .result.user-row .result-what { display: none; }
   .log-table th:nth-child(4), .log-table td:nth-child(4), .log-table th:nth-child(5), .log-table td:nth-child(5) { display: none; }
@@ -705,12 +706,12 @@ a.result:hover { background: var(--hover); }
 .page-body.plain .setting { border-top: 0; }
 /* The sub-nav names the page, so sections print no title of their own. */
 .page-body.plain > .card:first-child .card-head h2 { display: none; }
-.page-body.plain > .card:first-child .card-head:not(:has(p)) { display: none; }
+.page-body.plain > .card:first-child .card-head:not(:has(p, .menu-wrap)) { display: none; }
 
 /* Adding people, as in Google's sharing: a field with suggestions, then a row per
    person with access. */
 /* The menu a plus opens to add someone: a small search, then matches. */
-.people-menu { position: fixed; right: auto; z-index: 100; width: 300px; max-height: 420px; padding: 8px 0; overflow-y: auto; }
+.pop-menu { position: fixed; right: auto; z-index: 100; max-height: 420px; padding: 8px 0; overflow-y: auto; }
 .menu-search {
   display: block; width: calc(100% - 16px); height: 36px; margin: 0 8px 4px; padding: 0 12px; border: 0;
   border-radius: var(--radius); background: transparent; color: var(--text); font: inherit;
@@ -720,10 +721,12 @@ a.result:hover { background: var(--hover); }
 .menu-note { padding: 8px 16px; color: var(--text-2); font-size: 13px; }
 .menu-item { gap: 12px; }
 .menu-item.active { background: var(--hover); }
-.person-item { height: 52px; }
+.person-item, .pick-item { height: 52px; }
+.menu-item.danger { color: var(--bad); }
+.menu-item.danger.armed { background: var(--bad-bg); }
 .menu-item:disabled { opacity: .45; cursor: default; background: none; }
 .people { list-style: none; margin: 0; padding: 0 0 8px; }
-.person-row { display: flex; align-items: center; gap: 16px; min-height: 56px; padding: 0 8px 0 0; }
+.person-row { display: flex; align-items: center; gap: 16px; min-height: 56px; padding: 0; }
 .person-row .person { flex: 1; color: var(--text); }
 .person-row .person:hover { text-decoration: none; }
 .person-row .person:hover .scan-target { text-decoration: underline; }
@@ -744,6 +747,32 @@ a.result:hover { background: var(--hover); }
 .log-event { display: inline-flex; align-items: center; gap: 10px; }
 .log-event .dot { width: 8px; height: 8px; }
 .card .table-wrap { padding: 0 12px 12px; }
+
+/* An account at a glance: figures on top, then two columns of label and value. */
+.profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 48px; }
+.section-title { margin: 0 0 8px; font-size: 16px; font-weight: 500; }
+.kv { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 44px; }
+/* A faint line between one value and the next. */
+.kv + .kv, .kv + .kv-block, .kv-block + .kv { border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.kv-label { color: var(--text-2); font-size: 13px; }
+.kv-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv-value.muted { color: var(--text-3); }
+.kv-input { width: 100%; }
+.kv-actions { display: flex; gap: 2px; }
+.kv-block { display: grid; gap: 4px; padding: 8px 0; }
+
+/* A section with its heading and an action on one line, then compact rows split
+   by faint lines. */
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; margin-bottom: 4px; }
+.section-head .section-title { margin: 0; }
+.item-list { list-style: none; margin: 0; padding: 0; }
+.item-row { display: flex; align-items: center; gap: 12px; min-height: 52px; }
+.item-row + .item-row { border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.item-row .person { flex: 1; color: var(--text); }
+.item-row .person:hover { text-decoration: none; }
+.item-row .person:hover .scan-target { text-decoration: underline; }
+.item-icon { color: var(--text-2); }
+.empty-note { margin: 0; padding: 12px 0; color: var(--text-3); }
 
 /* Fields set straight on a card, under its heading. */
 .card-pad { padding: 0 24px 16px; }
