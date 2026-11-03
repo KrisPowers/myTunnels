@@ -631,6 +631,9 @@ a.result:hover { background: var(--hover); }
   .result.user-row { grid-template-columns: 32px minmax(0, 1fr) auto; }
   .result.user-row .result-meta, .result.user-row .result-service, .result.user-row .result-what { display: none; }
   .result.signin-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .result.event-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .result.event-row .mono.muted, .result.event-row .result-service { display: none; }
+  .person-row .result-meta { display: none; }
   .result.signin-row .result-service, .result.signin-row .mono.muted { display: none; }
   .edit-row .place, .edit-row .protocol { flex: 1; width: auto; }
   .setup { padding: 16px; }
