@@ -34,6 +34,9 @@ pub fn router(state: AppState) -> Router {
         .route("/routes/{id}", patch(update_route).delete(delete_route))
         .route("/devices", get(list_devices))
         .route("/devices/{id}", patch(update_device).delete(delete_device))
+        .route("/device", post(this_device))
+        .route("/users", get(list_users).post(create_user))
+        .route("/users/{id}", patch(update_user).delete(delete_user))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_admin));
     let api = Router::new()
         .route("/auth", get(auth_state))
