@@ -190,6 +190,8 @@ export function DevicePage({ device, routes, users, onChanged }: { device: Devic
           {!device.all_routes && gated.length === 0 && <p className="card-note muted">No tunnel needs an approved device yet.</p>}
         </Card>
 
+        <Accounts device={device} users={users} />
+
         <Card title="Hardware" sub="What the browser reported. A change in platform, touch or graphics sends an approved device back to waiting.">
           <Facts rows={hardware} />
         </Card>
