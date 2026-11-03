@@ -881,10 +881,10 @@ async fn update_user(
         }
         user.username = username;
     }
-    if body.email.is_some() {
-        user.email = clean_email(body.email)?;
+    if let Some(email) = body.email {
+        user.email = clean_email(&email)?;
     }
-    check_unique(&state, &user.id, &user.username, user.email.as_deref())?;
+    check_unique(&state, &user.id, &user.username, &user.email)?;
     if let Some(name) = body.name {
         user.name = name.trim().chars().take(80).collect();
     }
