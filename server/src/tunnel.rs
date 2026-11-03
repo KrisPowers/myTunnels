@@ -159,6 +159,7 @@ async fn supervise(state: AppState) {
 async fn collect_logs(state: AppState, stream: impl AsyncRead + Unpin) {
     let mut lines = BufReader::new(stream).lines();
     while let Ok(Some(line)) = lines.next_line().await {
+        tracing::info!(target: "cloudflared", "{line}");
         state.tunnel.update(|s| {
             s.logs.push_back(line);
             while s.logs.len() > LOG_LINES {
