@@ -40,13 +40,24 @@ export type RouteEdit = Pick<Route, "target_host" | "target_scheme" | "enabled" 
 export interface User {
   id: string;
   username: string;
-  email: string | null;
+  email: string;
   name: string;
   enabled: boolean;
   all_routes: boolean;
   route_ids: string[];
   created_at: number;
   last_login: number | null;
+  // Why the account is held, while it is.
+  note: string | null;
+}
+
+export interface SignIn {
+  user_id: string;
+  device_id: string | null;
+  ip: string | null;
+  country: string | null;
+  at: number;
+  outcome: "ok" | "failed" | "blocked";
 }
 
 export type DeviceStatus = "seen" | "pending" | "approved" | "denied";
