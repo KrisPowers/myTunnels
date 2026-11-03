@@ -437,29 +437,28 @@ function PasswordValue({ onSave }: { onSave: (password: string) => Promise<unkno
   );
 }
 
-// Activity is where an account has been used from: its devices, and its sign-ins.
+// Activity is how an account has been used: figures for the last 30 days, then
+// every sign-in attempt as a table.
 function Activity({ user }: { user: User }) {
   const [list, setList] = useState<SignIn[] | null>(null);
   useEffect(() => {
     api.userActivity(user.id).then(setList).catch(() => setList([]));
   }, [user.id, user.last_login, user.note]);
-
-  const devices = new Map<string, { count: number; last: SignIn }>();
-  for (const s of list ?? []) {
-    if (s.outcome !== "ok" || !s.device_id) continue;
-    const seen = devices.get(s.device_id);
-    devices.set(s.device_id, { count: (seen?.count ?? 0) + 1, last: seen?.last ?? s });
-  }
+  const month = Date.now() / 1000 - 30 * 86_400;
+  const recent = (list ?? []).filter((s) => s.at > month);
+  const ok = recent.filter((s) => s.outcome === "ok");
+  const count = (values: (string | null)[]) => new Set(values.filter(Boolean)).size;
 
   return (
     <>
-      <Card title="Devices" sub={devices.size ? undefined : "No sign-ins yet."}>
-        {[...devices].map(([id, { count, last }]) => (
-          <Row key={id} title={<a className="mono" href={`#/devices/${id}`}>{shortId(id)}</a>}
-            sub={`${count} sign-in${count === 1 ? "" : "s"}, last ${ago(last.at)}${last.ip ? ` from ${last.ip}` : ""}${last.country ? ` (${last.country})` : ""}`} />
-        ))}
-      </Card>
-      <Card title="Sign-ins">
+      <div className="tally four">
+        <div className="tally-item ok"><b>{list ? ok.length : "..."}</b><span>Sign-ins, 30 days</span></div>
+        <div className={"tally-item " + (recent.length - ok.length ? "bad" : "")}><b>{list ? recent.length - ok.length : "..."}</b><span>Refused, 30 days</span></div>
+        <div className="tally-item plain"><b>{list ? count(ok.map((s) => s.device_id)) : "..."}</b><span>Devices used</span></div>
+        <div className="tally-item plain"><b>{list ? count(ok.map((s) => s.country)) : "..."}</b><span>Countries</span></div>
+      </div>
+      <section>
+        <div className="section-head"><h3 className="section-title">Sign-ins</h3></div>
         {list && list.length > 0 ? (
           <LogTable who="Device" entries={list.slice(0, 100).map((s): LogEntry => ({
             at: s.at,
