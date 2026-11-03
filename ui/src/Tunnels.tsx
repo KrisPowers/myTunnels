@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, editOf, LEVELS, list, message, shortId, strength, type Access, type Device, type PolicyMode, type Route, type RouteEdit, type Status, type User, type Zone } from "./api";
+import { ago, api, editOf, LEVELS, list, message, shortId, strength, type Access, type Device, type PolicyMode, type Route, type RouteEdit, type Status, type TunnelEvent, type User, type Zone } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Card, Row, SubNav, Switch, TextField, useNotify } from "./ui";
+import { ArmedButton, Avatar, Card, Row, SubNav, Switch, TextField, useNotify } from "./ui";
 
 // Chips saying who may open a tunnel.
 export function AccessChips({ route }: { route: Route }) {
@@ -334,8 +334,8 @@ export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: 
 
 const TUNNEL_PAGES: [string, string, IconName][] = [
   ["access", "Access Control", "shield"],
-  ["signin", "Sign-in", "login"],
   ["devices", "Devices", "devices"],
+  ["activity", "Activity", "history"],
 ];
 
 // TunnelPage is one tunnel: its address and target in the heading, each with an
@@ -441,22 +441,9 @@ export function TunnelPage({ route, page, devices, users, onChanged }: { route: 
             }} />
         )}
 
-        {current === "signin" && (!edit.require_login ? (
-          <div className="card welcome">
-            <Icon name="login" size={40} />
-            <h2>Sign-in is off</h2>
-            <p className="muted">Turn it on to ask visitors to sign in with an account.</p>
-            <button type="button" className="btn primary" onClick={() => quietly({ require_login: true })}>Turn on sign-in</button>
-          </div>
-        ) : (
-          <Card title="Accounts allowed" sub={users.length ? undefined : <>No accounts yet. Add one under <a href="#/users">Users</a>.</>}>
-            {users.map((u) => (
-              <Row key={u.id} title={<a href={`#/users/${u.id}`}>{u.name || u.username}</a>} sub={u.all_routes ? "Allowed on every tunnel" : u.email}>
-                <Switch label={`Allow ${u.username}`} on={u.all_routes || u.route_ids.includes(route.id)} disabled={u.all_routes} onChange={(v) => grantUser(u, v)} />
-              </Row>
-            ))}
-          </Card>
-        ))}
+        {current === "access" && <People route={route} users={users} onGrant={grantUser} />}
+
+        {current === "activity" && <TunnelActivity route={route} users={users} />}
 
         {current === "devices" && (!edit.require_device ? (
           <div className="card welcome">
@@ -556,5 +543,166 @@ function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () =>
         <button className="btn primary" disabled={busy || !port}>{busy && <span className="spinner small on-accent" />}Save</button>
       </div>
     </form>
+  );
+}
+
+// People are the accounts that may sign in at this tunnel, added one by one, as in
+// Google's sharing: a field to add someone, then everyone with access.
+function People({ route, users, onGrant }: { route: Route; users: User[]; onGrant: (user: User, on: boolean) => Promise<void> }) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const members = users.filter((u) => u.route_ids.includes(route.id));
+  const needle = q.trim().toLowerCase();
+  const matches = users
+    .filter((u) => !u.route_ids.includes(route.id))
+    .filter((u) => !needle || [u.name, u.username, u.email].some((v) => v.toLowerCase().includes(needle)))
+    .slice(0, 6);
+  const listed = open && matches.length > 0;
+
+  const add = async (u: User) => {
+    setQ("");
+    setActive(0);
+    await onGrant(u, true);
+  };
+
+  return (
+    <Card title="People with access" sub={route.require_login ? undefined : "Sign-in is off, so no one is asked for an account yet."}>
+      <div className="card-pad">
+        {users.length === 0 ? (
+          <p className="muted">No accounts yet. <a href="#/users/new">Add one</a>, then add them here.</p>
+        ) : (
+          <div className="search people-search">
+            <Icon name="person" className="search-icon" />
+            <input type="text" placeholder="Add people by name or email" aria-label="Add people" autoComplete="off" spellCheck={false}
+              role="combobox" aria-expanded={listed} value={q}
+              onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setOpen(true);
+                setActive(0);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setActive((a) => Math.max(0, Math.min(matches.length - 1, a + (e.key === "ArrowDown" ? 1 : -1))));
+                } else if (e.key === "Enter" && matches[active]) {
+                  e.preventDefault();
+                  add(matches[active]);
+                }
+              }} />
+            {listed && (
+              <div className="recent">
+                <ul role="listbox" aria-label="Accounts">
+                  {matches.map((u, i) => (
+                    <li key={u.id} role="option" aria-selected={i === active} className={"recent-item" + (i === active ? " active" : "")}
+                      onMouseDown={(e) => e.preventDefault()} onMouseEnter={() => setActive(i)} onClick={() => add(u)}>
+                      <Avatar name={u.name || u.username} />
+                      <span className="person">
+                        <span>{u.name || u.username}</span>
+                        <small>{u.email}</small>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      {members.length > 0 && (
+        <ul className="people">
+          {members.map((u) => (
+            <li key={u.id} className="person-row">
+              <Avatar name={u.name || u.username} />
+              <a className="person" href={`#/users/${u.id}`}>
+                <span className="scan-target">{u.name || u.username}</span>
+                <small>{u.email}</small>
+              </a>
+              <span className="result-meta">{u.last_login ? `Signed in ${ago(u.last_login)}` : "Never signed in"}</span>
+              <button type="button" className="icon-btn danger" aria-label={`Remove ${u.username}`} title="Remove" onClick={() => onGrant(u, false)}>
+                <Icon name="close" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+const KINDS: [string, string][] = [
+  ["", "All"],
+  ["sign-in", "Sign-ins"],
+  ["password", "Passwords"],
+  ["visit", "Turned away"],
+  ["device", "Devices"],
+];
+
+// What each event's outcome is called, and its colour.
+function outcome(e: TunnelEvent): [string, string] {
+  if (e.kind === "visit") {
+    const asked: Record<string, string> = { network: "Not on the home network", login: "Asked to sign in", password: "Asked for the password", device: "Asked for an approved device" };
+    return [e.outcome === "network" ? "bad" : "", asked[e.outcome] ?? e.outcome];
+  }
+  if (e.kind === "device") return ["plain", "Asked for approval"];
+  const named: Record<string, [string, string]> = {
+    ok: ["ok", e.kind === "password" ? "Right password" : "Signed in"],
+    failed: ["warn", "Wrong password"],
+    locked: ["bad", "Locked out"],
+    blocked: ["bad", "Held for review"],
+  };
+  return named[e.outcome] ?? ["", e.outcome];
+}
+
+// TunnelActivity is the tunnel's log: sign-ins and passwords tried, visitors turned
+// away, devices asking in. Newest first, refreshed as it runs.
+function TunnelActivity({ route, users }: { route: Route; users: User[] }) {
+  const [events, setEvents] = useState<TunnelEvent[] | null>(null);
+  const [kind, setKind] = useState("");
+  useEffect(() => {
+    const load = () => api.routeActivity(route.id).then(setEvents).catch(() => setEvents((e) => e ?? []));
+    load();
+    const t = setInterval(load, 10_000);
+    return () => clearInterval(t);
+  }, [route.id]);
+  const shown = (events ?? []).filter((e) => !kind || e.kind === kind);
+  const count = (k: string) => (events ?? []).filter((e) => !k || e.kind === k).length;
+
+  return (
+    <>
+      <div className="filters" role="tablist">
+        {KINDS.map(([key, label]) => (
+          <button key={key} type="button" role="tab" className="filter" aria-selected={kind === key} onClick={() => setKind(key)}>
+            {label}<span>{count(key)}</span>
+          </button>
+        ))}
+      </div>
+      {events && shown.length === 0 ? (
+        <p className="muted">Nothing yet.</p>
+      ) : (
+        <ul className="results">
+          {shown.map((e, i) => {
+            const [tone, label] = outcome(e);
+            const user = e.user_id ? users.find((u) => u.id === e.user_id) : undefined;
+            return (
+              <li key={i}>
+                <div className="result event-row">
+                  <span className={"chip " + tone}>{label}</span>
+                  <span className="event-who">
+                    {user ? <a href={`#/users/${user.id}`}>{user.name || user.username}</a>
+                      : e.device_id ? <a className="mono" href={`#/devices/${e.device_id}`}>{shortId(e.device_id)}</a>
+                      : <span className="muted">Unknown visitor</span>}
+                  </span>
+                  <span className="mono muted">{e.ip ?? ""}</span>
+                  <span className="result-service">{e.country ?? ""}</span>
+                  <span className="result-meta">{ago(e.at)}</span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </>
   );
 }
