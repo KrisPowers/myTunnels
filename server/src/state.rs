@@ -145,6 +145,7 @@ impl AppState {
         let routes = self.db.routes()?;
         let hub = routes
             .iter()
+            .filter(|r| r.enabled)
             .min_by_key(|r| (r.created_at, r.id.clone()))
             .map(|r| r.hostname.clone());
         let routes = routes
