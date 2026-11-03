@@ -155,11 +155,13 @@ type AccessValue = Access & { password_set?: boolean };
 
 // AccessCard holds a tunnel's access layers. A tunnel password is asked for when
 // that layer is turned on with none set; `onPassword` stores one on its own.
-function AccessCard({ value, users, onChange, onPassword }: {
+function AccessCard({ value, users, onChange, onPassword, signInElsewhere }: {
   value: AccessValue;
   users: User[];
   onChange: (patch: Partial<Access>) => void;
   onPassword?: (password: string) => Promise<unknown>;
+  // On a tunnel's page the sign-in switch sits beside People with access instead.
+  signInElsewhere?: boolean;
 }) {
   const layers = [value.require_lan, value.require_device, value.require_password, value.require_login].filter(Boolean).length;
   const accounts = users.filter((u) => u.enabled).length;
@@ -179,9 +181,9 @@ function AccessCard({ value, users, onChange, onPassword }: {
       {value.require_password && (
         <PasswordRow set={!!value.password_set} value={value.password ?? ""} onChange={onPassword ? undefined : (password) => onChange({ password })} onSave={onPassword} />
       )}
-      <Row title="Sign-in" sub={<>People sign in with their email and an account from <a href="#/users">Users</a>. {accounts ? `${accounts} account${accounts === 1 ? "" : "s"} so far.` : "There are none yet."}</>}>
+      {!signInElsewhere && <Row title="Sign-in" sub={<>People sign in with their email and an account from <a href="#/users">Users</a>. {accounts ? `${accounts} account${accounts === 1 ? "" : "s"} so far.` : "There are none yet."}</>}>
         <Switch label="Sign-in" on={value.require_login} disabled={last(value.require_login)} onChange={(v) => onChange({ require_login: v })} />
-      </Row>
+      </Row>}
       {value.require_login && (
         <>
           <Row title="Sign in again after" sub="How long a sign-in lasts before it is asked for again.">
@@ -439,14 +441,19 @@ export function TunnelPage({ route, page, devices, users, onChanged }: { route: 
 
       <div className="page-body stack plain" key={current}>
         {current === "access" && (
-          <AccessCard value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} onChange={access}
+          <AccessCard signInElsewhere value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} onChange={access}
             onPassword={async (password) => {
               await save({ require_password: true, password });
               setAsking(false);
             }} />
         )}
 
-        {current === "access" && <People route={route} users={users} onGrant={grantUser} />}
+        {current === "access" && (
+          <People route={route} users={users} onGrant={grantUser} signIn={edit.require_login}
+            // The last layer on stays on.
+            signInLocked={edit.require_login && [edit.require_lan, edit.require_device, edit.require_password].every((on) => !on)}
+            onSignIn={(v) => access({ require_login: v })} />
+        )}
 
         {current === "activity" && <TunnelLogs route={route} users={users} />}
 
@@ -553,12 +560,19 @@ function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () =>
 
 // People are the accounts that may sign in at this tunnel, added one by one: a
 // plus beside the heading opens a menu to find someone, then a row per person.
-function People({ route, users, onGrant }: { route: Route; users: User[]; onGrant: (user: User, on: boolean) => Promise<void> }) {
+function People({ route, users, onGrant, signIn, signInLocked, onSignIn }: {
+  route: Route;
+  users: User[];
+  onGrant: (user: User, on: boolean) => Promise<void>;
+  signIn: boolean;
+  signInLocked: boolean;
+  onSignIn: (on: boolean) => void;
+}) {
   const members = users.filter((u) => u.route_ids.includes(route.id));
   // Most active first: latest sign-in, then never signed in.
   const ranked = [...users].sort((a, b) => (b.last_login ?? 0) - (a.last_login ?? 0));
   return (
-    <Card title="People with access"
+    <Card title={<>People with access<span className="title-toggle">Require sign-in<Switch label="Require sign-in" on={signIn} disabled={signInLocked} onChange={onSignIn} /></span></>}
       sub={!route.require_login ? "Sign-in is off, so no one is asked for an account yet." : members.length ? undefined : "No one yet."}
       action={
         <AddMenu label="Add people" placeholder="Name or email"
