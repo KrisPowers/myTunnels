@@ -598,11 +598,12 @@ impl Db {
         let tx = conn.transaction()?;
         tx.execute(
             &format!(
-                "INSERT INTO users ({USER_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                "INSERT INTO users ({USER_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                  ON CONFLICT(id) DO UPDATE SET username = excluded.username,
                      email = excluded.email, name = excluded.name,
                      password_hash = excluded.password_hash, enabled = excluded.enabled,
-                     all_routes = excluded.all_routes, last_login = excluded.last_login"
+                     all_routes = excluded.all_routes, last_login = excluded.last_login,
+                     note = excluded.note"
             ),
             params![
                 u.id,
