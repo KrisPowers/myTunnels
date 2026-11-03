@@ -171,7 +171,8 @@ async fn collect_logs(state: AppState, stream: impl AsyncRead + Unpin) {
 
 /// Number of live connections cloudflared holds to the Cloudflare edge.
 pub async fn ready_connections(state: &AppState) -> Option<u64> {
-    let url = format!("http://{}/ready", state.config.metrics_addr);
+    let addr = lock(&state.tunnel.state).metrics.clone()?;
+    let url = format!("http://{addr}/ready");
     let ready: Value = state
         .http
         .get(url)
