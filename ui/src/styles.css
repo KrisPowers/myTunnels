@@ -625,6 +625,9 @@ a.result:hover { background: var(--hover); }
   .result.tunnel-row .result-service, .result.device-row .result-meta { display: none; }
   .result.tunnel-row .result-what, .result.device-row .result-service { grid-column: 2; grid-row: 2; }
   .tally.three { grid-template-columns: minmax(0, 1fr); }
+  .header-new { width: 40px; padding: 0; justify-content: center; font-size: 0; gap: 0; }
+  .edit-row { flex-wrap: wrap; }
+  .edit-row .grow { flex-basis: 100%; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
   .result.user-row { grid-template-columns: 16px minmax(0, 1fr) auto; }
   .result.user-row .result-meta { display: none; }
