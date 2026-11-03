@@ -668,12 +668,11 @@ function People({ route, users, onGrant }: { route: Route; users: User[]; onGran
   );
 }
 
-const KINDS: [string, string][] = [
-  ["", "All"],
-  ["sign-in", "Sign-ins"],
-  ["password", "Passwords"],
-  ["visit", "Turned away"],
-  ["device", "Devices"],
+const KINDS: Option<TunnelEvent["kind"]>[] = [
+  { value: "sign-in", label: "Sign-ins" },
+  { value: "password", label: "Passwords" },
+  { value: "visit", label: "Turned away" },
+  { value: "device", label: "Devices" },
 ];
 
 // line says what an event was, in a sentence, and whether it went well, badly
