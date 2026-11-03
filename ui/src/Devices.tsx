@@ -153,7 +153,7 @@ export function DevicePage({ device, routes, onChanged }: { device: Device; rout
       <div className="page-head">
         <a className="icon-btn" href="#/devices" aria-label="All devices" title="All devices"><Icon name="arrow_back" /></a>
         <div className="page-head-main">
-          <h1 className="mono">{device.id}</h1>
+          <h1 className="mono"><Copy text={shortId(device.id)} copyText={device.id} plain /></h1>
           <div className="page-sub">
             <span className={"chip " + TONE[device.status]}>{LABEL[device.status]}</span>
             {device.name && <b>{device.name}</b>}
