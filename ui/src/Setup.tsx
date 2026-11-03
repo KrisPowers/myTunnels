@@ -343,10 +343,8 @@ function NetworkStep({ onBack, onDone }: { onBack: () => void; onDone: () => Pro
         </div>
         <span className="field-hint">Visitors arriving from these addresses count as on the same network as this host.</span>
       </div>
-      <div className="field">
-        <label className="field-label" htmlFor="trusted">Also count as home <span className="muted">(optional)</span></label>
-        <textarea id="trusted" className="input mono" rows={2} value={trusted} placeholder="One network per line, such as a VPN range" onChange={(e) => setTrusted(e.target.value)} spellCheck={false} />
-      </div>
+      <TextField label="Also count as home (optional)" mono rows={2} value={trusted} onChange={setTrusted}
+        hint="One network per line, such as a VPN range." />
       {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
       <Foot onBack={onBack} note={<SaveMark state={saved} />}>
         <button type="button" className="btn primary" disabled={host === null} onClick={async () => (await save()) && onDone()}>Continue<Icon name="arrow_forward" size={18} /></button>
