@@ -17,7 +17,8 @@ export function Setup({ auth, onChange }: { auth: Auth; onChange: () => Promise<
   const done = [setup.password && auth.authenticated, setup.cloudflare, setup.network, false];
   const open = done.indexOf(false);
   const [at, setAt] = useState(open);
-  const step = Math.min(at, open);
+  // A password once set is never stepped back into.
+  const step = Math.max(Math.min(at, open), done[0] ? 1 : 0);
   const next = async () => {
     await onChange();
     setAt((a) => a + 1);
