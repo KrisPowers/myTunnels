@@ -578,6 +578,9 @@ async fn update_route(
     route.login_idle = body.login_idle;
     route.preserve_host = body.preserve_host;
     state.db.update_route(&route)?;
+    if switched && state.cloudflare().is_ok() {
+        tunnel::sync_ingress(&state).await?;
+    }
     state.reload()?;
     Ok(Json(route))
 }
