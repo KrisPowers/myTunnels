@@ -565,7 +565,9 @@ function People({ route, users, onGrant }: { route: Route; users: User[]; onGran
   const matches = users
     .filter((u) => !u.route_ids.includes(route.id))
     .filter((u) => !needle || [u.name, u.username, u.email].some((v) => v.toLowerCase().includes(needle)))
-    .slice(0, 6);
+    // Most active first: latest sign-in, then never signed in.
+    .sort((a, b) => (b.last_login ?? 0) - (a.last_login ?? 0))
+    .slice(0, 8);
 
   const add = async (u: User) => {
     close();
