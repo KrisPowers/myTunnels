@@ -112,7 +112,7 @@ const CONTENT: Record<string, ReactNode> = {
   oauth: (
     <>
       <Doc title="Other ways to sign in">
-        <p>Tunnels with Sign-in on can also offer <b>Continue with GitHub</b>, Google, GitLab, or an OpenID Connect provider of your own such as Authentik, Authelia, Keycloak or Pocket ID. Each is set up once on the <b>Third-Party OAuth</b> page: register an app with the provider and paste its client ID and secret back. Then each tunnel switches on the ones it offers, under Access Control.</p>
+        <p>Tunnels with Sign-in on can also offer <b>Continue with</b> GitHub, Google, GitLab, Discord, Slack or Codeberg; a self-hosted Authentik, Authelia, Keycloak, Pocket ID, Zitadel, Kanidm, Gitea or Forgejo; Auth0 or Okta; or any other OpenID Connect provider. Self-hosted and tenant providers also take their issuer URL. Each is set up once on the <b>Third-Party OAuth</b> page: register an app with the provider and paste its client ID and secret back. Then each tunnel switches on the ones it offers, under Access Control.</p>
       </Doc>
       <Doc title="Who it lets in">
         <p>The provider vouches for an email. The account in Users with that email signs in, held to the same rules as signing in with its password: it must be on, may open the tunnel, and be on a device linked to it.</p>
