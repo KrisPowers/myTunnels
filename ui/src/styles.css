@@ -553,20 +553,18 @@ a.result:hover { background: var(--hover); }
 .setup-main { width: min(640px, 100%); margin: 32px auto 0; }
 
 .steps { display: flex; gap: 4px; margin: 0 0 20px; padding: 0; list-style: none; }
-.step { flex: 1; min-width: 0; }
-.step button {
-  position: relative; display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 4px 14px; border: 0; background: none;
-  color: var(--text-3); font: 500 13px var(--font); text-align: left; cursor: pointer;
+.step {
+  position: relative; flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 10px 0 14px;
+  color: var(--text-3); font: 500 13px var(--font);
 }
-.step button:disabled { cursor: default; }
-.step button::after {
+.step::after {
   content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; border-radius: 3px; background: var(--line);
   transition: background .25s var(--ease);
 }
-.step.done button { color: var(--text-2); }
-.step.done button::after { background: color-mix(in srgb, var(--accent) 45%, transparent); }
-.step.now button { color: var(--accent); }
-.step.now button::after { background: var(--accent); }
+.step.done { color: var(--text-2); }
+.step.done::after { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+.step.now { color: var(--accent); }
+.step.now::after { background: var(--accent); }
 .step-mark {
   display: grid; place-items: center; width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%;
   background: var(--card-2); color: var(--text-2); font-size: 12px;
