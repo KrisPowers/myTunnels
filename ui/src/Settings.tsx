@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { api, message, TOKEN_URL, type Account, type Route, type Settings as Saved, type Status } from "./api";
+import { api, message, TOKEN_URL, type Account, type AdminAccount, type Route, type Settings as Saved, type Status } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { loadLook, saveLook, type Look } from "./prefs";
-import { Card, Row, SaveField, useNotify } from "./ui";
+import { Card, Row, SaveField, useNotify, ValueRow } from "./ui";
 
 // The sections, in the order the sidebar lists them.
 export const SETTINGS: [string, string, IconName][] = [
@@ -40,6 +40,7 @@ export function Settings({ section, status, routes, onChanged, onSignOut }: { se
         {key === "network" && saved && <Network saved={saved} status={status} onSaved={reload} />}
         {key === "connector" && <Connector status={status} />}
         {key === "appearance" && <Appearance />}
+        {key === "account" && <AdminAccountCard />}
         {key === "account" && (
           <Card title="Session">
             <Row title="Sign out" sub="Ends this browser's admin session. Tunnels keep running.">
@@ -50,6 +51,22 @@ export function Settings({ section, status, routes, onChanged, onSignOut }: { se
         {key === "about" && <About />}
       </div>
     </>
+  );
+}
+
+// AdminAccountCard is who signs in to this dashboard: either the email or the
+// username works, with the admin password.
+function AdminAccountCard() {
+  const [account, setAccount] = useState<AdminAccount | null>(null);
+  useEffect(() => {
+    api.account().then(setAccount).catch(() => {});
+  }, []);
+  if (!account) return null;
+  return (
+    <Card title="Admin account" sub="Sign in with either the email or the username.">
+      <ValueRow title="Email" type="email" value={account.email ?? ""} onSave={(email) => api.editAccount({ email }).then(setAccount)} />
+      <ValueRow title="Username" value={account.username ?? ""} onSave={(username) => api.editAccount({ username }).then(setAccount)} />
+    </Card>
   );
 }
 
