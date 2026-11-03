@@ -553,7 +553,7 @@ async fn action_response(
             Err(status) => status.into_response(),
         },
         ("login", true) => match body::<LoginRequest>(req).await {
-            Ok((_, body)) => login(state, route, ip, body).await,
+            Ok((headers, body)) => login(state, route, ip, &headers, body).await,
             Err(status) => status.into_response(),
         },
         _ => StatusCode::NOT_FOUND.into_response(),
