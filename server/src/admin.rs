@@ -419,6 +419,7 @@ async fn create_route(
         return Err(ApiError::bad("Port must be between 1 and 65535"));
     }
     let target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
+    check_not_self(&state, target_host.as_deref(), body.port)?;
 
     let cf = Cloudflare::new(&state.http, &cf_settings.token);
     let zone = cf
