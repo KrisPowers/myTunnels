@@ -78,55 +78,208 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
         );
     }
     let ip = client_ip(req.headers());
-
-    if route.require_device && req.method() == Method::POST && req.uri().path() == ENROLL_PATH {
-        return enroll(&state, &route, ip, req).await;
+    if let Some(action) = req.uri().path().strip_prefix("/__gate/").map(str::to_owned) {
+        return action_response(&state, &route, ip, &action, req).await;
+    }
+    if !route.enabled {
+        return page(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "message",
+            &host,
+            "Switched off",
+            "This app is switched off right now.",
+        );
     }
 
-    let lan = route
-        .require_lan
-        .then(|| ip.is_some_and(|ip| state.is_local(&snap, ip)));
-    let device = route
-        .require_device
-        .then(|| has_session(&state, &snap, req.headers(), &route));
-    let allowed = match (lan, device) {
-        (Some(l), Some(d)) if route.policy_mode == "any" => l || d,
-        (l, d) => l.unwrap_or(true) && d.unwrap_or(true),
+    let mut new_cookie = None;
+    if req.method() == Method::GET && wants_identity(req.headers()) {
+        match identify(&state, &snap, &route, ip, &req) {
+            Identity::Here(value) => new_cookie = Some(value),
+            Identity::Away(response) => return response,
+            Identity::Keep => {}
+        }
+    }
+
+    let verdict = check(&state, &snap, &route, ip, req.headers());
+    let mut response = if verdict.allowed() {
+        proxy::forward(&state, &snap, &route, ip, req).await
+    } else {
+        refuse(&host, &verdict, &req)
     };
-    if allowed {
-        return proxy::forward(&state, &snap, &route, ip, req).await;
+    if let Some(value) = new_cookie {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    response
+}
+
+// ---- access checks ----
+
+/// Each check a tunnel asks for, and whether this request passes it.
+struct Verdict {
+    any: bool,
+    lan: Option<bool>,
+    device: Option<bool>,
+    password: Option<bool>,
+    login: Option<bool>,
+}
+
+impl Verdict {
+    fn results(&self) -> impl Iterator<Item = bool> + '_ {
+        [self.lan, self.device, self.password, self.login]
+            .into_iter()
+            .flatten()
     }
 
-    let wants_html = req.method() == Method::GET
+    fn allowed(&self) -> bool {
+        let mut results = self.results().peekable();
+        if results.peek().is_none() {
+            return true;
+        }
+        if self.any {
+            self.results().any(|r| r)
+        } else {
+            self.results().all(|r| r)
+        }
+    }
+
+    /// The checks a visitor can still pass on a page here, in the order offered.
+    fn open(&self) -> Vec<&'static str> {
+        [
+            ("login", self.login),
+            ("password", self.password),
+            ("device", self.device),
+        ]
+        .into_iter()
+        .filter(|(_, r)| *r == Some(false))
+        .map(|(kind, _)| kind)
+        .collect()
+    }
+}
+
+fn check(
+    state: &AppState,
+    snap: &Snapshot,
+    route: &Route,
+    ip: Option<IpAddr>,
+    headers: &HeaderMap,
+) -> Verdict {
+    Verdict {
+        any: route.policy_mode == "any",
+        lan: route
+            .require_lan
+            .then(|| ip.is_some_and(|ip| state.is_local(snap, ip))),
+        device: route
+            .require_device
+            .then(|| device_session(state, snap, headers, route)),
+        password: route
+            .require_password
+            .then(|| password_session(state, headers, route)),
+        login: route
+            .require_login
+            .then(|| user_session(state, snap, headers, route)),
+    }
+}
+
+fn device_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &Route) -> bool {
+    cookie(headers, SESSION_COOKIE)
+        .and_then(|sid| session(&state.device_sessions, sid))
+        .and_then(|(device_id, _)| snap.devices.get(&device_id))
+        .is_some_and(|d| may_open(d, route))
+}
+
+fn password_session(state: &AppState, headers: &HeaderMap, route: &Route) -> bool {
+    let Some(hash) = &route.password_hash else {
+        return false;
+    };
+    cookie(headers, PASS_COOKIE)
+        .and_then(|sid| session(&state.pass_sessions, sid))
+        .is_some_and(|(route_id, tag)| route_id == route.id && tag == secret::tag(hash))
+}
+
+fn user_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &Route) -> bool {
+    cookie(headers, USER_COOKIE)
+        .and_then(|sid| session(&state.user_sessions, sid))
+        .and_then(|(user_id, tag)| {
+            snap.users
+                .get(&user_id)
+                .filter(|u| secret::tag(&u.password_hash) == tag)
+        })
+        .is_some_and(|u| u.enabled && (u.all_routes || u.route_ids.contains(&route.id)))
+}
+
+fn may_open(device: &Device, route: &Route) -> bool {
+    device.status == "approved" && (device.all_routes || device.route_ids.contains(&route.id))
+}
+
+/// What a visitor who did not pass sees: the network notice, or the page for one of
+/// the checks they can pass here. `?__gate=password` picks another of those.
+fn refuse(host: &str, verdict: &Verdict, req: &Request) -> Response {
+    let html = req.method() == Method::GET
         && req
             .headers()
             .get(header::ACCEPT)
             .and_then(|v| v.to_str().ok())
             .is_some_and(|v| v.contains("text/html"));
-    let network_blocked = lan == Some(false) && (device.is_none() || route.policy_mode == "all");
-    match (network_blocked, wants_html) {
-        (true, true) => page(
-            StatusCode::FORBIDDEN,
-            "message",
-            &host,
-            "Home network only",
-            "This app can only be opened from the network it is hosted on.",
+    let open = verdict.open();
+    let network_only = verdict.lan == Some(false) && (!verdict.any || open.is_empty());
+    if network_only {
+        return if html {
+            page(
+                StatusCode::FORBIDDEN,
+                "message",
+                host,
+                "Home network only",
+                "This app can only be opened from the network it is hosted on.",
+            )
+        } else {
+            (StatusCode::FORBIDDEN, "Not on an allowed network").into_response()
+        };
+    }
+    if !html {
+        return (StatusCode::UNAUTHORIZED, "Sign-in required").into_response();
+    }
+    let wanted = query(req.uri().query(), "__gate");
+    let kind = open
+        .iter()
+        .copied()
+        .find(|k| Some(*k) == wanted.as_deref())
+        .unwrap_or(open[0]);
+    let others: Vec<&str> = if verdict.any {
+        open.iter().copied().filter(|k| *k != kind).collect()
+    } else {
+        Vec::new()
+    };
+    let (title, text) = match kind {
+        "login" => (
+            "Sign in",
+            "Sign in with the account you were given for this app.",
         ),
-        (true, false) => (StatusCode::FORBIDDEN, "Not on an allowed network").into_response(),
-        (false, true) => page(
-            StatusCode::UNAUTHORIZED,
-            "device",
-            &host,
+        "password" => ("Password required", "Enter the password for this app."),
+        _ => (
             "Device approval required",
             "This app only opens on approved devices. Give the ID below to the administrator.",
         ),
-        (false, false) => (StatusCode::UNAUTHORIZED, "Device approval required").into_response(),
-    }
+    };
+    gate_page(StatusCode::UNAUTHORIZED, kind, host, title, text, &others)
 }
 
+// ---- pages ----
+
 pub fn page(status: StatusCode, mode: &str, host: &str, title: &str, text: &str) -> Response {
+    gate_page(status, mode, host, title, text, &[])
+}
+
+fn gate_page(
+    status: StatusCode,
+    mode: &str,
+    host: &str,
+    title: &str,
+    text: &str,
+    others: &[&str],
+) -> Response {
     let html = TEMPLATE
         .replace("{{MODE}}", mode)
+        .replace("{{OTHERS}}", &others.join(" "))
         .replace("{{HOST}}", &escape(host))
         .replace("{{TITLE}}", &escape(title))
         .replace("{{TEXT}}", &escape(text));
