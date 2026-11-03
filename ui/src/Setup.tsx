@@ -46,7 +46,7 @@ export function Setup({ auth, onChange }: { auth: Auth; onChange: () => Promise<
           const state = i === step ? "now" : done[i] ? "done" : "later";
           return (
             <li key={s.label} className={"step " + state}>
-              <button type="button" disabled={i > open || !auth.authenticated} onClick={() => setAt(i)} aria-current={i === step ? "step" : undefined}>
+              <button type="button" disabled={i > open} onClick={() => setAt(i)} aria-current={i === step ? "step" : undefined}>
                 <span className="step-mark">{state === "done" ? <Icon name="check" size={16} /> : i + 1}</span>
                 <span className="step-label">{s.label}</span>
               </button>
