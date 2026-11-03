@@ -9,6 +9,11 @@ use serde_json::Value;
 use crate::util::{lock, random_alnum};
 
 const SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS revoked (
+    key TEXT PRIMARY KEY,
+    at INTEGER NOT NULL,
+    expires INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -376,6 +381,26 @@ impl Db {
             })
             .optional()?;
         Ok(value)
+    }
+
+    /// Signed-out tokens and subjects, `(key, at, expires)`. Ones past use are dropped.
+    pub fn revocations(&self, now: i64) -> Result<Vec<(String, i64, i64)>> {
+        let conn = self.conn();
+        conn.execute("DELETE FROM revoked WHERE expires <= ?1", [now])?;
+        let mut stmt = conn.prepare("SELECT key, at, expires FROM revoked")?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+
+    pub fn revoke(&self, key: &str, at: i64, expires: i64) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO revoked (key, at, expires) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET at = excluded.at, expires = excluded.expires",
+            params![key, at, expires],
+        )?;
+        Ok(())
     }
 
     pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {

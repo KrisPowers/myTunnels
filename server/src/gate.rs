@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 
 use crate::db::{Device, Event, Route, SignIn};
 use crate::proxy;
-use crate::state::{open_session, session, touch_session, AppState, Hop, Snapshot};
+use crate::state::{AppState, Hop, Snapshot};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
 use crate::{guard, secret};
 
@@ -172,7 +172,7 @@ fn check(
 
 fn device_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &Route) -> bool {
     cookie(headers, SESSION_COOKIE)
-        .and_then(|sid| session(&state.device_sessions, sid))
+        .and_then(|sid| state.session(&state.device_sessions, sid))
         .and_then(|s| snap.devices.get(&s.subject))
         .is_some_and(|d| may_open(d, route))
 }
@@ -182,7 +182,7 @@ fn password_session(state: &AppState, headers: &HeaderMap, route: &Route) -> boo
         return false;
     };
     cookie(headers, PASS_COOKIE)
-        .and_then(|sid| session(&state.pass_sessions, sid))
+        .and_then(|sid| state.session(&state.pass_sessions, sid))
         .is_some_and(|s| s.subject == route.id && s.tag == secret::tag(hash))
 }
 
@@ -192,7 +192,7 @@ fn user_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &
     let Some(sid) = cookie(headers, USER_COOKIE) else {
         return false;
     };
-    let Some(s) = session(&state.user_sessions, sid) else {
+    let Some(s) = state.session(&state.user_sessions, sid) else {
         return false;
     };
     let here = cookie(headers, DEVICE_COOKIE)
@@ -213,7 +213,7 @@ fn user_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &
         .filter(|u| secret::tag(&u.password_hash) == s.tag)
         .is_some_and(|u| u.enabled && u.route_ids.contains(&route.id));
     if ok {
-        touch_session(&state.user_sessions, sid);
+        state.touch_session(&state.user_sessions, &s);
     }
     ok
 }
@@ -724,7 +724,7 @@ fn register(
         .map(|v| (header::SET_COOKIE, v)),
     );
     if allowed {
-        let sid = open_session(
+        let sid = state.open_session(
             &state.device_sessions,
             &device.id,
             "",
@@ -784,7 +784,7 @@ async fn password(
     }
     log(state, route, "password", "ok", None, ip, headers);
     state.clear_failures(&key);
-    let sid = open_session(
+    let sid = state.open_session(
         &state.pass_sessions,
         &route.id,
         &secret::tag(hash),
@@ -900,7 +900,7 @@ async fn login(
         account.enabled = false;
         account.note = Some(reason);
         let _ = state.db.save_user(&account);
-        crate::util::lock(&state.user_sessions).retain(|_, s| s.subject != account.id);
+        state.end_sessions_of(&state.user_sessions, &account.id);
         let _ = state.reload();
         return json_error(
             StatusCode::FORBIDDEN,
@@ -911,7 +911,7 @@ async fn login(
     record(&account.id, "ok");
     account.last_login = Some(now());
     let _ = state.db.save_user(&account);
-    let sid = open_session(
+    let sid = state.open_session(
         &state.user_sessions,
         &account.id,
         &secret::tag(&account.password_hash),

@@ -16,7 +16,7 @@ use crate::cloudflare::{Account, Cloudflare, Zone};
 use crate::db::{Device, Event, Route, SignIn, User};
 use crate::netinfo;
 use crate::state::AppState;
-use crate::util::{cookie, lock, now, random_hex, valid_host, ApiError, ApiResult};
+use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
 use crate::{gate, secret, tunnel};
 
 const ADMIN_COOKIE: &str = "admin_session";
@@ -59,12 +59,19 @@ pub fn router(state: AppState) -> Router {
 
 // Auth
 
+/// A session opened with the admin password as it is now.
 fn is_admin(state: &AppState, headers: &HeaderMap) -> bool {
-    cookie(headers, ADMIN_COOKIE).is_some_and(|sid| {
-        lock(&state.admin_sessions)
-            .get(sid)
-            .is_some_and(|exp| *exp > now())
-    })
+    let Some(session) =
+        cookie(headers, ADMIN_COOKIE).and_then(|v| state.session(&state.admin_sessions, v))
+    else {
+        return false;
+    };
+    state
+        .db
+        .setting("admin_password")
+        .ok()
+        .flatten()
+        .is_some_and(|hash| secret::tag(&hash) == session.tag)
 }
 
 async fn require_admin(State(state): State<AppState>, req: Request, next: Next) -> Response {
@@ -110,7 +117,7 @@ async fn setup(
     state
         .db
         .set_setting("admin_password", &secret::hash(&body.password)?)?;
-    Ok(start_session(&state))
+    start_session(&state)
 }
 
 async fn login(
@@ -132,29 +139,33 @@ async fn login(
         return Err(ApiError(StatusCode::UNAUTHORIZED, "Wrong password".into()));
     }
     state.clear_failures("admin");
-    Ok(start_session(&state))
+    start_session(&state)
 }
 
-fn start_session(state: &AppState) -> Response {
-    let sid = random_hex(32);
-    let now = now();
-    let mut sessions = lock(&state.admin_sessions);
-    sessions.retain(|_, exp| *exp > now);
-    sessions.insert(sid.clone(), now + ADMIN_TTL);
-    drop(sessions);
-    (
+fn start_session(state: &AppState) -> ApiResult<Response> {
+    let hash = state.db.setting("admin_password")?.unwrap_or_default();
+    let sid = state.open_session(
+        &state.admin_sessions,
+        "admin",
+        &secret::tag(&hash),
+        "",
+        ADMIN_TTL,
+    );
+    Ok((
         [(
             header::SET_COOKIE,
             format!("{ADMIN_COOKIE}={sid}; Path=/; Max-Age={ADMIN_TTL}; HttpOnly; SameSite=Strict"),
         )],
         Json(json!({ "ok": true })),
     )
-        .into_response()
+        .into_response())
 }
 
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    if let Some(sid) = cookie(&headers, ADMIN_COOKIE) {
-        lock(&state.admin_sessions).remove(sid);
+    if let Some(session) =
+        cookie(&headers, ADMIN_COOKIE).and_then(|v| state.session(&state.admin_sessions, v))
+    {
+        state.end_session(&state.admin_sessions, &session);
     }
     (
         [(
@@ -742,7 +753,7 @@ async fn delete_device(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     state.db.delete_device(&id)?;
-    lock(&state.device_sessions).retain(|_, s| s.subject != id);
+    state.end_sessions_of(&state.device_sessions, &id);
     state.reload()?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -951,7 +962,7 @@ async fn device_activity(
 
 /// Ends every sign-in of this account.
 async fn sign_out_user(State(state): State<AppState>, Path(id): Path<String>) -> Json<Value> {
-    lock(&state.user_sessions).retain(|_, s| s.subject != id);
+    state.end_sessions_of(&state.user_sessions, &id);
     Json(json!({ "ok": true }))
 }
 
@@ -960,7 +971,7 @@ async fn delete_user(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     state.db.delete_user(&id)?;
-    lock(&state.user_sessions).retain(|_, s| s.subject != id);
+    state.end_sessions_of(&state.user_sessions, &id);
     state.reload()?;
     Ok(Json(json!({ "ok": true })))
 }
