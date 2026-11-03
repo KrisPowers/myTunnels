@@ -121,7 +121,7 @@ export function DevicePage({ device, routes, onChanged }: { device: Device; rout
   const forget = async () => {
     try {
       await api.forgetDevice(device.id);
-      notify(`Forgot ${device.name || device.id}`);
+      notify(`Forgot ${device.name || shortId(device.id)}`);
       await onChanged();
       go("#/devices");
     } catch (e) {
