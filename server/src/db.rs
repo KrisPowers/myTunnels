@@ -264,6 +264,13 @@ impl Db {
         let conn = Connection::open(path)?;
         conn.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()))?;
         conn.execute_batch(SCHEMA)?;
+        let user_columns: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('users')")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        if !user_columns.iter().any(|c| c == "note") {
+            conn.execute_batch("ALTER TABLE users ADD COLUMN note TEXT;")?;
+        }
         let have: Vec<String> = conn
             .prepare("SELECT name FROM pragma_table_info('routes')")?
             .query_map([], |r| r.get(0))?
