@@ -30,6 +30,7 @@ pub fn router(state: AppState) -> Router {
         .route("/settings", get(settings))
         .route("/settings/cloudflare", put(save_cloudflare))
         .route("/settings/network", put(save_network))
+        .route("/setup/finish", post(finish_setup))
         .route("/cloudflare/accounts", post(cloudflare_accounts))
         .route("/zones", get(zones))
         .route("/status", get(status))
@@ -70,11 +71,27 @@ async fn require_admin(State(state): State<AppState>, req: Request, next: Next) 
     }
 }
 
+/// What first-run setup has saved so far, so the panel can resume where it was left.
 async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
+    let db = &state.db;
+    let password = db.setting("admin_password")?.is_some();
     Ok(Json(json!({
-        "setup_required": state.db.setting("admin_password")?.is_none(),
+        "setup_required": !password,
         "authenticated": is_admin(&state, &headers),
+        "setup": {
+            "password": password,
+            "token": db.setting("cf_token")?.is_some(),
+            "cloudflare": state.cloudflare().is_ok(),
+            "network": db.setting("network_saved")?.is_some(),
+            "done": db.setting("setup_done")?.is_some(),
+        },
     })))
+}
+
+async fn finish_setup(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    state.cloudflare()?;
+    state.db.set_setting("setup_done", "1")?;
+    Ok(Json(json!({ "ok": true })))
 }
 
 #[derive(Deserialize)]
@@ -190,7 +207,13 @@ async fn cloudflare_accounts(
     Json(body): Json<TokenBody>,
 ) -> ApiResult<Json<Vec<Account>>> {
     let token = token_or_saved(&state, body.api_token)?;
-    Ok(Json(Cloudflare::new(&state.http, &token).accounts().await?))
+    let accounts = Cloudflare::new(&state.http, &token).accounts().await?;
+    // Until Cloudflare is connected, a token that works is kept as soon as it is checked,
+    // so setup can be left and resumed. Once connected, only saving the connection replaces it.
+    if state.cloudflare().is_err() && !accounts.is_empty() {
+        state.db.set_setting("cf_token", &token)?;
+    }
+    Ok(Json(accounts))
 }
 
 #[derive(Deserialize)]
@@ -273,6 +296,7 @@ async fn save_network(
     state
         .db
         .set_setting("trusted_networks", body.trusted_networks.trim())?;
+    state.db.set_setting("network_saved", "1")?;
     state.reload()?;
     Ok(Json(json!({ "ok": true })))
 }
