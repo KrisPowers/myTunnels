@@ -256,13 +256,11 @@ function CloudflareStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<vo
             <span className="how-num">2</span>
             <div className="how-body">
               <b>Paste it here</b>
-              <div className="input-wrap">
-                <input className="input big mono" type="password" aria-label="Cloudflare API token" placeholder={auth.setup.token ? "Saved. Paste a new one to replace it." : "Paste the token"}
-                  autoComplete="off" spellCheck={false} data-1p-ignore data-lpignore="true" value={token} onChange={(e) => setToken(e.target.value)} />
-                {busy && <span className="spinner small input-spin" aria-label="Checking" />}
-              </div>
-              {phase === "checking" && <span className="field-hint">Checking the token</span>}
-              {phase === "connecting" && <span className="field-hint">Creating the tunnel</span>}
+              <TextField label="API token" type="password" mono autoComplete="off" data-1p-ignore data-lpignore="true"
+                placeholder={auth.setup.token ? "Saved. Paste a new one to replace it." : undefined}
+                value={token} onChange={setToken}
+                trailing={busy ? <span className="spinner small" aria-label="Checking" /> : undefined}
+                hint={phase === "checking" ? "Checking the token" : phase === "connecting" ? "Creating the tunnel" : undefined} />
               {phase === "pick" && (
                 <div className="pick">
                   <span className="muted">This token sees more than one account. Pick the one with your domains.</span>
