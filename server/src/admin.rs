@@ -582,7 +582,17 @@ async fn delete_device(
 
 #[cfg(test)]
 mod tests {
-    use super::valid_label;
+    use super::{strong_password, valid_label};
+
+    #[test]
+    fn passwords_need_length_case_number_and_symbol() {
+        assert!(strong_password("Homelab-2026"));
+        assert!(!strong_password("Homelab2026"));
+        assert!(!strong_password("homelab-2026"));
+        assert!(!strong_password("HOMELAB-2026"));
+        assert!(!strong_password("Homelab-ab"));
+        assert!(!strong_password("Hl-2026"));
+    }
 
     #[test]
     fn subdomain_labels() {
