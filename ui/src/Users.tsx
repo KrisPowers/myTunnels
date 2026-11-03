@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ago, api, LEVELS, list, message, shortId, strength, type Route, type SignIn, type User } from "./api";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Avatar, Card, LogDays, Row, SaveField, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
+import { ArmedButton, Avatar, Card, LogTable, Row, SaveField, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
 
 function state(u: User): [string, string] {
   if (u.note) return ["bad", "Held for review"];
@@ -310,12 +310,13 @@ function Activity({ user }: { user: User }) {
       </Card>
       <Card title="Sign-ins">
         {list && list.length > 0 ? (
-          <LogDays entries={list.slice(0, 100).map((s): LogEntry => ({
+          <LogTable who="Device" entries={list.slice(0, 100).map((s): LogEntry => ({
             at: s.at,
             tone: s.outcome === "ok" ? "ok" : "bad",
-            text: s.outcome === "ok" ? `Signed in${s.device_id ? ` on ${shortId(s.device_id)}` : ""}`
-              : s.outcome === "failed" ? "Wrong password" : "Blocked and held for review",
-            where: [s.ip, s.country].filter(Boolean).join(", "),
+            event: s.outcome === "ok" ? "Signed in" : s.outcome === "failed" ? "Wrong password" : "Blocked and held for review",
+            who: s.device_id ? <a className="mono" href={`#/devices/${s.device_id}`}>{shortId(s.device_id)}</a> : undefined,
+            ip: s.ip,
+            country: s.country,
           }))} />
         ) : <p className="card-note muted">Nothing yet.</p>}
       </Card>
