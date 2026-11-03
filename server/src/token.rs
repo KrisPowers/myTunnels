@@ -26,6 +26,9 @@ pub struct Claims {
     /// The hash of the device key it was opened on, if bound to one.
     #[serde(default)]
     pub dev: String,
+    /// Opened with an emailed code as well.
+    #[serde(default)]
+    pub mfa: bool,
     pub iat: i64,
     pub exp: i64,
 }
@@ -67,6 +70,7 @@ mod tests {
             sub: "u1".into(),
             tag: "t".into(),
             dev: String::new(),
+            mfa: false,
             iat: 100,
             exp: 200,
         }
