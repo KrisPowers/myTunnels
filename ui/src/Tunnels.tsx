@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEve
 import { createPortal } from "react-dom";
 import { ago, api, editOf, LEVELS, list, message, shortId, strength, type Access, type Device, type PolicyMode, type Route, type RouteEdit, type Status, type TunnelEvent, type User, type Zone } from "./api";
 import { useDismiss } from "./dismiss";
-import { Dropdown, type Option } from "./Dropdown";
+import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
 import { ArmedButton, Avatar, Card, LogDays, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
