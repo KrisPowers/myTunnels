@@ -346,6 +346,13 @@ impl Db {
                  SELECT u.id, r.id FROM users u, routes r WHERE u.all_routes = 1;
              UPDATE users SET all_routes = 0 WHERE all_routes = 1;",
         )?;
+        // Every tunnel checks who opens it; any left with no layer asks for an
+        // approved device.
+        conn.execute_batch(
+            "UPDATE routes SET require_device = 1
+             WHERE require_lan = 0 AND require_device = 0
+               AND require_password = 0 AND require_login = 0;",
+        )?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         // Accounts made before devices were linked take the devices they already
         // signed in from. This runs once, so a device unlinked later stays unlinked.
