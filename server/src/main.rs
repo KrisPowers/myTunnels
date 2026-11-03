@@ -3,6 +3,7 @@ mod cloudflare;
 mod config;
 mod db;
 mod gate;
+mod guard;
 mod netinfo;
 mod proxy;
 mod secret;

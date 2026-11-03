@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::cloudflare::{Account, Cloudflare, Zone};
-use crate::db::{Device, Route, User};
+use crate::db::{Device, Route, SignIn, User};
 use crate::netinfo;
 use crate::state::AppState;
 use crate::util::{cookie, lock, now, random_hex, valid_host, ApiError, ApiResult};
@@ -38,6 +38,9 @@ pub fn router(state: AppState) -> Router {
         .route("/device", post(this_device))
         .route("/users", get(list_users).post(create_user))
         .route("/users/{id}", patch(update_user).delete(delete_user))
+        .route("/users/{id}/signout", post(sign_out_user))
+        .route("/users/{id}/activity", get(user_activity))
+        .route("/devices/{id}/activity", get(device_activity))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_admin));
     let api = Router::new()
         .route("/auth", get(auth_state))
@@ -377,6 +380,19 @@ fn default_mode() -> String {
     "all".into()
 }
 
+fn default_login_max() -> i64 {
+    7 * 86_400
+}
+
+/// Sign-in limits: from 0 (never) up to the longest a sign-in can last.
+fn check_limits(max: i64, idle: i64) -> ApiResult<()> {
+    let longest = 30 * 86_400;
+    if !(0..=longest).contains(&max) || !(0..=longest).contains(&idle) {
+        return Err(ApiError::bad("Sign-in limits run from never up to 30 days"));
+    }
+    Ok(())
+}
+
 #[derive(Deserialize)]
 struct NewRoute {
     subdomain: String,
@@ -396,6 +412,10 @@ struct NewRoute {
     password: Option<String>,
     #[serde(default)]
     require_login: bool,
+    #[serde(default = "default_login_max")]
+    login_max: i64,
+    #[serde(default)]
+    login_idle: i64,
     #[serde(default)]
     preserve_host: bool,
 }
@@ -435,6 +455,7 @@ async fn create_route(
     let target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
     check_not_self(&state, target_host.as_deref(), body.port)?;
     let password_hash = tunnel_password(body.require_password, body.password, None)?;
+    check_limits(body.login_max, body.login_idle)?;
 
     let cf = Cloudflare::new(&state.http, &cf_settings.token);
     let zone = cf
@@ -482,6 +503,8 @@ async fn create_route(
         password_set: password_hash.is_some(),
         password_hash,
         require_login: body.require_login,
+        login_max: body.login_max,
+        login_idle: body.login_idle,
         preserve_host: body.preserve_host,
         dns_record_id: Some(record_id.clone()),
         created_at: now(),
@@ -515,6 +538,10 @@ struct RouteEdit {
     password: Option<String>,
     #[serde(default)]
     require_login: bool,
+    #[serde(default = "default_login_max")]
+    login_max: i64,
+    #[serde(default)]
+    login_idle: i64,
     #[serde(default)]
     preserve_host: bool,
 }
@@ -543,7 +570,10 @@ async fn update_route(
     )?;
     route.password_set = route.password_hash.is_some();
     route.require_password = body.require_password;
+    check_limits(body.login_max, body.login_idle)?;
     route.require_login = body.require_login;
+    route.login_max = body.login_max;
+    route.login_idle = body.login_idle;
     route.preserve_host = body.preserve_host;
     state.db.update_route(&route)?;
     state.reload()?;
@@ -742,13 +772,20 @@ fn valid_username(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
 }
 
-fn clean_email(email: Option<String>) -> ApiResult<Option<String>> {
-    match email.map(|e| e.trim().to_owned()).filter(|e| !e.is_empty()) {
-        Some(e) if !(e.len() <= 254 && e.contains('@') && !e.contains(char::is_whitespace)) => {
-            Err(ApiError::bad("That email address does not look right"))
-        }
-        other => Ok(other),
+/// An account's email: required, as it is what they sign in with.
+fn clean_email(email: &str) -> ApiResult<String> {
+    let email = email.trim();
+    let (local, domain) = email.split_once('@').unwrap_or_default();
+    if local.is_empty()
+        || !domain.contains('.')
+        || domain.starts_with('.')
+        || domain.ends_with('.')
+        || email.len() > 254
+        || email.contains(char::is_whitespace)
+    {
+        return Err(ApiError::bad("Enter a valid email address"));
     }
+    Ok(email.to_owned())
 }
 
 fn known_routes(state: &AppState, ids: Vec<String>) -> Vec<String> {
@@ -758,18 +795,16 @@ fn known_routes(state: &AppState, ids: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-/// Usernames and emails both sign in, so neither may belong to another account.
-fn check_unique(state: &AppState, id: &str, username: &str, email: Option<&str>) -> ApiResult<()> {
+/// Each username and each email belongs to one account.
+fn check_unique(state: &AppState, id: &str, username: &str, email: &str) -> ApiResult<()> {
     for other in state.db.users()?.iter().filter(|u| u.id != id) {
-        let names = [Some(other.username.as_str()), other.email.as_deref()];
-        for taken in names.into_iter().flatten() {
-            if taken.eq_ignore_ascii_case(username)
-                || email.is_some_and(|e| taken.eq_ignore_ascii_case(e))
-            {
-                return Err(ApiError::conflict(
-                    "Another account already uses that name or email",
-                ));
-            }
+        if other.username.eq_ignore_ascii_case(username) {
+            return Err(ApiError::conflict(
+                "Another account already has that username",
+            ));
+        }
+        if other.email.eq_ignore_ascii_case(email) {
+            return Err(ApiError::conflict("Another account already has that email"));
         }
     }
     Ok(())
@@ -778,7 +813,7 @@ fn check_unique(state: &AppState, id: &str, username: &str, email: Option<&str>)
 #[derive(Deserialize)]
 struct NewUser {
     username: String,
-    email: Option<String>,
+    email: String,
     #[serde(default)]
     name: String,
     password: String,
@@ -798,8 +833,8 @@ async fn create_user(
             "Username: 2 to 40 letters, digits, '.', '-' or '_'",
         ));
     }
-    let email = clean_email(body.email)?;
-    check_unique(&state, "", &username, email.as_deref())?;
+    let email = clean_email(&body.email)?;
+    check_unique(&state, "", &username, &email)?;
     if !secret::strong(&body.password) {
         return Err(ApiError::bad(secret::RULE));
     }
@@ -814,6 +849,7 @@ async fn create_user(
         route_ids: known_routes(&state, body.route_ids),
         created_at: now(),
         last_login: None,
+        note: None,
     };
     state.db.save_user(&user)?;
     state.reload()?;
@@ -845,10 +881,10 @@ async fn update_user(
         }
         user.username = username;
     }
-    if body.email.is_some() {
-        user.email = clean_email(body.email)?;
+    if let Some(email) = body.email {
+        user.email = clean_email(&email)?;
     }
-    check_unique(&state, &user.id, &user.username, user.email.as_deref())?;
+    check_unique(&state, &user.id, &user.username, &user.email)?;
     if let Some(name) = body.name {
         user.name = name.trim().chars().take(80).collect();
     }
@@ -860,6 +896,10 @@ async fn update_user(
     }
     if let Some(enabled) = body.enabled {
         user.enabled = enabled;
+        // Turning an account back on clears what held it.
+        if enabled {
+            user.note = None;
+        }
     }
     if let Some(all) = body.all_routes {
         user.all_routes = all;
@@ -870,6 +910,28 @@ async fn update_user(
     state.db.save_user(&user)?;
     state.reload()?;
     Ok(Json(user))
+}
+
+/// An account's latest sign-ins, and the devices it has used.
+async fn user_activity(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Vec<SignIn>>> {
+    Ok(Json(state.db.sign_ins("user_id", &id, 100)?))
+}
+
+/// The accounts signed in from a device lately.
+async fn device_activity(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Vec<SignIn>>> {
+    Ok(Json(state.db.sign_ins("device_id", &id, 100)?))
+}
+
+/// Ends every sign-in of this account.
+async fn sign_out_user(State(state): State<AppState>, Path(id): Path<String>) -> Json<Value> {
+    lock(&state.user_sessions).retain(|_, s| s.subject != id);
+    Json(json!({ "ok": true }))
 }
 
 async fn delete_user(
