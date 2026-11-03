@@ -851,6 +851,7 @@ async fn login(
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
     let record = |user_id: &str, outcome: &str| {
+        log(state, route, "sign-in", outcome, Some(user_id), ip, headers);
         let _ = state.db.add_sign_in(&SignIn {
             user_id: user_id.to_owned(),
             device_id: device_id.clone(),
