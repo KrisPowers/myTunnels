@@ -142,7 +142,6 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
             </>
           ) : (
             <>
-              <a className="fab" href="#/new"><Icon name="add" size={24} />New tunnel</a>
               <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels" || view === "new"} />
               <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={pending || undefined} />
               <NavItem to="#/users" icon="group" label="Users" on={view === "users"} />
