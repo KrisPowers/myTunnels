@@ -1,17 +1,18 @@
 import { useState } from "react";
-import { ago, api, message, type Device, type DeviceStatus, type Route } from "./api";
+import { ago, api, message, shortId, type Device, type DeviceStatus, type Route } from "./api";
 import { Icon } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Callout, Card, Row, SaveField, Switch, useNotify } from "./ui";
+import { ArmedButton, Callout, Card, Copy, Row, SaveField, Switch, useNotify } from "./ui";
 
 const FILTERS: [DeviceStatus, string][] = [
   ["pending", "Waiting"],
   ["approved", "Approved"],
+  ["seen", "Seen"],
   ["denied", "Denied"],
 ];
 
-const TONE: Record<DeviceStatus, string> = { pending: "warn", approved: "ok", denied: "bad" };
-const LABEL: Record<DeviceStatus, string> = { pending: "Waiting", approved: "Approved", denied: "Denied" };
+const TONE: Record<DeviceStatus, string> = { seen: "", pending: "warn", approved: "ok", denied: "bad" };
+const LABEL: Record<DeviceStatus, string> = { seen: "Seen", pending: "Waiting", approved: "Approved", denied: "Denied" };
 
 function summary(d: Device) {
   const i = d.info ?? {};
