@@ -390,6 +390,31 @@ struct NewRoute {
     require_device: bool,
     #[serde(default = "default_mode")]
     policy_mode: String,
+    #[serde(default)]
+    require_password: bool,
+    password: Option<String>,
+    #[serde(default)]
+    require_login: bool,
+    #[serde(default)]
+    preserve_host: bool,
+}
+
+/// A tunnel password to store: a new one when given, which must be strong, else the
+/// one already set. Asking for a password with none set is refused.
+fn tunnel_password(
+    required: bool,
+    given: Option<String>,
+    current: Option<String>,
+) -> ApiResult<Option<String>> {
+    let hash = match given.filter(|p| !p.is_empty()) {
+        Some(p) if !secret::strong(&p) => return Err(ApiError::bad(secret::RULE)),
+        Some(p) => Some(secret::hash(&p)?),
+        None => current,
+    };
+    if required && hash.is_none() {
+        return Err(ApiError::bad("Set the tunnel password"));
+    }
+    Ok(hash)
 }
 
 async fn create_route(
