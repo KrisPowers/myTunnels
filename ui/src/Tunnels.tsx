@@ -549,18 +549,8 @@ function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () =>
     <form className="edit-block" onSubmit={save}>
       <div className="edit-row">
         <TextField className="port" label="Port" mono inputMode="numeric" autoFocus value={port} onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
-        <div className="tf static protocol">
-          <div className="tf-box">
-            <Dropdown label="Protocol" value={scheme} options={[{ value: "http", label: "http" }, { value: "https", label: "https" }]} onChange={(v) => setScheme(v as RouteEdit["target_scheme"])} />
-            <span className="tf-label">Protocol</span>
-          </div>
-        </div>
-        <TextField className="grow" label="Host" placeholder="This computer" mono value={host} onChange={setHost} />
       </div>
-      <label className="edit-switch">
-        <Switch label="Pass the public address" on={preserve} onChange={setPreserve} />
-        <span>Pass the public address to the app, for apps set up with it</span>
-      </label>
+      <LocalApp value={where} onChange={(patch) => setWhere((w) => ({ ...w, ...patch }))} />
       <div className="edit-actions">
         <button type="button" className="btn text" onClick={onDone}>Cancel</button>
         <button className="btn primary" disabled={busy || !port}>{busy && <span className="spinner small on-accent" />}Save</button>
