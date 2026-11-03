@@ -1,17 +1,23 @@
-# syntax=docker/dockerfile:1
 ARG CLOUDFLARED_IMAGE=cloudflare/cloudflared:latest
+
+# The UI and the server build side by side. Downloads and compiled
+# dependencies live in BuildKit caches that outlast each build, so a change
+# rebuilds only what it touched.
 
 FROM node:22-alpine AS ui
 WORKDIR /ui
 COPY ui/package.json ui/package-lock.json* ./
-RUN npm install --no-audit --no-fund
+RUN --mount=type=cache,target=/root/.npm npm install --no-audit --no-fund
 COPY ui/ ./
 RUN npm run build
 
 FROM rust:1-bookworm AS server
 WORKDIR /server
 COPY server/ ./
-RUN cargo build --release --locked
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/server/target \
+    cargo build --release --locked \
+    && cp target/release/server /usr/local/bin/server
 
 FROM ${CLOUDFLARED_IMAGE} AS cloudflared
 
