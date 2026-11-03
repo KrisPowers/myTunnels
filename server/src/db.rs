@@ -157,6 +157,8 @@ pub struct User {
     #[serde(skip)]
     pub all_routes: bool,
     pub route_ids: Vec<String>,
+    /// The devices this account may sign in from.
+    pub device_ids: Vec<String>,
     pub created_at: i64,
     pub last_login: Option<i64>,
     /// Why the account was locked, while it is.
