@@ -86,9 +86,12 @@ async fn supervise(state: AppState) {
             continue;
         };
 
+        // A free port each start, so another cloudflared on this machine
+        // never makes this one fail to start.
+        let metrics = free_local_addr().unwrap_or_else(|| "127.0.0.1:20241".to_owned());
         let spawned = Command::new(&state.config.cloudflared_bin)
             .args(["tunnel", "--no-autoupdate", "--metrics"])
-            .arg(&state.config.metrics_addr)
+            .arg(&metrics)
             .arg("run")
             .env("TUNNEL_TOKEN", &token)
             .stdin(Stdio::null())
