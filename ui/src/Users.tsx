@@ -1,12 +1,18 @@
-import { useState, type FormEvent } from "react";
-import { ago, api, LEVELS, list, message, strength, type Route, type User } from "./api";
-import { Icon } from "./Icon";
+import { useEffect, useState, type FormEvent } from "react";
+import { ago, api, LEVELS, list, message, shortId, strength, type Route, type SignIn, type User } from "./api";
+import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Card, Row, SaveField, Switch, TextField, useNotify } from "./ui";
+import { ArmedButton, Avatar, Card, Row, SaveField, SubNav, Switch, TextField, useNotify } from "./ui";
 
-// Users are the accounts people sign in with at tunnels that ask for one.
+function state(u: User): [string, string] {
+  if (u.note) return ["bad", "Held for review"];
+  return u.enabled ? ["ok", "Active"] : ["", "Turned off"];
+}
+
+// Users are the accounts people sign in with, by email, at tunnels that ask for one.
 export function Users({ users, routes }: { users: User[] | null; routes: Route[] }) {
   const asking = routes.filter((r) => r.require_login).length;
+  const held = users?.filter((u) => u.note).length ?? 0;
   return (
     <>
       <div className="page-head">
