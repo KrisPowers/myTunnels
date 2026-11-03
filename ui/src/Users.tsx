@@ -112,14 +112,11 @@ function PasswordField({ label, value, onChange, hint }: { label: string; value:
   );
 }
 
-// Grants are the tunnels an account may open: every one, or those picked.
-function Grants({ all, ids, routes, onAll, onPick }: { all: boolean; ids: string[]; routes: Route[]; onAll: (v: boolean) => void; onPick: (id: string, on: boolean) => void }) {
+// Grants are the tunnels an account may open, each added on its own.
+function Grants({ ids, routes, onPick }: { ids: string[]; routes: Route[]; onPick: (id: string, on: boolean) => void }) {
   return (
-    <Card title="Tunnels">
-      <Row title="Every tunnel" sub="Including tunnels added later.">
-        <Switch label="Every tunnel" on={all} onChange={onAll} />
-      </Row>
-      {!all && routes.map((r) => (
+    <Card title="Tunnels" sub={routes.length ? undefined : "There are no tunnels yet."}>
+      {routes.map((r) => (
         <Row key={r.id} title={<span className="mono">{r.hostname}</span>} sub={r.require_login ? undefined : "Does not ask for sign-in"}>
           <Switch label={`Allow ${r.hostname}`} on={ids.includes(r.id)} onChange={(v) => onPick(r.id, v)} />
         </Row>
