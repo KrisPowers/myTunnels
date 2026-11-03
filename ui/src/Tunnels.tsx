@@ -337,7 +337,7 @@ export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: 
 const TUNNEL_PAGES: [string, string, IconName][] = [
   ["access", "Access Control", "shield"],
   ["devices", "Devices", "devices"],
-  ["logs", "Logs", "history"],
+  ["activity", "Activity", "history"],
 ];
 
 // TunnelPage is one tunnel: its address and target in the heading, each with an
