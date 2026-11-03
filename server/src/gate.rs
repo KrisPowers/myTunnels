@@ -796,25 +796,50 @@ async fn login(
     state: &AppState,
     route: &Route,
     ip: Option<IpAddr>,
+    headers: &HeaderMap,
     body: LoginRequest,
 ) -> Response {
     if !route.require_login {
         return StatusCode::NOT_FOUND.into_response();
     }
     let by_address = format!("login:{}", ip.map(|ip| ip.to_string()).unwrap_or_default());
-    let by_account = format!("login-account:{}", body.login.trim().to_ascii_lowercase());
+    let by_account = format!("login-account:{}", body.email.trim().to_ascii_lowercase());
     if state.locked_out(&by_address) || state.locked_out(&by_account) {
         return json_error(
             StatusCode::TOO_MANY_REQUESTS,
             "Too many wrong tries. Wait 15 minutes and try again.",
         );
     }
-    let account = state.db.user_by_login(&body.login).ok().flatten();
+    let account = state.db.user_by_email(&body.email).ok().flatten();
     let valid = secret::verify_or_waste(
         &body.password,
         account.as_ref().map(|u| u.password_hash.as_str()),
     );
+    // Who is signing in: the device key this browser holds, and where it is.
+    let key = cookie(headers, DEVICE_COOKIE).filter(|t| valid_token(t));
+    let device_hash = key.map(sha256_hex).unwrap_or_default();
+    let device_id = key
+        .and_then(|t| state.db.device_by_token(&sha256_hex(t)).ok().flatten())
+        .map(|d| d.id);
+    let country = headers
+        .get("cf-ipcountry")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    let record = |user_id: &str, outcome: &str| {
+        let _ = state.db.add_sign_in(&SignIn {
+            user_id: user_id.to_owned(),
+            device_id: device_id.clone(),
+            ip: ip.map(|ip| ip.to_string()),
+            country: country.clone(),
+            at: now(),
+            outcome: outcome.to_owned(),
+        });
+    };
+
     let Some(mut account) = account.filter(|u| valid && u.enabled) else {
+        if let Some(u) = state.db.user_by_email(&body.email).ok().flatten() {
+            record(&u.id, if valid { "blocked" } else { "failed" });
+        }
         state.record_failure(&by_address);
         state.record_failure(&by_account);
         tokio::time::sleep(Duration::from_millis(700)).await;
