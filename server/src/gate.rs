@@ -17,9 +17,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::db::{Device, Event, Route, SignIn, User};
-use crate::state::{AppState, Hop, Snapshot};
+use crate::state::{AppState, Hop, Outcome, Snapshot};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
-use crate::{guard, secret};
+use crate::{codes, guard, secret};
 use crate::{oauth, proxy};
 
 pub const DEVICE_COOKIE: &str = "__gate_device";
@@ -233,6 +233,9 @@ fn user_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &
     if !s.device.is_empty() && s.device != here {
         return false;
     }
+    if route.require_code && !s.mfa {
+        return false;
+    }
     let now = now();
     if (route.login_max > 0 && now - s.created > route.login_max)
         || (route.login_idle > 0 && now - s.seen > route.login_idle)
@@ -319,10 +322,10 @@ fn refuse(
             "This app only opens on approved devices. Give the ID below to the administrator.",
         ),
     };
-    let providers = if kind == "login" {
-        sign_in_buttons(state)
+    let data = if kind == "login" {
+        json!({ "providers": sign_in_buttons(state) })
     } else {
-        "[]".into()
+        json!({})
     };
     gate_page(
         StatusCode::UNAUTHORIZED,
@@ -331,28 +334,27 @@ fn refuse(
         title,
         text,
         &others,
-        &providers,
+        &data,
     )
 }
 
 /// The providers a visitor can sign in with, as `[{"id", "name"}]`.
-fn sign_in_buttons(state: &AppState) -> String {
+fn sign_in_buttons(state: &AppState) -> Vec<Value> {
     if oauth::callback_host(&state.db, &state.snapshot()).is_none() {
-        return "[]".into();
+        return Vec::new();
     }
-    let list: Vec<Value> = oauth::all(&state.db)
+    oauth::all(&state.db)
         .unwrap_or_default()
         .into_iter()
         .filter(|p| p.enabled)
         .map(|p| json!({ "id": p.id, "name": p.label() }))
-        .collect();
-    Value::from(list).to_string()
+        .collect()
 }
 
 // ---- pages ----
 
 pub fn page(status: StatusCode, mode: &str, host: &str, title: &str, text: &str) -> Response {
-    gate_page(status, mode, host, title, text, &[], "[]")
+    gate_page(status, mode, host, title, text, &[], &json!({}))
 }
 
 fn gate_page(
@@ -362,7 +364,7 @@ fn gate_page(
     title: &str,
     text: &str,
     others: &[&str],
-    providers: &str,
+    data: &Value,
 ) -> Response {
     let html = TEMPLATE
         .replace("{{MODE}}", mode)
@@ -370,7 +372,7 @@ fn gate_page(
         .replace("{{HOST}}", &escape(host))
         .replace("{{TITLE}}", &escape(title))
         .replace("{{TEXT}}", &escape(text))
-        .replace("{{PROVIDERS}}", &escape(providers));
+        .replace("{{DATA}}", &escape(&data.to_string()));
     (
         status,
         [
@@ -685,6 +687,10 @@ async fn action_response(
             Ok((headers, body)) => login(state, route, ip, &headers, body).await,
             Err(status) => status.into_response(),
         },
+        ("code", true) => match body::<CodeRequest>(req).await {
+            Ok((headers, body)) => code(state, route, ip, &headers, body).await,
+            Err(status) => status.into_response(),
+        },
         ("oauth", false) => {
             let (parts, _) = req.into_parts();
             oauth_start(state, route, &parts.uri, &parts.headers).await
@@ -863,6 +869,7 @@ fn register(
             "",
             "",
             DEVICE_SESSION_TTL,
+            false,
         );
         out.extend(
             cookie_value(
@@ -926,6 +933,7 @@ async fn password(
         &secret::tag(hash),
         "",
         PASS_TTL,
+        false,
     );
     let mut response = Json(json!({ "ok": true })).into_response();
     response
@@ -1004,17 +1012,7 @@ async fn login(
     state.clear_failures(&by_address);
     state.clear_failures(&by_account);
     state.clear_failures(&by_device);
-    match admit(state, route, account, &visitor) {
-        Ok(sid) => {
-            let mut response = Json(json!({ "ok": true })).into_response();
-            response.headers_mut().extend(
-                cookie_value(USER_COOKIE, &sid, Some(&route.zone_name), USER_TTL)
-                    .map(|v| (header::SET_COOKIE, v)),
-            );
-            response
-        }
-        Err((status, why)) => json_error(status, why),
-    }
+    signed_in(route, admit(state, route, account, &visitor).await)
 }
 
 /// Who is signing in: the device key this browser holds, and where it is.
@@ -1074,12 +1072,37 @@ fn record(state: &AppState, route: &Route, v: &Visitor, user_id: &str, outcome: 
 /// Lets in an account whose owner has proved who they are, by password or through
 /// another service: if it may open this tunnel, from a device linked to it, and the
 /// sign-in does not look like someone else holding it. Returns the session token.
-fn admit(
+async fn admit(
+    state: &AppState,
+    route: &Route,
+    account: User,
+    v: &Visitor,
+) -> Result<Outcome, ApiError> {
+    let account =
+        vet(state, route, account, v).map_err(|(status, why)| ApiError(status, why.into()))?;
+    if !route.require_code {
+        return Ok(Outcome::Session(open(state, route, account, v, false)));
+    }
+    let (ticket, sent_to) = codes::send(
+        state,
+        &account.id,
+        &account.email,
+        &route.id,
+        &v.device_hash,
+        &route.hostname,
+    )
+    .await?;
+    Ok(Outcome::Code { ticket, sent_to })
+}
+
+/// The checks every sign-in passes, before any code: the account may open this
+/// tunnel, from a device linked to it, and does not look like it is in other hands.
+fn vet(
     state: &AppState,
     route: &Route,
     mut account: User,
     v: &Visitor,
-) -> Result<String, (StatusCode, &'static str)> {
+) -> Result<User, (StatusCode, &'static str)> {
     if !account.route_ids.contains(&route.id) {
         return Err((StatusCode::FORBIDDEN, "This account cannot open this app."));
     }
@@ -1127,16 +1150,82 @@ fn admit(
         ));
     }
 
+    Ok(account)
+}
+
+/// Signs a vetted account in; returns the session token.
+fn open(state: &AppState, route: &Route, mut account: User, v: &Visitor, mfa: bool) -> String {
     record(state, route, v, &account.id, "ok");
     account.last_login = Some(now());
     let _ = state.db.save_user(&account);
-    Ok(state.open_session(
+    state.open_session(
         &state.user_sessions,
         &account.id,
         &secret::tag(&account.password_hash),
         &v.device_hash,
         USER_TTL,
-    ))
+        mfa,
+    )
+}
+
+/// The answer to a sign-in: a session cookie, or the ticket for the code it waits on.
+fn signed_in(route: &Route, outcome: Result<Outcome, ApiError>) -> Response {
+    match outcome {
+        Ok(Outcome::Session(sid)) => {
+            let mut response = Json(json!({ "ok": true })).into_response();
+            response.headers_mut().extend(
+                cookie_value(USER_COOKIE, &sid, Some(&route.zone_name), USER_TTL)
+                    .map(|v| (header::SET_COOKIE, v)),
+            );
+            response
+        }
+        Ok(Outcome::Code { ticket, sent_to }) => {
+            Json(json!({ "code_required": true, "ticket": ticket, "sent_to": sent_to }))
+                .into_response()
+        }
+        Ok(Outcome::Refused(why)) => json_error(StatusCode::FORBIDDEN, &why),
+        Err(err) => err.into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct CodeRequest {
+    ticket: String,
+    code: String,
+}
+
+/// The emailed code that finishes a sign-in, entered on the device that asked.
+async fn code(
+    state: &AppState,
+    route: &Route,
+    ip: Option<IpAddr>,
+    headers: &HeaderMap,
+    body: CodeRequest,
+) -> Response {
+    let visitor = Visitor::of(state, ip, headers);
+    let pending = match state.codes.redeem(&body.ticket, &body.code) {
+        Ok(p) if p.route_id == route.id && p.device_hash == visitor.device_hash => p,
+        Ok(_) => return json_error(StatusCode::FORBIDDEN, "Sign in again on this device."),
+        Err(why) => {
+            if why != "This code has expired. Sign in again." {
+                log(state, route, "sign-in", "wrong-code", None, ip, headers);
+            }
+            return json_error(StatusCode::UNAUTHORIZED, why);
+        }
+    };
+    let Some(account) = state
+        .db
+        .user(&pending.subject)
+        .ok()
+        .flatten()
+        .filter(|u| u.enabled)
+    else {
+        return json_error(StatusCode::FORBIDDEN, "This account is turned off.");
+    };
+    let outcome = vet(state, route, account, &visitor)
+        .map(|account| Outcome::Session(open(state, route, account, &visitor, true)))
+        .map_err(|(status, why)| ApiError(status, why.into()));
+    signed_in(route, outcome)
 }
 
 // ---- signing in through another service ----
@@ -1274,7 +1363,21 @@ async fn oauth_outcome(
     visitor: &Visitor,
     code: Option<String>,
     verifier: &str,
-) -> Result<String, String> {
+) -> Outcome {
+    match provider_sign_in(state, route, provider, visitor, code, verifier).await {
+        Ok(outcome) => outcome,
+        Err(why) => Outcome::Refused(why),
+    }
+}
+
+async fn provider_sign_in(
+    state: &AppState,
+    route: &Route,
+    provider: &str,
+    visitor: &Visitor,
+    code: Option<String>,
+    verifier: &str,
+) -> Result<Outcome, String> {
     let Some(provider) = oauth::load(&state.db, provider).ok().flatten() else {
         return Err("That sign-in method was removed.".into());
     };
@@ -1307,7 +1410,7 @@ async fn oauth_outcome(
         record(state, route, visitor, &account.id, "blocked");
         return Err("This account is turned off. Ask the administrator.".into());
     }
-    admit(state, route, account, visitor).map_err(|(_, why)| why.to_owned())
+    admit(state, route, account, visitor).await.map_err(|e| e.1)
 }
 
 /// Back on the tunnel the visitor started from: keeps the session, or says why not.
@@ -1319,13 +1422,26 @@ fn oauth_done(state: &AppState, route: &Route, req: &Request) -> Response {
             outcome,
             ..
         }) if host == route.hostname => match outcome {
-            Ok(sid) => redirect(
+            Outcome::Session(sid) => redirect(
                 &path,
                 cookie_value(USER_COOKIE, &sid, Some(&route.zone_name), USER_TTL)
                     .into_iter()
                     .collect(),
             ),
-            Err(why) => notice(&route.hostname, "Could not sign in", &why),
+            Outcome::Code { ticket, sent_to } => {
+                let mut response = gate_page(
+                    StatusCode::UNAUTHORIZED,
+                    "code",
+                    &route.hostname,
+                    "Check your email",
+                    &format!("Enter the code sent to {sent_to}."),
+                    &[],
+                    &json!({ "ticket": ticket, "path": path }),
+                );
+                harden(&mut response);
+                response
+            }
+            Outcome::Refused(why) => notice(&route.hostname, "Could not sign in", &why),
         },
         _ => redirect("/", Vec::new()),
     }
