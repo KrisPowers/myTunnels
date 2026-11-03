@@ -84,7 +84,7 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
                     </span>
                     <span className="result-service">{summary(d)}</span>
                     <span className="result-meta">{ago(d.last_seen)}</span>
-                    {d.status === "pending" || d.status === "seen" ? (
+                    {d.status !== "approved" ? (
                       <button type="button" className="btn primary small" onClick={(e) => {
                         e.preventDefault();
                         approve(d);
