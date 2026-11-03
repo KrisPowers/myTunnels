@@ -704,6 +704,51 @@ impl Db {
         Ok(list)
     }
 
+    /// Records what happened at a tunnel, keeping 90 days of it.
+    pub fn add_event(&self, e: &Event) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO events (route_id, kind, outcome, user_id, device_id, ip, country, at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                e.route_id,
+                e.kind,
+                e.outcome,
+                e.user_id,
+                e.device_id,
+                e.ip,
+                e.country,
+                e.at
+            ],
+        )?;
+        conn.execute("DELETE FROM events WHERE at < ?1", [e.at - 90 * 86_400])?;
+        Ok(())
+    }
+
+    /// A tunnel's latest events, newest first.
+    pub fn events(&self, route_id: &str, limit: i64) -> Result<Vec<Event>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT route_id, kind, outcome, user_id, device_id, ip, country, at FROM events
+             WHERE route_id = ?1 ORDER BY at DESC, id DESC LIMIT ?2",
+        )?;
+        let list = stmt
+            .query_map(params![route_id, limit], |r| {
+                Ok(Event {
+                    route_id: r.get(0)?,
+                    kind: r.get(1)?,
+                    outcome: r.get(2)?,
+                    user_id: r.get(3)?,
+                    device_id: r.get(4)?,
+                    ip: r.get(5)?,
+                    country: r.get(6)?,
+                    at: r.get(7)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(list)
+    }
+
     pub fn delete_user(&self, id: &str) -> Result<()> {
         self.conn()
             .execute("DELETE FROM users WHERE id = ?1", [id])?;
