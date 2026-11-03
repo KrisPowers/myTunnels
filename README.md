@@ -28,18 +28,20 @@ browser ──https──> Cloudflare edge ──tunnel──> cloudflared ─�
 docker compose up -d --build
 ```
 
-Open `http://<host>:7070`, create the admin password, then in **Settings**:
+Open `http://<host>:7070`. Until everything is in place the panel is a short setup, one
+step at a time, each saved as soon as it is done, so it can be left and resumed:
 
-1. Create a Cloudflare API token (My Profile, API Tokens, Create Token, Custom token) with
-   - Account, Cloudflare Tunnel, Edit
-   - Zone, DNS, Edit
-   - Zone, Zone, Read
-2. Paste the token, press **Find accounts**, pick the account, keep or change the tunnel
-   name, and press **Connect**. The tunnel is created if it does not exist and the
-   connector starts.
+1. **Admin password.** The one password for the panel.
+2. **Cloudflare.** **Open Cloudflare** goes to the token page with the permissions already
+   picked (Account, Cloudflare Tunnel, Edit; Zone, DNS, Edit; Zone, Zone, Read). Create the
+   token, paste it back, and the tunnel is created and the connector started. A token that
+   sees more than one account asks which one.
+3. **Network.** Where your apps run and what counts as the home network. The defaults suit
+   most setups.
+4. **Ready.** A summary, the connector coming online, and the theme.
 
-Then in **Tunnels** enter the subdomain, pick the domain, enter the port, choose who can
-open it, and press **Publish**.
+Then, on **Tunnels**, type the subdomain, pick the domain, enter the port and press
+**Publish**. Open the tunnel to choose who can open it.
 
 ## Access rules
 
