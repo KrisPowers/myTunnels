@@ -166,11 +166,14 @@ export const api = {
   thisDevice: (token: string | null, info: unknown) => call<{ id: string; token: string }>("/device", "POST", { token, info }),
 
   users: () => call<User[]>("/users"),
-  addUser: (body: { username: string; email: string | null; name: string; password: string; all_routes: boolean; route_ids: string[] }) =>
+  addUser: (body: { username: string; email: string; name: string; password: string; all_routes: boolean; route_ids: string[] }) =>
     call<User>("/users", "POST", body),
   editUser: (id: string, patch: Partial<Pick<User, "username" | "email" | "name" | "enabled" | "all_routes" | "route_ids">> & { password?: string }) =>
     call<User>(`/users/${id}`, "PATCH", patch),
   removeUser: (id: string) => call(`/users/${id}`, "DELETE"),
+  signOutUser: (id: string) => call(`/users/${id}/signout`, "POST"),
+  userActivity: (id: string) => call<SignIn[]>(`/users/${id}/activity`),
+  deviceActivity: (id: string) => call<SignIn[]>(`/devices/${id}/activity`),
 };
 
 export function editOf(r: Route): RouteEdit {
