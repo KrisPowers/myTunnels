@@ -379,12 +379,11 @@ a.result:hover { background: var(--hover); }
 }
 .dropdown-list.up { transform-origin: bottom; }
 .dropdown-option {
-  display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 6px 14px 6px 8px; border-radius: 10px;
+  display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 6px 14px; border-radius: 10px;
   color: var(--text); cursor: pointer;
 }
 .dropdown-option.active { background: var(--hover); }
 .dropdown-option[aria-selected="true"] { background: var(--accent-bg); color: var(--on-accent-bg); }
-.dropdown-check { display: grid; place-items: center; width: 20px; flex-shrink: 0; }
 .dropdown-icon { color: var(--text-2); }
 .dropdown-option[aria-selected="true"] .dropdown-icon { color: inherit; }
 .dropdown-text { display: grid; gap: 1px; }
@@ -690,6 +689,14 @@ a.result:hover { background: var(--hover); }
 .sub-nav-item .icon { color: inherit; }
 .sub-nav-item.on { color: var(--accent); }
 .sub-nav-item.on::after { transform: scaleX(1); }
+
+/* Sections with no fill behind them, at full size. */
+.page-body.plain .card { background: none; border-radius: 0; }
+.page-body.plain .card-head, .page-body.plain .setting { padding-left: 0; padding-right: 0; }
+.page-body.plain .setting { border-top: 0; }
+/* The sub-nav names the page, so sections print no title of their own. */
+.page-body.plain .card-head h2 { display: none; }
+.page-body.plain .card-head:not(:has(p)) { display: none; }
 
 /* Fields set straight on a card, under its heading. */
 .card-pad { padding: 0 24px 16px; }
