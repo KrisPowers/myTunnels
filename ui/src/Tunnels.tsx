@@ -718,21 +718,21 @@ function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
   const shown = (events ?? []).filter((e) => !kinds.length || kinds.includes(e.kind));
   const entries: LogEntry[] = shown.map((e) => {
     const user = e.user_id ? users.find((u) => u.id === e.user_id) : undefined;
-    const who = user ? user.name || user.username : e.device_id ? shortId(e.device_id) : "A visitor";
-    const [tone, text] = line(e, who);
-    return { at: e.at, tone, text, where: [e.ip, e.country].filter(Boolean).join(", ") };
+    const [tone, event] = line(e);
+    const who = user ? <a href={`#/users/${user.id}`}>{user.name || user.username}</a>
+      : e.device_id ? <a className="mono" href={`#/devices/${e.device_id}`}>{shortId(e.device_id)}</a> : undefined;
+    return { at: e.at, tone, event, who, ip: e.ip, country: e.country };
   });
 
   return (
     <>
       <div className="log-bar">
         <MultiDropdown label="Show" values={kinds} options={KINDS} allLabel="All events" onChange={setKinds} />
-        <button type="button" className="btn text" disabled={!kinds.length} onClick={() => setKinds([])}>
+        <button type="button" className="btn text" onClick={() => setKinds([])}>
           <Icon name="refresh" size={18} />Reset
         </button>
       </div>
-      {events && shown.length === 0 && <p className="muted">Nothing yet.</p>}
-      <LogDays entries={entries} />
+      {events && entries.length === 0 ? <p className="muted">Nothing yet.</p> : <LogTable entries={entries} />}
     </>
   );
 }
