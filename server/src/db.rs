@@ -171,6 +171,26 @@ fn route_row(r: &Row) -> rusqlite::Result<Route> {
         enabled: r.get(11)?,
         dns_record_id: r.get(12)?,
         created_at: r.get(13)?,
+        preserve_host: r.get(14)?,
+        require_password: r.get(15)?,
+        password_set: r.get::<_, Option<String>>(16)?.is_some(),
+        password_hash: r.get(16)?,
+        require_login: r.get(17)?,
+    })
+}
+
+fn user_row(r: &Row) -> rusqlite::Result<User> {
+    Ok(User {
+        id: r.get(0)?,
+        username: r.get(1)?,
+        email: r.get(2)?,
+        name: r.get(3)?,
+        password_hash: r.get(4)?,
+        enabled: r.get(5)?,
+        all_routes: r.get(6)?,
+        route_ids: Vec::new(),
+        created_at: r.get(7)?,
+        last_login: r.get(8)?,
     })
 }
 
