@@ -570,7 +570,10 @@ async fn update_route(
     )?;
     route.password_set = route.password_hash.is_some();
     route.require_password = body.require_password;
+    check_limits(body.login_max, body.login_idle)?;
     route.require_login = body.require_login;
+    route.login_max = body.login_max;
+    route.login_idle = body.login_idle;
     route.preserve_host = body.preserve_host;
     state.db.update_route(&route)?;
     state.reload()?;
