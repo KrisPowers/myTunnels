@@ -208,6 +208,8 @@ fn route_row(r: &Row) -> rusqlite::Result<Route> {
         password_set: r.get::<_, Option<String>>(16)?.is_some(),
         password_hash: r.get(16)?,
         require_login: r.get(17)?,
+        login_max: r.get(18)?,
+        login_idle: r.get(19)?,
     })
 }
 
