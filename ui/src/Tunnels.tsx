@@ -178,27 +178,18 @@ export function TunnelPage({ route, devices, onChanged }: { route: Route; device
       <div className="page-head">
         <a className="icon-btn" href="#/" aria-label="All tunnels" title="All tunnels"><Icon name="arrow_back" /></a>
         <div className="page-head-main">
-          <h1>{route.hostname}</h1>
+          <h1><Copy text={route.hostname} copyText={`https://${route.hostname}`} plain /></h1>
           <div className="page-sub">
-            <span className={"chip " + (edit.enabled ? "ok" : "")}>{edit.enabled ? "Live" : "Off"}</span>
             <span>to <span className="mono">{target(route)}</span></span>
           </div>
         </div>
         <div className="page-actions">
+          <Switch label={edit.enabled ? "Live, switch off" : "Off, switch live"} on={edit.enabled} onChange={(v) => quietly({ enabled: v })} />
           <a className="btn" href={`https://${route.hostname}`} target="_blank" rel="noreferrer"><Icon name="open_in_new" size={18} />Open</a>
           <ArmedButton icon="delete" label="Remove" armedLabel="Remove for good" onConfirm={remove} />
         </div>
       </div>
       <div className="page-body stack">
-        <Card title="Address">
-          <Row title="Live" sub="Off answers every visitor with a short notice instead of the app.">
-            <Switch label="Live" on={edit.enabled} onChange={(v) => quietly({ enabled: v })} />
-          </Row>
-          <Row title="Public address" sub="The DNS record and tunnel route are managed for you.">
-            <Copy text={`https://${route.hostname}`} />
-          </Row>
-        </Card>
-
         <Card title="Local app" sub="Where requests to this address go.">
           <Row title="Port">
             <SaveField label="Port" numeric mono width={110} value={String(edit.port)} onSave={(v) => save({ port: Number(v) })} />
