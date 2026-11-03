@@ -642,9 +642,9 @@ textarea.tf-input { height: auto; min-height: 88px; padding: 18px 16px 12px; res
   .page { margin-left: 0; padding: 16px 16px 40px; }
   .setting, .flow .setting { flex-wrap: wrap; gap: 12px; }
   .composer-row { flex-wrap: wrap; }
-  .composer-field.grow { flex-basis: 100%; }
+  .composer-row .grow { flex-basis: 100%; }
   .composer-dot, .composer-arrow { display: none; }
-  .composer-field.port { flex: 1; }
+  .composer-row .port { flex: 1; }
   .result.tunnel-row, .result.device-row { grid-template-columns: 16px minmax(0, 1fr) auto; gap: 4px 12px; padding: 10px 12px 10px 16px; }
   .result.tunnel-row .result-service, .result.device-row .result-meta { display: none; }
   .result.tunnel-row .result-what, .result.device-row .result-service { grid-column: 2; grid-row: 2; }
