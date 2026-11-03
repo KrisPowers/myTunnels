@@ -839,15 +839,19 @@ async fn create_user(
     if !secret::strong(&body.password) {
         return Err(ApiError::bad(secret::RULE));
     }
+    let device_id = known_devices(&state, vec![body.device_id])
+        .pop()
+        .ok_or_else(|| ApiError::bad("Pick the device this account signs in from"))?;
     let user = User {
         id: random_hex(8),
         username,
         email,
-        name: body.name.trim().chars().take(80).collect(),
+        name: String::new(),
         password_hash: secret::hash(&body.password)?,
         enabled: true,
         all_routes: false,
-        route_ids: known_routes(&state, body.route_ids),
+        route_ids: Vec::new(),
+        device_ids: vec![device_id],
         created_at: now(),
         last_login: None,
         note: None,
