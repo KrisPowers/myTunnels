@@ -8,6 +8,7 @@ mod netinfo;
 mod proxy;
 mod secret;
 mod state;
+mod token;
 mod tunnel;
 mod util;
 
