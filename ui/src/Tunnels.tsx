@@ -163,22 +163,24 @@ function AccessCard({ value, users, onChange, onPassword }: {
 }) {
   const layers = [value.require_lan, value.require_device, value.require_password, value.require_login].filter(Boolean).length;
   const accounts = users.filter((u) => u.enabled).length;
+  // Every tunnel keeps one layer on: the last one cannot be switched off.
+  const last = (on: boolean) => on && layers === 1;
   return (
     <Card title="Access Control">
       <Row title="Same network as this host" sub="Only visitors coming from this host's internet connection, or a trusted network.">
-        <Switch label="Same network as this host" on={value.require_lan} onChange={(v) => onChange({ require_lan: v })} />
+        <Switch label="Same network as this host" on={value.require_lan} disabled={last(value.require_lan)} onChange={(v) => onChange({ require_lan: v })} />
       </Row>
       <Row title="Approved devices" sub="A new device gets an ID and waits under Devices until you approve it.">
-        <Switch label="Approved devices" on={value.require_device} onChange={(v) => onChange({ require_device: v })} />
+        <Switch label="Approved devices" on={value.require_device} disabled={last(value.require_device)} onChange={(v) => onChange({ require_device: v })} />
       </Row>
       <Row title="Tunnel password" sub="One password for this tunnel alone, asked for before anything behind it loads.">
-        <Switch label="Tunnel password" on={value.require_password} onChange={(v) => onChange({ require_password: v })} />
+        <Switch label="Tunnel password" on={value.require_password} disabled={last(value.require_password)} onChange={(v) => onChange({ require_password: v })} />
       </Row>
       {value.require_password && (
         <PasswordRow set={!!value.password_set} value={value.password ?? ""} onChange={onPassword ? undefined : (password) => onChange({ password })} onSave={onPassword} />
       )}
       <Row title="Sign-in" sub={<>People sign in with their email and an account from <a href="#/users">Users</a>. {accounts ? `${accounts} account${accounts === 1 ? "" : "s"} so far.` : "There are none yet."}</>}>
-        <Switch label="Sign-in" on={value.require_login} onChange={(v) => onChange({ require_login: v })} />
+        <Switch label="Sign-in" on={value.require_login} disabled={last(value.require_login)} onChange={(v) => onChange({ require_login: v })} />
       </Row>
       {value.require_login && (
         <>
@@ -256,7 +258,7 @@ export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: 
   const [sub, setSub] = useState("");
   const [port, setPort] = useState("");
   const [access, setAccess] = useState<Access>({
-    require_lan: false, require_device: false, require_password: false, require_login: false,
+    require_lan: false, require_device: true, require_password: false, require_login: false,
     login_max: 7 * 86_400, login_idle: 0, policy_mode: "all",
   });
   const [where, setWhere] = useState<Target>({ target_scheme: "http", target_host: null, preserve_host: false });
