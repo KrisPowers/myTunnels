@@ -10,6 +10,9 @@ use crate::db::Route;
 use crate::gate;
 use crate::state::{AppState, Snapshot};
 
+/// Marks a request the gateway has already forwarded once.
+pub const HOP_HEADER: &str = "x-gateway-hop";
+
 const HOP_BY_HOP: [&str; 8] = [
     "connection",
     "keep-alive",
