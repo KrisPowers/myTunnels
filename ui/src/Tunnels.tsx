@@ -726,10 +726,8 @@ function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
 
   return (
     <>
-      <div className="filters" role="tablist">
-        {KINDS.map(([key, label]) => (
-          <button key={key} type="button" role="tab" className="filter" aria-selected={kind === key} onClick={() => setKind(key)}>{label}</button>
-        ))}
+      <div className="log-bar">
+        <MultiDropdown label="Show" values={kinds} options={KINDS} allLabel="All events" onChange={setKinds} />
       </div>
       {events && shown.length === 0 && <p className="muted">Nothing yet.</p>}
       <LogDays entries={entries} />
