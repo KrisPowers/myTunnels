@@ -97,10 +97,13 @@ Nothing here needs setting up; all of it is on from the first start.
   The signing key is made on first start and kept in the database, so sessions
   survive restarts. Signing out, signing an account out everywhere, removing a device
   or account, and changing a password all end the sessions they cover for good.
-- Rate limits: through the gateway, 1200 requests and 30 key, password or sign-in
-  steps per visitor address each minute; on the panel, 600 calls and 10 sign-in
-  attempts per address each minute. Five wrong passwords lock that address (and, for
-  accounts, that email) out for 15 minutes.
+- Every browser gets a device ID on its first visit, and the gateway's limits count
+  per device ID as well as per address: 1200 requests and 30 key, password or
+  sign-in steps a minute. One address gets at most 20 new device IDs an hour.
+- Password and sign-in attempts need a device ID. Five wrong tries lock that device,
+  that address and, for accounts, that email out for 15 minutes. A device that fails
+  on three different accounts in a day is refused for a day.
+- The panel allows 600 calls and 10 sign-in attempts per address each minute.
 - The panel refuses changes that do not carry the header it sends, so another site
   cannot act through a signed-in browser. It sends a strict Content Security Policy
   and refuses to be framed.
