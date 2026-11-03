@@ -1,0 +1,4 @@
+/server/target/
+/server/data/
+/ui/node_modules/
+/ui/dist/
