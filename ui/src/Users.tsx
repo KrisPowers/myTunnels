@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ago, api, LEVELS, list, message, shortId, strength, type Route, type SignIn, type User } from "./api";
+import { ago, api, LEVELS, list, message, shortId, strength, type Device, type Route, type SignIn, type User } from "./api";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
-import { AddMenu, Avatar, Card, LogTable, MoreMenu, Row, SubNav, Switch, TextField, useNotify, ValueRow, type LogEntry } from "./ui";
+import { Dropdown } from "./Dropdown";
+import { AddMenu, Avatar, Card, LogTable, MoreMenu, Row, SubNav, TextField, useNotify, type LogEntry } from "./ui";
 
 function state(u: User): [string, string] {
   if (u.note) return ["bad", "Held for review"];
@@ -112,37 +113,30 @@ function PasswordField({ label, value, onChange, hint }: { label: string; value:
   );
 }
 
-// Grants are the tunnels an account may open, each added on its own.
-function Grants({ ids, routes, onPick }: { ids: string[]; routes: Route[]; onPick: (id: string, on: boolean) => void }) {
-  return (
-    <Card title="Tunnels" sub={routes.length ? undefined : "There are no tunnels yet."}>
-      {routes.map((r) => (
-        <Row key={r.id} title={<span className="mono">{r.hostname}</span>} sub={r.require_login ? undefined : "Does not ask for sign-in"}>
-          <Switch label={`Allow ${r.hostname}`} on={ids.includes(r.id)} onChange={(v) => onPick(r.id, v)} />
-        </Row>
-      ))}
-    </Card>
-  );
-}
-
 // ---- a new account ----
 
-export function NewUser({ routes, onAdded }: { routes: Route[]; onAdded: () => Promise<void> }) {
-  const [name, setName] = useState("");
+function deviceLabel(d: Device) {
+  const where = [d.info?.platform, d.country].filter(Boolean).join(", ");
+  return `${d.name || shortId(d.id)}${where ? `, ${where}` : ""}`;
+}
+
+export function NewUser({ devices, onAdded }: { devices: Device[]; onAdded: () => Promise<void> }) {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
+  const [device, setDevice] = useState("");
   const [password, setPassword] = useState("");
-  const [ids, setIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
-  const ready = username.trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && strength(password).ok;
+  const ready = username.trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && device !== "" && strength(password).ok;
+  // Devices seen most recently first.
+  const choices = [...devices].sort((a, b) => b.last_seen - a.last_seen);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!ready) return;
     setBusy(true);
     try {
-      const user = await api.addUser({ username, email, name, password, route_ids: ids });
+      const user = await api.addUser({ username, email, password, device_id: device });
       await onAdded();
       notify(`Added ${user.username}`);
       go(`#/users/${user.id}`);
@@ -158,24 +152,30 @@ export function NewUser({ routes, onAdded }: { routes: Route[]; onAdded: () => P
         <a className="icon-btn" href="#/users" aria-label="All users" title="All users"><Icon name="arrow_back" /></a>
         <div className="page-head-main">
           <h1>New user</h1>
-          <div className="page-sub">They sign in with their email and this password.</div>
+          <div className="page-sub">They sign in with their email and password, from the device picked here. Add tunnels once the account exists.</div>
         </div>
       </div>
       <div className="page-body stack">
-        <Card title="Who they are">
-          <div className="card-pad form-grid">
-            <TextField label="Full name" autoFocus autoComplete="off" value={name} onChange={setName} />
-            <TextField label="Username" autoComplete="off" value={username} onChange={(v) => setUsername(v.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 40))}
+        <div className="card form-card">
+          <div className="form-grid">
+            <TextField label="Username" autoFocus autoComplete="off" value={username} onChange={(v) => setUsername(v.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 40))}
               hint="Letters, digits, dots, dashes and underscores" />
-            <TextField className="span" label="Email" type="email" autoComplete="off" value={email} onChange={setEmail} hint="What they sign in with" />
-          </div>
-        </Card>
-        <Card title="Password">
-          <div className="card-pad">
+            <TextField label="Email" type="email" autoComplete="off" value={email} onChange={setEmail} hint="What they sign in with" />
+            <div className="tf static span">
+              <div className="tf-box">
+                {choices.length ? (
+                  <Dropdown label="Device" value={device} onChange={setDevice}
+                    options={[{ value: "", label: "Pick their device" }, ...choices.map((d) => ({ value: d.id, label: deviceLabel(d), hint: `Seen ${ago(d.last_seen)}` }))]} />
+                ) : (
+                  <span className="dropdown placeholder">No devices yet. Open a tunnel on their device first.</span>
+                )}
+                <span className="tf-label">Device</span>
+              </div>
+              <div className="tf-hint">The only device they can sign in from. More can be linked later.</div>
+            </div>
             <PasswordField label="Password" value={password} onChange={setPassword} hint="Generate one, or type at least 10 characters with upper and lower case, a number and a symbol." />
           </div>
-        </Card>
-        <Grants ids={ids} routes={routes} onPick={(id, on) => setIds((had) => (on ? [...had, id] : had.filter((x) => x !== id)))} />
+        </div>
         <div className="form-foot">
           <a className="btn text" href="#/users">Cancel</a>
           <button className="btn primary" disabled={busy || !ready}>{busy && <span className="spinner small on-accent" />}Add user</button>
@@ -193,11 +193,12 @@ const USER_PAGES: [string, string, IconName][] = [
   ["activity", "Activity", "history"],
 ];
 
-export function UserPage({ user, page, routes, onChanged }: { user: User; page: string; routes: Route[]; onChanged: () => Promise<void> }) {
+export function UserPage({ user, page, routes, devices, onChanged }: { user: User; page: string; routes: Route[]; devices: Device[]; onChanged: () => Promise<void> }) {
   const notify = useNotify();
   const current = USER_PAGES.some(([k]) => k === page) ? page : "profile";
   const [tone, label] = state(user);
   const theirs = routes.filter((r) => user.route_ids.includes(r.id));
+  const linked = devices.filter((d) => user.device_ids.includes(d.id));
 
   const edit = async (patch: Parameters<typeof api.editUser>[1]) => {
     await api.editUser(user.id, patch);
@@ -250,50 +251,147 @@ export function UserPage({ user, page, routes, onChanged }: { user: User; page: 
           </div>
         )}
 
-        {current === "profile" && (
-          <>
-            <Card title="Details">
-              <ValueRow title="Full name" value={user.name} onSave={(v) => edit({ name: v })} />
-              <ValueRow title="Username" value={user.username} onSave={(v) => edit({ username: v })} />
-              <ValueRow title="Email" value={user.email} type="email" hint="What they sign in with" onSave={(v) => edit({ email: v })} />
-            </Card>
-            <Card title="Security">
-              <PasswordValue onSave={(password) => edit({ password })} />
-              <Row title="Last signed in" sub={user.last_login ? ago(user.last_login) : "Never"} />
-            </Card>
-          </>
-        )}
+        {current === "profile" && <Profile user={user} edit={edit} />}
 
         {current === "access" && (
-          <Card title="Tunnels" sub={theirs.length ? undefined : "None yet. Add the tunnels this account may sign in at."}
-            action={
-              <AddMenu label="Add a tunnel" placeholder="Find a tunnel" onPick={(id) => quietly({ route_ids: [...user.route_ids, id] })}
-                empty={<div className="menu-note">There are no tunnels yet</div>}
-                items={routes.map((r) => ({ id: r.id, label: r.hostname, sub: r.require_login ? undefined : "Sign-in is off here", disabled: user.route_ids.includes(r.id), note: "Already added" }))} />
-            }>
-            {theirs.length > 0 && (
-              <ul className="people">
-                {theirs.map((r) => (
-                  <li key={r.id} className="person-row">
-                    <span className={"dot " + (r.enabled ? "ok" : "")} />
-                    <a className="person" href={`#/tunnels/${r.id}`}>
-                      <span className="scan-target">{r.hostname}</span>
-                      <small>{r.require_login ? "Asks for sign-in" : "Sign-in is off"}</small>
-                    </a>
-                    <button type="button" className="icon-btn danger" aria-label={`Remove ${r.hostname}`} title="Remove"
-                      onClick={() => quietly({ route_ids: user.route_ids.filter((x) => x !== r.id) })}>
-                      <Icon name="close" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+          <>
+            <Card title="Tunnels" sub={theirs.length ? undefined : "None yet. Add the tunnels this account may sign in at."}
+              action={
+                <AddMenu label="Add a tunnel" placeholder="Find a tunnel" onPick={(id) => quietly({ route_ids: [...user.route_ids, id] })}
+                  empty={<div className="menu-note">There are no tunnels yet</div>}
+                  items={routes.map((r) => ({ id: r.id, label: r.hostname, sub: r.require_login ? undefined : "Sign-in is off here", disabled: user.route_ids.includes(r.id), note: "Already added" }))} />
+              }>
+              {theirs.length > 0 && (
+                <ul className="people">
+                  {theirs.map((r) => (
+                    <li key={r.id} className="person-row">
+                      <span className={"dot " + (r.enabled ? "ok" : "")} />
+                      <a className="person" href={`#/tunnels/${r.id}`}>
+                        <span className="scan-target">{r.hostname}</span>
+                        <small>{r.require_login ? "Asks for sign-in" : "Sign-in is off"}</small>
+                      </a>
+                      <button type="button" className="icon-btn danger" aria-label={`Remove ${r.hostname}`} title="Remove"
+                        onClick={() => quietly({ route_ids: user.route_ids.filter((x) => x !== r.id) })}>
+                        <Icon name="close" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+            <Card title="Devices" sub={linked.length ? undefined : "None linked. They cannot sign in until a device is."}
+              action={
+                <AddMenu label="Link a device" placeholder="Find a device" onPick={(id) => quietly({ device_ids: [...user.device_ids, id] })}
+                  empty={<div className="menu-note">There are no devices yet</div>}
+                  items={[...devices].sort((a, b) => b.last_seen - a.last_seen).map((d) => ({ id: d.id, label: d.name || shortId(d.id), sub: [d.info?.platform, d.country, `seen ${ago(d.last_seen)}`].filter(Boolean).join(", "), disabled: user.device_ids.includes(d.id), note: "Already linked" }))} />
+              }>
+              {linked.length > 0 && (
+                <ul className="people">
+                  {linked.map((d) => (
+                    <li key={d.id} className="person-row">
+                      <Icon name="devices" />
+                      <a className="person" href={`#/devices/${d.id}`}>
+                        <span className="scan-target">{d.name || shortId(d.id)}</span>
+                        <small>{[d.info?.platform, d.country].filter(Boolean).join(", ") || "Unknown hardware"}</small>
+                      </a>
+                      <span className="result-meta">Seen {ago(d.last_seen)}</span>
+                      <button type="button" className="icon-btn danger" aria-label={`Unlink ${d.name || shortId(d.id)}`} title="Unlink"
+                        onClick={() => quietly({ device_ids: user.device_ids.filter((x) => x !== d.id) })}>
+                        <Icon name="close" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </>
         )}
 
         {current === "activity" && <Activity user={user} />}
       </div>
     </>
+  );
+}
+
+// Profile is an account at a glance: four figures, then its details and its
+// security side by side, each value beside its label with an edit button.
+function Profile({ user, edit }: { user: User; edit: (patch: Parameters<typeof api.editUser>[1]) => Promise<void> }) {
+  const [list, setList] = useState<SignIn[] | null>(null);
+  useEffect(() => {
+    api.userActivity(user.id).then(setList).catch(() => setList([]));
+  }, [user.id, user.last_login]);
+  const month = Date.now() / 1000 - 30 * 86_400;
+  const wrong = (list ?? []).filter((s) => s.at > month && s.outcome !== "ok").length;
+  const [tone, label] = state(user);
+
+  return (
+    <>
+      <div className="tally four">
+        <div className="tally-item plain"><b>{user.route_ids.length}</b><span>Tunnels</span></div>
+        <div className="tally-item plain"><b>{user.device_ids.length}</b><span>Devices</span></div>
+        <div className="tally-item"><b>{user.last_login ? ago(user.last_login) : "Never"}</b><span>Last sign-in</span></div>
+        <div className={"tally-item " + (wrong ? "bad" : "ok")}><b>{list ? wrong : "..."}</b><span>Refused, 30 days</span></div>
+      </div>
+      <div className="profile-grid">
+        <section>
+          <h3 className="section-title">Details</h3>
+          <KeyValue label="Username" value={user.username} onSave={(v) => edit({ username: v })} />
+          <KeyValue label="Email" value={user.email} type="email" onSave={(v) => edit({ email: v })} />
+          <KeyValue label="Name" value={user.name} onSave={(v) => edit({ name: v })} />
+        </section>
+        <section>
+          <h3 className="section-title">Security</h3>
+          <PasswordValue onSave={(password) => edit({ password })} />
+          <div className="kv"><span className="kv-label">Status</span><span className="kv-value"><span className={"chip " + tone}>{label}</span></span></div>
+          <div className="kv"><span className="kv-label">Added</span><span className="kv-value">{new Date(user.created_at * 1000).toLocaleDateString()}</span></div>
+        </section>
+      </div>
+    </>
+  );
+}
+
+// KeyValue is a label, its value right beside it, and an edit button that turns
+// the value into a field.
+function KeyValue({ label, value, type, onSave }: { label: string; value: string; type?: string; onSave: (v: string) => Promise<unknown> }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+  if (editing) {
+    return (
+      <form className="kv" onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        try {
+          await onSave(draft.trim());
+          setEditing(false);
+        } catch (err) {
+          notify(message(err), "bad");
+        } finally {
+          setBusy(false);
+        }
+      }}>
+        <span className="kv-label">{label}</span>
+        <input className="input kv-input" type={type ?? "text"} autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} aria-label={label} />
+        <span className="kv-actions">
+          <button type="button" className="icon-btn small" aria-label="Cancel" title="Cancel" onClick={() => setEditing(false)}><Icon name="close" size={18} /></button>
+          <button className="icon-btn small" aria-label="Save" title="Save" disabled={busy}><Icon name="check" size={18} /></button>
+        </span>
+      </form>
+    );
+  }
+  return (
+    <div className="kv">
+      <span className="kv-label">{label}</span>
+      <span className={"kv-value" + (value ? "" : " muted")}>{value || "None"}</span>
+      <button type="button" className="icon-btn small" aria-label={`Change ${label.toLowerCase()}`} title={`Change ${label.toLowerCase()}`}
+        onClick={() => {
+          setDraft(value);
+          setEditing(true);
+        }}>
+        <Icon name="edit" size={18} />
+      </button>
+    </div>
   );
 }
 
@@ -305,15 +403,17 @@ function PasswordValue({ onSave }: { onSave: (password: string) => Promise<unkno
   const notify = useNotify();
   if (!editing) {
     return (
-      <Row title="Password" sub="Set">
-        <button type="button" className="icon-btn" aria-label="Change password" title="Change password" onClick={() => setEditing(true)}>
-          <Icon name="edit" size={20} />
+      <div className="kv">
+        <span className="kv-label">Password</span>
+        <span className="kv-value">Set</span>
+        <button type="button" className="icon-btn small" aria-label="Change password" title="Change password" onClick={() => setEditing(true)}>
+          <Icon name="edit" size={18} />
         </button>
-      </Row>
+      </div>
     );
   }
   return (
-    <form className="setting nested" onSubmit={async (e) => {
+    <form className="kv-block" onSubmit={async (e) => {
       e.preventDefault();
       setBusy(true);
       try {
@@ -328,8 +428,10 @@ function PasswordValue({ onSave }: { onSave: (password: string) => Promise<unkno
       }
     }}>
       <PasswordField label="New password" value={password} onChange={setPassword} hint="Changing it signs them out everywhere." />
-      <button type="button" className="btn text" onClick={() => setEditing(false)}>Cancel</button>
-      <button className="btn primary" disabled={busy || !strength(password).ok}>Save</button>
+      <div className="edit-actions">
+        <button type="button" className="btn text" onClick={() => setEditing(false)}>Cancel</button>
+        <button className="btn primary" disabled={busy || !strength(password).ok}>Save</button>
+      </div>
     </form>
   );
 }
@@ -361,7 +463,8 @@ function Activity({ user }: { user: User }) {
           <LogTable who="Device" entries={list.slice(0, 100).map((s): LogEntry => ({
             at: s.at,
             tone: s.outcome === "ok" ? "ok" : "bad",
-            event: s.outcome === "ok" ? "Signed in" : s.outcome === "failed" ? "Wrong password" : "Blocked and held for review",
+            event: s.outcome === "ok" ? "Signed in" : s.outcome === "failed" ? "Wrong password"
+              : s.outcome === "unlinked" ? "Refused, not a linked device" : "Blocked and held for review",
             who: s.device_id ? <a className="mono" href={`#/devices/${s.device_id}`}>{shortId(s.device_id)}</a> : undefined,
             ip: s.ip,
             country: s.country,
