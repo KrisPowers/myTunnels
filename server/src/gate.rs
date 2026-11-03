@@ -850,12 +850,39 @@ async fn login(
     if !(account.all_routes || account.route_ids.contains(&route.id)) {
         return json_error(StatusCode::FORBIDDEN, "This account cannot open this app.");
     }
+
+    // A sign-in that looks like the account is in other hands holds it for review.
+    let history = state
+        .db
+        .sign_ins("user_id", &account.id, 200)
+        .unwrap_or_default();
+    let attempt = guard::Attempt {
+        device: device_id.as_deref(),
+        country: country.as_deref(),
+        at: now(),
+    };
+    if let Some(reason) = guard::assess(&history, &attempt) {
+        tracing::warn!("holding account {} for review: {reason}", account.username);
+        record(&account.id, "blocked");
+        account.enabled = false;
+        account.note = Some(reason);
+        let _ = state.db.save_user(&account);
+        crate::util::lock(&state.user_sessions).retain(|_, s| s.subject != account.id);
+        let _ = state.reload();
+        return json_error(
+            StatusCode::FORBIDDEN,
+            "This account is held for review. Ask the administrator to check it.",
+        );
+    }
+
+    record(&account.id, "ok");
     account.last_login = Some(now());
     let _ = state.db.save_user(&account);
     let sid = open_session(
         &state.user_sessions,
         &account.id,
         &secret::tag(&account.password_hash),
+        &device_hash,
         USER_TTL,
     );
     let mut response = Json(json!({ "ok": true })).into_response();
