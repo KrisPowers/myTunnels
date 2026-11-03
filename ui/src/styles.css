@@ -251,7 +251,7 @@ kbd {
 .card-head h2 { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 20px; font-weight: 400; }
 .card-head p { color: var(--text-2); }
 /* A small labelled switch beside a card title. */
-.title-toggle { display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; color: var(--text-2); font-size: 14px; font-weight: 400; }
+.title-toggle { display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; color: var(--text-2); font-size: 13px; font-weight: 400; }
 
 .stack { display: grid; gap: 16px; }
 
@@ -418,6 +418,10 @@ a.result:hover { background: var(--hover); }
 }
 .switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
 .switch[aria-checked="true"] span { top: 2px; left: 2px; width: 24px; height: 24px; background: var(--on-accent); transform: translateX(20px); }
+/* The small switch beside a card title. */
+.title-toggle .switch { width: 36px; height: 20px; }
+.title-toggle .switch span { top: 3px; left: 3px; width: 10px; height: 10px; }
+.title-toggle .switch[aria-checked="true"] span { top: 1px; left: 1px; width: 14px; height: 14px; transform: translateX(16px); }
 
 .btn.danger { color: var(--bad); }
 .btn.danger:hover { background: var(--bad-bg); }
