@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS user_routes (
 ";
 
 /// Columns added to `routes` after its first release, with how to add each.
-const ROUTE_MIGRATIONS: [(&str, &str); 4] = [
+const ROUTE_MIGRATIONS: [(&str, &str); 6] = [
     ("preserve_host", "preserve_host INTEGER NOT NULL DEFAULT 0"),
     (
         "require_password",
