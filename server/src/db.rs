@@ -384,7 +384,7 @@ impl Db {
             "UPDATE routes SET target_host = ?2, target_port = ?3, target_scheme = ?4,
                  require_lan = ?5, require_device = ?6, policy_mode = ?7, enabled = ?8,
                  preserve_host = ?9, require_password = ?10, password_hash = ?11,
-                 require_login = ?12
+                 require_login = ?12, login_max = ?13, login_idle = ?14
              WHERE id = ?1",
             params![
                 r.id,
