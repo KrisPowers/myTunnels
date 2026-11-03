@@ -111,7 +111,7 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
   return (
     <form onSubmit={submit}>
       <StepHead title={create ? "Create the admin password" : "Sign in"}
-        sub={create ? "The one password for this dashboard." : auth.setup.done ? "Enter the admin password." : "Enter the admin password to carry on with setup."} />
+        sub={create ? "The one password for this dashboard." : auth.setup.cloudflare ? "Enter the admin password." : "Enter the admin password to carry on with setup."} />
       <TextField label="Password" type={show ? "text" : "password"} autoFocus autoComplete={create ? "new-password" : "current-password"}
         value={password} onChange={setPassword}
         trailing={<button type="button" className="tf-action" onClick={() => setShow((v) => !v)}>{show ? "Hide" : "Show"}</button>}
