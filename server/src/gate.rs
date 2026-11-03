@@ -235,7 +235,14 @@ fn may_open(device: &Device, route: &Route) -> bool {
 
 /// What a visitor who did not pass sees: the network notice, or the page for one of
 /// the checks they can pass here. `?__gate=password` picks another of those.
-fn refuse(host: &str, verdict: &Verdict, req: &Request) -> Response {
+fn refuse(
+    state: &AppState,
+    route: &Route,
+    ip: Option<IpAddr>,
+    host: &str,
+    verdict: &Verdict,
+    req: &Request,
+) -> Response {
     let html = req.method() == Method::GET
         && req
             .headers()
