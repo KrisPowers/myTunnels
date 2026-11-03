@@ -450,31 +450,67 @@ a.result:hover { background: var(--hover); }
 }
 .health:hover { background: var(--card-2); color: var(--text); }
 
-/* ---- fields ---- */
+/* ---- fields ----
+   Outlined, as in Google's consoles: a thin outline that darkens on hover
+   and turns to a 2px accent ring on focus. A text field's label rests inside
+   it and floats onto the outline once it has focus or a value. */
+.tf { display: grid; gap: 4px; min-width: 0; margin-bottom: 20px; }
+.tf-box { position: relative; }
+.tf-input {
+  display: block; width: 100%; height: 56px; padding: 0 16px; border: 0; border-radius: var(--radius);
+  background: transparent; color: var(--text); font: 400 16px var(--font);
+  box-shadow: inset 0 0 0 1px var(--line-strong); transition: box-shadow .15s;
+}
+textarea.tf-input { height: auto; min-height: 88px; padding: 18px 16px 12px; resize: vertical; line-height: 1.5; }
+.tf-input.mono { font-family: var(--mono); font-size: 15px; }
+.tf-input:hover { box-shadow: inset 0 0 0 1px var(--text); }
+.tf-input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+.tf-input::placeholder { color: transparent; }
+.tf-input:focus::placeholder { color: var(--text-3); transition: color .15s .1s; }
+.tf.has-trailing .tf-input { padding-right: 80px; }
+.tf-label {
+  position: absolute; left: 12px; top: 28px; max-width: calc(100% - 24px); padding: 0 4px; transform: translateY(-50%);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: var(--card); color: var(--text-2); font: 400 16px/1.2 var(--font); pointer-events: none;
+  transition: top .15s var(--ease), font-size .15s var(--ease), color .15s;
+}
+.tf-input:focus ~ .tf-label, .tf-input:not(:placeholder-shown) ~ .tf-label, .tf.static .tf-label { top: 0; font-size: 12px; }
+.tf-input:focus ~ .tf-label { color: var(--accent); }
+.tf-trailing { position: absolute; right: 8px; top: 28px; display: flex; align-items: center; transform: translateY(-50%); }
+.tf-trailing > .spinner { margin-right: 8px; }
+.tf-action {
+  height: 40px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent;
+  color: var(--accent); font: 500 14px var(--font); cursor: pointer;
+}
+.tf-action:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tf-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 16px; color: var(--text-2); font-size: 12px; line-height: 1.5; }
+.tf-hint code { padding: 1px 6px; border-radius: 3px; background: var(--code); }
+.tf .dropdown {
+  width: 100%; height: 56px; padding: 0 12px 0 16px; border-radius: var(--radius); background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-strong); font: 400 16px var(--font);
+}
+.tf .dropdown:hover { background: transparent; box-shadow: inset 0 0 0 1px var(--text); }
+.tf .dropdown.open { background: transparent; color: var(--text); box-shadow: inset 0 0 0 2px var(--accent); }
+.tf .dropdown.open ~ .tf-label { color: var(--accent); }
+.dropdown.placeholder { color: var(--text-3); cursor: default; }
+
+/* The compact outlined field in a settings row. */
 .input {
-  height: 40px; padding: 0 14px; border: 0; border-radius: var(--round); background: var(--card-2); color: var(--text);
-  font: inherit; transition: background .15s, box-shadow .15s;
+  height: 40px; padding: 0 12px; border: 0; border-radius: var(--radius); background: transparent; color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line-strong); font: inherit; transition: box-shadow .15s;
 }
-.card .input { background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); }
 .input::placeholder { color: var(--text-3); }
-.input:focus { outline: none; background: var(--raised); box-shadow: inset 0 0 0 2px var(--accent); }
-.input.big { width: 100%; height: 48px; font-size: 16px; }
+.input:hover { box-shadow: inset 0 0 0 1px var(--text); }
+.input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
 .input.mono { font-family: var(--mono); font-size: 14px; }
-textarea.input { width: 100%; height: auto; padding: 12px 14px; resize: vertical; line-height: 1.5; }
-.input-wrap { position: relative; }
-.input-wrap .input { padding-right: 72px; }
-.input-action {
-  position: absolute; right: 6px; top: 50%; transform: translateY(-50%); height: 36px; padding: 0 12px; border: 0; border-radius: 999px;
-  background: transparent; color: var(--accent); font: 500 13px var(--font); cursor: pointer;
-}
-.input-action:hover { background: var(--hover); }
-.input-spin { position: absolute; right: 16px; top: 50%; margin-top: -6px; }
+
 .field { display: grid; gap: 8px; margin-bottom: 20px; }
 .field-label { font-weight: 500; }
 .field-hint { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--text-2); font-size: 13px; }
-.field-hint .icon { color: var(--ok); }
-.field-hint.warn { color: light-dark(#b06000, var(--warn)); }
-.field-hint code { padding: 1px 6px; border-radius: 3px; background: var(--code); }
+.strength { font-weight: 500; }
+.strength.poor { color: var(--bad); }
+.strength.decent { color: light-dark(#b06000, var(--warn)); }
+.strength.good, .strength.strong { color: var(--ok); }
 
 /* A field that saves itself, with what it is doing beside it. */
 .save-field { display: inline-flex; align-items: center; justify-content: flex-end; gap: 10px; }
