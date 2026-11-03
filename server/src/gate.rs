@@ -46,6 +46,8 @@ const TEMPLATE: &str = include_str!("gate.html");
 /// many of those may be key, password and sign-in steps.
 const REQUESTS_PER_MINUTE: u32 = 1200;
 const ACTIONS_PER_MINUTE: u32 = 30;
+/// New device IDs one address may be given each hour.
+const NEW_DEVICES_PER_HOUR: u32 = 20;
 
 /// Browser properties that should not change for the life of a device.
 const FINGERPRINT_KEYS: [&str; 5] = [
@@ -78,11 +80,20 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
     }
     let ip = client_ip(req.headers());
     let from = ip.map(|ip| ip.to_string()).unwrap_or_default();
-    if !state.allow(&format!("gate:{from}"), REQUESTS_PER_MINUTE, 60) {
+    // Limits count per address and, once a browser has one, per device ID, so
+    // neither changing networks nor sharing one escapes them.
+    let device = device_key(req.headers());
+    let within = |name: &str, max: u32| {
+        state.allow(&format!("{name}:{from}"), max, 60)
+            && device
+                .as_ref()
+                .is_none_or(|d| state.allow(&format!("{name}-device:{d}"), max, 60))
+    };
+    if !within("gate", REQUESTS_PER_MINUTE) {
         return too_many();
     }
     if let Some(action) = req.uri().path().strip_prefix("/__gate/").map(str::to_owned) {
-        if !state.allow(&format!("gate-action:{from}"), ACTIONS_PER_MINUTE, 60) {
+        if !within("gate-action", ACTIONS_PER_MINUTE) {
             return too_many();
         }
         let mut response = action_response(&state, &route, ip, &action, req).await;
@@ -423,6 +434,32 @@ fn harden(response: &mut Response) {
     }
 }
 
+/// The hash of this browser's device key, if it holds one.
+fn device_key(headers: &HeaderMap) -> Option<String> {
+    cookie(headers, DEVICE_COOKIE)
+        .filter(|t| valid_token(t))
+        .map(sha256_hex)
+}
+
+/// Every password and sign-in attempt comes from a device with an ID.
+fn no_device() -> Response {
+    json_error(
+        StatusCode::FORBIDDEN,
+        "This browser has no device ID yet. Reload the page and try again.",
+    )
+}
+
+fn locked() -> Response {
+    json_error(
+        StatusCode::TOO_MANY_REQUESTS,
+        "Too many wrong tries. Wait 15 minutes and try again.",
+    )
+}
+
+/// A device that fails on this many different accounts in a day is refused for a day.
+const ACCOUNTS_PER_DEVICE: usize = 3;
+const DEVICE_BLOCK: i64 = 86_400;
+
 fn too_many() -> Response {
     let mut response = (
         StatusCode::TOO_MANY_REQUESTS,
@@ -537,6 +574,14 @@ fn new_device(
         return Err(ApiError(
             StatusCode::TOO_MANY_REQUESTS,
             "Too many devices are waiting for approval".into(),
+        ));
+    }
+    // One address cannot mint device IDs without end to dodge per-device limits.
+    let from = ip.map(|ip| ip.to_string()).unwrap_or_default();
+    if !state.allow(&format!("new-device:{from}"), NEW_DEVICES_PER_HOUR, 3600) {
+        return Err(ApiError(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many new devices from this address. Try again later.".into(),
         ));
     }
     let token = random_alnum(TOKEN_LEN);
@@ -814,26 +859,29 @@ async fn password(
     else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    let Some(device) = device_key(headers) else {
+        return no_device();
+    };
     let key = format!(
         "password:{}:{}",
         route.id,
         ip.map(|ip| ip.to_string()).unwrap_or_default()
     );
-    if state.locked_out(&key) {
+    let by_device = format!("auth-device:{device}");
+    if state.locked_out(&key) || state.locked_out(&by_device) || state.is_blocked(&by_device) {
         log(state, route, "password", "locked", None, ip, headers);
-        return json_error(
-            StatusCode::TOO_MANY_REQUESTS,
-            "Too many wrong tries. Wait 15 minutes and try again.",
-        );
+        return locked();
     }
     if !secret::verify(&body.password, hash) {
         log(state, route, "password", "failed", None, ip, headers);
         state.record_failure(&key);
+        state.record_failure(&by_device);
         tokio::time::sleep(Duration::from_millis(700)).await;
         return json_error(StatusCode::UNAUTHORIZED, "That password is not right.");
     }
     log(state, route, "password", "ok", None, ip, headers);
     state.clear_failures(&key);
+    state.clear_failures(&by_device);
     let sid = state.open_session(
         &state.pass_sessions,
         &route.id,
@@ -866,13 +914,24 @@ async fn login(
     if !route.require_login {
         return StatusCode::NOT_FOUND.into_response();
     }
+    let Some(device) = device_key(headers) else {
+        return no_device();
+    };
+    let email = body.email.trim().to_ascii_lowercase();
     let by_address = format!("login:{}", ip.map(|ip| ip.to_string()).unwrap_or_default());
-    let by_account = format!("login-account:{}", body.email.trim().to_ascii_lowercase());
-    if state.locked_out(&by_address) || state.locked_out(&by_account) {
+    let by_account = format!("login-account:{email}");
+    let by_device = format!("auth-device:{device}");
+    if state.is_blocked(&by_device) {
         return json_error(
             StatusCode::TOO_MANY_REQUESTS,
-            "Too many wrong tries. Wait 15 minutes and try again.",
+            "This device tried too many accounts. Try again tomorrow.",
         );
+    }
+    if state.locked_out(&by_address)
+        || state.locked_out(&by_account)
+        || state.locked_out(&by_device)
+    {
+        return locked();
     }
     let account = state.db.user_by_email(&body.email).ok().flatten();
     let valid = secret::verify_or_waste(
@@ -907,11 +966,20 @@ async fn login(
         }
         state.record_failure(&by_address);
         state.record_failure(&by_account);
+        state.record_failure(&by_device);
+        if state.distinct(&format!("emails-device:{device}"), &email, DEVICE_BLOCK)
+            >= ACCOUNTS_PER_DEVICE
+        {
+            tracing::warn!("refusing a device for a day: it failed on several accounts");
+            log(state, route, "device", "blocked", None, ip, headers);
+            state.block(&by_device, DEVICE_BLOCK);
+        }
         tokio::time::sleep(Duration::from_millis(700)).await;
         return json_error(StatusCode::UNAUTHORIZED, "Those details are not right.");
     };
     state.clear_failures(&by_address);
     state.clear_failures(&by_account);
+    state.clear_failures(&by_device);
     if !account.route_ids.contains(&route.id) {
         return json_error(StatusCode::FORBIDDEN, "This account cannot open this app.");
     }
