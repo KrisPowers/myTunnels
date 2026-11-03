@@ -115,7 +115,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
             </>
           ) : (
             <>
-              <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels"} count={routes?.length} />
+              <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels"} />
               <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={pending || undefined} alert={pending > 0} />
             </>
           )}
