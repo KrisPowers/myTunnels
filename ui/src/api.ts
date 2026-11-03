@@ -178,9 +178,9 @@ export const api = {
   thisDevice: (token: string | null, info: unknown) => call<{ id: string; token: string }>("/device", "POST", { token, info }),
 
   users: () => call<User[]>("/users"),
-  addUser: (body: { username: string; email: string; name: string; password: string; route_ids: string[] }) =>
+  addUser: (body: { username: string; email: string; password: string; device_id: string }) =>
     call<User>("/users", "POST", body),
-  editUser: (id: string, patch: Partial<Pick<User, "username" | "email" | "name" | "enabled" | "route_ids">> & { password?: string }) =>
+  editUser: (id: string, patch: Partial<Pick<User, "username" | "email" | "name" | "enabled" | "route_ids" | "device_ids">> & { password?: string }) =>
     call<User>(`/users/${id}`, "PATCH", patch),
   removeUser: (id: string) => call(`/users/${id}`, "DELETE"),
   signOutUser: (id: string) => call(`/users/${id}/signout`, "POST"),
