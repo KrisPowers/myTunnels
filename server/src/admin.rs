@@ -896,6 +896,10 @@ async fn update_user(
     }
     if let Some(enabled) = body.enabled {
         user.enabled = enabled;
+        // Turning an account back on clears what held it.
+        if enabled {
+            user.note = None;
+        }
     }
     if let Some(all) = body.all_routes {
         user.all_routes = all;
