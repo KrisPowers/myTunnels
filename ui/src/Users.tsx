@@ -310,12 +310,13 @@ function Activity({ user }: { user: User }) {
       </Card>
       <Card title="Sign-ins">
         {list && list.length > 0 ? (
-          <LogDays entries={list.slice(0, 100).map((s): LogEntry => ({
+          <LogTable who="Device" entries={list.slice(0, 100).map((s): LogEntry => ({
             at: s.at,
             tone: s.outcome === "ok" ? "ok" : "bad",
-            text: s.outcome === "ok" ? `Signed in${s.device_id ? ` on ${shortId(s.device_id)}` : ""}`
-              : s.outcome === "failed" ? "Wrong password" : "Blocked and held for review",
-            where: [s.ip, s.country].filter(Boolean).join(", "),
+            event: s.outcome === "ok" ? "Signed in" : s.outcome === "failed" ? "Wrong password" : "Blocked and held for review",
+            who: s.device_id ? <a className="mono" href={`#/devices/${s.device_id}`}>{shortId(s.device_id)}</a> : undefined,
+            ip: s.ip,
+            country: s.country,
           }))} />
         ) : <p className="card-note muted">Nothing yet.</p>}
       </Card>
