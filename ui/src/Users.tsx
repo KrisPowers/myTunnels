@@ -20,6 +20,7 @@ export function Users({ users, routes }: { users: User[] | null; routes: Route[]
           <h1>Users</h1>
           <div className="page-sub">
             <span><b>{users?.length ?? 0}</b> accounts</span>
+            {held > 0 && <span className="chip bad">{held} held for review</span>}
             <span>{asking ? `${asking} tunnel${asking === 1 ? "" : "s"} ask for sign-in` : "No tunnel asks for sign-in yet"}</span>
           </div>
         </div>
