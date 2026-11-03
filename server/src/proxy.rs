@@ -130,10 +130,35 @@ pub async fn forward(
     }
 
     strip_hop_by_hop(&mut response_headers, false);
+    // Redirects to the app's local address go to the public one instead.
+    for from in [
+        local_origin.clone(),
+        format!("{}://127.0.0.1:{}", route.target_scheme, route.target_port),
+    ] {
+        swap_origin(
+            &mut response_headers,
+            header::LOCATION,
+            &from,
+            &public_origin,
+        );
+    }
     let mut response = Response::new(Body::from_stream(upstream.bytes_stream()));
     *response.status_mut() = status;
     *response.headers_mut() = response_headers;
     response
+}
+
+/// Replaces a leading `from` origin in a header with `to`.
+fn swap_origin(headers: &mut HeaderMap, name: HeaderName, from: &str, to: &str) {
+    let swapped = headers
+        .get(&name)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix(from))
+        .filter(|rest| rest.is_empty() || rest.starts_with('/') || rest.starts_with('?'))
+        .and_then(|rest| HeaderValue::from_str(&format!("{to}{rest}")).ok());
+    if let Some(value) = swapped {
+        headers.insert(name, value);
+    }
 }
 
 fn is_upgrade(headers: &HeaderMap) -> bool {
