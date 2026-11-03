@@ -537,7 +537,7 @@ function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () =>
     e.preventDefault();
     setBusy(true);
     try {
-      await onSave({ port: Number(port), target_scheme: scheme, target_host: host.trim() || null, preserve_host: preserve });
+      await onSave({ port: Number(port), ...where });
       onDone();
     } catch (err) {
       notify(message(err), "bad");
