@@ -765,6 +765,7 @@ async fn password(
     state: &AppState,
     route: &Route,
     ip: Option<IpAddr>,
+    headers: &HeaderMap,
     body: PasswordRequest,
 ) -> Response {
     let Some(hash) = route
