@@ -47,19 +47,22 @@ function Root() {
   }} />;
 }
 
-// Dashboard is the frame every page sits in: a header with the search bar,
-// the connector's health and settings, a sidebar of pages, and the page.
+// Dashboard is the frame every page sits in, after Google's apps: a header with
+// the name, the search bar, help and settings; a sidebar with New on top and the
+// pages under it; and the page.
 function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const [place, setPlace] = useState(readHash);
   const [routes, setRoutes] = useState<Route[] | null>(null);
   const [devices, setDevices] = useState<Device[] | null>(null);
+  const [users, setUsers] = useState<User[] | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [drawer, setDrawer] = useState(false);
 
   const load = useCallback(async () => {
-    const [r, d, s] = await Promise.allSettled([api.routes(), api.devices(), api.status()]);
+    const [r, d, u, s] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status()]);
     if (r.status === "fulfilled") setRoutes(r.value);
     if (d.status === "fulfilled") setDevices(d.value);
+    if (u.status === "fulfilled") setUsers(u.value);
     if (s.status === "fulfilled") setStatus(s.value);
   }, []);
 
