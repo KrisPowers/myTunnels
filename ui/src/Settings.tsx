@@ -40,6 +40,13 @@ export function Settings({ section, status, routes, onChanged, onSignOut }: { se
         {key === "network" && saved && <Network saved={saved} status={status} onSaved={reload} />}
         {key === "connector" && <Connector status={status} />}
         {key === "appearance" && <Appearance />}
+        {key === "account" && (
+          <Card title="Session">
+            <Row title="Sign out" sub="Ends this browser's admin session. Tunnels keep running.">
+              <button type="button" className="btn" onClick={onSignOut}><Icon name="logout" size={18} />Sign out</button>
+            </Row>
+          </Card>
+        )}
         {key === "about" && <About />}
       </div>
     </>
