@@ -38,13 +38,13 @@ export function Setup({ auth, onChange }: { auth: Auth; onChange: () => Promise<
   return (
     <Frame>
       <ol className="steps" aria-label="Setup steps">
-        {STEPS.map((s, i) => {
+        {STEPS.map((label, i) => {
           const state = i === step ? "now" : done[i] ? "done" : "later";
           return (
-            <li key={s.label} className={"step " + state}>
-              <button type="button" disabled={i > open} onClick={() => setAt(i)} aria-current={i === step ? "step" : undefined}>
+            <li key={label} className={"step " + state}>
+              <button type="button" disabled={i > open || (i === 0 && done[0])} onClick={() => setAt(i)} aria-current={i === step ? "step" : undefined}>
                 <span className="step-mark">{state === "done" ? <Icon name="check" size={16} /> : i + 1}</span>
-                <span className="step-label">{s.label}</span>
+                <span className="step-label">{label}</span>
               </button>
             </li>
           );
