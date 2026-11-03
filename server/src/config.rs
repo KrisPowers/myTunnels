@@ -7,8 +7,6 @@ pub struct Config {
     pub gate_addr: String,
     /// The gateway address as cloudflared should reach it.
     pub gate_service: String,
-    /// cloudflared metrics endpoint, used to report connection health.
-    pub metrics_addr: String,
     pub data_dir: PathBuf,
     pub ui_dir: PathBuf,
     /// Host that tunnel ports point at unless a tunnel names its own.
