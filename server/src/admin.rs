@@ -503,6 +503,8 @@ async fn create_route(
         password_set: password_hash.is_some(),
         password_hash,
         require_login: body.require_login,
+        login_max: body.login_max,
+        login_idle: body.login_idle,
         preserve_host: body.preserve_host,
         dns_record_id: Some(record_id.clone()),
         created_at: now(),
