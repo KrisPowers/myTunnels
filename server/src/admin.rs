@@ -813,7 +813,7 @@ fn check_unique(state: &AppState, id: &str, username: &str, email: &str) -> ApiR
 #[derive(Deserialize)]
 struct NewUser {
     username: String,
-    email: Option<String>,
+    email: String,
     #[serde(default)]
     name: String,
     password: String,
