@@ -52,7 +52,7 @@ export function Setup({ auth, onChange }: { auth: Auth; onChange: () => Promise<
       </ol>
       <div className="setup-card card" key={step}>
         {step === 0 && <AdminStep auth={auth} onDone={next} />}
-        {step === 1 && <CloudflareStep auth={auth} onBack={() => setAt(0)} onDone={next} />}
+        {step === 1 && <CloudflareStep auth={auth} onDone={next} />}
         {step === 2 && <NetworkStep onBack={() => setAt(1)} onDone={next} />}
         {step === 3 && <ReadyStep onBack={() => setAt(2)} onDone={async () => {
           await api.finishSetup();
