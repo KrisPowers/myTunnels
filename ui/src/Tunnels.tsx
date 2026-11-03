@@ -638,7 +638,8 @@ function People({ route, users, onGrant }: { route: Route; users: User[]; onGran
               })}
             </>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
