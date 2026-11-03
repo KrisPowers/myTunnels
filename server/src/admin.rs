@@ -82,16 +82,9 @@ async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
             "password": password,
             "token": db.setting("cf_token")?.is_some(),
             "cloudflare": state.cloudflare().is_ok(),
-            "network": db.setting("network_saved")?.is_some(),
-            "done": db.setting("setup_done")?.is_some(),
+            "done": password && state.cloudflare().is_ok(),
         },
     })))
-}
-
-async fn finish_setup(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    state.cloudflare()?;
-    state.db.set_setting("setup_done", "1")?;
-    Ok(Json(json!({ "ok": true })))
 }
 
 #[derive(Deserialize)]
