@@ -720,7 +720,9 @@ a.result:hover { background: var(--hover); }
 .menu-note { padding: 8px 16px; color: var(--text-2); font-size: 13px; }
 .menu-item { gap: 12px; }
 .menu-item.active { background: var(--hover); }
-.person-item { height: 52px; }
+.person-item, .pick-item { height: 52px; }
+.menu-item.danger { color: var(--bad); }
+.menu-item.danger.armed { background: var(--bad-bg); }
 .menu-item:disabled { opacity: .45; cursor: default; background: none; }
 .people { list-style: none; margin: 0; padding: 0 0 8px; }
 .person-row { display: flex; align-items: center; gap: 16px; min-height: 56px; padding: 0 8px 0 0; }
