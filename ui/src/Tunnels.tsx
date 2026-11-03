@@ -65,7 +65,7 @@ export function Tunnels({ routes, status }: { routes: Route[] | null; status: St
                     <span className={"dot " + (r.enabled ? "ok" : "")} role="img" aria-label={r.enabled ? "Live" : "Off"} title={r.enabled ? "Live" : "Off"} />
                     <span className="scan-target">{r.hostname}</span>
                     <span className="result-service mono">{target(r)}</span>
-                    <span className="result-what"><Access route={r} /></span>
+                    <span className="result-what"><AccessChips route={r} /></span>
                     <Icon name="chevron_right" className="result-go" />
                   </a>
                 </li>
