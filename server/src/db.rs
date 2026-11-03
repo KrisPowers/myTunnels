@@ -109,6 +109,10 @@ pub struct Route {
     pub require_password: bool,
     /// Sign-in with an account from Users.
     pub require_login: bool,
+    /// Seconds after signing in that a visitor must sign in again; 0 is never.
+    pub login_max: i64,
+    /// Seconds of inactivity that end a sign-in; 0 is never.
+    pub login_idle: i64,
     /// "all": every enabled check must pass. "any": one passing check is enough.
     pub policy_mode: String,
     pub enabled: bool,
