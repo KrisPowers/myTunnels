@@ -195,19 +195,16 @@ const USER_PAGES: [string, string, IconName][] = [
 
 export function UserPage({ user, page, routes, onChanged }: { user: User; page: string; routes: Route[]; onChanged: () => Promise<void> }) {
   const notify = useNotify();
-  const [password, setPassword] = useState("");
   const current = USER_PAGES.some(([k]) => k === page) ? page : "profile";
   const [tone, label] = state(user);
+  const theirs = routes.filter((r) => user.route_ids.includes(r.id));
 
   const edit = async (patch: Parameters<typeof api.editUser>[1]) => {
-    try {
-      await api.editUser(user.id, patch);
-      await onChanged();
-    } catch (e) {
-      notify(message(e), "bad");
-      throw e;
-    }
+    await api.editUser(user.id, patch);
+    await onChanged();
   };
+  const quietly = (patch: Parameters<typeof api.editUser>[1], done?: string) =>
+    edit(patch).then(() => done && notify(done)).catch((e) => notify(message(e), "bad"));
 
   const remove = async () => {
     try {
