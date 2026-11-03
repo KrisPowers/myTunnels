@@ -14,6 +14,8 @@ export interface Route {
   require_password: boolean;
   require_login: boolean;
   require_code: boolean;
+  // Third-party providers offered beside the password sign-in.
+  oauth: string[];
   login_max: number;
   login_idle: number;
   password_set: boolean;
@@ -32,6 +34,7 @@ export interface Access {
   require_login: boolean;
   // After signing in, a code emailed to the account.
   require_code: boolean;
+  oauth: string[];
   login_max: number;
   login_idle: number;
   policy_mode: PolicyMode;
@@ -133,8 +136,9 @@ export interface Status {
   public_ips: string[];
 }
 
-// A way to sign in at tunnels through another service. The secret stays on
-// the server; `secret_set` says one is saved.
+// A way to sign in at tunnels through another service, set up once and offered
+// by the tunnels that switch it on. The secret stays on the server;
+// `secret_set` says one is saved.
 export interface OAuthProvider {
   id: "github" | "google" | "gitlab" | "oidc";
   label: string;
@@ -142,13 +146,13 @@ export interface OAuthProvider {
   issuer: string;
   client_id: string;
   secret_set: boolean;
-  enabled: boolean;
   configured: boolean;
 }
 
-// Every provider, and the address they send people back to; none until a
-// tunnel exists.
-export interface OAuthState { callback: string | null; providers: OAuthProvider[] }
+export interface OAuthState { providers: OAuthProvider[] }
+
+// Where a provider sends people back: the tunnel they signed in at.
+export const redirectUrl = (hostname: string) => `https://${hostname}/__gate/oauth-callback`;
 
 // The mail server codes go out through. Its password stays on the server.
 export interface Smtp {
@@ -197,7 +201,7 @@ export const api = {
   editAccount: (patch: Partial<{ username: string; email: string }>) => call<AdminAccount>("/account", "PATCH", patch),
 
   oauth: () => call<OAuthState>("/oauth"),
-  saveOAuth: (id: string, body: Partial<{ client_id: string; client_secret: string; enabled: boolean; name: string; issuer: string }>) =>
+  saveOAuth: (id: string, body: Partial<{ client_id: string; client_secret: string; name: string; issuer: string }>) =>
     call<OAuthState>(`/oauth/${id}`, "PUT", body),
   removeOAuth: (id: string) => call<OAuthState>(`/oauth/${id}`, "DELETE"),
 
@@ -250,6 +254,7 @@ export function editOf(r: Route): RouteEdit {
     require_password: r.require_password,
     require_login: r.require_login,
     require_code: r.require_code,
+    oauth: r.oauth,
     login_max: r.login_max,
     login_idle: r.login_idle,
     policy_mode: r.policy_mode,
