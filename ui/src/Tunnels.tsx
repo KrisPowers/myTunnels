@@ -300,6 +300,8 @@ export function TunnelPage({ route, devices, users, onChanged }: { route: Route;
   };
   const quietly = (change: Partial<RouteEdit>) => save(change).catch((e) => notify(message(e), "bad"));
 
+  const [editing, setEditing] = useState<"" | "address" | "target">("");
+
   // Turning on the tunnel password waits for one to be set.
   const [asking, setAsking] = useState(false);
   const access = (patch: Partial<Access>) => {
