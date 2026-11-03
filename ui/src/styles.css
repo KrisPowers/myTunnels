@@ -445,13 +445,6 @@ a.result:hover { background: var(--hover); }
 .nav-count.alert { background: var(--accent); color: var(--on-accent); }
 .nav-item.on .nav-count { background: color-mix(in srgb, var(--on-accent-bg) 14%, transparent); color: inherit; }
 
-/* The connector's health, a pill in the header. */
-.health {
-  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px; margin-right: 4px;
-  border-radius: 999px; background: var(--card); color: var(--text-2); font-weight: 500; font-size: 13px; transition: background .12s;
-}
-.health:hover { background: var(--card-2); color: var(--text); }
-
 /* ---- fields ----
    Outlined, as in Google's consoles: a thin outline that darkens on hover
    and turns to a 2px accent ring on focus. A text field's label rests inside
