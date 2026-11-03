@@ -144,16 +144,16 @@ export function Notices({ children }: { children: ReactNode }) {
 }
 
 // Copy is a value that copies itself when clicked.
-export function Copy({ text }: { text: string }) {
+export function Copy({ text, copyText, plain }: { text: string; copyText?: string; plain?: boolean }) {
   const [done, setDone] = useState(false);
   return (
     <button type="button" className={"copy" + (done ? " done" : "")} title="Copy"
       onClick={() => {
-        navigator.clipboard?.writeText(text);
+        navigator.clipboard?.writeText(copyText ?? text);
         setDone(true);
-        setTimeout(() => setDone(false), 1400);
+        setTimeout(() => setDone(false), 2500);
       }}>
-      <span className="copy-text mono">{text}</span>
+      <span className={"copy-text" + (plain ? "" : " mono")}>{text}</span>
       <Icon name={done ? "check" : "content_copy"} size={16} className="copy-icon" />
     </button>
   );
