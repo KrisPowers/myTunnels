@@ -599,9 +599,8 @@ a.result:hover { background: var(--hover); }
   .header .search { grid-column: auto; }
   .header-actions { grid-column: auto; }
   .header .menu-btn { display: inline-grid; width: 44px; height: 44px; }
-  .brand-name, .health span:last-child { display: none; }
+  .brand-name { display: none; }
   .brand { padding: 0 4px; }
-  .health { padding: 0 11px; }
   .search kbd { display: none; }
   .search input { padding-right: 16px; }
   .shell { grid-template-columns: minmax(0, 1fr); padding: 0; gap: 0; }
