@@ -77,13 +77,8 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
         return action_response(&state, &route, ip, &action, req).await;
     }
     if !route.enabled {
-        return page(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "message",
-            &host,
-            "Switched off",
-            "This app is switched off right now.",
-        );
+        // A tunnel switched off answers as if it did not exist.
+        return StatusCode::NOT_FOUND.into_response();
     }
 
     let mut new_cookie = None;
