@@ -62,6 +62,7 @@ pub async fn forward(
         headers.insert("x-real-ip", ip);
     }
     headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+    headers.insert(HOP_HEADER, HeaderValue::from_static("1"));
     if let Some(original_host) = original_host {
         headers.insert("x-forwarded-host", original_host);
     }
