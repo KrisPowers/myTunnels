@@ -98,7 +98,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
     return () => removeEventListener("hashchange", onHash);
   }, []);
 
-  const { view, id } = place;
+  const { view, id, page } = place;
   const pending = devices?.filter((d) => d.status === "pending").length ?? 0;
   const route = view === "tunnels" && id ? routes?.find((r) => r.id === id) : undefined;
   const device = view === "devices" && id ? devices?.find((d) => d.id === id) : undefined;
