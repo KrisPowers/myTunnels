@@ -274,7 +274,7 @@ export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: 
     if (!sub || !port || !zone || !passwordOk) return;
     setBusy(true);
     try {
-      const route = await api.publish({ subdomain: sub, zone_id: zone, port: Number(port), ...targetOpts, ...access });
+      const route = await api.publish({ subdomain: sub, zone_id: zone, port: Number(port), ...where, ...access });
       await onPublished();
       notify(`Published ${route.hostname}`);
       go(`#/tunnels/${route.id}`);
