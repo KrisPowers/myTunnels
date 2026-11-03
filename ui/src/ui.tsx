@@ -267,3 +267,199 @@ export function LogTable({ entries, who = "Who" }: { entries: LogEntry[]; who?: 
     </div>
   );
 }
+
+// usePopover places a panel over the page under its button, so no card or scroll
+// area cuts it off. A click outside, Escape, scrolling the page or resizing closes it.
+function usePopover(width: number) {
+  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState({ top: 0, left: 0 });
+  const anchor = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useDismiss(open, close, anchor, panel);
+  useLayoutEffect(() => {
+    if (!open || !anchor.current) return;
+    const r = anchor.current.getBoundingClientRect();
+    setAt({ top: r.bottom + 4, left: Math.max(8, Math.min(r.right - width, innerWidth - width - 8)) });
+    const away = (e: Event) => {
+      if (!panel.current?.contains(e.target as Node)) close();
+    };
+    addEventListener("scroll", away, true);
+    addEventListener("resize", close);
+    return () => {
+      removeEventListener("scroll", away, true);
+      removeEventListener("resize", close);
+    };
+  }, [open, close, width]);
+  return { open, setOpen, close, anchor, panel, style: { top: at.top, left: at.left, width } };
+}
+
+export interface PickItem {
+  id: string;
+  label: string;
+  sub?: string;
+  // A name to draw initials from, for people.
+  avatar?: string;
+  // Already there: listed, not pickable, with `note` in place of `sub`.
+  disabled?: boolean;
+  note?: string;
+}
+
+// AddMenu is a plus that opens a menu: a search, then the items, narrowed as
+// you type. Items already added stay listed, greyed out.
+export function AddMenu({ label, placeholder, items, onPick, empty }: {
+  label: string;
+  placeholder: string;
+  items: PickItem[];
+  onPick: (id: string) => void;
+  empty?: ReactNode;
+}) {
+  const pop = usePopover(300);
+  const [q, setQ] = useState("");
+  const [active, setActive] = useState(0);
+  const needle = q.trim().toLowerCase();
+  const matches = items.filter((i) => !needle || [i.label, i.sub ?? ""].some((v) => v.toLowerCase().includes(needle))).slice(0, 8);
+  const pick = (item: PickItem) => {
+    if (item.disabled) return;
+    pop.close();
+    onPick(item.id);
+  };
+  return (
+    <div className="menu-wrap" ref={pop.anchor}>
+      <button type="button" className="icon-btn" aria-label={label} title={label} aria-expanded={pop.open}
+        onClick={() => {
+          setQ("");
+          setActive(0);
+          pop.setOpen((o) => !o);
+        }}>
+        <Icon name="add" />
+      </button>
+      {pop.open && createPortal(
+        <div ref={pop.panel} className="menu pop-menu" style={pop.style}>
+          {items.length === 0 ? empty : (
+            <>
+              <input className="menu-search" type="text" placeholder={placeholder} aria-label={placeholder} autoFocus autoComplete="off" spellCheck={false}
+                value={q}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  setActive(0);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setActive((i) => Math.max(0, Math.min(matches.length - 1, i + (e.key === "ArrowDown" ? 1 : -1))));
+                  } else if (e.key === "Enter" && matches[active]) {
+                    e.preventDefault();
+                    pick(matches[active]);
+                  }
+                }} />
+              {matches.length === 0 && <div className="menu-note">Nothing by that name</div>}
+              {matches.map((item, i) => (
+                <button key={item.id} type="button" className={"menu-item pick-item" + (i === active ? " active" : "")} disabled={item.disabled}
+                  onMouseEnter={() => setActive(i)} onClick={() => pick(item)}>
+                  {item.avatar !== undefined && <Avatar name={item.avatar} />}
+                  <span className="person">
+                    <span>{item.label}</span>
+                    {(item.disabled ? item.note : item.sub) && <small>{item.disabled ? item.note : item.sub}</small>}
+                  </span>
+                </button>
+              ))}
+            </>
+          )}
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+export interface MenuAction {
+  label: string;
+  icon: IconName;
+  onClick: () => void;
+  danger?: boolean;
+  // Asked once more, with this label, before it runs.
+  confirm?: string;
+}
+
+// MoreMenu is the three dots that hold a page's less frequent actions.
+export function MoreMenu({ label, actions }: { label: string; actions: MenuAction[] }) {
+  const pop = usePopover(240);
+  const [armed, setArmed] = useState("");
+  return (
+    <div className="menu-wrap" ref={pop.anchor}>
+      <button type="button" className="icon-btn" aria-label={label} title={label} aria-expanded={pop.open}
+        onClick={() => {
+          setArmed("");
+          pop.setOpen((o) => !o);
+        }}>
+        <Icon name="more_vert" />
+      </button>
+      {pop.open && createPortal(
+        <div ref={pop.panel} className="menu pop-menu" style={pop.style} role="menu">
+          {actions.map((a) => (
+            <button key={a.label} type="button" role="menuitem" className={"menu-item" + (a.danger ? " danger" : "") + (armed === a.label ? " armed" : "")}
+              onClick={() => {
+                if (a.confirm && armed !== a.label) return setArmed(a.label);
+                pop.close();
+                a.onClick();
+              }}>
+              <Icon name={a.icon} size={20} />
+              {armed === a.label && a.confirm ? a.confirm : a.label}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+// ValueRow shows a setting's value as text, with an edit button that turns it
+// into a field with Save and Cancel.
+export function ValueRow({ title, value, empty = "None", type, hint, onSave }: {
+  title: string;
+  value: string;
+  empty?: string;
+  type?: string;
+  hint?: ReactNode;
+  onSave: (value: string) => Promise<unknown>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+
+  if (editing) {
+    const save = async (e: FormEvent) => {
+      e.preventDefault();
+      setBusy(true);
+      try {
+        await onSave(draft.trim());
+        setEditing(false);
+      } catch (err) {
+        notify(message(err), "bad");
+      } finally {
+        setBusy(false);
+      }
+    };
+    return (
+      <form className="setting nested" onSubmit={save}>
+        <TextField className="grow" label={title} type={type} autoFocus autoComplete="off" value={draft} onChange={setDraft} hint={hint} />
+        <button type="button" className="btn text" onClick={() => setEditing(false)}>Cancel</button>
+        <button className="btn primary" disabled={busy}>Save</button>
+      </form>
+    );
+  }
+  return (
+    <Row title={title} sub={value || empty}>
+      <button type="button" className="icon-btn" aria-label={`Change ${title.toLowerCase()}`} title={`Change ${title.toLowerCase()}`}
+        onClick={() => {
+          setDraft(value);
+          setEditing(true);
+        }}>
+        <Icon name="edit" size={20} />
+      </button>
+    </Row>
+  );
+}
