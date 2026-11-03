@@ -24,5 +24,10 @@ tower-http = { version = "0.6", features = ["fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Dev builds keep line numbers for panics and nothing more, so each save
+# compiles and links quickly.
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.release]
 strip = true
