@@ -563,6 +563,7 @@ async fn update_route(
     route.require_lan = body.require_lan;
     route.require_device = body.require_device;
     route.policy_mode = body.policy_mode;
+    let switched = route.enabled != body.enabled;
     route.enabled = body.enabled;
     route.password_hash = tunnel_password(
         body.require_password,
@@ -577,6 +578,9 @@ async fn update_route(
     route.login_idle = body.login_idle;
     route.preserve_host = body.preserve_host;
     state.db.update_route(&route)?;
+    if switched && state.cloudflare().is_ok() {
+        tunnel::sync_ingress(&state).await?;
+    }
     state.reload()?;
     Ok(Json(route))
 }
