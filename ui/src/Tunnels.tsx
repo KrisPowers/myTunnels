@@ -323,7 +323,7 @@ export function TunnelPage({ route, devices, users, onChanged }: { route: Route;
   };
 
   const approved = devices.filter((d) => d.status === "approved");
-  const grant = async (device: Device, on: boolean) => {
+  const grantDevice = async (device: Device, on: boolean) => {
     const ids = on ? [...device.route_ids, route.id] : device.route_ids.filter((r) => r !== route.id);
     try {
       await api.editDevice(device.id, { route_ids: ids });
