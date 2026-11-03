@@ -819,11 +819,9 @@ fn check_unique(state: &AppState, id: &str, username: &str, email: &str) -> ApiR
 struct NewUser {
     username: String,
     email: String,
-    #[serde(default)]
-    name: String,
     password: String,
-    #[serde(default)]
-    route_ids: Vec<String>,
+    /// The device the account signs in from; more can be linked later.
+    device_id: String,
 }
 
 async fn create_user(
@@ -841,15 +839,19 @@ async fn create_user(
     if !secret::strong(&body.password) {
         return Err(ApiError::bad(secret::RULE));
     }
+    let device_id = known_devices(&state, vec![body.device_id])
+        .pop()
+        .ok_or_else(|| ApiError::bad("Pick the device this account signs in from"))?;
     let user = User {
         id: random_hex(8),
         username,
         email,
-        name: body.name.trim().chars().take(80).collect(),
+        name: String::new(),
         password_hash: secret::hash(&body.password)?,
         enabled: true,
         all_routes: false,
-        route_ids: known_routes(&state, body.route_ids),
+        route_ids: Vec::new(),
+        device_ids: vec![device_id],
         created_at: now(),
         last_login: None,
         note: None,
@@ -867,6 +869,15 @@ struct UserEdit {
     password: Option<String>,
     enabled: Option<bool>,
     route_ids: Option<Vec<String>>,
+    device_ids: Option<Vec<String>>,
+}
+
+/// Device IDs that exist, in the order given.
+fn known_devices(state: &AppState, ids: Vec<String>) -> Vec<String> {
+    let snap = state.snapshot();
+    ids.into_iter()
+        .filter(|id| snap.devices.contains_key(id))
+        .collect()
 }
 
 async fn update_user(
@@ -905,6 +916,9 @@ async fn update_user(
     }
     if let Some(ids) = body.route_ids {
         user.route_ids = known_routes(&state, ids);
+    }
+    if let Some(ids) = body.device_ids {
+        user.device_ids = known_devices(&state, ids);
     }
     state.db.save_user(&user)?;
     state.reload()?;
