@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ago, api, LEVELS, list, message, shortId, strength, type Route, type SignIn, type User } from "./api";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Avatar, Card, Row, SaveField, SubNav, Switch, TextField, useNotify } from "./ui";
+import { ArmedButton, Avatar, Card, LogDays, Row, SaveField, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
 
 function state(u: User): [string, string] {
   if (u.note) return ["bad", "Held for review"];
