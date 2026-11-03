@@ -46,6 +46,9 @@ export function Tunnels({ routes, status }: { routes: Route[] | null; status: St
             <span>{links > 0 ? `Connector online, ${links} links` : status?.running ? "Connector starting" : "Connector offline"}</span>
           </div>
         </div>
+        <div className="page-actions">
+          <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>
+        </div>
       </div>
       <div className="page-body stack">
         {routes && routes.length === 0 && (
