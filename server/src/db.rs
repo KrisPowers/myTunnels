@@ -584,15 +584,13 @@ impl Db {
         Ok(self.users()?.into_iter().find(|u| u.id == id))
     }
 
-    /// The account a sign-in names, by username or email.
-    pub fn user_by_login(&self, login: &str) -> Result<Option<User>> {
-        let login = login.trim();
-        Ok(self.users()?.into_iter().find(|u| {
-            u.username.eq_ignore_ascii_case(login)
-                || u.email
-                    .as_deref()
-                    .is_some_and(|e| e.eq_ignore_ascii_case(login))
-        }))
+    /// The account that signs in with this email.
+    pub fn user_by_email(&self, email: &str) -> Result<Option<User>> {
+        let email = email.trim();
+        Ok(self
+            .users()?
+            .into_iter()
+            .find(|u| !u.email.is_empty() && u.email.eq_ignore_ascii_case(email)))
     }
 
     pub fn save_user(&self, u: &User) -> Result<()> {
