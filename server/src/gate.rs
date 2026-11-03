@@ -691,6 +691,7 @@ fn register(
             }
             if device.status == "seen" {
                 device.status = "pending".into();
+                log(state, route, "device", "asked", None, ip, headers);
             }
             device.info = body.info;
             device.last_ip = ip.map(|ip| ip.to_string()).or(device.last_ip);
