@@ -31,6 +31,11 @@ pub struct Session {
     pub subject: String,
     pub tag: String,
     pub expires: i64,
+    /// When it was opened, and when it last let a request through.
+    pub created: i64,
+    pub seen: i64,
+    /// The hash of the device key it was opened on, if it is bound to one.
+    pub device: String,
 }
 
 /// One step of sharing a device key across domains, kept for a minute.
