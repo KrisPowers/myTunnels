@@ -191,6 +191,61 @@ export function ago(seconds: number) {
   return new Date(seconds * 1000).toLocaleDateString();
 }
 
+// A device ID is 256 characters; the dashboard shows its start.
+export function shortId(id: string) {
+  return id.length > 12 ? id.slice(0, 8) + "..." : id;
+}
+
 export function message(e: unknown) {
   return e instanceof Error ? e.message : String(e);
+}
+
+// What this browser reports about its hardware, as the gateway's device page sends it.
+export function deviceInfo() {
+  const n = navigator as Navigator & { userAgentData?: { platform?: string; mobile?: boolean }; deviceMemory?: number };
+  let vendor = "";
+  let renderer = "";
+  try {
+    const gl = document.createElement("canvas").getContext("webgl");
+    const ext = gl?.getExtension("WEBGL_debug_renderer_info");
+    if (gl) {
+      vendor = String(gl.getParameter(ext ? ext.UNMASKED_VENDOR_WEBGL : gl.VENDOR));
+      renderer = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+    }
+  } catch {
+    // No graphics information, then.
+  }
+  return {
+    userAgent: n.userAgent,
+    platform: n.userAgentData?.platform || n.platform || "",
+    mobile: n.userAgentData ? !!n.userAgentData.mobile : null,
+    languages: [...(n.languages ?? [n.language])],
+    hardwareConcurrency: n.hardwareConcurrency || null,
+    deviceMemory: n.deviceMemory || null,
+    maxTouchPoints: n.maxTouchPoints || 0,
+    screen: { width: screen.width, height: screen.height, colorDepth: screen.colorDepth, pixelRatio: devicePixelRatio },
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    webglVendor: vendor,
+    webglRenderer: renderer,
+  };
+}
+
+// The rating every password here is held to: 10 or more characters with upper
+// and lower case, a number and a symbol.
+export const LEVELS = { poor: "Poor", decent: "Decent", good: "Good", strong: "Strong" } as const;
+
+export function strength(p: string) {
+  const missing = [
+    p.length < 10 && "10 or more characters",
+    !/[A-Z]/.test(p) && "an uppercase letter",
+    !/[a-z]/.test(p) && "a lowercase letter",
+    !/[0-9]/.test(p) && "a number",
+    !/[^A-Za-z0-9]/.test(p) && "a symbol such as ! or $",
+  ].filter((m): m is string => Boolean(m));
+  const level: keyof typeof LEVELS = missing.length > 2 ? "poor" : missing.length > 0 ? "decent" : p.length >= 14 ? "strong" : "good";
+  return { ok: missing.length === 0, level, missing };
+}
+
+export function list(items: string[]) {
+  return items.length < 2 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
 }
