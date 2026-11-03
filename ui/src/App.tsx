@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent } from "react";
-import { api, deviceInfo, message, shortId, type Auth, type Device, type Route, type Status, type User } from "./api";
+import { api, deviceInfo, message, shortId, type Auth, type Device, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { DevicePage, Devices } from "./Devices";
 import { Icon, type IconName } from "./Icon";
 import { go, readHash } from "./route";
@@ -58,14 +58,16 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [users, setUsers] = useState<User[] | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
+  const [providers, setProviders] = useState<OAuthProvider[]>([]);
   const [drawer, setDrawer] = useState(false);
 
   const load = useCallback(async () => {
-    const [r, d, u, s] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status()]);
+    const [r, d, u, s, o] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status(), api.oauth()]);
     if (r.status === "fulfilled") setRoutes(r.value);
     if (d.status === "fulfilled") setDevices(d.value);
     if (u.status === "fulfilled") setUsers(u.value);
     if (s.status === "fulfilled") setStatus(s.value);
+    if (o.status === "fulfilled") setProviders(o.value.providers.filter((p) => p.configured));
   }, []);
 
   useEffect(() => {
@@ -156,8 +158,8 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
 
         <main className="page" key={view + id}>
           {view === "tunnels" && !id && <Tunnels routes={routes} status={status} />}
-          {view === "new" && <NewTunnel users={users ?? []} onPublished={load} />}
-          {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} onChanged={load} />}
+          {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} />}
+          {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
           {view === "devices" && !id && <Devices devices={devices} routes={routes ?? []} onChanged={load} />}
           {device && <DevicePage device={device} routes={routes ?? []} users={users ?? []} onChanged={load} />}
           {view === "users" && !id && <Users users={users} routes={routes ?? []} />}

@@ -112,13 +112,13 @@ const CONTENT: Record<string, ReactNode> = {
   oauth: (
     <>
       <Doc title="Other ways to sign in">
-        <p>Tunnels with Sign-in on can also offer <b>Continue with GitHub</b>, Google, GitLab, or an OpenID Connect provider of your own such as Authentik, Authelia, Keycloak or Pocket ID. Each is set up on the <b>Third-Party OAuth</b> page: register an app with the provider, give it the redirect URL shown there, and paste its client ID and secret back.</p>
+        <p>Tunnels with Sign-in on can also offer <b>Continue with GitHub</b>, Google, GitLab, or an OpenID Connect provider of your own such as Authentik, Authelia, Keycloak or Pocket ID. Each is set up once on the <b>Third-Party OAuth</b> page: register an app with the provider and paste its client ID and secret back. Then each tunnel switches on the ones it offers, under Access Control.</p>
       </Doc>
       <Doc title="Who it lets in">
         <p>The provider vouches for an email. The account in Users with that email signs in, held to the same rules as signing in with its password: it must be on, may open the tunnel, and be on a device linked to it.</p>
       </Doc>
       <Doc title="The redirect URL">
-        <p>Every provider sends people back to one tunnel address, the oldest tunnel's when the first provider is saved, and from there to the tunnel they started from. If that tunnel is removed the redirect URL moves to another one, and the page shows the new one to give the providers.</p>
+        <p>A provider sends people back to the tunnel they signed in at, at <code>/__gate/oauth-callback</code>. Switching a provider on at a tunnel shows that URL to add to the provider's app. GitHub takes one callback URL that covers a whole domain, so registering <code>https://example.com</code> covers every tunnel on it.</p>
       </Doc>
     </>
   ),

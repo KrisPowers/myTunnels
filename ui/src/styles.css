@@ -673,12 +673,25 @@ a.result:hover { background: var(--hover); }
 .edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .edit-actions-start { margin-right: auto; }
 
-/* Actions at a card's right, and steps that open inside it. */
-.card-actions { display: flex; align-items: center; gap: 8px; }
+/* Steps that open inside a card. */
 .card-steps { padding: 20px 24px; border-top: 1px solid var(--line); }
-.redirect-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
-.redirect-line .copy, .card-head + .setting .copy { min-width: 0; text-align: left; }
-.redirect-line .copy-text, .card-head + .setting .copy-text { overflow-wrap: anywhere; }
+
+/* Third-party providers: a grid of tiles, the provider's logo on top. */
+.provider-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+.provider-tile {
+  display: grid; justify-items: center; gap: 10px; min-width: 0; padding: 28px 16px 22px;
+  border: 1px solid transparent; border-radius: var(--card-round); background: var(--card); color: var(--text);
+  font: inherit; text-align: center; cursor: pointer; transition: border-color .15s, box-shadow .15s;
+}
+.provider-tile:hover { border-color: var(--line-strong); }
+.provider-tile.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.provider-tile > .provider-logo { margin-bottom: 6px; }
+.provider-tile b { font-size: 16px; font-weight: 500; }
+.provider-tile .chip { text-transform: none; }
+.provider-logo { flex-shrink: 0; color: var(--text); }
+.provider-name { display: inline-flex; align-items: center; gap: 10px; }
+.redirect-copy .copy { min-width: 0; text-align: left; }
+.redirect-copy .copy-text { overflow-wrap: anywhere; }
 
 /* A field that sits under the setting it belongs to, with its button beside it. */
 .setting.nested { align-items: flex-start; padding-top: 4px; }

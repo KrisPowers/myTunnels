@@ -366,10 +366,8 @@ async fn edit_account(
 
 // Third-party sign-in
 
-/// Every provider, set up or not, and the address each must send visitors back to.
+/// Every provider, set up or not. Tunnels pick from the ones set up.
 async fn list_oauth(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    let callback =
-        oauth::callback_host(&state.db, &state.snapshot()).map(|h| oauth::redirect_uri(&h));
     let mut providers = Vec::new();
     for id in oauth::PROVIDERS {
         let saved = oauth::load(&state.db, id)?;
@@ -384,13 +382,10 @@ async fn list_oauth(State(state): State<AppState>) -> ApiResult<Json<Value>> {
             "issuer": p.issuer,
             "client_id": p.client_id,
             "secret_set": !p.client_secret.is_empty(),
-            "enabled": p.enabled,
             "configured": saved.is_some(),
         }));
     }
-    Ok(Json(
-        json!({ "callback": callback, "providers": providers }),
-    ))
+    Ok(Json(json!({ "providers": providers })))
 }
 
 #[derive(Deserialize)]
@@ -398,7 +393,6 @@ struct ProviderBody {
     client_id: Option<String>,
     /// A new secret; left out, the saved one stays.
     client_secret: Option<String>,
-    enabled: Option<bool>,
     name: Option<String>,
     issuer: Option<String>,
 }
@@ -413,7 +407,6 @@ async fn save_oauth(
     }
     let mut p = oauth::load(&state.db, &id)?.unwrap_or_else(|| Provider {
         id: id.clone(),
-        enabled: true,
         ..Provider::default()
     });
     let changed = body.client_id.is_some() || body.issuer.is_some();
@@ -433,9 +426,6 @@ async fn save_oauth(
     if let Some(v) = body.issuer {
         p.issuer = v.trim().trim_end_matches('/').to_owned();
     }
-    if let Some(v) = body.enabled {
-        p.enabled = v;
-    }
     if p.client_id.is_empty() || p.client_secret.is_empty() {
         return Err(ApiError::bad("Enter the client ID and the client secret"));
     }
@@ -448,15 +438,6 @@ async fn save_oauth(
         oauth::check(&state.http, &p)
             .await
             .map_err(|e| ApiError::bad(format!("{e:#}")))?;
-    }
-    // Providers keep one callback address, so it stays put as tunnels come and go.
-    let snap = state.snapshot();
-    let pinned = state
-        .db
-        .setting("oauth_host")?
-        .is_some_and(|h| snap.routes.contains_key(&h));
-    if let (false, Some(hub)) = (pinned, &snap.hub) {
-        state.db.set_setting("oauth_host", hub)?;
     }
     oauth::save(&state.db, &p)?;
     list_oauth(State(state)).await
@@ -835,7 +816,20 @@ struct NewRoute {
     #[serde(default)]
     require_code: bool,
     #[serde(default)]
+    oauth: Vec<String>,
+    #[serde(default)]
     preserve_host: bool,
+}
+
+/// Provider IDs that exist, once each.
+fn known_providers(ids: Vec<String>) -> Vec<String> {
+    let mut known: Vec<String> = Vec::new();
+    for id in ids {
+        if oauth::PROVIDERS.contains(&id.as_str()) && !known.contains(&id) {
+            known.push(id);
+        }
+    }
+    known
 }
 
 /// A tunnel password to store: a new one when given, which must be strong, else the
@@ -924,6 +918,7 @@ async fn create_route(
         login_max: body.login_max,
         login_idle: body.login_idle,
         require_code: body.require_code,
+        oauth: known_providers(body.oauth),
         preserve_host: body.preserve_host,
         dns_record_id: Some(record_id.clone()),
         created_at: now(),
@@ -964,6 +959,8 @@ struct RouteEdit {
     #[serde(default)]
     require_code: bool,
     #[serde(default)]
+    oauth: Vec<String>,
+    #[serde(default)]
     preserve_host: bool,
 }
 
@@ -997,6 +994,7 @@ async fn update_route(
     route.login_max = body.login_max;
     route.login_idle = body.login_idle;
     route.require_code = body.require_code;
+    route.oauth = known_providers(body.oauth);
     route.preserve_host = body.preserve_host;
     state.db.update_route(&route)?;
     if switched && state.cloudflare().is_ok() {

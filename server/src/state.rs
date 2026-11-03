@@ -46,8 +46,8 @@ impl Sessions {
 /// The longest any session lasts, so a subject's sign-out can be forgotten after it.
 const LONGEST_SESSION: i64 = 31 * 86_400;
 
-/// One step of a trip across domains: sharing a device key, or signing in through
-/// another service. Each is used once and kept only briefly.
+/// One step of a trip away and back: sharing a device key across domains, or
+/// signing in through another service. Each is used once and kept only briefly.
 pub enum Hop {
     /// A tunnel sent the browser to the hub for its key and wants it back here.
     Return { url: String, expires: i64 },
@@ -68,13 +68,6 @@ pub enum Hop {
         verifier: String,
         expires: i64,
     },
-    /// How a sign-in elsewhere ended, for tunnel `host` to finish.
-    Signed {
-        host: String,
-        path: String,
-        outcome: Outcome,
-        expires: i64,
-    },
 }
 
 /// Where a sign-in through another service ended up.
@@ -92,8 +85,7 @@ impl Hop {
         match self {
             Hop::Return { expires, .. }
             | Hop::Claim { expires, .. }
-            | Hop::OAuth { expires, .. }
-            | Hop::Signed { expires, .. } => *expires,
+            | Hop::OAuth { expires, .. } => *expires,
         }
     }
 }

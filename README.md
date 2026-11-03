@@ -76,15 +76,16 @@ review, which stops a copied key from working on another machine.
 
 Tunnels with sign-in on can also offer **Continue with GitHub**, Google, GitLab, or any
 OpenID Connect provider (Authentik, Authelia, Keycloak, Pocket ID and others). Set each up
-on the **Third-Party OAuth** page the way Cloudflare was set up: **Open GitHub** (or the
-provider's console), register an app with the redirect URL shown there, then paste its
-client ID and secret back.
+once on the **Third-Party OAuth** page the way Cloudflare was set up: **Open GitHub** (or
+the provider's console), register an app, then paste its client ID and secret back. Each
+tunnel then switches on the providers it offers, under **Access Control**.
 
 The provider vouches for an email, and the account under **Users** with that email signs
 in, held to the same rules as a password sign-in: it must be on, allowed on the tunnel,
-and on a linked device. Every provider returns through one tunnel address,
-`https://<tunnel>/__gate/oauth-callback`, and from there to the tunnel the visitor started
-from.
+and on a linked device. A provider sends the visitor back to the tunnel they signed in at,
+`https://<tunnel>/__gate/oauth-callback`, which the tunnel shows once the provider is on
+there. GitHub's one callback URL covers a whole domain, so `https://example.com` covers
+every tunnel on it.
 
 ## Two-factor sign-in
 

@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ago, api, editOf, LEVELS, list, message, shortId, strength, type Access, type Device, type PolicyMode, type Route, type RouteEdit, type Status, type TunnelEvent, type User, type Zone } from "./api";
+import { ago, api, editOf, LEVELS, list, message, redirectUrl, shortId, strength, type Access, type Device, type OAuthProvider, type PolicyMode, type Route, type RouteEdit, type Status, type TunnelEvent, type User, type Zone } from "./api";
 import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
-import { AddMenu, ArmedButton, Avatar, Card, LogTable, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
+import { ProviderLogo } from "./ProviderLogo";
+import { AddMenu, ArmedButton, Avatar, Card, Copy, LogTable, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
 
 // Chips saying who may open a tunnel.
 export function AccessChips({ route }: { route: Route }) {
@@ -155,9 +156,13 @@ type AccessValue = Access & { password_set?: boolean };
 
 // AccessCard holds a tunnel's access layers. A tunnel password is asked for when
 // that layer is turned on with none set; `onPassword` stores one on its own.
-function AccessCard({ value, users, onChange, onPassword, signInElsewhere }: {
+function AccessCard({ value, users, providers, hostname, onChange, onPassword, signInElsewhere }: {
   value: AccessValue;
   users: User[];
+  // Third-party providers that are set up, to offer here.
+  providers: OAuthProvider[];
+  // The tunnel's address, once known: providers send people back to it.
+  hostname?: string;
   onChange: (patch: Partial<Access>) => void;
   onPassword?: (password: string) => Promise<unknown>;
   // On a tunnel's page the sign-in switch sits beside People with access instead.
@@ -184,6 +189,19 @@ function AccessCard({ value, users, onChange, onPassword, signInElsewhere }: {
       </Row>}
       {value.require_login && (
         <>
+          {providers.map((p) => {
+            const on = value.oauth.includes(p.id);
+            return (
+              <Row key={p.id} title={<span className="provider-name"><ProviderLogo id={p.id} size={20} />Continue with {p.label}</span>}
+                sub={on && hostname ? <span className="redirect-copy">Redirect URL for {p.label}: <Copy text={redirectUrl(hostname)} /></span> : `Let people sign in with ${p.label} as well.`}>
+                <Switch label={`Continue with ${p.label}`} on={on}
+                  onChange={(v) => onChange({ oauth: v ? [...value.oauth, p.id] : value.oauth.filter((x) => x !== p.id) })} />
+              </Row>
+            );
+          })}
+          {providers.length === 0 && (
+            <Row title="Third-party sign-in" sub={<>Set up GitHub, Google and others under <a href="#/oauth">Third-Party OAuth</a>, then switch them on here.</>} />
+          )}
           <Row title="Email code" sub={<>After signing in, a code sent to their email. The mail server is set up under <a href="#/twofactor">Two-Factor Auth</a>.</>}>
             <Switch label="Email code" on={value.require_code} onChange={(v) => onChange({ require_code: v })} />
           </Row>
@@ -255,13 +273,13 @@ function PasswordRow({ set, value, onChange, onSave }: {
 
 // NewTunnel publishes a port: the address on top, then where the app runs, then
 // who can open it.
-export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: () => Promise<void> }) {
+export function NewTunnel({ users, providers, onPublished }: { users: User[]; providers: OAuthProvider[]; onPublished: () => Promise<void> }) {
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [zone, setZone] = useState("");
   const [sub, setSub] = useState("");
   const [port, setPort] = useState("");
   const [access, setAccess] = useState<Access>({
-    require_lan: false, require_device: false, require_password: false, require_login: false, require_code: false,
+    require_lan: false, require_device: false, require_password: false, require_login: false, require_code: false, oauth: [],
     login_max: 7 * 86_400, login_idle: 0, policy_mode: "all",
   });
   const [where, setWhere] = useState<Target>({ target_scheme: "http", target_host: null, preserve_host: false });
@@ -332,7 +350,8 @@ export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: 
           </div>
         </Card>
 
-        <AccessCard value={access} users={users} onChange={(patch) => setAccess((a) => ({ ...a, ...patch }))} />
+        <AccessCard value={access} users={users} providers={providers} onChange={(patch) => setAccess((a) => ({ ...a, ...patch }))}
+          hostname={sub && zones ? `${sub}.${zones.find((z) => z.id === zone)?.name ?? ""}` : undefined} />
       </div>
     </form>
   );
@@ -348,7 +367,7 @@ const TUNNEL_PAGES: [string, string, IconName][] = [
 
 // TunnelPage is one tunnel: its address and target in the heading, each with an
 // edit button, then its sub-pages under a bar.
-export function TunnelPage({ route, page, devices, users, onChanged }: { route: Route; page: string; devices: Device[]; users: User[]; onChanged: () => Promise<void> }) {
+export function TunnelPage({ route, page, devices, users, providers, onChanged }: { route: Route; page: string; devices: Device[]; users: User[]; providers: OAuthProvider[]; onChanged: () => Promise<void> }) {
   const [edit, setEdit] = useState<RouteEdit>(() => editOf(route));
   const [editing, setEditing] = useState<"" | "address" | "target">("");
   const notify = useNotify();
@@ -442,7 +461,7 @@ export function TunnelPage({ route, page, devices, users, onChanged }: { route: 
 
       <div className="page-body stack plain" key={current}>
         {current === "access" && (
-          <AccessCard signInElsewhere value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} onChange={access}
+          <AccessCard signInElsewhere value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} providers={providers} hostname={route.hostname} onChange={access}
             onPassword={async (password) => {
               await save({ require_password: true, password });
               setAsking(false);

@@ -323,7 +323,7 @@ fn refuse(
         ),
     };
     let data = if kind == "login" {
-        json!({ "providers": sign_in_buttons(state) })
+        json!({ "providers": sign_in_buttons(state, route) })
     } else {
         json!({})
     };
@@ -338,15 +338,12 @@ fn refuse(
     )
 }
 
-/// The providers a visitor can sign in with, as `[{"id", "name"}]`.
-fn sign_in_buttons(state: &AppState) -> Vec<Value> {
-    if oauth::callback_host(&state.db, &state.snapshot()).is_none() {
-        return Vec::new();
-    }
+/// The providers this tunnel offers that are set up, as `[{"id", "name"}]`.
+fn sign_in_buttons(state: &AppState, route: &Route) -> Vec<Value> {
     oauth::all(&state.db)
         .unwrap_or_default()
         .into_iter()
-        .filter(|p| p.enabled)
+        .filter(|p| route.oauth.contains(&p.id))
         .map(|p| json!({ "id": p.id, "name": p.label() }))
         .collect()
 }
@@ -699,7 +696,6 @@ async fn action_response(
             let (parts, _) = req.into_parts();
             oauth_callback(state, route, ip, &parts.uri, &parts.headers).await
         }
-        ("oauth-done", false) => oauth_done(state, route, &req),
         _ => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -1246,13 +1242,14 @@ fn local_path(path: Option<String>) -> String {
         .unwrap_or_else(|| "/".into())
 }
 
-/// `/__gate/oauth?p=<provider>&r=<path>`: off to the provider, remembering where
-/// the visitor was and which device they are on.
+/// `/__gate/oauth?p=<provider>&r=<path>`: off to a provider this tunnel offers,
+/// remembering where the visitor was and which device they are on. The provider
+/// sends them back to this tunnel's own address.
 async fn oauth_start(state: &AppState, route: &Route, uri: &Uri, headers: &HeaderMap) -> Response {
     let host = &route.hostname;
     let provider = query_decoded(uri, "p")
-        .and_then(|id| oauth::load(&state.db, &id).ok().flatten())
-        .filter(|p| p.enabled && route.require_login);
+        .filter(|id| route.require_login && route.oauth.contains(id))
+        .and_then(|id| oauth::load(&state.db, &id).ok().flatten());
     let Some(provider) = provider else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -1263,12 +1260,9 @@ async fn oauth_start(state: &AppState, route: &Route, uri: &Uri, headers: &Heade
             "This browser has no device ID yet. Reload the page and try again.",
         );
     };
-    let Some(callback) = oauth::callback_host(&state.db, &state.snapshot()) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    let redirect_uri = oauth::redirect_uri(&callback);
     let verifier = random_alnum(64);
     let nonce = random_hex(16);
+    let redirect_uri = oauth::redirect_uri(host);
     let url = match oauth::authorize_url(&state.http, &provider, &redirect_uri, &nonce, &verifier)
         .await
     {
@@ -1303,9 +1297,9 @@ async fn oauth_start(state: &AppState, route: &Route, uri: &Uri, headers: &Heade
     redirect(&url, Vec::new())
 }
 
-/// On the callback tunnel: the provider is back with a code. Trades it for the
-/// emails the provider vouches for, signs in the account with one of them, and
-/// sends the browser back to the tunnel it started from.
+/// Back from the provider with a code: trades it for the emails the provider
+/// vouches for, and signs in the account with one of them, or asks for its
+/// emailed code, or says why not.
 async fn oauth_callback(
     state: &AppState,
     route: &Route,
@@ -1313,24 +1307,21 @@ async fn oauth_callback(
     uri: &Uri,
     headers: &HeaderMap,
 ) -> Response {
+    let hop = query_decoded(uri, "state").and_then(|n| state.take_hop(&n));
     let Some(Hop::OAuth {
         provider,
-        host,
         path,
         device_hash,
         device_id,
         verifier,
         ..
-    }) = query_decoded(uri, "state").and_then(|n| state.take_hop(&n))
+    }) = hop.filter(|h| matches!(h, Hop::OAuth { host, .. } if *host == route.hostname))
     else {
         return notice(
             &route.hostname,
             "Sign-in expired",
             "This sign-in link has expired or was used already. Go back to the app and try again.",
         );
-    };
-    let Some(target) = state.snapshot().routes.get(&host).cloned() else {
-        return StatusCode::NOT_FOUND.into_response();
     };
     let visitor = Visitor {
         device_id,
@@ -1339,34 +1330,31 @@ async fn oauth_callback(
         country: country(headers),
     };
     let code = query_decoded(uri, "code");
-    let outcome = oauth_outcome(state, &target, &provider, &visitor, code, &verifier).await;
-    let hop = random_hex(16);
-    state.put_hop(
-        hop.clone(),
-        Hop::Signed {
-            host: host.clone(),
-            path,
-            outcome,
-            expires: now() + HOP_TTL,
-        },
-    );
-    redirect(
-        &format!("https://{host}/__gate/oauth-done?c={hop}"),
-        Vec::new(),
-    )
-}
-
-async fn oauth_outcome(
-    state: &AppState,
-    route: &Route,
-    provider: &str,
-    visitor: &Visitor,
-    code: Option<String>,
-    verifier: &str,
-) -> Outcome {
-    match provider_sign_in(state, route, provider, visitor, code, verifier).await {
+    let outcome = match provider_sign_in(state, route, &provider, &visitor, code, &verifier).await {
         Ok(outcome) => outcome,
         Err(why) => Outcome::Refused(why),
+    };
+    match outcome {
+        Outcome::Session(sid) => redirect(
+            &path,
+            cookie_value(USER_COOKIE, &sid, Some(&route.zone_name), USER_TTL)
+                .into_iter()
+                .collect(),
+        ),
+        Outcome::Code { ticket, sent_to } => {
+            let mut response = gate_page(
+                StatusCode::UNAUTHORIZED,
+                "code",
+                &route.hostname,
+                "Check your email",
+                &format!("Enter the code sent to {sent_to}."),
+                &[],
+                &json!({ "ticket": ticket, "path": path }),
+            );
+            harden(&mut response);
+            response
+        }
+        Outcome::Refused(why) => notice(&route.hostname, "Could not sign in", &why),
     }
 }
 
@@ -1385,10 +1373,7 @@ async fn provider_sign_in(
     let Some(code) = code else {
         return Err(format!("{name} did not sign you in."));
     };
-    let Some(callback) = oauth::callback_host(&state.db, &state.snapshot()) else {
-        return Err("Sign-in is not set up.".into());
-    };
-    let redirect_uri = oauth::redirect_uri(&callback);
+    let redirect_uri = oauth::redirect_uri(&route.hostname);
     let emails =
         oauth::verified_emails(&state.http, &provider, &redirect_uri, &code, verifier).await;
     let emails = match emails {
@@ -1411,40 +1396,6 @@ async fn provider_sign_in(
         return Err("This account is turned off. Ask the administrator.".into());
     }
     admit(state, route, account, visitor).await.map_err(|e| e.1)
-}
-
-/// Back on the tunnel the visitor started from: keeps the session, or says why not.
-fn oauth_done(state: &AppState, route: &Route, req: &Request) -> Response {
-    match query(req.uri().query(), "c").and_then(|c| state.take_hop(&c)) {
-        Some(Hop::Signed {
-            host,
-            path,
-            outcome,
-            ..
-        }) if host == route.hostname => match outcome {
-            Outcome::Session(sid) => redirect(
-                &path,
-                cookie_value(USER_COOKIE, &sid, Some(&route.zone_name), USER_TTL)
-                    .into_iter()
-                    .collect(),
-            ),
-            Outcome::Code { ticket, sent_to } => {
-                let mut response = gate_page(
-                    StatusCode::UNAUTHORIZED,
-                    "code",
-                    &route.hostname,
-                    "Check your email",
-                    &format!("Enter the code sent to {sent_to}."),
-                    &[],
-                    &json!({ "ticket": ticket, "path": path }),
-                );
-                harden(&mut response);
-                response
-            }
-            Outcome::Refused(why) => notice(&route.hostname, "Could not sign in", &why),
-        },
-        _ => redirect("/", Vec::new()),
-    }
 }
 
 /// A query parameter, percent-decoded.
