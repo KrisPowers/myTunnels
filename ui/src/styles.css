@@ -27,6 +27,10 @@
   --text-3: light-dark(#747775, #8e918f);
   --accent: light-dark(#0b57d0, #a8c7fa);
   --accent-bg: light-dark(#d3e3fd, #004a77);
+  /* Sidebar items: a plain grey under the pointer, a pale blue for the open one. */
+  --nav-hover: light-dark(#e9ebee, #2d2e30);
+  --nav-on: light-dark(#e8f0fe, #0d4f80);
+  --on-nav-on: light-dark(#0b57d0, #d3e3fd);
   --on-accent-bg: light-dark(#041e49, #c2e7ff);
   --on-accent: light-dark(#ffffff, #062e6f);
   --ok: light-dark(#188038, #81c995);
@@ -118,9 +122,9 @@ kbd {
 /* A little air between items, so hover and active backgrounds never touch. */
 .nav-item + .nav-item { margin-top: 4px; }
 .nav-item.on { font-weight: 500; }
-.nav-item:hover { background: var(--hover); }
-.nav-item.on { background: var(--accent-bg); color: var(--on-accent-bg); }
-.nav-item.on .icon { color: var(--on-accent-bg); }
+.nav-item:hover { background: var(--nav-hover); }
+.nav-item.on { background: var(--nav-on); color: var(--on-nav-on); }
+.nav-item.on .icon { color: var(--on-nav-on); }
 /* A docs or settings section: plain text, its colour easing in, a short bar
    growing beside the one open. */
 .nav-item.quiet { position: relative; height: 36px; border-radius: 0; color: var(--text-2); font-weight: 400; transition: color .2s var(--ease); }
@@ -457,7 +461,7 @@ a.result:hover { background: var(--hover); }
 /* A count beside a page in the sidebar; the accent when something waits. */
 .nav-count { min-width: 24px; height: 20px; padding: 0 7px; border-radius: 10px; background: var(--card-2); color: var(--text-2); font: 500 12px/20px var(--font); text-align: center; }
 .nav-count.alert { background: var(--accent); color: var(--on-accent); }
-.nav-item.on .nav-count { background: color-mix(in srgb, var(--on-accent-bg) 14%, transparent); color: inherit; }
+.nav-item.on .nav-count { background: color-mix(in srgb, var(--on-nav-on) 14%, transparent); color: inherit; }
 
 /* ---- fields ----
    Outlined, as in Google's consoles: a thin outline that darkens on hover
