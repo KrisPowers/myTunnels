@@ -78,12 +78,133 @@ export function Tunnels({ routes, status }: { routes: Route[] | null; status: St
   );
 }
 
-// Publish is the one line that puts a port on a domain: subdomain, domain, port.
-function Publish({ onPublished }: { onPublished: () => Promise<void> }) {
+// ---- who may open it ----
+
+type AccessValue = Access & { password_set?: boolean };
+
+// AccessCard holds a tunnel's access layers. A tunnel password is asked for when
+// that layer is turned on with none set; `onPassword` stores one on its own.
+function AccessCard({ value, users, onChange, onPassword }: {
+  value: AccessValue;
+  users: User[];
+  onChange: (patch: Partial<Access>) => void;
+  onPassword?: (password: string) => Promise<unknown>;
+}) {
+  const layers = [value.require_lan, value.require_device, value.require_password, value.require_login].filter(Boolean).length;
+  const accounts = users.filter((u) => u.enabled).length;
+  return (
+    <Card title="Access Control">
+      <Row title="Same network as this host" sub="Only visitors coming from this host's internet connection, or a trusted network.">
+        <Switch label="Same network as this host" on={value.require_lan} onChange={(v) => onChange({ require_lan: v })} />
+      </Row>
+      <Row title="Approved devices" sub="A new device gets an ID and waits under Devices until you approve it.">
+        <Switch label="Approved devices" on={value.require_device} onChange={(v) => onChange({ require_device: v })} />
+      </Row>
+      <Row title="Tunnel password" sub="One password for this tunnel alone, asked for before anything behind it loads.">
+        <Switch label="Tunnel password" on={value.require_password} onChange={(v) => onChange({ require_password: v })} />
+      </Row>
+      {value.require_password && (
+        <PasswordRow set={!!value.password_set} value={value.password ?? ""} onChange={onPassword ? undefined : (password) => onChange({ password })} onSave={onPassword} />
+      )}
+      <Row title="Sign-in" sub={<>People sign in with an account from <a href="#/users">Users</a>. {accounts ? `${accounts} account${accounts === 1 ? "" : "s"} so far.` : "There are none yet."}</>}>
+        <Switch label="Sign-in" on={value.require_login} onChange={(v) => onChange({ require_login: v })} />
+      </Row>
+      {layers > 1 && (
+        <Row title="Combine" sub="Whether a visitor needs every layer above, or any one of them.">
+          <Dropdown label="Combine" value={value.policy_mode} onChange={(v) => onChange({ policy_mode: v as PolicyMode })} options={[
+            { value: "all", label: "Require all", hint: "Every layer that is on" },
+            { value: "any", label: "Any one is enough", hint: "Visitors pick the one they have" },
+          ]} />
+        </Row>
+      )}
+    </Card>
+  );
+}
+
+// PasswordRow sets the tunnel password: typed into the form when publishing, or
+// saved on its own for a tunnel that exists.
+function PasswordRow({ set, value, onChange, onSave }: {
+  set: boolean;
+  value: string;
+  onChange?: (password: string) => void;
+  onSave?: (password: string) => Promise<unknown>;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [busy, setBusy] = useState(false);
+  const rating = strength(draft);
+  const notify = useNotify();
+  const update = (p: string) => {
+    setDraft(p);
+    onChange?.(p);
+  };
+  return (
+    <div className="setting nested">
+      <TextField className="grow" label={set ? "New tunnel password" : "Tunnel password"} type="password" autoComplete="new-password"
+        value={draft} onChange={update}
+        hint={draft ? (
+          <>
+            <span className={"strength " + rating.level}>{LEVELS[rating.level]}</span>
+            {rating.missing.length > 0 && <span>Needs {list(rating.missing)}.</span>}
+          </>
+        ) : set ? "A password is set. Type a new one to replace it." : "Visitors type this before the app loads."} />
+      {onSave && (
+        <button type="button" className="btn primary" disabled={busy || !rating.ok} onClick={async () => {
+          setBusy(true);
+          try {
+            await onSave(draft);
+            setDraft("");
+            notify(set ? "Tunnel password changed" : "Tunnel password set");
+          } catch (e) {
+            notify(message(e), "bad");
+          } finally {
+            setBusy(false);
+          }
+        }}>{set ? "Change" : "Set password"}</button>
+      )}
+    </div>
+  );
+}
+
+// TargetRows are where requests go: port, protocol, host, and the host name the app sees.
+function TargetRows({ value, onChange, onSave }: {
+  value: Pick<RouteEdit, "port" | "target_scheme" | "target_host" | "preserve_host">;
+  onChange: (patch: Partial<RouteEdit>) => void;
+  onSave?: (patch: Partial<RouteEdit>) => Promise<unknown>;
+}) {
+  const write = (patch: Partial<RouteEdit>) => (onSave ? onSave(patch) : Promise.resolve(onChange(patch)));
+  return (
+    <>
+      {onSave && (
+        <Row title="Port">
+          <SaveField label="Port" numeric mono width={110} value={String(value.port)} onSave={(v) => write({ port: Number(v) })} />
+        </Row>
+      )}
+      <Row title="Protocol" sub="Choose https when the app serves it itself. Self-signed certificates are fine.">
+        <Dropdown label="Protocol" value={value.target_scheme} options={[{ value: "http", label: "http" }, { value: "https", label: "https" }]}
+          onChange={(v) => write({ target_scheme: v as RouteEdit["target_scheme"] })} />
+      </Row>
+      <Row title="Host" sub="Leave empty for this computer. Or a container name, or another machine on the network.">
+        <SaveField label="Host" mono width={220} placeholder="This computer" value={value.target_host ?? ""} onSave={(v) => write({ target_host: v.trim() || null })} />
+      </Row>
+      <Row title="Pass the public address" sub="Off, the app sees itself opened on this computer, which apps that only answer to localhost need. On, it sees the public address, for apps set up with it.">
+        <Switch label="Pass the public address" on={value.preserve_host} onChange={(v) => write({ preserve_host: v })} />
+      </Row>
+    </>
+  );
+}
+
+// ---- publishing ----
+
+// NewTunnel publishes a port: the address on top, then who can open it and,
+// folded away, where requests go.
+export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: () => Promise<void> }) {
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [zone, setZone] = useState("");
   const [sub, setSub] = useState("");
   const [port, setPort] = useState("");
+  const [access, setAccess] = useState<Access>({ require_lan: false, require_device: false, require_password: false, require_login: false, policy_mode: "all" });
+  const [targetOpts, setTargetOpts] = useState({ target_scheme: "http" as RouteEdit["target_scheme"], target_host: null as string | null, preserve_host: false });
+  const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
 
