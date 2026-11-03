@@ -139,7 +139,8 @@ async function call<T>(path: string, method = "GET", body?: unknown): Promise<T>
   const res = await fetch("/api" + path, {
     method,
     credentials: "same-origin",
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    // The server refuses changes without this header, which a page on another site cannot send.
+    headers: { "X-Requested-With": "fetch", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));

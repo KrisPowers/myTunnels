@@ -1,13 +1,14 @@
 //! The admin panel's API and static files.
 
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
-use axum::extract::{Path, Request, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::extract::{ConnectInfo, Path, Request, State};
+use axum::http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post, put};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
@@ -16,7 +17,7 @@ use crate::cloudflare::{Account, Cloudflare, Zone};
 use crate::db::{Device, Event, Route, SignIn, User};
 use crate::netinfo;
 use crate::state::AppState;
-use crate::util::{cookie, lock, now, random_hex, valid_host, ApiError, ApiResult};
+use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
 use crate::{gate, secret, tunnel};
 
 const ADMIN_COOKIE: &str = "admin_session";
@@ -48,23 +49,96 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/setup", post(setup))
         .route("/auth/login", post(login))
         .route("/auth/logout", post(logout))
-        .merge(protected);
+        .merge(protected)
+        .layer(middleware::from_fn_with_state(state.clone(), guard_api));
     let ui = &state.config.ui_dir;
     let spa = ServeDir::new(ui).fallback(ServeFile::new(ui.join("index.html")));
     Router::new()
         .nest("/api", api)
         .fallback_service(spa)
+        .layer(middleware::from_fn(harden))
         .with_state(state)
+}
+
+/// Requests from one address each minute, and of those, sign-in and setup attempts.
+const API_PER_MINUTE: u32 = 600;
+const AUTH_PER_MINUTE: u32 = 10;
+
+/// The address a request to the panel came from.
+#[derive(Clone, Copy)]
+struct Peer(IpAddr);
+
+/// Rate limits every call, refuses changes a page on another site could send (it
+/// cannot set the header the panel sends), and keeps answers out of caches.
+async fn guard_api(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
+    let ip = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map_or(IpAddr::from([0, 0, 0, 0]), |c| c.0.ip());
+    req.extensions_mut().insert(Peer(ip));
+    let changes = !matches!(*req.method(), Method::GET | Method::HEAD);
+    let auth = changes && req.uri().path().starts_with("/auth/");
+    if !state.allow(&format!("api:{ip}"), API_PER_MINUTE, 60)
+        || (auth && !state.allow(&format!("api-auth:{ip}"), AUTH_PER_MINUTE, 60))
+    {
+        return ApiError(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many requests. Wait a minute and try again.".into(),
+        )
+        .into_response();
+    }
+    if changes && !req.headers().contains_key("x-requested-with") {
+        return ApiError(
+            StatusCode::FORBIDDEN,
+            "Refused: not sent by the panel".into(),
+        )
+        .into_response();
+    }
+    let mut response = next.run(req).await;
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+/// Headers that keep the panel from being framed, sniffed or loading anything but
+/// its own files.
+async fn harden(req: Request, next: Next) -> Response {
+    let mut response = next.run(req).await;
+    let headers = response.headers_mut();
+    for (name, value) in [
+        (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        (header::X_FRAME_OPTIONS, "DENY"),
+        (header::REFERRER_POLICY, "no-referrer"),
+        (
+            header::CONTENT_SECURITY_POLICY,
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+        ),
+        (
+            HeaderName::from_static("permissions-policy"),
+            "camera=(), microphone=(), geolocation=(), payment=()",
+        ),
+    ] {
+        headers.insert(name, HeaderValue::from_static(value));
+    }
+    response
 }
 
 // Auth
 
+/// A session opened with the admin password as it is now.
 fn is_admin(state: &AppState, headers: &HeaderMap) -> bool {
-    cookie(headers, ADMIN_COOKIE).is_some_and(|sid| {
-        lock(&state.admin_sessions)
-            .get(sid)
-            .is_some_and(|exp| *exp > now())
-    })
+    let Some(session) =
+        cookie(headers, ADMIN_COOKIE).and_then(|v| state.session(&state.admin_sessions, v))
+    else {
+        return false;
+    };
+    state
+        .db
+        .setting("admin_password")
+        .ok()
+        .flatten()
+        .is_some_and(|hash| secret::tag(&hash) == session.tag)
 }
 
 async fn require_admin(State(state): State<AppState>, req: Request, next: Next) -> Response {
@@ -110,51 +184,57 @@ async fn setup(
     state
         .db
         .set_setting("admin_password", &secret::hash(&body.password)?)?;
-    Ok(start_session(&state))
+    start_session(&state)
 }
 
 async fn login(
     State(state): State<AppState>,
+    Extension(Peer(ip)): Extension<Peer>,
     Json(body): Json<PasswordBody>,
 ) -> ApiResult<Response> {
     let Some(hash) = state.db.setting("admin_password")? else {
         return Err(ApiError::bad("Set a password first"));
     };
-    if state.locked_out("admin") {
+    let key = format!("admin:{ip}");
+    if state.locked_out(&key) {
         return Err(ApiError(
             StatusCode::TOO_MANY_REQUESTS,
             "Too many wrong tries. Wait 15 minutes and try again.".into(),
         ));
     }
     if !secret::verify(&body.password, &hash) {
-        state.record_failure("admin");
+        state.record_failure(&key);
         tokio::time::sleep(Duration::from_millis(800)).await;
         return Err(ApiError(StatusCode::UNAUTHORIZED, "Wrong password".into()));
     }
-    state.clear_failures("admin");
-    Ok(start_session(&state))
+    state.clear_failures(&key);
+    start_session(&state)
 }
 
-fn start_session(state: &AppState) -> Response {
-    let sid = random_hex(32);
-    let now = now();
-    let mut sessions = lock(&state.admin_sessions);
-    sessions.retain(|_, exp| *exp > now);
-    sessions.insert(sid.clone(), now + ADMIN_TTL);
-    drop(sessions);
-    (
+fn start_session(state: &AppState) -> ApiResult<Response> {
+    let hash = state.db.setting("admin_password")?.unwrap_or_default();
+    let sid = state.open_session(
+        &state.admin_sessions,
+        "admin",
+        &secret::tag(&hash),
+        "",
+        ADMIN_TTL,
+    );
+    Ok((
         [(
             header::SET_COOKIE,
             format!("{ADMIN_COOKIE}={sid}; Path=/; Max-Age={ADMIN_TTL}; HttpOnly; SameSite=Strict"),
         )],
         Json(json!({ "ok": true })),
     )
-        .into_response()
+        .into_response())
 }
 
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    if let Some(sid) = cookie(&headers, ADMIN_COOKIE) {
-        lock(&state.admin_sessions).remove(sid);
+    if let Some(session) =
+        cookie(&headers, ADMIN_COOKIE).and_then(|v| state.session(&state.admin_sessions, v))
+    {
+        state.end_session(&state.admin_sessions, &session);
     }
     (
         [(
@@ -386,6 +466,17 @@ fn default_login_max() -> i64 {
 }
 
 /// Sign-in limits: from 0 (never) up to the longest a sign-in can last.
+/// Every tunnel checks who opens it: at least one layer stays on.
+fn check_layers(lan: bool, device: bool, password: bool, login: bool) -> ApiResult<()> {
+    if lan || device || password || login {
+        Ok(())
+    } else {
+        Err(ApiError::bad(
+            "Keep at least one access layer on. Every tunnel checks who opens it.",
+        ))
+    }
+}
+
 fn check_limits(max: i64, idle: i64) -> ApiResult<()> {
     let longest = 30 * 86_400;
     if !(0..=longest).contains(&max) || !(0..=longest).contains(&idle) {
@@ -457,6 +548,12 @@ async fn create_route(
     check_not_self(&state, target_host.as_deref(), body.port)?;
     let password_hash = tunnel_password(body.require_password, body.password, None)?;
     check_limits(body.login_max, body.login_idle)?;
+    check_layers(
+        body.require_lan,
+        body.require_device,
+        body.require_password,
+        body.require_login,
+    )?;
 
     let cf = Cloudflare::new(&state.http, &cf_settings.token);
     let zone = cf
@@ -573,6 +670,12 @@ async fn update_route(
     route.password_set = route.password_hash.is_some();
     route.require_password = body.require_password;
     check_limits(body.login_max, body.login_idle)?;
+    check_layers(
+        body.require_lan,
+        body.require_device,
+        body.require_password,
+        body.require_login,
+    )?;
     route.require_login = body.require_login;
     route.login_max = body.login_max;
     route.login_idle = body.login_idle;
@@ -742,7 +845,7 @@ async fn delete_device(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     state.db.delete_device(&id)?;
-    lock(&state.device_sessions).retain(|_, s| s.subject != id);
+    state.end_sessions_of(&state.device_sessions, &id);
     state.reload()?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -951,7 +1054,7 @@ async fn device_activity(
 
 /// Ends every sign-in of this account.
 async fn sign_out_user(State(state): State<AppState>, Path(id): Path<String>) -> Json<Value> {
-    lock(&state.user_sessions).retain(|_, s| s.subject != id);
+    state.end_sessions_of(&state.user_sessions, &id);
     Json(json!({ "ok": true }))
 }
 
@@ -960,7 +1063,7 @@ async fn delete_user(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     state.db.delete_user(&id)?;
-    lock(&state.user_sessions).retain(|_, s| s.subject != id);
+    state.end_sessions_of(&state.user_sessions, &id);
     state.reload()?;
     Ok(Json(json!({ "ok": true })))
 }

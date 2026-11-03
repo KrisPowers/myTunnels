@@ -5,15 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>myTunnels</title>
-<script>
-  // The look picked in Settings, applied before the page draws.
-  try {
-    ["theme", "motion", "density"].forEach(function (key) {
-      var value = localStorage.getItem(key);
-      if (value) document.documentElement.dataset[key] = value;
-    });
-  } catch (e) {}
-</script>
+<script src="/theme.js"></script>
 </head>
 <body>
 <div id="root"></div>

@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 
 use crate::db::{Device, Event, Route, SignIn};
 use crate::proxy;
-use crate::state::{open_session, session, touch_session, AppState, Hop, Snapshot};
+use crate::state::{AppState, Hop, Snapshot};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
 use crate::{guard, secret};
 
@@ -42,6 +42,10 @@ pub const DEVICE_ID_LEN: usize = 256;
 const MAX_PENDING: i64 = 100;
 const MAX_SEEN: i64 = 500;
 const TEMPLATE: &str = include_str!("gate.html");
+/// Requests one visitor address may make through the gateway each minute, and how
+/// many of those may be key, password and sign-in steps.
+const REQUESTS_PER_MINUTE: u32 = 1200;
+const ACTIONS_PER_MINUTE: u32 = 30;
 
 /// Browser properties that should not change for the life of a device.
 const FINGERPRINT_KEYS: [&str; 5] = [
@@ -73,8 +77,17 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
         );
     }
     let ip = client_ip(req.headers());
+    let from = ip.map(|ip| ip.to_string()).unwrap_or_default();
+    if !state.allow(&format!("gate:{from}"), REQUESTS_PER_MINUTE, 60) {
+        return too_many();
+    }
     if let Some(action) = req.uri().path().strip_prefix("/__gate/").map(str::to_owned) {
-        return action_response(&state, &route, ip, &action, req).await;
+        if !state.allow(&format!("gate-action:{from}"), ACTIONS_PER_MINUTE, 60) {
+            return too_many();
+        }
+        let mut response = action_response(&state, &route, ip, &action, req).await;
+        harden(&mut response);
+        return response;
     }
     if !route.enabled {
         // A tunnel switched off answers as if it did not exist.
@@ -92,9 +105,17 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
 
     let verdict = check(&state, &snap, &route, ip, req.headers());
     let mut response = if verdict.allowed() {
-        proxy::forward(&state, &snap, &route, ip, req).await
+        let mut response = proxy::forward(&state, &snap, &route, ip, req).await;
+        // Tunnels are only ever reached over HTTPS.
+        response
+            .headers_mut()
+            .entry(header::STRICT_TRANSPORT_SECURITY)
+            .or_insert(HeaderValue::from_static("max-age=31536000"));
+        response
     } else {
-        refuse(&state, &route, ip, &host, &verdict, &req)
+        let mut response = refuse(&state, &route, ip, &host, &verdict, &req);
+        harden(&mut response);
+        response
     };
     if let Some(value) = new_cookie {
         response.headers_mut().append(header::SET_COOKIE, value);
@@ -121,9 +142,10 @@ impl Verdict {
     }
 
     fn allowed(&self) -> bool {
+        // A tunnel with no layer on is refused, never left open.
         let mut results = self.results().peekable();
         if results.peek().is_none() {
-            return true;
+            return false;
         }
         if self.any {
             self.results().any(|r| r)
@@ -172,7 +194,7 @@ fn check(
 
 fn device_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &Route) -> bool {
     cookie(headers, SESSION_COOKIE)
-        .and_then(|sid| session(&state.device_sessions, sid))
+        .and_then(|sid| state.session(&state.device_sessions, sid))
         .and_then(|s| snap.devices.get(&s.subject))
         .is_some_and(|d| may_open(d, route))
 }
@@ -182,7 +204,7 @@ fn password_session(state: &AppState, headers: &HeaderMap, route: &Route) -> boo
         return false;
     };
     cookie(headers, PASS_COOKIE)
-        .and_then(|sid| session(&state.pass_sessions, sid))
+        .and_then(|sid| state.session(&state.pass_sessions, sid))
         .is_some_and(|s| s.subject == route.id && s.tag == secret::tag(hash))
 }
 
@@ -192,7 +214,7 @@ fn user_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &
     let Some(sid) = cookie(headers, USER_COOKIE) else {
         return false;
     };
-    let Some(s) = session(&state.user_sessions, sid) else {
+    let Some(s) = state.session(&state.user_sessions, sid) else {
         return false;
     };
     let here = cookie(headers, DEVICE_COOKIE)
@@ -213,7 +235,7 @@ fn user_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &
         .filter(|u| secret::tag(&u.password_hash) == s.tag)
         .is_some_and(|u| u.enabled && u.route_ids.contains(&route.id));
     if ok {
-        touch_session(&state.user_sessions, sid);
+        state.touch_session(&state.user_sessions, &s);
     }
     ok
 }
@@ -381,6 +403,35 @@ fn redirect(to: &str, cookies: Vec<HeaderValue>) -> Response {
     for value in cookies {
         response.headers_mut().append(header::SET_COOKIE, value);
     }
+    response
+}
+
+/// The gateway's own pages: never framed, cached or sniffed, and HTTPS only.
+fn harden(response: &mut Response) {
+    let headers = response.headers_mut();
+    for (name, value) in [
+        (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        (header::X_FRAME_OPTIONS, "DENY"),
+        (header::REFERRER_POLICY, "same-origin"),
+        (
+            header::CONTENT_SECURITY_POLICY,
+            "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
+        ),
+        (header::STRICT_TRANSPORT_SECURITY, "max-age=31536000"),
+        (header::CACHE_CONTROL, "no-store"),
+    ] {
+        headers.insert(name, HeaderValue::from_static(value));
+    }
+}
+
+fn too_many() -> Response {
+    let mut response = (
+        StatusCode::TOO_MANY_REQUESTS,
+        [(header::RETRY_AFTER, "60")],
+        "Too many requests. Wait a minute and try again.",
+    )
+        .into_response();
+    harden(&mut response);
     response
 }
 
@@ -724,7 +775,7 @@ fn register(
         .map(|v| (header::SET_COOKIE, v)),
     );
     if allowed {
-        let sid = open_session(
+        let sid = state.open_session(
             &state.device_sessions,
             &device.id,
             "",
@@ -784,7 +835,7 @@ async fn password(
     }
     log(state, route, "password", "ok", None, ip, headers);
     state.clear_failures(&key);
-    let sid = open_session(
+    let sid = state.open_session(
         &state.pass_sessions,
         &route.id,
         &secret::tag(hash),
@@ -900,7 +951,7 @@ async fn login(
         account.enabled = false;
         account.note = Some(reason);
         let _ = state.db.save_user(&account);
-        crate::util::lock(&state.user_sessions).retain(|_, s| s.subject != account.id);
+        state.end_sessions_of(&state.user_sessions, &account.id);
         let _ = state.reload();
         return json_error(
             StatusCode::FORBIDDEN,
@@ -911,7 +962,7 @@ async fn login(
     record(&account.id, "ok");
     account.last_login = Some(now());
     let _ = state.db.save_user(&account);
-    let sid = open_session(
+    let sid = state.open_session(
         &state.user_sessions,
         &account.id,
         &secret::tag(&account.password_hash),
@@ -1046,7 +1097,7 @@ mod tests {
 
     #[test]
     fn checks_combine_by_mode() {
-        assert!(verdict(false, None, None, None, None).allowed());
+        assert!(!verdict(false, None, None, None, None).allowed());
         assert!(!verdict(false, Some(true), None, Some(false), None).allowed());
         assert!(verdict(true, Some(false), None, Some(true), None).allowed());
         assert!(!verdict(true, Some(false), Some(false), None, None).allowed());

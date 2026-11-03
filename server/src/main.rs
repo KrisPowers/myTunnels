@@ -8,8 +8,11 @@ mod netinfo;
 mod proxy;
 mod secret;
 mod state;
+mod token;
 mod tunnel;
 mod util;
+
+use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
 use tokio::net::TcpListener;
@@ -44,7 +47,10 @@ async fn main() -> Result<()> {
     tunnel::spawn(state.clone());
     netinfo::spawn(state.clone());
 
-    let admin = axum::serve(admin_listener, admin::router(state.clone()));
+    let admin = axum::serve(
+        admin_listener,
+        admin::router(state.clone()).into_make_service_with_connect_info::<SocketAddr>(),
+    );
     let gate = axum::serve(gate_listener, gate::router(state.clone()));
     tokio::select! {
         result = admin => result?,

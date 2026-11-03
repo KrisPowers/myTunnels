@@ -45,7 +45,8 @@ Then, on **Tunnels**, type the subdomain, pick the domain, enter the port and pr
 
 ## Access rules
 
-Each tunnel can require nothing, or any combination of:
+Every tunnel keeps at least one of these on; a tunnel with none is refused. New
+tunnels start with device approval.
 
 | Rule | Passes when |
 | --- | --- |
@@ -88,6 +89,23 @@ environment variables:
 container (or any program) on the host works as a target. A tunnel can also point at
 another host, such as a container name on a shared network or another machine on the LAN,
 under **Show target options**.
+
+## Security
+
+Nothing here needs setting up; all of it is on from the first start.
+
+- Sessions (admin, device, tunnel password, account) are signed tokens (JWT, HS256).
+  The signing key is made on first start and kept in the database, so sessions
+  survive restarts. Signing out, signing an account out everywhere, removing a device
+  or account, and changing a password all end the sessions they cover for good.
+- Rate limits: through the gateway, 1200 requests and 30 key, password or sign-in
+  steps per visitor address each minute; on the panel, 600 calls and 10 sign-in
+  attempts per address each minute. Five wrong passwords lock that address (and, for
+  accounts, that email) out for 15 minutes.
+- The panel refuses changes that do not carry the header it sends, so another site
+  cannot act through a signed-in browser. It sends a strict Content Security Policy
+  and refuses to be framed.
+- Tunnels get HSTS, and the gateway's own cookies never reach the apps behind it.
 
 ## Notes
 
