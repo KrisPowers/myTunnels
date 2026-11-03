@@ -141,11 +141,12 @@ export function MultiDropdown<T extends string>({ label, values, options, allLab
         <svg className="dropdown-caret" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z" /></svg>
       </button>
       {open && createPortal(
-        <ul ref={list} className="dropdown-list" role="listbox" aria-multiselectable="true" aria-label={label}
+        <ul ref={list} className="dropdown-list multi" role="listbox" aria-multiselectable="true" aria-label={label}
           style={{ left: at.left, top: at.top, minWidth: at.width }}>
           {options.map((o) => (
             <li key={o.value} role="option" aria-selected={values.includes(o.value)} className="dropdown-option"
               onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(o.value)}>
+              <span className="check-box" aria-hidden>{values.includes(o.value) && <Icon name="check" size={16} />}</span>
               {o.icon && <Icon name={o.icon} size={20} className="dropdown-icon" />}
               <span className="dropdown-text">
                 <span>{o.label}</span>
