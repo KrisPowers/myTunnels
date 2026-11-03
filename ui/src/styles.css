@@ -752,6 +752,8 @@ a.result:hover { background: var(--hover); }
 .profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 48px; }
 .section-title { margin: 0 0 8px; font-size: 16px; font-weight: 500; }
 .kv { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 44px; }
+/* A faint line between one value and the next. */
+.kv + .kv, .kv + .kv-block, .kv-block + .kv { border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
 .kv-label { color: var(--text-2); font-size: 13px; }
 .kv-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kv-value.muted { color: var(--text-3); }
