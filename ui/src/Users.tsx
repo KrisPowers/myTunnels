@@ -286,12 +286,6 @@ export function UserPage({ user, page, routes, onChanged }: { user: User; page: 
   );
 }
 
-const OUTCOME: Record<SignIn["outcome"], [string, string]> = {
-  ok: ["ok", "Signed in"],
-  failed: ["warn", "Wrong password"],
-  blocked: ["bad", "Blocked"],
-};
-
 // Activity is where an account has been used from: its devices, and its sign-ins.
 function Activity({ user }: { user: User }) {
   const [list, setList] = useState<SignIn[] | null>(null);
