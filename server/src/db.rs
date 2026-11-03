@@ -50,7 +50,34 @@ CREATE TABLE IF NOT EXISTS device_routes (
     route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
     PRIMARY KEY (device_id, route_id)
 );
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    email TEXT COLLATE NOCASE,
+    name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    enabled INTEGER NOT NULL,
+    all_routes INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_login INTEGER
+);
+CREATE TABLE IF NOT EXISTS user_routes (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, route_id)
+);
 ";
+
+/// Columns added to `routes` after its first release, with how to add each.
+const ROUTE_MIGRATIONS: [(&str, &str); 4] = [
+    ("preserve_host", "preserve_host INTEGER NOT NULL DEFAULT 0"),
+    (
+        "require_password",
+        "require_password INTEGER NOT NULL DEFAULT 0",
+    ),
+    ("password_hash", "password_hash TEXT"),
+    ("require_login", "require_login INTEGER NOT NULL DEFAULT 0"),
+];
 
 /// A published tunnel: one hostname on a Cloudflare zone pointing at one local port.
 #[derive(Clone, Serialize)]
