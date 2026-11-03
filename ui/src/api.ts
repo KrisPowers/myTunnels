@@ -138,7 +138,8 @@ export const api = {
   zones: () => call<Zone[]>("/zones"),
 
   routes: () => call<Route[]>("/routes"),
-  publish: (body: { subdomain: string; zone_id: string; port: number }) => call<Route>("/routes", "POST", body),
+  publish: (body: { subdomain: string; zone_id: string; port: number; target_host: string | null; target_scheme: string; preserve_host: boolean } & Access) =>
+    call<Route>("/routes", "POST", body),
   editRoute: (id: string, edit: RouteEdit) => call<Route>(`/routes/${id}`, "PATCH", edit),
   removeRoute: (id: string) => call(`/routes/${id}`, "DELETE"),
 
