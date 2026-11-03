@@ -781,16 +781,19 @@ async fn password(
         ip.map(|ip| ip.to_string()).unwrap_or_default()
     );
     if state.locked_out(&key) {
+        log(state, route, "password", "locked", None, ip, headers);
         return json_error(
             StatusCode::TOO_MANY_REQUESTS,
             "Too many wrong tries. Wait 15 minutes and try again.",
         );
     }
     if !secret::verify(&body.password, hash) {
+        log(state, route, "password", "failed", None, ip, headers);
         state.record_failure(&key);
         tokio::time::sleep(Duration::from_millis(700)).await;
         return json_error(StatusCode::UNAUTHORIZED, "That password is not right.");
     }
+    log(state, route, "password", "ok", None, ip, headers);
     state.clear_failures(&key);
     let sid = open_session(
         &state.pass_sessions,
