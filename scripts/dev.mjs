@@ -63,6 +63,15 @@ const env = {
 
 // ---- the server: build, swap in, reload pages ----
 
+// rmSync with force ignores files that are gone, but not ones still locked.
+const tidy = (fn) => (...args) => {
+  try {
+    fn(...args);
+  } catch {
+    // Still in use; the next sweep gets it.
+  }
+};
+
 let running = null;
 let slot = 0;
 let building = false;
