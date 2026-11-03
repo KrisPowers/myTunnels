@@ -119,6 +119,38 @@ export function Callout({ tone, icon, children }: { tone?: "bad" | "warn" | "ok"
   );
 }
 
+// Dialog is a panel over the whole page, the page dimmed behind it, so nothing
+// on the page moves. Escape, the close button or a click outside closes it.
+// Menus opened inside it sit above it.
+export function Dialog({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
+  const id = useId();
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => {
+      // A menu open inside the dialog takes Escape first.
+      if (e.key === "Escape" && !document.querySelector(".dropdown-list, .pop-menu")) onClose();
+    };
+    document.addEventListener("keydown", esc);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", esc);
+      document.body.style.overflow = overflow;
+    };
+  }, [onClose]);
+  return createPortal(
+    <div className="dialog-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby={id}>
+        <div className="dialog-head">
+          <h2 id={id}>{title}</h2>
+          <button type="button" className="icon-btn" aria-label="Close" title="Close" onClick={onClose}><Icon name="close" /></button>
+        </div>
+        <div className="dialog-body">{children}</div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 // Notices pop up at the bottom left for a few seconds.
 type Notify = (text: string, tone?: "ok" | "bad") => void;
 const NotifyContext = createContext<Notify>(() => {});
@@ -415,8 +447,8 @@ export function MoreMenu({ label, actions }: { label: string; actions: MenuActio
   );
 }
 
-// ValueRow shows a setting's value as text, with an edit button that turns it
-// into a field with Save and Cancel.
+// ValueRow shows a setting's value as text, with an edit button that opens a
+// dialog with the field, Save and Cancel.
 export function ValueRow({ title, value, empty = "None", type, hint, onSave }: {
   title: string;
   value: string;
@@ -430,29 +462,31 @@ export function ValueRow({ title, value, empty = "None", type, hint, onSave }: {
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
 
-  if (editing) {
-    const save = async (e: FormEvent) => {
-      e.preventDefault();
-      setBusy(true);
-      try {
-        await onSave(draft.trim());
-        setEditing(false);
-      } catch (err) {
-        notify(message(err), "bad");
-      } finally {
-        setBusy(false);
-      }
-    };
-    return (
-      <form className="setting nested" onSubmit={save}>
-        <TextField className="grow" label={title} type={type} autoFocus autoComplete="off" value={draft} onChange={setDraft} hint={hint} />
-        <button type="button" className="btn text" onClick={() => setEditing(false)}>Cancel</button>
-        <button className="btn primary" disabled={busy}>Save</button>
-      </form>
-    );
-  }
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await onSave(draft.trim());
+      setEditing(false);
+    } catch (err) {
+      notify(message(err), "bad");
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <Row title={title} sub={value || empty}>
+      {editing && (
+        <Dialog title={`Change ${title.toLowerCase()}`} onClose={() => setEditing(false)}>
+          <form onSubmit={save}>
+            <TextField label={title} type={type} autoFocus autoComplete="off" value={draft} onChange={setDraft} hint={hint} />
+            <div className="edit-actions">
+              <button type="button" className="btn text" onClick={() => setEditing(false)}>Cancel</button>
+              <button className="btn primary" disabled={busy}>Save</button>
+            </div>
+          </form>
+        </Dialog>
+      )}
       <button type="button" className="icon-btn" aria-label={`Change ${title.toLowerCase()}`} title={`Change ${title.toLowerCase()}`}
         onClick={() => {
           setDraft(value);

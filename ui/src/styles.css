@@ -668,13 +668,24 @@ a.result:hover { background: var(--hover); }
 .edit-row .port { width: 120px; flex-shrink: 0; }
 .edit-row .protocol { width: 140px; flex-shrink: 0; }
 .edit-row > .btn { margin-top: 8px; }
-.edit-block { display: grid; gap: 4px; padding-top: 8px; }
+.edit-block { display: grid; gap: 4px; }
 .edit-switch { display: flex; align-items: center; gap: 12px; color: var(--text-2); cursor: pointer; }
 .edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .edit-actions-start { margin-right: auto; }
 
-/* Steps that open inside a card. */
-.card-steps { padding: 20px 24px; border-top: 1px solid var(--line); }
+/* A panel over the whole page, the page dimmed behind it; menus inside it sit above. */
+.dialog-scrim {
+  position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 24px 16px;
+  background: rgb(0 0 0 / .5); animation: fade .2s both;
+}
+.dialog {
+  width: min(600px, 100%); max-height: 100%; overflow: auto; border-radius: var(--card-round);
+  background: var(--bg); color: var(--text); box-shadow: var(--shadow); animation: rise .2s var(--ease) both;
+}
+.dialog-head { display: flex; align-items: center; gap: 12px; padding: 20px 20px 4px 24px; }
+.dialog-head h2 { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; font-size: 22px; font-weight: 400; }
+.dialog-body { padding: 16px 24px 24px; }
+
 
 /* Third-party providers: a grid of tiles, the provider's logo on top. */
 .provider-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
@@ -779,13 +790,12 @@ a.result:hover { background: var(--hover); }
 .section-title { margin: 0 0 8px; font-size: 16px; font-weight: 500; }
 .kv { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 44px; }
 /* A faint line between one value and the next. */
-.kv + .kv, .kv + .kv-block, .kv-block + .kv { border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.kv + .kv { border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
 .kv-label { color: var(--text-2); font-size: 13px; }
 .kv-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kv-value.muted { color: var(--text-3); }
 .kv-input { width: 100%; }
 .kv-actions { display: flex; gap: 2px; }
-.kv-block { display: grid; gap: 4px; padding: 8px 0; }
 
 /* A section with its heading and an action on one line, then compact rows split
    by faint lines. */
