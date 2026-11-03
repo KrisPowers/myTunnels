@@ -82,7 +82,6 @@ environment variables:
 | `GATE_ADDR` | `127.0.0.1:7080` | Gateway address, reached only by cloudflared |
 | `UPSTREAM_HOST` | `host.docker.internal` | Default host for tunnel ports, changeable in Settings |
 | `DATA_DIR` | `/data` | Database location |
-| `METRICS_ADDR` | `127.0.0.1:20241` | cloudflared metrics, used for the health indicator |
 | `RUST_LOG` | `info` | Log level |
 
 `compose.yaml` maps `host.docker.internal` to the Docker host, so a port published by any
