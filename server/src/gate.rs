@@ -184,7 +184,7 @@ fn check(
 fn device_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &Route) -> bool {
     cookie(headers, SESSION_COOKIE)
         .and_then(|sid| session(&state.device_sessions, sid))
-        .and_then(|(device_id, _)| snap.devices.get(&device_id))
+        .and_then(|s| snap.devices.get(&s.subject))
         .is_some_and(|d| may_open(d, route))
 }
 
