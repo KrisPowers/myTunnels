@@ -203,7 +203,7 @@ function Search({ routes, devices }: { routes: Route[] | null; devices: Device[]
       .map((r) => ({ key: "r" + r.id, icon: "public" as IconName, label: r.hostname, sub: `port ${r.target_port}`, to: `#/tunnels/${r.id}` })),
     ...(devices ?? [])
       .filter((d) => d.id.toLowerCase().includes(needle) || d.name.toLowerCase().includes(needle))
-      .map((d) => ({ key: "d" + d.id, icon: "devices" as IconName, label: d.name || d.id, sub: d.name ? d.id : d.status, to: `#/devices/${d.id}` })),
+      .map((d) => ({ key: "d" + d.id, icon: "devices" as IconName, label: d.name || shortId(d.id), sub: d.name ? shortId(d.id) : d.status, to: `#/devices/${d.id}` })),
   ].slice(0, 8) : [];
   const listed = open && items.length > 0;
 
