@@ -124,6 +124,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
         </div>
         <Search routes={routes} devices={devices} />
         <div className="header-actions">
+          <a className="btn primary header-new" href="#/new"><Icon name="add" size={20} />New tunnel</a>
           <a className={"icon-btn" + (view === "docs" ? " on" : "")} href="#/docs" aria-label="Help" title="Help"><Icon name="help" /></a>
           <a className={"icon-btn" + (view === "settings" ? " on" : "")} href="#/settings" aria-label="Settings" title="Settings"><Icon name="settings" /></a>
         </div>
@@ -141,7 +142,6 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
             </>
           ) : (
             <>
-              <a className="fab" href="#/new"><Icon name="add" size={24} />New tunnel</a>
               <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels" || view === "new"} />
               <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={pending || undefined} />
               <NavItem to="#/users" icon="group" label="Users" on={view === "users"} />

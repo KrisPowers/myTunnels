@@ -116,7 +116,7 @@ kbd {
 }
 .nav-item .icon { color: var(--text); }
 /* A little air between items, so hover and active backgrounds never touch. */
-.nav-item + .nav-item { margin-top: 0; }
+.nav-item + .nav-item { margin-top: 4px; }
 .nav-item.on { font-weight: 500; }
 .nav-item:hover { background: var(--hover); }
 .nav-item.on { background: var(--accent-bg); color: var(--on-accent-bg); }
@@ -445,18 +445,6 @@ a.result:hover { background: var(--hover); }
 .brand:hover { text-decoration: none; }
 .brand-mark { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--accent); color: var(--on-accent); }
 
-/* New, raised over the sidebar as in Google's apps. */
-.fab {
-  display: inline-flex; align-items: center; gap: 12px; height: 56px; margin: 0 0 16px; padding: 0 20px 0 16px;
-  border-radius: 16px; background: var(--raised); color: var(--text); font-weight: 500; white-space: nowrap;
-  box-shadow: 0 1px 2px light-dark(rgba(60, 64, 67, .3), rgba(0, 0, 0, .6)), 0 1px 3px 1px light-dark(rgba(60, 64, 67, .15), rgba(0, 0, 0, .3));
-  transition: box-shadow .2s, background .2s;
-}
-.fab:hover {
-  text-decoration: none; background: color-mix(in srgb, var(--accent) 8%, var(--raised));
-  box-shadow: 0 1px 3px light-dark(rgba(60, 64, 67, .3), rgba(0, 0, 0, .6)), 0 4px 8px 3px light-dark(rgba(60, 64, 67, .15), rgba(0, 0, 0, .3));
-}
-
 /* A count beside a page in the sidebar; the accent when something waits. */
 .nav-count { min-width: 24px; height: 20px; padding: 0 7px; border-radius: 10px; background: var(--card-2); color: var(--text-2); font: 500 12px/20px var(--font); text-align: center; }
 .nav-count.alert { background: var(--accent); color: var(--on-accent); }
@@ -637,6 +625,9 @@ a.result:hover { background: var(--hover); }
   .result.tunnel-row .result-service, .result.device-row .result-meta { display: none; }
   .result.tunnel-row .result-what, .result.device-row .result-service { grid-column: 2; grid-row: 2; }
   .tally.three { grid-template-columns: minmax(0, 1fr); }
+  .header-new { width: 40px; padding: 0; justify-content: center; font-size: 0; gap: 0; }
+  .edit-row { flex-wrap: wrap; }
+  .edit-row .grow { flex-basis: 100%; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
   .result.user-row { grid-template-columns: 16px minmax(0, 1fr) auto; }
   .result.user-row .result-meta { display: none; }
@@ -645,6 +636,23 @@ a.result:hover { background: var(--hover); }
   .step-label { display: none; }
   .step { justify-content: center; }
 }
+
+/* New tunnel, in the header beside help and settings. */
+.header-new { height: 40px; margin-right: 8px; padding: 0 20px 0 16px; }
+.header-new:hover { text-decoration: none; }
+
+/* A title or line with its edit button beside it, and the form that replaces it. */
+.inline-edit { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.icon-btn.small { width: 32px; height: 32px; }
+.edit-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.edit-row .tf { margin-bottom: 8px; }
+.edit-row .grow { flex: 1; }
+.edit-row .port { width: 120px; flex-shrink: 0; }
+.edit-row .protocol { width: 140px; flex-shrink: 0; }
+.edit-row > .btn { margin-top: 8px; }
+.edit-block { display: grid; gap: 4px; padding-top: 8px; }
+.edit-switch { display: flex; align-items: center; gap: 12px; color: var(--text-2); cursor: pointer; }
+.edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* A field that sits under the setting it belongs to, with its button beside it. */
 .setting.nested { align-items: flex-start; padding-top: 4px; }
