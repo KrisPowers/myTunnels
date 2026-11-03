@@ -220,43 +220,48 @@ export interface LogEntry {
   at: number;
   // "ok", "bad", or "" for neither.
   tone: string;
-  text: ReactNode;
-  where?: string;
+  event: string;
+  who?: ReactNode;
+  ip?: string | null;
+  country?: string | null;
 }
 
-function dayOf(at: number) {
+// When something happened: the time today, the date and time before that.
+function when(at: number) {
   const d = new Date(at * 1000);
-  if (d.toDateString() === new Date().toDateString()) return "Today";
-  if (d.toDateString() === new Date(Date.now() - 86_400_000).toDateString()) return "Yesterday";
-  return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  if (d.toDateString() === new Date().toDateString()) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+  return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-// LogDays is a log: a heading per day, then one quiet line per entry with a dot,
-// the time, what happened, and where from.
-export function LogDays({ entries }: { entries: LogEntry[] }) {
-  const days: [string, LogEntry[]][] = [];
-  for (const e of entries) {
-    const label = dayOf(e.at);
-    if (days.at(-1)?.[0] !== label) days.push([label, []]);
-    days.at(-1)![1].push(e);
-  }
+// LogTable is a log as a table: when, what happened, who, and where from,
+// newest first.
+export function LogTable({ entries, who = "Who" }: { entries: LogEntry[]; who?: string }) {
   return (
-    <>
-      {days.map(([label, list]) => (
-        <section key={label} className="log-day">
-          <h3>{label}</h3>
-          <ul className="log-list">
-            {list.map((e, i) => (
-              <li key={i} className="log-line">
-                <span className={"dot " + e.tone} />
-                <time className="log-time">{new Date(e.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
-                <span className="log-text">{e.text}</span>
-                {e.where && <span className="log-where">{e.where}</span>}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-    </>
+    <div className="table-wrap">
+      <table className="table log-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th className="grow">Event</th>
+            <th>{who}</th>
+            <th>Address</th>
+            <th>Country</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((e, i) => (
+            <tr key={i}>
+              <td className="log-time">{when(e.at)}</td>
+              <td><span className="log-event"><span className={"dot " + e.tone} />{e.event}</span></td>
+              <td>{e.who ?? <span className="muted">Unknown</span>}</td>
+              <td className="mono muted">{e.ip ?? ""}</td>
+              <td className="muted">{e.country ?? ""}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
