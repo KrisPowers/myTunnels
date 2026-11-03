@@ -50,6 +50,17 @@ export interface User {
   note: string | null;
 }
 
+export interface TunnelEvent {
+  route_id: string;
+  kind: "sign-in" | "password" | "visit" | "device";
+  outcome: string;
+  user_id: string | null;
+  device_id: string | null;
+  ip: string | null;
+  country: string | null;
+  at: number;
+}
+
 export interface SignIn {
   user_id: string;
   device_id: string | null;
