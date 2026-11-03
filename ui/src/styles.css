@@ -761,6 +761,19 @@ a.result:hover { background: var(--hover); }
 .kv-actions { display: flex; gap: 2px; }
 .kv-block { display: grid; gap: 4px; padding: 8px 0; }
 
+/* A section with its heading and an action on one line, then compact rows split
+   by faint lines. */
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; margin-bottom: 4px; }
+.section-head .section-title { margin: 0; }
+.item-list { list-style: none; margin: 0; padding: 0; }
+.item-row { display: flex; align-items: center; gap: 12px; min-height: 52px; }
+.item-row + .item-row { border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.item-row .person { flex: 1; color: var(--text); }
+.item-row .person:hover { text-decoration: none; }
+.item-row .person:hover .scan-target { text-decoration: underline; }
+.item-icon { color: var(--text-2); }
+.empty-note { margin: 0; padding: 12px 0; color: var(--text-3); }
+
 /* Fields set straight on a card, under its heading. */
 .card-pad { padding: 0 24px 16px; }
 .form-grid .span { grid-column: 1 / -1; }
