@@ -72,6 +72,18 @@ CREATE TABLE IF NOT EXISTS sign_ins (
 );
 CREATE INDEX IF NOT EXISTS sign_ins_user ON sign_ins (user_id, at);
 CREATE INDEX IF NOT EXISTS sign_ins_device ON sign_ins (device_id, at);
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    user_id TEXT,
+    device_id TEXT,
+    ip TEXT,
+    country TEXT,
+    at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS events_route ON events (route_id, at);
 CREATE TABLE IF NOT EXISTS user_routes (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
