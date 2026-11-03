@@ -207,7 +207,13 @@ async fn cloudflare_accounts(
     Json(body): Json<TokenBody>,
 ) -> ApiResult<Json<Vec<Account>>> {
     let token = token_or_saved(&state, body.api_token)?;
-    Ok(Json(Cloudflare::new(&state.http, &token).accounts().await?))
+    let accounts = Cloudflare::new(&state.http, &token).accounts().await?;
+    // Until Cloudflare is connected, a token that works is kept as soon as it is checked,
+    // so setup can be left and resumed. Once connected, only saving the connection replaces it.
+    if state.cloudflare().is_err() && !accounts.is_empty() {
+        state.db.set_setting("cf_token", &token)?;
+    }
+    Ok(Json(accounts))
 }
 
 #[derive(Deserialize)]
