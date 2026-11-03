@@ -124,6 +124,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
         </div>
         <Search routes={routes} devices={devices} />
         <div className="header-actions">
+          <a className="btn primary header-new" href="#/new"><Icon name="add" size={20} />New tunnel</a>
           <a className={"icon-btn" + (view === "docs" ? " on" : "")} href="#/docs" aria-label="Help" title="Help"><Icon name="help" /></a>
           <a className={"icon-btn" + (view === "settings" ? " on" : "")} href="#/settings" aria-label="Settings" title="Settings"><Icon name="settings" /></a>
         </div>
