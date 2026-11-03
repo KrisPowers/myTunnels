@@ -43,7 +43,6 @@ export interface User {
   email: string;
   name: string;
   enabled: boolean;
-  all_routes: boolean;
   route_ids: string[];
   created_at: number;
   last_login: number | null;
