@@ -105,7 +105,7 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
     let mut response = if verdict.allowed() {
         proxy::forward(&state, &snap, &route, ip, req).await
     } else {
-        refuse(&host, &verdict, &req)
+        refuse(&state, &route, ip, &host, &verdict, &req)
     };
     if let Some(value) = new_cookie {
         response.headers_mut().append(header::SET_COOKIE, value);
