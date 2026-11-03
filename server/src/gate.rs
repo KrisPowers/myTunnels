@@ -10,17 +10,17 @@ use std::net::IpAddr;
 use std::time::Duration;
 
 use axum::extract::{Request, State};
-use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::db::{Device, Event, Route, SignIn};
-use crate::proxy;
+use crate::db::{Device, Event, Route, SignIn, User};
 use crate::state::{AppState, Hop, Snapshot};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
 use crate::{guard, secret};
+use crate::{oauth, proxy};
 
 pub const DEVICE_COOKIE: &str = "__gate_device";
 const SESSION_COOKIE: &str = "__gate_session";
@@ -319,13 +319,40 @@ fn refuse(
             "This app only opens on approved devices. Give the ID below to the administrator.",
         ),
     };
-    gate_page(StatusCode::UNAUTHORIZED, kind, host, title, text, &others)
+    let providers = if kind == "login" {
+        sign_in_buttons(state)
+    } else {
+        "[]".into()
+    };
+    gate_page(
+        StatusCode::UNAUTHORIZED,
+        kind,
+        host,
+        title,
+        text,
+        &others,
+        &providers,
+    )
+}
+
+/// The providers a visitor can sign in with, as `[{"id", "name"}]`.
+fn sign_in_buttons(state: &AppState) -> String {
+    if oauth::callback_host(&state.db, &state.snapshot()).is_none() {
+        return "[]".into();
+    }
+    let list: Vec<Value> = oauth::all(&state.db)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| p.enabled)
+        .map(|p| json!({ "id": p.id, "name": p.label() }))
+        .collect();
+    Value::from(list).to_string()
 }
 
 // ---- pages ----
 
 pub fn page(status: StatusCode, mode: &str, host: &str, title: &str, text: &str) -> Response {
-    gate_page(status, mode, host, title, text, &[])
+    gate_page(status, mode, host, title, text, &[], "[]")
 }
 
 fn gate_page(
@@ -335,13 +362,15 @@ fn gate_page(
     title: &str,
     text: &str,
     others: &[&str],
+    providers: &str,
 ) -> Response {
     let html = TEMPLATE
         .replace("{{MODE}}", mode)
         .replace("{{OTHERS}}", &others.join(" "))
         .replace("{{HOST}}", &escape(host))
         .replace("{{TITLE}}", &escape(title))
-        .replace("{{TEXT}}", &escape(text));
+        .replace("{{TEXT}}", &escape(text))
+        .replace("{{PROVIDERS}}", &escape(providers));
     (
         status,
         [
@@ -656,6 +685,15 @@ async fn action_response(
             Ok((headers, body)) => login(state, route, ip, &headers, body).await,
             Err(status) => status.into_response(),
         },
+        ("oauth", false) => {
+            let (parts, _) = req.into_parts();
+            oauth_start(state, route, &parts.uri, &parts.headers).await
+        }
+        ("oauth-callback", false) => {
+            let (parts, _) = req.into_parts();
+            oauth_callback(state, route, ip, &parts.uri, &parts.headers).await
+        }
+        ("oauth-done", false) => oauth_done(state, route, &req),
         _ => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -938,31 +976,17 @@ async fn login(
         &body.password,
         account.as_ref().map(|u| u.password_hash.as_str()),
     );
-    // Who is signing in: the device key this browser holds, and where it is.
-    let key = cookie(headers, DEVICE_COOKIE).filter(|t| valid_token(t));
-    let device_hash = key.map(sha256_hex).unwrap_or_default();
-    let device_id = key
-        .and_then(|t| state.db.device_by_token(&sha256_hex(t)).ok().flatten())
-        .map(|d| d.id);
-    let country = headers
-        .get("cf-ipcountry")
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_owned);
-    let record = |user_id: &str, outcome: &str| {
-        log(state, route, "sign-in", outcome, Some(user_id), ip, headers);
-        let _ = state.db.add_sign_in(&SignIn {
-            user_id: user_id.to_owned(),
-            device_id: device_id.clone(),
-            ip: ip.map(|ip| ip.to_string()),
-            country: country.clone(),
-            at: now(),
-            outcome: outcome.to_owned(),
-        });
-    };
+    let visitor = Visitor::of(state, ip, headers);
 
-    let Some(mut account) = account.filter(|u| valid && u.enabled) else {
+    let Some(account) = account.filter(|u| valid && u.enabled) else {
         if let Some(u) = state.db.user_by_email(&body.email).ok().flatten() {
-            record(&u.id, if valid { "blocked" } else { "failed" });
+            record(
+                state,
+                route,
+                &visitor,
+                &u.id,
+                if valid { "blocked" } else { "failed" },
+            );
         }
         state.record_failure(&by_address);
         state.record_failure(&by_account);
@@ -980,26 +1004,103 @@ async fn login(
     state.clear_failures(&by_address);
     state.clear_failures(&by_account);
     state.clear_failures(&by_device);
+    match admit(state, route, account, &visitor) {
+        Ok(sid) => {
+            let mut response = Json(json!({ "ok": true })).into_response();
+            response.headers_mut().extend(
+                cookie_value(USER_COOKIE, &sid, Some(&route.zone_name), USER_TTL)
+                    .map(|v| (header::SET_COOKIE, v)),
+            );
+            response
+        }
+        Err((status, why)) => json_error(status, why),
+    }
+}
+
+/// Who is signing in: the device key this browser holds, and where it is.
+struct Visitor {
+    device_id: Option<String>,
+    device_hash: String,
+    ip: Option<IpAddr>,
+    country: Option<String>,
+}
+
+impl Visitor {
+    fn of(state: &AppState, ip: Option<IpAddr>, headers: &HeaderMap) -> Self {
+        let key = cookie(headers, DEVICE_COOKIE).filter(|t| valid_token(t));
+        Self {
+            device_id: key
+                .and_then(|t| state.db.device_by_token(&sha256_hex(t)).ok().flatten())
+                .map(|d| d.id),
+            device_hash: key.map(sha256_hex).unwrap_or_default(),
+            ip,
+            country: country(headers),
+        }
+    }
+}
+
+fn country(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("cf-ipcountry")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned)
+}
+
+/// Notes a sign-in attempt on the account and at the tunnel.
+fn record(state: &AppState, route: &Route, v: &Visitor, user_id: &str, outcome: &str) {
+    log_event(
+        state,
+        Event {
+            route_id: route.id.clone(),
+            kind: "sign-in".into(),
+            outcome: outcome.to_owned(),
+            user_id: Some(user_id.to_owned()),
+            device_id: v.device_id.clone(),
+            ip: v.ip.map(|ip| ip.to_string()),
+            country: v.country.clone(),
+            at: now(),
+        },
+    );
+    let _ = state.db.add_sign_in(&SignIn {
+        user_id: user_id.to_owned(),
+        device_id: v.device_id.clone(),
+        ip: v.ip.map(|ip| ip.to_string()),
+        country: v.country.clone(),
+        at: now(),
+        outcome: outcome.to_owned(),
+    });
+}
+
+/// Lets in an account whose owner has proved who they are, by password or through
+/// another service: if it may open this tunnel, from a device linked to it, and the
+/// sign-in does not look like someone else holding it. Returns the session token.
+fn admit(
+    state: &AppState,
+    route: &Route,
+    mut account: User,
+    v: &Visitor,
+) -> Result<String, (StatusCode, &'static str)> {
     if !account.route_ids.contains(&route.id) {
-        return json_error(StatusCode::FORBIDDEN, "This account cannot open this app.");
+        return Err((StatusCode::FORBIDDEN, "This account cannot open this app."));
     }
 
     // An account signs in only from the devices linked to it. One with none yet
     // takes the device of its first sign-in.
     if account.device_ids.is_empty() {
-        if let Some(first) = &device_id {
+        if let Some(first) = &v.device_id {
             account.device_ids.push(first.clone());
         }
     }
-    if !device_id
+    if !v
+        .device_id
         .as_ref()
         .is_some_and(|d| account.device_ids.contains(d))
     {
-        record(&account.id, "unlinked");
-        return json_error(
+        record(state, route, v, &account.id, "unlinked");
+        return Err((
             StatusCode::FORBIDDEN,
             "This device is not linked to the account. Ask the administrator to link it.",
-        );
+        ));
     }
 
     // A sign-in that looks like the account is in other hands holds it for review.
@@ -1008,40 +1109,234 @@ async fn login(
         .sign_ins("user_id", &account.id, 200)
         .unwrap_or_default();
     let attempt = guard::Attempt {
-        device: device_id.as_deref(),
-        country: country.as_deref(),
+        device: v.device_id.as_deref(),
+        country: v.country.as_deref(),
         at: now(),
     };
     if let Some(reason) = guard::assess(&history, &attempt) {
         tracing::warn!("holding account {} for review: {reason}", account.username);
-        record(&account.id, "blocked");
+        record(state, route, v, &account.id, "blocked");
         account.enabled = false;
         account.note = Some(reason);
         let _ = state.db.save_user(&account);
         state.end_sessions_of(&state.user_sessions, &account.id);
         let _ = state.reload();
-        return json_error(
+        return Err((
             StatusCode::FORBIDDEN,
             "This account is held for review. Ask the administrator to check it.",
-        );
+        ));
     }
 
-    record(&account.id, "ok");
+    record(state, route, v, &account.id, "ok");
     account.last_login = Some(now());
     let _ = state.db.save_user(&account);
-    let sid = state.open_session(
+    Ok(state.open_session(
         &state.user_sessions,
         &account.id,
         &secret::tag(&account.password_hash),
-        &device_hash,
+        &v.device_hash,
         USER_TTL,
-    );
-    let mut response = Json(json!({ "ok": true })).into_response();
-    response.headers_mut().extend(
-        cookie_value(USER_COOKIE, &sid, Some(&route.zone_name), USER_TTL)
-            .map(|v| (header::SET_COOKIE, v)),
-    );
+    ))
+}
+
+// ---- signing in through another service ----
+
+/// How long a visitor has to finish signing in at the provider.
+const OAUTH_TTL: i64 = 10 * 60;
+
+/// A refusal shown as the gateway's own page.
+fn notice(host: &str, title: &str, text: &str) -> Response {
+    let mut response = page(StatusCode::FORBIDDEN, "message", host, title, text);
+    harden(&mut response);
     response
+}
+
+/// A path on this site to come back to, never another site.
+fn local_path(path: Option<String>) -> String {
+    path.filter(|p| p.starts_with('/') && !p.starts_with("//") && !p.contains('\\'))
+        .unwrap_or_else(|| "/".into())
+}
+
+/// `/__gate/oauth?p=<provider>&r=<path>`: off to the provider, remembering where
+/// the visitor was and which device they are on.
+async fn oauth_start(state: &AppState, route: &Route, uri: &Uri, headers: &HeaderMap) -> Response {
+    let host = &route.hostname;
+    let provider = query_decoded(uri, "p")
+        .and_then(|id| oauth::load(&state.db, &id).ok().flatten())
+        .filter(|p| p.enabled && route.require_login);
+    let Some(provider) = provider else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Some(device_hash) = device_key(headers) else {
+        return notice(
+            host,
+            "No device ID yet",
+            "This browser has no device ID yet. Reload the page and try again.",
+        );
+    };
+    let Some(callback) = oauth::callback_host(&state.db, &state.snapshot()) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let redirect_uri = oauth::redirect_uri(&callback);
+    let verifier = random_alnum(64);
+    let nonce = random_hex(16);
+    let url = match oauth::authorize_url(&state.http, &provider, &redirect_uri, &nonce, &verifier)
+        .await
+    {
+        Ok(url) => url,
+        Err(err) => {
+            tracing::warn!("cannot start a {} sign-in: {err:#}", provider.label());
+            return notice(
+                host,
+                "Sign-in unavailable",
+                &format!("{} cannot be reached right now.", provider.label()),
+            );
+        }
+    };
+    let device_id = state
+        .db
+        .device_by_token(&device_hash)
+        .ok()
+        .flatten()
+        .map(|d| d.id);
+    state.put_hop(
+        nonce,
+        Hop::OAuth {
+            provider: provider.id,
+            host: host.clone(),
+            path: local_path(query_decoded(uri, "r")),
+            device_hash,
+            device_id,
+            verifier,
+            expires: now() + OAUTH_TTL,
+        },
+    );
+    redirect(&url, Vec::new())
+}
+
+/// On the callback tunnel: the provider is back with a code. Trades it for the
+/// emails the provider vouches for, signs in the account with one of them, and
+/// sends the browser back to the tunnel it started from.
+async fn oauth_callback(
+    state: &AppState,
+    route: &Route,
+    ip: Option<IpAddr>,
+    uri: &Uri,
+    headers: &HeaderMap,
+) -> Response {
+    let Some(Hop::OAuth {
+        provider,
+        host,
+        path,
+        device_hash,
+        device_id,
+        verifier,
+        ..
+    }) = query_decoded(uri, "state").and_then(|n| state.take_hop(&n))
+    else {
+        return notice(
+            &route.hostname,
+            "Sign-in expired",
+            "This sign-in link has expired or was used already. Go back to the app and try again.",
+        );
+    };
+    let Some(target) = state.snapshot().routes.get(&host).cloned() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let visitor = Visitor {
+        device_id,
+        device_hash,
+        ip,
+        country: country(headers),
+    };
+    let code = query_decoded(uri, "code");
+    let outcome = oauth_outcome(state, &target, &provider, &visitor, code, &verifier).await;
+    let hop = random_hex(16);
+    state.put_hop(
+        hop.clone(),
+        Hop::Signed {
+            host: host.clone(),
+            path,
+            outcome,
+            expires: now() + HOP_TTL,
+        },
+    );
+    redirect(
+        &format!("https://{host}/__gate/oauth-done?c={hop}"),
+        Vec::new(),
+    )
+}
+
+async fn oauth_outcome(
+    state: &AppState,
+    route: &Route,
+    provider: &str,
+    visitor: &Visitor,
+    code: Option<String>,
+    verifier: &str,
+) -> Result<String, String> {
+    let Some(provider) = oauth::load(&state.db, provider).ok().flatten() else {
+        return Err("That sign-in method was removed.".into());
+    };
+    let name = provider.label();
+    let Some(code) = code else {
+        return Err(format!("{name} did not sign you in."));
+    };
+    let Some(callback) = oauth::callback_host(&state.db, &state.snapshot()) else {
+        return Err("Sign-in is not set up.".into());
+    };
+    let redirect_uri = oauth::redirect_uri(&callback);
+    let emails =
+        oauth::verified_emails(&state.http, &provider, &redirect_uri, &code, verifier).await;
+    let emails = match emails {
+        Ok(emails) => emails,
+        Err(err) => {
+            tracing::warn!("{name} sign-in failed: {err:#}");
+            return Err(format!("{name} could not confirm who you are."));
+        }
+    };
+    let Some(account) = emails
+        .iter()
+        .find_map(|e| state.db.user_by_email(e).ok().flatten())
+    else {
+        return Err(format!(
+            "No account here uses the email your {name} account has verified."
+        ));
+    };
+    if !account.enabled {
+        record(state, route, visitor, &account.id, "blocked");
+        return Err("This account is turned off. Ask the administrator.".into());
+    }
+    admit(state, route, account, visitor).map_err(|(_, why)| why.to_owned())
+}
+
+/// Back on the tunnel the visitor started from: keeps the session, or says why not.
+fn oauth_done(state: &AppState, route: &Route, req: &Request) -> Response {
+    match query(req.uri().query(), "c").and_then(|c| state.take_hop(&c)) {
+        Some(Hop::Signed {
+            host,
+            path,
+            outcome,
+            ..
+        }) if host == route.hostname => match outcome {
+            Ok(sid) => redirect(
+                &path,
+                cookie_value(USER_COOKIE, &sid, Some(&route.zone_name), USER_TTL)
+                    .into_iter()
+                    .collect(),
+            ),
+            Err(why) => notice(&route.hostname, "Could not sign in", &why),
+        },
+        _ => redirect("/", Vec::new()),
+    }
+}
+
+/// A query parameter, percent-decoded.
+fn query_decoded(uri: &Uri, name: &str) -> Option<String> {
+    let url = reqwest::Url::parse(&format!("https://gate{uri}")).ok()?;
+    url.query_pairs()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.into_owned())
 }
 
 // ---- the tunnel's log ----
@@ -1060,21 +1355,24 @@ fn log(
         .filter(|t| valid_token(t))
         .and_then(|t| state.db.device_by_token(&sha256_hex(t)).ok().flatten())
         .map(|d| d.id);
-    let event = Event {
-        route_id: route.id.clone(),
-        kind: kind.to_owned(),
-        outcome: outcome.to_owned(),
-        user_id: user_id.map(str::to_owned),
-        device_id,
-        ip: ip.map(|ip| ip.to_string()),
-        country: headers
-            .get("cf-ipcountry")
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_owned),
-        at: now(),
-    };
+    log_event(
+        state,
+        Event {
+            route_id: route.id.clone(),
+            kind: kind.to_owned(),
+            outcome: outcome.to_owned(),
+            user_id: user_id.map(str::to_owned),
+            device_id,
+            ip: ip.map(|ip| ip.to_string()),
+            country: country(headers),
+            at: now(),
+        },
+    );
+}
+
+fn log_event(state: &AppState, event: Event) {
     if let Err(err) = state.db.add_event(&event) {
-        tracing::warn!("could not log a {kind} event: {err:#}");
+        tracing::warn!("could not log a {} event: {err:#}", event.kind);
     }
 }
 
