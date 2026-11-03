@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent } from "react";
-import { api, message, type Auth, type Device, type Route, type Status } from "./api";
+import { api, deviceInfo, message, shortId, type Auth, type Device, type Route, type Status, type User } from "./api";
 import { DevicePage, Devices } from "./Devices";
 import { Icon, type IconName } from "./Icon";
 import { go, readHash } from "./route";
 import { SETTINGS, Settings } from "./Settings";
 import { Setup } from "./Setup";
-import { TunnelPage, Tunnels } from "./Tunnels";
+import { DOCS, Docs } from "./Docs";
+import { NewTunnel, TunnelPage, Tunnels } from "./Tunnels";
+import { NewUser, UserPage, Users } from "./Users";
 import { Callout, Notices } from "./ui";
 
 export function App() {
