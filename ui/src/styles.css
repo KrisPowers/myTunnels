@@ -640,7 +640,7 @@ a.result:hover { background: var(--hover); }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
   .result.user-row { grid-template-columns: 32px minmax(0, 1fr) auto; }
   .result.user-row .result-meta, .result.user-row .result-service, .result.user-row .result-what { display: none; }
-  .log-where { display: none; }
+  .log-table th:nth-child(4), .log-table td:nth-child(4), .log-table th:nth-child(5), .log-table td:nth-child(5) { display: none; }
   .person-row .result-meta { display: none; }
   .edit-row .place, .edit-row .protocol { flex: 1; width: auto; }
   .setup { padding: 16px; }
