@@ -451,7 +451,7 @@ async fn delete_oauth(
     list_oauth(State(state)).await
 }
 
-// Two-factor: the mail server, and where emailed codes are asked for
+// Two-factor: the SMTP credentials, and where emailed codes are asked for
 
 async fn two_factor(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let smtp = mail::load(&state.db)?.map(|m| {
@@ -483,14 +483,14 @@ struct SmtpBody {
     from: String,
 }
 
-/// Saves the mail server once it answers and accepts the sign-in.
+/// Saves SMTP credentials once the server accepts them.
 async fn save_smtp(
     State(state): State<AppState>,
     Json(body): Json<SmtpBody>,
 ) -> ApiResult<Json<Value>> {
     let host = body.host.trim();
     if !valid_host(host) {
-        return Err(ApiError::bad("Enter the mail server's host name"));
+        return Err(ApiError::bad("Enter the SMTP host, such as smtp.gmail.com"));
     }
     if body.port == 0 {
         return Err(ApiError::bad("Port must be between 1 and 65535"));
@@ -501,7 +501,7 @@ async fn save_smtp(
     let from = body.from.trim();
     if from.parse::<lettre::message::Mailbox>().is_err() {
         return Err(ApiError::bad(
-            "Enter the sender, such as myTunnels <codes@example.com>",
+            "Enter the from address, such as you@gmail.com",
         ));
     }
     let saved = mail::load(&state.db)?.unwrap_or_default();
@@ -526,7 +526,7 @@ async fn save_smtp(
 /// Sends a test email to the admin.
 async fn test_mail(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let smtp =
-        mail::load(&state.db)?.ok_or_else(|| ApiError::bad("Set up the mail server first"))?;
+        mail::load(&state.db)?.ok_or_else(|| ApiError::bad("Enter your SMTP credentials first"))?;
     let to = state
         .db
         .setting("admin_email")?
@@ -548,7 +548,7 @@ struct TwoFactorBody {
 }
 
 /// Turns codes for the dashboard on or off. Turning them on sends a test email
-/// first, so a mail server that does not deliver cannot lock the admin out.
+/// first, so credentials that do not deliver cannot lock the admin out.
 async fn save_two_factor(
     State(state): State<AppState>,
     Json(body): Json<TwoFactorBody>,
