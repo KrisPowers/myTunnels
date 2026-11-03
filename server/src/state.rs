@@ -168,6 +168,8 @@ impl AppState {
         let snapshot = Arc::new(Snapshot {
             routes,
             devices,
+            users,
+            hub,
             upstream_host,
             trusted,
         });
