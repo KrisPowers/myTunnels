@@ -375,8 +375,242 @@ pub fn fingerprint(info: &Value) -> String {
     sha256_hex(&parts.join("|"))
 }
 
-fn valid_token(token: &str) -> bool {
-    token.len() == TOKEN_LEN && token.bytes().all(|b| b.is_ascii_alphanumeric())
+/// True when `info` holds what the browser reports about its hardware, not just what
+/// the server saw.
+fn has_hardware(info: &Value) -> bool {
+    info.get("platform").is_some()
+}
+
+/// A page load that should leave with a device key: a browser opening a page without one.
+fn wants_identity(headers: &HeaderMap) -> bool {
+    let text = |name| {
+        headers
+            .get(name)
+            .and_then(|v: &HeaderValue| v.to_str().ok())
+            .unwrap_or("")
+    };
+    cookie(headers, DEVICE_COOKIE).is_none_or(|t| !valid_token(t))
+        && cookie(headers, TRIED_COOKIE).is_none()
+        && text("accept").contains("text/html")
+        && text("user-agent").starts_with("Mozilla/")
+        && matches!(text("sec-fetch-mode"), "" | "navigate")
+}
+
+enum Identity {
+    /// The key was made here; this cookie carries it.
+    Here(HeaderValue),
+    /// The browser goes to the hub for its key first.
+    Away(Response),
+    Keep,
+}
+
+fn identify(
+    state: &AppState,
+    snap: &Snapshot,
+    route: &Route,
+    ip: Option<IpAddr>,
+    req: &Request,
+) -> Identity {
+    let hub = snap.hub.as_deref().and_then(|h| snap.routes.get(h));
+    let same_domain = hub.is_none_or(|h| h.zone_name == route.zone_name);
+    if same_domain {
+        return match new_device(state, route, ip, req.headers(), "seen", Value::Null) {
+            Ok((_, token)) => cookie_value(
+                DEVICE_COOKIE,
+                &token,
+                Some(&route.zone_name),
+                DEVICE_COOKIE_TTL,
+            )
+            .map_or(Identity::Keep, Identity::Here),
+            Err(err) => {
+                tracing::warn!("could not record a new device: {}", err.1);
+                Identity::Keep
+            }
+        };
+    }
+    let path = req.uri().path_and_query().map_or("/", |p| p.as_str());
+    let nonce = random_hex(16);
+    state.put_hop(
+        nonce.clone(),
+        Hop::Return {
+            url: format!("https://{}{path}", route.hostname),
+            expires: now() + HOP_TTL,
+        },
+    );
+    let hub = hub.map(|h| h.hostname.as_str()).unwrap_or_default();
+    let tried = cookie_value(TRIED_COOKIE, "1", None, 300)
+        .into_iter()
+        .collect();
+    Identity::Away(redirect(
+        &format!("https://{hub}/__gate/id?n={nonce}"),
+        tried,
+    ))
+}
+
+/// Records a browser first met here and gives it a key.
+fn new_device(
+    state: &AppState,
+    route: &Route,
+    ip: Option<IpAddr>,
+    headers: &HeaderMap,
+    status: &str,
+    info: Value,
+) -> ApiResult<(Device, String)> {
+    if status == "pending" && state.db.pending_count()? >= MAX_PENDING {
+        return Err(ApiError(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many devices are waiting for approval".into(),
+        ));
+    }
+    let token = random_alnum(TOKEN_LEN);
+    let now = now();
+    let ip = ip.map(|ip| ip.to_string());
+    let info = if info.is_null() {
+        json!({ "userAgent": headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("") })
+    } else {
+        info
+    };
+    let device = Device {
+        id: random_alnum(DEVICE_ID_LEN),
+        name: String::new(),
+        status: status.into(),
+        all_routes: false,
+        route_ids: Vec::new(),
+        fingerprint: if has_hardware(&info) {
+            fingerprint(&info)
+        } else {
+            String::new()
+        },
+        info,
+        note: None,
+        first_ip: ip.clone(),
+        last_ip: ip,
+        country: headers
+            .get("cf-ipcountry")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned),
+        first_host: Some(route.hostname.clone()),
+        created_at: now,
+        last_seen: now,
+    };
+    state.db.insert_device(&device, &sha256_hex(&token))?;
+    if status == "seen" {
+        state.db.prune_seen(MAX_SEEN)?;
+    }
+    state.reload()?;
+    tracing::info!("device {} first seen on {}", device.id, route.hostname);
+    Ok((device, token))
+}
+
+// ---- /__gate/ actions ----
+
+async fn action_response(
+    state: &AppState,
+    route: &Route,
+    ip: Option<IpAddr>,
+    action: &str,
+    req: Request,
+) -> Response {
+    let post = req.method() == Method::POST;
+    match (action, post) {
+        ("id", false) => hub_hand_out(state, route, ip, &req),
+        ("claim", false) => claim(state, route, &req),
+        ("logout", false) => redirect(
+            "/",
+            cookie_value(USER_COOKIE, "", Some(&route.zone_name), 0)
+                .into_iter()
+                .collect(),
+        ),
+        ("enroll", true) => match body::<EnrollRequest>(req).await {
+            Ok((headers, body)) => register(state, route, ip, &headers, body)
+                .unwrap_or_else(IntoResponse::into_response),
+            Err(response) => response,
+        },
+        ("password", true) => match body::<PasswordRequest>(req).await {
+            Ok((_, body)) => password(state, route, ip, body).await,
+            Err(response) => response,
+        },
+        ("login", true) => match body::<LoginRequest>(req).await {
+            Ok((_, body)) => login(state, route, ip, body).await,
+            Err(response) => response,
+        },
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn body<T: serde::de::DeserializeOwned>(req: Request) -> Result<(HeaderMap, T), Response> {
+    let headers = req.headers().clone();
+    let bytes = axum::body::to_bytes(req.into_body(), 16 * 1024)
+        .await
+        .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE.into_response())?;
+    let body =
+        serde_json::from_slice(&bytes).map_err(|_| StatusCode::BAD_REQUEST.into_response())?;
+    Ok((headers, body))
+}
+
+/// On the hub: hands this browser's key (made now if it has none) to the tunnel that
+/// sent it, through a one-use code.
+fn hub_hand_out(state: &AppState, route: &Route, ip: Option<IpAddr>, req: &Request) -> Response {
+    let Some(Hop::Return { url, .. }) =
+        query(req.uri().query(), "n").and_then(|n| state.take_hop(&n))
+    else {
+        return redirect("/", Vec::new());
+    };
+    let Some((host, path)) = url.strip_prefix("https://").map(|rest| {
+        let (host, path) = rest
+            .split_once('/')
+            .map_or((rest, "/".to_owned()), |(h, p)| (h, format!("/{p}")));
+        (host.to_owned(), path)
+    }) else {
+        return redirect("/", Vec::new());
+    };
+    let mut cookies = Vec::new();
+    let token = match cookie(req.headers(), DEVICE_COOKIE).filter(|t| valid_token(t)) {
+        Some(token) => token.to_owned(),
+        None => match new_device(state, route, ip, req.headers(), "seen", Value::Null) {
+            Ok((_, token)) => {
+                cookies.extend(cookie_value(
+                    DEVICE_COOKIE,
+                    &token,
+                    Some(&route.zone_name),
+                    DEVICE_COOKIE_TTL,
+                ));
+                token
+            }
+            Err(_) => return redirect(&url, Vec::new()),
+        },
+    };
+    let code = random_hex(16);
+    state.put_hop(
+        code.clone(),
+        Hop::Claim {
+            host: host.clone(),
+            path,
+            token,
+            expires: now() + HOP_TTL,
+        },
+    );
+    redirect(&format!("https://{host}/__gate/claim?c={code}"), cookies)
+}
+
+/// Back on the tunnel: keeps the key the hub handed over, then carries on.
+fn claim(state: &AppState, route: &Route, req: &Request) -> Response {
+    match query(req.uri().query(), "c").and_then(|c| state.take_hop(&c)) {
+        Some(Hop::Claim {
+            host, path, token, ..
+        }) if host == route.hostname => redirect(
+            &path,
+            cookie_value(
+                DEVICE_COOKIE,
+                &token,
+                Some(&route.zone_name),
+                DEVICE_COOKIE_TTL,
+            )
+            .into_iter()
+            .collect(),
+        ),
+        _ => redirect("/", Vec::new()),
+    }
 }
 
 #[derive(Deserialize)]
@@ -386,22 +620,8 @@ struct EnrollRequest {
     info: Value,
 }
 
-async fn enroll(state: &AppState, route: &Route, ip: Option<IpAddr>, req: Request) -> Response {
-    let headers = req.headers().clone();
-    let Ok(bytes) = axum::body::to_bytes(req.into_body(), 16 * 1024).await else {
-        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
-    };
-    let Ok(body) = serde_json::from_slice::<EnrollRequest>(&bytes) else {
-        return StatusCode::BAD_REQUEST.into_response();
-    };
-    match register(state, route, ip, &headers, body) {
-        Ok(response) => response,
-        Err(err) => err.into_response(),
-    }
-}
-
-/// Identifies the calling browser by its device key, creating a pending device for a new one,
-/// and opens a session when the device is approved for this tunnel.
+/// Identifies the calling browser by its device key, asking for approval when it has not
+/// yet, and opens a session when the device is approved for this tunnel.
 fn register(
     state: &AppState,
     route: &Route,
