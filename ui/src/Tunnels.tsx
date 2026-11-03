@@ -337,7 +337,7 @@ export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: 
 const TUNNEL_PAGES: [string, string, IconName][] = [
   ["access", "Access Control", "shield"],
   ["devices", "Devices", "devices"],
-  ["logs", "Logs", "history"],
+  ["activity", "Activity", "history"],
 ];
 
 // TunnelPage is one tunnel: its address and target in the heading, each with an
@@ -445,7 +445,7 @@ export function TunnelPage({ route, page, devices, users, onChanged }: { route: 
 
         {current === "access" && <People route={route} users={users} onGrant={grantUser} />}
 
-        {current === "logs" && <TunnelLogs route={route} users={users} />}
+        {current === "activity" && <TunnelLogs route={route} users={users} />}
 
         {current === "devices" && (!edit.require_device ? (
           <div className="card welcome">
