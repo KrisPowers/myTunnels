@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ago, api, LEVELS, list, message, shortId, strength, type Route, type SignIn, type User } from "./api";
+import { ago, api, LEVELS, list, message, shortId, strength, type Device, type Route, type SignIn, type User } from "./api";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
-import { AddMenu, Avatar, Card, LogTable, MoreMenu, Row, SubNav, Switch, TextField, useNotify, ValueRow, type LogEntry } from "./ui";
+import { Dropdown } from "./Dropdown";
+import { AddMenu, Avatar, Card, LogTable, MoreMenu, Row, SubNav, TextField, useNotify, type LogEntry } from "./ui";
 
 function state(u: User): [string, string] {
   if (u.note) return ["bad", "Held for review"];
