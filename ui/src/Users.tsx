@@ -254,57 +254,58 @@ export function UserPage({ user, page, routes, devices, onChanged }: { user: Use
         {current === "profile" && <Profile user={user} edit={edit} />}
 
         {current === "access" && (
-          <>
-            <Card title="Tunnels" sub={theirs.length ? undefined : "None yet. Add the tunnels this account may sign in at."}
-              action={
+          <div className="profile-grid">
+            <section>
+              <div className="section-head">
+                <h3 className="section-title">Tunnels</h3>
                 <AddMenu label="Add a tunnel" placeholder="Find a tunnel" onPick={(id) => quietly({ route_ids: [...user.route_ids, id] })}
                   empty={<div className="menu-note">There are no tunnels yet</div>}
                   items={routes.map((r) => ({ id: r.id, label: r.hostname, sub: r.require_login ? undefined : "Sign-in is off here", disabled: user.route_ids.includes(r.id), note: "Already added" }))} />
-              }>
-              {theirs.length > 0 && (
-                <ul className="people">
+              </div>
+              {theirs.length ? (
+                <ul className="item-list">
                   {theirs.map((r) => (
-                    <li key={r.id} className="person-row">
+                    <li key={r.id} className="item-row">
                       <span className={"dot " + (r.enabled ? "ok" : "")} />
                       <a className="person" href={`#/tunnels/${r.id}`}>
                         <span className="scan-target">{r.hostname}</span>
                         <small>{r.require_login ? "Asks for sign-in" : "Sign-in is off"}</small>
                       </a>
-                      <button type="button" className="icon-btn danger" aria-label={`Remove ${r.hostname}`} title="Remove"
+                      <button type="button" className="icon-btn small danger" aria-label={`Remove ${r.hostname}`} title="Remove"
                         onClick={() => quietly({ route_ids: user.route_ids.filter((x) => x !== r.id) })}>
-                        <Icon name="close" />
+                        <Icon name="close" size={18} />
                       </button>
                     </li>
                   ))}
                 </ul>
-              )}
-            </Card>
-            <Card title="Devices" sub={linked.length ? undefined : "None linked. They cannot sign in until a device is."}
-              action={
+              ) : <p className="empty-note">No tunnels yet</p>}
+            </section>
+            <section>
+              <div className="section-head">
+                <h3 className="section-title">Devices</h3>
                 <AddMenu label="Link a device" placeholder="Find a device" onPick={(id) => quietly({ device_ids: [...user.device_ids, id] })}
                   empty={<div className="menu-note">There are no devices yet</div>}
                   items={[...devices].sort((a, b) => b.last_seen - a.last_seen).map((d) => ({ id: d.id, label: d.name || shortId(d.id), sub: [d.info?.platform, d.country, `seen ${ago(d.last_seen)}`].filter(Boolean).join(", "), disabled: user.device_ids.includes(d.id), note: "Already linked" }))} />
-              }>
-              {linked.length > 0 && (
-                <ul className="people">
+              </div>
+              {linked.length ? (
+                <ul className="item-list">
                   {linked.map((d) => (
-                    <li key={d.id} className="person-row">
-                      <Icon name="devices" />
+                    <li key={d.id} className="item-row">
+                      <Icon name="devices" size={18} className="item-icon" />
                       <a className="person" href={`#/devices/${d.id}`}>
                         <span className="scan-target">{d.name || shortId(d.id)}</span>
-                        <small>{[d.info?.platform, d.country].filter(Boolean).join(", ") || "Unknown hardware"}</small>
+                        <small>{[d.info?.platform, d.country, `seen ${ago(d.last_seen)}`].filter(Boolean).join(", ")}</small>
                       </a>
-                      <span className="result-meta">Seen {ago(d.last_seen)}</span>
-                      <button type="button" className="icon-btn danger" aria-label={`Unlink ${d.name || shortId(d.id)}`} title="Unlink"
+                      <button type="button" className="icon-btn small danger" aria-label={`Unlink ${d.name || shortId(d.id)}`} title="Unlink"
                         onClick={() => quietly({ device_ids: user.device_ids.filter((x) => x !== d.id) })}>
-                        <Icon name="close" />
+                        <Icon name="close" size={18} />
                       </button>
                     </li>
                   ))}
                 </ul>
-              )}
-            </Card>
-          </>
+              ) : <p className="empty-note">None linked, so they cannot sign in yet</p>}
+            </section>
+          </div>
         )}
 
         {current === "activity" && <Activity user={user} />}
