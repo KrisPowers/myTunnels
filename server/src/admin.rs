@@ -120,6 +120,16 @@ async fn setup(
     Ok(start_session(&state))
 }
 
+/// The panel's own rule, matched by the setup page: 10 or more characters with
+/// upper and lower case, a number and a symbol.
+fn strong_password(p: &str) -> bool {
+    p.chars().count() >= 10
+        && p.chars().any(|c| c.is_uppercase())
+        && p.chars().any(|c| c.is_lowercase())
+        && p.chars().any(|c| c.is_ascii_digit())
+        && p.chars().any(|c| !c.is_ascii_alphanumeric())
+}
+
 async fn login(
     State(state): State<AppState>,
     Json(body): Json<PasswordBody>,
