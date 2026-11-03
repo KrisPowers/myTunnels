@@ -774,6 +774,7 @@ async fn password(
         &state.pass_sessions,
         &route.id,
         &secret::tag(hash),
+        "",
         PASS_TTL,
     );
     let mut response = Json(json!({ "ok": true })).into_response();
