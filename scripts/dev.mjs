@@ -85,13 +85,29 @@ function stop(child) {
 }
 
 function start() {
-  // Runs a copy, so the next build can replace the binary while this one serves.
-  slot = 1 - slot;
-  const copy = join(work, `server-${slot}${exe}`);
-  copyFileSync(join(target, "debug", "server" + exe), copy);
+  // Runs a copy under a new name each time, so the next build can replace the
+  // binary while this one serves, and no copy ever lands on a file Windows
+  // still holds open.
+  const copy = join(work, `server-${Date.now()}-${++slot}${exe}`);
+  try {
+    copyFileSync(join(target, "debug", "server" + exe), copy);
+  } catch (err) {
+    log(`could not stage the new server (${err.code ?? err.message}), keeping the last one`);
+    return false;
+  }
   const previous = running;
   stop(previous);
   running = spawn(copy, [], { cwd: serverDir, env, stdio: "inherit", detached: !windows });
+  if (previous) setTimeout(() => sweep(copy), 2000);
+  return true;
+}
+
+// sweep removes copies of earlier builds once they are no longer running.
+function sweep(keep) {
+  for (const name of readdirSync(work)) {
+    const file = join(work, name);
+    if (name.startsWith("server-") && file !== keep) tidy(rmSync)(file, { force: true });
+  }
 }
 
 function build(reason) {
