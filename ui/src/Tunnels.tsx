@@ -153,14 +153,6 @@ const IDLE_FOR: Option<number>[] = [
 
 type AccessValue = Access & { password_set?: boolean };
 
-const ONE_LAYER = "Turn on another access layer first. Every tunnel keeps at least one on.";
-
-// True when a change would switch off every access layer.
-function leavesNoLayer(value: Access, patch: Partial<Access>) {
-  const next = { ...value, ...patch };
-  return ![next.require_lan, next.require_device, next.require_password, next.require_login].some(Boolean);
-}
-
 // AccessCard holds a tunnel's access layers. A tunnel password is asked for when
 // that layer is turned on with none set; `onPassword` stores one on its own.
 function AccessCard({ value, users, onChange, onPassword, signInElsewhere }: {
@@ -173,28 +165,22 @@ function AccessCard({ value, users, onChange, onPassword, signInElsewhere }: {
 }) {
   const layers = [value.require_lan, value.require_device, value.require_password, value.require_login].filter(Boolean).length;
   const accounts = users.filter((u) => u.enabled).length;
-  const notify = useNotify();
-  // Every tunnel keeps one layer on: switching off the last one says so instead.
-  const set = (patch: Partial<Access>) => {
-    if (leavesNoLayer(value, patch)) return notify(ONE_LAYER, "bad");
-    onChange(patch);
-  };
   return (
     <Card title="Access Control">
       <Row title="Same network as this host" sub="Only visitors coming from this host's internet connection, or a trusted network.">
-        <Switch label="Same network as this host" on={value.require_lan} onChange={(v) => set({ require_lan: v })} />
+        <Switch label="Same network as this host" on={value.require_lan} onChange={(v) => onChange({ require_lan: v })} />
       </Row>
       <Row title="Approved devices" sub="A new device gets an ID and waits under Devices until you approve it.">
-        <Switch label="Approved devices" on={value.require_device} onChange={(v) => set({ require_device: v })} />
+        <Switch label="Approved devices" on={value.require_device} onChange={(v) => onChange({ require_device: v })} />
       </Row>
       <Row title="Tunnel password" sub="One password for this tunnel alone, asked for before anything behind it loads.">
-        <Switch label="Tunnel password" on={value.require_password} onChange={(v) => set({ require_password: v })} />
+        <Switch label="Tunnel password" on={value.require_password} onChange={(v) => onChange({ require_password: v })} />
       </Row>
       {value.require_password && (
         <PasswordRow set={!!value.password_set} value={value.password ?? ""} onChange={onPassword ? undefined : (password) => onChange({ password })} onSave={onPassword} />
       )}
       {!signInElsewhere && <Row title="Sign-in" sub={<>People sign in with their email and an account from <a href="#/users">Users</a>. {accounts ? `${accounts} account${accounts === 1 ? "" : "s"} so far.` : "There are none yet."}</>}>
-        <Switch label="Sign-in" on={value.require_login} onChange={(v) => set({ require_login: v })} />
+        <Switch label="Sign-in" on={value.require_login} onChange={(v) => onChange({ require_login: v })} />
       </Row>}
       {value.require_login && (
         <>
@@ -272,7 +258,7 @@ export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: 
   const [sub, setSub] = useState("");
   const [port, setPort] = useState("");
   const [access, setAccess] = useState<Access>({
-    require_lan: false, require_device: true, require_password: false, require_login: false,
+    require_lan: false, require_device: false, require_password: false, require_login: false,
     login_max: 7 * 86_400, login_idle: 0, policy_mode: "all",
   });
   const [where, setWhere] = useState<Target>({ target_scheme: "http", target_host: null, preserve_host: false });
@@ -383,10 +369,6 @@ export function TunnelPage({ route, page, devices, users, onChanged }: { route: 
   // Turning on the tunnel password waits for one to be set.
   const [asking, setAsking] = useState(false);
   const access = (patch: Partial<Access>) => {
-    if (leavesNoLayer(edit, patch)) {
-      notify(ONE_LAYER, "bad");
-      return;
-    }
     if (patch.require_password && !route.password_set) {
       setAsking(true);
       return;

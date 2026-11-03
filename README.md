@@ -45,8 +45,7 @@ Then, on **Tunnels**, type the subdomain, pick the domain, enter the port and pr
 
 ## Access rules
 
-Every tunnel keeps at least one of these on; a tunnel with none is refused. New
-tunnels start with device approval.
+Each tunnel can require nothing, or any combination of:
 
 | Rule | Passes when |
 | --- | --- |

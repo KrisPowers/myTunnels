@@ -466,17 +466,6 @@ fn default_login_max() -> i64 {
 }
 
 /// Sign-in limits: from 0 (never) up to the longest a sign-in can last.
-/// Every tunnel checks who opens it: at least one layer stays on.
-fn check_layers(lan: bool, device: bool, password: bool, login: bool) -> ApiResult<()> {
-    if lan || device || password || login {
-        Ok(())
-    } else {
-        Err(ApiError::bad(
-            "Keep at least one access layer on. Every tunnel checks who opens it.",
-        ))
-    }
-}
-
 fn check_limits(max: i64, idle: i64) -> ApiResult<()> {
     let longest = 30 * 86_400;
     if !(0..=longest).contains(&max) || !(0..=longest).contains(&idle) {
@@ -548,12 +537,6 @@ async fn create_route(
     check_not_self(&state, target_host.as_deref(), body.port)?;
     let password_hash = tunnel_password(body.require_password, body.password, None)?;
     check_limits(body.login_max, body.login_idle)?;
-    check_layers(
-        body.require_lan,
-        body.require_device,
-        body.require_password,
-        body.require_login,
-    )?;
 
     let cf = Cloudflare::new(&state.http, &cf_settings.token);
     let zone = cf
@@ -670,12 +653,6 @@ async fn update_route(
     route.password_set = route.password_hash.is_some();
     route.require_password = body.require_password;
     check_limits(body.login_max, body.login_idle)?;
-    check_layers(
-        body.require_lan,
-        body.require_device,
-        body.require_password,
-        body.require_login,
-    )?;
     route.require_login = body.require_login;
     route.login_max = body.login_max;
     route.login_idle = body.login_idle;
