@@ -6,7 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::util::lock;
+use crate::util::{lock, random_alnum};
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS settings (
@@ -50,7 +50,34 @@ CREATE TABLE IF NOT EXISTS device_routes (
     route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
     PRIMARY KEY (device_id, route_id)
 );
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    email TEXT COLLATE NOCASE,
+    name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    enabled INTEGER NOT NULL,
+    all_routes INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_login INTEGER
+);
+CREATE TABLE IF NOT EXISTS user_routes (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, route_id)
+);
 ";
+
+/// Columns added to `routes` after its first release, with how to add each.
+const ROUTE_MIGRATIONS: [(&str, &str); 4] = [
+    ("preserve_host", "preserve_host INTEGER NOT NULL DEFAULT 0"),
+    (
+        "require_password",
+        "require_password INTEGER NOT NULL DEFAULT 0",
+    ),
+    ("password_hash", "password_hash TEXT"),
+    ("require_login", "require_login INTEGER NOT NULL DEFAULT 0"),
+];
 
 /// A published tunnel: one hostname on a Cloudflare zone pointing at one local port.
 #[derive(Clone, Serialize)]
@@ -65,11 +92,36 @@ pub struct Route {
     pub target_scheme: String,
     pub require_lan: bool,
     pub require_device: bool,
+    /// A password shared for this tunnel alone.
+    pub require_password: bool,
+    /// Sign-in with an account from Users.
+    pub require_login: bool,
     /// "all": every enabled check must pass. "any": one passing check is enough.
     pub policy_mode: String,
     pub enabled: bool,
+    /// Send the app the public name as Host instead of its own address.
+    pub preserve_host: bool,
+    #[serde(skip)]
+    pub password_hash: Option<String>,
+    pub password_set: bool,
     pub dns_record_id: Option<String>,
     pub created_at: i64,
+}
+
+/// Someone who can sign in at tunnels that ask for an account.
+#[derive(Clone, Serialize)]
+pub struct User {
+    pub id: String,
+    pub username: String,
+    pub email: Option<String>,
+    pub name: String,
+    #[serde(skip)]
+    pub password_hash: String,
+    pub enabled: bool,
+    pub all_routes: bool,
+    pub route_ids: Vec<String>,
+    pub created_at: i64,
+    pub last_login: Option<i64>,
 }
 
 /// A browser that has asked for access through the gateway.
@@ -77,7 +129,7 @@ pub struct Route {
 pub struct Device {
     pub id: String,
     pub name: String,
-    /// "pending", "approved" or "denied".
+    /// "seen" (identified, never asked), "pending", "approved" or "denied".
     pub status: String,
     pub all_routes: bool,
     pub route_ids: Vec<String>,
@@ -94,7 +146,11 @@ pub struct Device {
 }
 
 const ROUTE_COLS: &str = "id, subdomain, zone_id, zone_name, hostname, target_host, target_port, \
-     target_scheme, require_lan, require_device, policy_mode, enabled, dns_record_id, created_at";
+     target_scheme, require_lan, require_device, policy_mode, enabled, dns_record_id, created_at, \
+     preserve_host, require_password, password_hash, require_login";
+
+const USER_COLS: &str =
+    "id, username, email, name, password_hash, enabled, all_routes, created_at, last_login";
 
 const DEVICE_COLS: &str = "id, name, status, all_routes, fingerprint, info, note, first_ip, \
      last_ip, country, first_host, created_at, last_seen";
@@ -115,6 +171,26 @@ fn route_row(r: &Row) -> rusqlite::Result<Route> {
         enabled: r.get(11)?,
         dns_record_id: r.get(12)?,
         created_at: r.get(13)?,
+        preserve_host: r.get(14)?,
+        require_password: r.get(15)?,
+        password_set: r.get::<_, Option<String>>(16)?.is_some(),
+        password_hash: r.get(16)?,
+        require_login: r.get(17)?,
+    })
+}
+
+fn user_row(r: &Row) -> rusqlite::Result<User> {
+    Ok(User {
+        id: r.get(0)?,
+        username: r.get(1)?,
+        email: r.get(2)?,
+        name: r.get(3)?,
+        password_hash: r.get(4)?,
+        enabled: r.get(5)?,
+        all_routes: r.get(6)?,
+        route_ids: Vec::new(),
+        created_at: r.get(7)?,
+        last_login: r.get(8)?,
     })
 }
 
@@ -152,8 +228,34 @@ impl Db {
     pub fn open(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
         conn.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()))?;
-        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch(SCHEMA)?;
+        let have: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('routes')")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (column, ddl) in ROUTE_MIGRATIONS {
+            if !have.iter().any(|c| c == column) {
+                conn.execute_batch(&format!("ALTER TABLE routes ADD COLUMN {ddl};"))?;
+            }
+        }
+        // Device IDs became 256 characters; earlier short ones are replaced, with
+        // their grants, before foreign keys are enforced.
+        let short: Vec<String> = conn
+            .prepare("SELECT id FROM devices WHERE length(id) != 256")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        for old in short {
+            let new = random_alnum(256);
+            conn.execute(
+                "UPDATE device_routes SET device_id = ?2 WHERE device_id = ?1",
+                params![old, new],
+            )?;
+            conn.execute(
+                "UPDATE devices SET id = ?2 WHERE id = ?1",
+                params![old, new],
+            )?;
+        }
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(Self(Mutex::new(conn)))
     }
 
@@ -207,7 +309,7 @@ impl Db {
         self.conn().execute(
             &format!(
                 "INSERT INTO routes ({ROUTE_COLS})
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)"
             ),
             params![
                 r.id,
@@ -224,6 +326,10 @@ impl Db {
                 r.enabled,
                 r.dns_record_id,
                 r.created_at,
+                r.preserve_host,
+                r.require_password,
+                r.password_hash,
+                r.require_login,
             ],
         )?;
         Ok(())
@@ -232,7 +338,9 @@ impl Db {
     pub fn update_route(&self, r: &Route) -> Result<()> {
         self.conn().execute(
             "UPDATE routes SET target_host = ?2, target_port = ?3, target_scheme = ?4,
-                 require_lan = ?5, require_device = ?6, policy_mode = ?7, enabled = ?8
+                 require_lan = ?5, require_device = ?6, policy_mode = ?7, enabled = ?8,
+                 preserve_host = ?9, require_password = ?10, password_hash = ?11,
+                 require_login = ?12
              WHERE id = ?1",
             params![
                 r.id,
@@ -243,6 +351,28 @@ impl Db {
                 r.require_device,
                 r.policy_mode,
                 r.enabled,
+                r.preserve_host,
+                r.require_password,
+                r.password_hash,
+                r.require_login,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Moves a tunnel to another address.
+    pub fn move_route(&self, r: &Route) -> Result<()> {
+        self.conn().execute(
+            "UPDATE routes SET subdomain = ?2, zone_id = ?3, zone_name = ?4, hostname = ?5,
+                 dns_record_id = ?6
+             WHERE id = ?1",
+            params![
+                r.id,
+                r.subdomain,
+                r.zone_id,
+                r.zone_name,
+                r.hostname,
+                r.dns_record_id,
             ],
         )?;
         Ok(())
@@ -369,6 +499,93 @@ impl Db {
     pub fn delete_device(&self, id: &str) -> Result<()> {
         self.conn()
             .execute("DELETE FROM devices WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    /// Keeps at most `keep` devices that were only ever seen, dropping the longest
+    /// unseen, so passing visitors cannot fill the database.
+    pub fn prune_seen(&self, keep: i64) -> Result<()> {
+        self.conn().execute(
+            "DELETE FROM devices WHERE id IN (
+                 SELECT id FROM devices WHERE status = 'seen'
+                 ORDER BY last_seen DESC LIMIT -1 OFFSET ?1)",
+            [keep],
+        )?;
+        Ok(())
+    }
+
+    pub fn users(&self) -> Result<Vec<User>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!("SELECT {USER_COLS} FROM users ORDER BY username"))?;
+        let mut users = stmt
+            .query_map([], user_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut stmt = conn.prepare("SELECT user_id, route_id FROM user_routes")?;
+        let pairs = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for user in &mut users {
+            user.route_ids = pairs
+                .iter()
+                .filter(|(owner, _)| *owner == user.id)
+                .map(|(_, route)| route.clone())
+                .collect();
+        }
+        Ok(users)
+    }
+
+    pub fn user(&self, id: &str) -> Result<Option<User>> {
+        Ok(self.users()?.into_iter().find(|u| u.id == id))
+    }
+
+    /// The account a sign-in names, by username or email.
+    pub fn user_by_login(&self, login: &str) -> Result<Option<User>> {
+        let login = login.trim();
+        Ok(self.users()?.into_iter().find(|u| {
+            u.username.eq_ignore_ascii_case(login)
+                || u.email
+                    .as_deref()
+                    .is_some_and(|e| e.eq_ignore_ascii_case(login))
+        }))
+    }
+
+    pub fn save_user(&self, u: &User) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute(
+            &format!(
+                "INSERT INTO users ({USER_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 ON CONFLICT(id) DO UPDATE SET username = excluded.username,
+                     email = excluded.email, name = excluded.name,
+                     password_hash = excluded.password_hash, enabled = excluded.enabled,
+                     all_routes = excluded.all_routes, last_login = excluded.last_login"
+            ),
+            params![
+                u.id,
+                u.username,
+                u.email,
+                u.name,
+                u.password_hash,
+                u.enabled,
+                u.all_routes,
+                u.created_at,
+                u.last_login,
+            ],
+        )?;
+        tx.execute("DELETE FROM user_routes WHERE user_id = ?1", [&u.id])?;
+        for route_id in &u.route_ids {
+            tx.execute(
+                "INSERT OR IGNORE INTO user_routes (user_id, route_id) VALUES (?1, ?2)",
+                params![u.id, route_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn delete_user(&self, id: &str) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM users WHERE id = ?1", [id])?;
         Ok(())
     }
 

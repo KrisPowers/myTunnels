@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent } from "react";
-import { api, message, type Auth, type Device, type Route, type Status } from "./api";
+import { api, deviceInfo, message, shortId, type Auth, type Device, type Route, type Status, type User } from "./api";
 import { DevicePage, Devices } from "./Devices";
 import { Icon, type IconName } from "./Icon";
 import { go, readHash } from "./route";
 import { SETTINGS, Settings } from "./Settings";
 import { Setup } from "./Setup";
-import { TunnelPage, Tunnels } from "./Tunnels";
+import { DOCS, Docs } from "./Docs";
+import { NewTunnel, TunnelPage, Tunnels } from "./Tunnels";
+import { NewUser, UserPage, Users } from "./Users";
 import { Callout, Notices } from "./ui";
 
 export function App() {
@@ -45,19 +47,22 @@ function Root() {
   }} />;
 }
 
-// Dashboard is the frame every page sits in: a header with the search bar,
-// the connector's health and settings, a sidebar of pages, and the page.
+// Dashboard is the frame every page sits in, after Google's apps: a header with
+// the name, the search bar, help and settings; a sidebar with New on top and the
+// pages under it; and the page.
 function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const [place, setPlace] = useState(readHash);
   const [routes, setRoutes] = useState<Route[] | null>(null);
   const [devices, setDevices] = useState<Device[] | null>(null);
+  const [users, setUsers] = useState<User[] | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [drawer, setDrawer] = useState(false);
 
   const load = useCallback(async () => {
-    const [r, d, s] = await Promise.allSettled([api.routes(), api.devices(), api.status()]);
+    const [r, d, u, s] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status()]);
     if (r.status === "fulfilled") setRoutes(r.value);
     if (d.status === "fulfilled") setDevices(d.value);
+    if (u.status === "fulfilled") setUsers(u.value);
     if (s.status === "fulfilled") setStatus(s.value);
   }, []);
 
@@ -66,6 +71,23 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, [load]);
+
+  // The browser the admin uses gets its device key here, the first time.
+  useEffect(() => {
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem("gate.device");
+    } catch {
+      // Kept for this visit only.
+    }
+    api.thisDevice(token, deviceInfo()).then((d) => {
+      try {
+        localStorage.setItem("gate.device", d.token);
+      } catch {
+        // As above.
+      }
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const onHash = () => {
@@ -80,12 +102,16 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const pending = devices?.filter((d) => d.status === "pending").length ?? 0;
   const route = view === "tunnels" && id ? routes?.find((r) => r.id === id) : undefined;
   const device = view === "devices" && id ? devices?.find((d) => d.id === id) : undefined;
+  const user = view === "users" && id && id !== "new" ? users?.find((u) => u.id === id) : undefined;
 
-  // A tunnel or device that is gone goes back to its list.
+  // A tunnel, device or account that is gone goes back to its list.
   useEffect(() => {
     if (view === "tunnels" && id && routes && !route) go("#/");
     if (view === "devices" && id && devices && !device) go("#/devices");
-  }, [view, id, routes, devices, route, device]);
+    if (view === "users" && id && id !== "new" && users && !user) go("#/users");
+  }, [view, id, routes, devices, users, route, device, user]);
+
+  const sections = view === "settings" ? SETTINGS : view === "docs" ? DOCS : null;
 
   return (
     <div className="app">
@@ -94,52 +120,59 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           <button type="button" className="icon-btn menu-btn" aria-label="Menu" aria-expanded={drawer} onClick={() => setDrawer((d) => !d)}>
             <Icon name="menu" />
           </button>
-          <a className="brand" href="#/"><span className="brand-mark"><Icon name="public" size={18} /></span><span className="brand-name">myTunnels</span></a>
+          <a className="brand" href="#/"><span className="brand-mark"><Icon name="public" size={20} /></span><span className="brand-name">myTunnels</span></a>
         </div>
         <Search routes={routes} devices={devices} />
         <div className="header-actions">
+          <a className="btn primary header-new" href="#/new"><Icon name="add" size={20} />New tunnel</a>
+          <a className={"icon-btn" + (view === "docs" ? " on" : "")} href="#/docs" aria-label="Help" title="Help"><Icon name="help" /></a>
           <a className={"icon-btn" + (view === "settings" ? " on" : "")} href="#/settings" aria-label="Settings" title="Settings"><Icon name="settings" /></a>
-          <button type="button" className="icon-btn" aria-label="Sign out" title="Sign out" onClick={onSignOut}><Icon name="logout" /></button>
         </div>
       </header>
 
       <div className="shell">
         <nav className={"sidebar" + (drawer ? " open" : "")} aria-label="Pages">
-          {view === "settings" ? (
+          {sections ? (
             <>
               <a className="nav-back" href="#/"><Icon name="arrow_back" /><span>Dashboard</span></a>
               <hr className="nav-rule" />
-              {SETTINGS.map(([key, label, icon], i) => (
-                <NavItem key={key} to={`#/settings/${key}`} icon={icon} label={label} on={id === key || (!id && i === 0)} quiet />
+              {sections.map(([key, label, icon], i) => (
+                <NavItem key={key} to={`#/${view}/${key}`} icon={icon} label={label} on={id === key || (!id && i === 0)} quiet />
               ))}
             </>
           ) : (
             <>
-              <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels"} />
-              <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={pending || undefined} alert={pending > 0} />
+              <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels" || view === "new"} />
+              <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={pending || undefined} />
+              <NavItem to="#/users" icon="group" label="Users" on={view === "users"} />
             </>
           )}
         </nav>
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
 
         <main className="page" key={view + id}>
-          {view === "tunnels" && !id && <Tunnels routes={routes} status={status} onChanged={load} />}
-          {route && <TunnelPage route={route} devices={devices ?? []} onChanged={load} />}
+          {view === "tunnels" && !id && <Tunnels routes={routes} status={status} />}
+          {view === "new" && <NewTunnel users={users ?? []} onPublished={load} />}
+          {route && <TunnelPage route={route} devices={devices ?? []} users={users ?? []} onChanged={load} />}
           {view === "devices" && !id && <Devices devices={devices} routes={routes ?? []} onChanged={load} />}
           {device && <DevicePage device={device} routes={routes ?? []} onChanged={load} />}
-          {view === "settings" && <Settings section={id} status={status} routes={routes ?? []} onChanged={load} />}
+          {view === "users" && !id && <Users users={users} routes={routes ?? []} />}
+          {view === "users" && id === "new" && <NewUser routes={routes ?? []} onAdded={load} />}
+          {user && <UserPage user={user} routes={routes ?? []} onChanged={load} />}
+          {view === "settings" && <Settings section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
+          {view === "docs" && <Docs section={id} />}
         </main>
       </div>
     </div>
   );
 }
 
-function NavItem({ to, icon, label, on, quiet, count, alert }: { to: string; icon: IconName; label: string; on: boolean; quiet?: boolean; count?: number; alert?: boolean }) {
+function NavItem({ to, icon, label, on, quiet, count }: { to: string; icon: IconName; label: string; on: boolean; quiet?: boolean; count?: number }) {
   return (
     <a className={"nav-item" + (quiet ? " quiet" : "") + (on ? " on" : "")} href={to} aria-current={on ? "page" : undefined}>
       <Icon name={icon} />
       <span className="nav-label">{label}</span>
-      {count !== undefined && <span className={"nav-count" + (alert ? " alert" : "")}>{count}</span>}
+      {count !== undefined && <span className="nav-count">{count}</span>}
     </a>
   );
 }
@@ -170,7 +203,7 @@ function Search({ routes, devices }: { routes: Route[] | null; devices: Device[]
       .map((r) => ({ key: "r" + r.id, icon: "public" as IconName, label: r.hostname, sub: `port ${r.target_port}`, to: `#/tunnels/${r.id}` })),
     ...(devices ?? [])
       .filter((d) => d.id.toLowerCase().includes(needle) || d.name.toLowerCase().includes(needle))
-      .map((d) => ({ key: "d" + d.id, icon: "devices" as IconName, label: d.name || d.id, sub: d.name ? d.id : d.status, to: `#/devices/${d.id}` })),
+      .map((d) => ({ key: "d" + d.id, icon: "devices" as IconName, label: d.name || shortId(d.id), sub: d.name ? shortId(d.id) : d.status, to: `#/devices/${d.id}` })),
   ].slice(0, 8) : [];
   const listed = open && items.length > 0;
 

@@ -48,7 +48,8 @@
   --side: 256px;
   --head: 64px;
   /* The sidebar's distance from the window's edge, and from the page. */
-  --rail: 40px;
+  --rail: 16px;
+  --search: light-dark(#e9eef6, #282a2c);
   --ease: cubic-bezier(.2, .8, .2, 1);
   --font: "Roboto", "Segoe UI", system-ui, -apple-system, sans-serif;
   --mono: "Roboto Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
@@ -91,8 +92,8 @@ kbd {
 /* The header: the search bar in the middle, help and settings on the right. */
 .header {
   position: sticky; top: 0; z-index: 20; display: grid; align-items: center; gap: 16px;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 540px) minmax(0, 1fr);
-  height: var(--head); padding: 0 16px; background: var(--bg);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 720px) minmax(0, 1fr);
+  height: var(--head); padding: 0 12px 0 var(--rail); background: var(--bg);
 }
 .header .menu-btn { display: none; }
 .header .search { grid-column: 2; }
@@ -107,15 +108,16 @@ kbd {
    level with the page's heading. */
 .sidebar {
   position: sticky; top: var(--head); align-self: start; height: calc(100vh - var(--head)); overflow-y: auto;
-  padding: 24px 0 16px; background: var(--bg);
+  padding: 8px 0 16px; background: var(--bg);
 }
 .nav-item {
-  display: flex; align-items: center; gap: 16px; height: 40px; padding: 0 16px;
-  border-radius: 999px; color: var(--text); font-weight: 500; transition: background .12s;
+  display: flex; align-items: center; gap: 16px; height: 32px; padding: 0 12px 0 20px;
+  border-radius: 16px; color: var(--text); transition: background .12s;
 }
-.nav-item .icon { color: var(--text-2); }
+.nav-item .icon { color: var(--text); }
 /* A little air between items, so hover and active backgrounds never touch. */
 .nav-item + .nav-item { margin-top: 4px; }
+.nav-item.on { font-weight: 500; }
 .nav-item:hover { background: var(--hover); }
 .nav-item.on { background: var(--accent-bg); color: var(--on-accent-bg); }
 .nav-item.on .icon { color: var(--on-accent-bg); }
@@ -172,10 +174,10 @@ kbd {
 
 /* ---- search bar ---- */
 .search { position: relative; width: 100%; margin: 0; }
-.search-icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--text-2); pointer-events: none; }
+.search-icon { position: absolute; left: 20px; top: 50%; transform: translateY(-50%); color: var(--text-2); pointer-events: none; }
 .search input {
-  width: 100%; height: 46px; padding: 0 84px 0 52px; border: 0; border-radius: var(--round);
-  background: var(--field); color: var(--text); font: inherit; font-size: 16px;
+  width: 100%; height: 48px; padding: 0 84px 0 56px; border: 0; border-radius: 24px;
+  background: var(--search); color: var(--text); font: inherit; font-size: 16px;
   transition: background .15s, box-shadow .15s;
 }
 .search input::placeholder { color: var(--text-2); }
@@ -439,10 +441,9 @@ a.result:hover { background: var(--hover); }
 
 /* The header's left: the menu on narrow windows, then the name. */
 .header-start { display: flex; align-items: center; gap: 8px; min-width: 0; }
-/* The mark sits over the sidebar's icons, the name over their labels. */
-.header { padding-left: calc(var(--rail) + 4px); }
-.brand { display: inline-flex; align-items: center; gap: 12px; color: var(--text); font-size: 18px; font-weight: 400; white-space: nowrap; }
-.brand-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--accent); color: var(--on-accent); }
+.brand { display: inline-flex; align-items: center; gap: 10px; padding: 0 4px; color: var(--text-2); font-size: 22px; font-weight: 400; white-space: nowrap; }
+.brand:hover { text-decoration: none; }
+.brand-mark { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--accent); color: var(--on-accent); }
 
 /* A count beside a page in the sidebar; the accent when something waits. */
 .nav-count { min-width: 24px; height: 20px; padding: 0 7px; border-radius: 10px; background: var(--card-2); color: var(--text-2); font: 500 12px/20px var(--font); text-align: center; }
@@ -624,11 +625,56 @@ a.result:hover { background: var(--hover); }
   .result.tunnel-row .result-service, .result.device-row .result-meta { display: none; }
   .result.tunnel-row .result-what, .result.device-row .result-service { grid-column: 2; grid-row: 2; }
   .tally.three { grid-template-columns: minmax(0, 1fr); }
+  .header-new { width: 40px; padding: 0; justify-content: center; font-size: 0; gap: 0; }
+  .edit-row { flex-wrap: wrap; }
+  .edit-row .grow { flex-basis: 100%; }
+  .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .result.user-row { grid-template-columns: 16px minmax(0, 1fr) auto; }
+  .result.user-row .result-meta { display: none; }
   .setup { padding: 16px; }
   .setup-card { padding: 22px 18px; }
   .step-label { display: none; }
   .step { justify-content: center; }
 }
+
+/* New tunnel, in the header beside help and settings. */
+.header-new { height: 40px; margin-right: 8px; padding: 0 20px 0 16px; }
+.header-new:hover { text-decoration: none; }
+
+/* A title or line with its edit button beside it, and the form that replaces it. */
+.inline-edit { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.icon-btn.small { width: 32px; height: 32px; }
+.edit-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.edit-row .tf { margin-bottom: 8px; }
+.edit-row .grow { flex: 1; }
+.edit-row .port { width: 120px; flex-shrink: 0; }
+.edit-row .protocol { width: 140px; flex-shrink: 0; }
+.edit-row > .btn { margin-top: 8px; }
+.edit-block { display: grid; gap: 4px; padding-top: 8px; }
+.edit-switch { display: flex; align-items: center; gap: 12px; color: var(--text-2); cursor: pointer; }
+.edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* A field that sits under the setting it belongs to, with its button beside it. */
+.setting.nested { align-items: flex-start; padding-top: 4px; }
+.setting.nested .tf { margin: 0; }
+.setting.nested .btn { margin-top: 8px; }
+
+/* A form of fields on a card, two to a row. */
+.form-card { padding: 24px 24px 4px; overflow: visible; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+
+.result.user-row { grid-template-columns: 16px minmax(140px, 1fr) minmax(0, .8fr) 150px 24px; }
+.fold-caret { color: var(--text-3); transition: transform .2s var(--ease); }
+.fold-caret.open { transform: rotate(90deg); }
+
+/* Help: headings, then paragraphs and lists at a reading measure. */
+.flow .doc { display: grid; gap: 14px; padding: 28px 0; }
+.flow .doc + .doc { border-top: 1px solid var(--line); }
+.flow .doc h3 { margin: 0; font-size: 16px; font-weight: 500; line-height: 1.4; }
+.flow .doc p { line-height: 1.65; color: var(--text-2); }
+.flow .doc p b, .flow .doc li b { color: var(--text); font-weight: 500; }
+.bullets { display: grid; gap: 10px; margin: 0; padding-left: 20px; color: var(--text-2); line-height: 1.6; }
+.flow p code, .flow li code { padding: 2px 6px; border-radius: 3px; background: var(--code); font-size: 12.5px; }
 
 /* Compact density, picked in Settings. */
 :root[data-density="compact"] .result { min-height: 44px; }

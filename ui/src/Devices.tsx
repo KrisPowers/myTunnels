@@ -1,17 +1,19 @@
 import { useState } from "react";
-import { ago, api, message, type Device, type DeviceStatus, type Route } from "./api";
+import { ago, api, message, shortId, type Device, type DeviceStatus, type Route } from "./api";
 import { Icon } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Callout, Card, Row, SaveField, Switch, useNotify } from "./ui";
+import { ArmedButton, Callout, Card, Copy, Row, SaveField, Switch, useNotify } from "./ui";
 
-const FILTERS: [DeviceStatus, string][] = [
-  ["pending", "Waiting"],
+// Two lists: devices let in, and every other device met, waiting to be decided.
+type Tab = "approved" | "requests";
+const TABS: [Tab, string][] = [
   ["approved", "Approved"],
-  ["denied", "Denied"],
+  ["requests", "Requests"],
 ];
+const inTab = (tab: Tab, d: Device) => (tab === "approved") === (d.status === "approved");
 
-const TONE: Record<DeviceStatus, string> = { pending: "warn", approved: "ok", denied: "bad" };
-const LABEL: Record<DeviceStatus, string> = { pending: "Waiting", approved: "Approved", denied: "Denied" };
+const TONE: Record<DeviceStatus, string> = { seen: "", pending: "warn", approved: "ok", denied: "bad" };
+const LABEL: Record<DeviceStatus, string> = { seen: "Request", pending: "Request", approved: "Approved", denied: "Denied" };
 
 function summary(d: Device) {
   const i = d.info ?? {};
@@ -28,21 +30,20 @@ function useApprove(routes: Route[], onChanged: () => Promise<void>) {
     try {
       await api.editDevice(d.id, { status: "approved", route_ids });
       await onChanged();
-      notify(`Approved ${d.name || d.id}${asked && route_ids ? ` for ${asked.hostname}` : ""}`);
+      notify(`Approved ${d.name || shortId(d.id)}${asked && route_ids ? ` for ${asked.hostname}` : ""}`);
     } catch (e) {
       notify(message(e), "bad");
     }
   };
 }
 
-// Devices is every browser that asked to open a tunnel needing an approved
-// device, a filter per state.
+// Devices is every browser met so far: those approved, and requests.
 export function Devices({ devices, routes, onChanged }: { devices: Device[] | null; routes: Route[]; onChanged: () => Promise<void> }) {
   const all = devices ?? [];
-  const count = (s: DeviceStatus) => all.filter((d) => d.status === s).length;
-  const [filter, setFilter] = useState<DeviceStatus>(count("pending") || !all.length ? "pending" : "approved");
+  const count = (tab: Tab) => all.filter((d) => inTab(tab, d)).length;
+  const [tab, setTab] = useState<Tab>(all.some((d) => d.status === "pending") ? "requests" : "approved");
   const approve = useApprove(routes, onChanged);
-  const shown = all.filter((d) => d.status === filter);
+  const shown = all.filter((d) => inTab(tab, d));
 
   return (
     <>
@@ -50,15 +51,15 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
         <div className="page-head-main">
           <h1>Devices</h1>
           <div className="page-sub">
-            <span><b>{count("pending")}</b> waiting for approval</span>
             <span><b>{count("approved")}</b> approved</span>
+            <span><b>{count("requests")}</b> requests</span>
           </div>
         </div>
       </div>
       <div className="page-body">
         <div className="filters" role="tablist">
-          {FILTERS.map(([key, label]) => (
-            <button key={key} type="button" role="tab" className="filter" aria-selected={filter === key} onClick={() => setFilter(key)}>
+          {TABS.map(([key, label]) => (
+            <button key={key} type="button" role="tab" className="filter" aria-selected={tab === key} onClick={() => setTab(key)}>
               {label}<span>{count(key)}</span>
             </button>
           ))}
@@ -66,8 +67,8 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
         {devices && shown.length === 0 && (
           <div className="card welcome">
             <Icon name="devices" size={40} />
-            <h2>{filter === "pending" ? "No device is waiting" : `No ${LABEL[filter].toLowerCase()} devices`}</h2>
-            {filter === "pending" && <p className="muted">Turn on Approved devices for a tunnel, then open its address on the device you want to add. Its ID shows up here.</p>}
+            <h2>{tab === "requests" ? "No requests" : "No approved devices"}</h2>
+            {tab === "requests" && <p className="muted">A device shows up here the first time it opens one of your tunnels.</p>}
           </div>
         )}
         {shown.length > 0 && (
@@ -78,12 +79,12 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
                   <a className="result device-row" href={`#/devices/${d.id}`}>
                     <span className={"dot " + TONE[d.status]} role="img" aria-label={LABEL[d.status]} title={LABEL[d.status]} />
                     <span className="device-name">
-                      <span className="scan-target mono">{d.id}</span>
+                      <span className="scan-target mono">{shortId(d.id)}</span>
                       {d.name && <small>{d.name}</small>}
                     </span>
                     <span className="result-service">{summary(d)}</span>
                     <span className="result-meta">{ago(d.last_seen)}</span>
-                    {d.status === "pending" ? (
+                    {d.status !== "approved" ? (
                       <button type="button" className="btn primary small" onClick={(e) => {
                         e.preventDefault();
                         approve(d);
@@ -120,7 +121,7 @@ export function DevicePage({ device, routes, onChanged }: { device: Device; rout
   const forget = async () => {
     try {
       await api.forgetDevice(device.id);
-      notify(`Forgot ${device.name || device.id}`);
+      notify(`Forgot ${device.name || shortId(device.id)}`);
       await onChanged();
       go("#/devices");
     } catch (e) {
@@ -152,7 +153,7 @@ export function DevicePage({ device, routes, onChanged }: { device: Device; rout
       <div className="page-head">
         <a className="icon-btn" href="#/devices" aria-label="All devices" title="All devices"><Icon name="arrow_back" /></a>
         <div className="page-head-main">
-          <h1 className="mono">{device.id}</h1>
+          <h1 className="mono"><Copy text={shortId(device.id)} copyText={device.id} plain /></h1>
           <div className="page-sub">
             <span className={"chip " + TONE[device.status]}>{LABEL[device.status]}</span>
             {device.name && <b>{device.name}</b>}

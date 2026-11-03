@@ -1,32 +1,39 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, editOf, message, type Device, type Route, type RouteEdit, type Status, type Zone } from "./api";
+import { api, editOf, LEVELS, list, message, shortId, strength, type Access, type Device, type PolicyMode, type Route, type RouteEdit, type Status, type User, type Zone } from "./api";
 import { Dropdown } from "./Dropdown";
 import { Icon } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Card, Copy, Row, SaveField, Switch, TextField, useNotify } from "./ui";
+import { ArmedButton, Card, Row, SaveField, Switch, TextField, useNotify } from "./ui";
 
-// Access is who may open a tunnel, as chips.
-export function Access({ route }: { route: Route }) {
-  if (!route.require_lan && !route.require_device) return <span className="chip">Open</span>;
-  const both = route.require_lan && route.require_device;
+// Chips saying who may open a tunnel.
+export function AccessChips({ route }: { route: Route }) {
+  const parts = [
+    route.require_lan && "Home network",
+    route.require_device && "Approved device",
+    route.require_password && "Password",
+    route.require_login && "Sign-in",
+  ].filter((p): p is string => Boolean(p));
+  if (!parts.length) return <span className="chip">Open</span>;
+  const joiner = route.policy_mode === "any" ? "or" : "and";
   return (
     <span className="chips">
-      {route.require_lan && <span className="chip plain">Home network</span>}
-      {both && <span className="joiner">{route.policy_mode === "any" ? "or" : "and"}</span>}
-      {route.require_device && <span className="chip plain">Approved device</span>}
+      {parts.map((p, i) => (
+        <span key={p} className="chips">
+          {i > 0 && <span className="joiner">{joiner}</span>}
+          <span className="chip plain">{p}</span>
+        </span>
+      ))}
     </span>
   );
 }
 
-// target is where a tunnel goes: just the port on the apps host, or host and
-// port when it names its own.
 function target(route: Route) {
   const scheme = route.target_scheme === "https" ? "https://" : "";
   return route.target_host ? `${scheme}${route.target_host}:${route.target_port}` : `${scheme}port ${route.target_port}`;
 }
 
-// Tunnels is the home page: publish a port, and every tunnel published.
-export function Tunnels({ routes, status, onChanged }: { routes: Route[] | null; status: Status | null; onChanged: () => Promise<void> }) {
+// Tunnels is the home page: every tunnel published.
+export function Tunnels({ routes, status }: { routes: Route[] | null; status: Status | null }) {
   const live = routes?.filter((r) => r.enabled).length ?? 0;
   const links = status?.connections ?? 0;
   return (
@@ -41,12 +48,12 @@ export function Tunnels({ routes, status, onChanged }: { routes: Route[] | null;
         </div>
       </div>
       <div className="page-body stack">
-        <Publish onPublished={onChanged} />
         {routes && routes.length === 0 && (
           <div className="card welcome">
             <Icon name="public" size={40} />
             <h2>Nothing published yet</h2>
-            <p className="muted">Type a subdomain, pick a domain, enter the port your app listens on, and press Publish.</p>
+            <p className="muted">Publish a port on one of your domains, and choose who can open it.</p>
+            <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>
           </div>
         )}
         {routes && routes.length > 0 && (
@@ -58,7 +65,7 @@ export function Tunnels({ routes, status, onChanged }: { routes: Route[] | null;
                     <span className={"dot " + (r.enabled ? "ok" : "")} role="img" aria-label={r.enabled ? "Live" : "Off"} title={r.enabled ? "Live" : "Off"} />
                     <span className="scan-target">{r.hostname}</span>
                     <span className="result-service mono">{target(r)}</span>
-                    <span className="result-what"><Access route={r} /></span>
+                    <span className="result-what"><AccessChips route={r} /></span>
                     <Icon name="chevron_right" className="result-go" />
                   </a>
                 </li>
@@ -71,12 +78,133 @@ export function Tunnels({ routes, status, onChanged }: { routes: Route[] | null;
   );
 }
 
-// Publish is the one line that puts a port on a domain: subdomain, domain, port.
-function Publish({ onPublished }: { onPublished: () => Promise<void> }) {
+// ---- who may open it ----
+
+type AccessValue = Access & { password_set?: boolean };
+
+// AccessCard holds a tunnel's access layers. A tunnel password is asked for when
+// that layer is turned on with none set; `onPassword` stores one on its own.
+function AccessCard({ value, users, onChange, onPassword }: {
+  value: AccessValue;
+  users: User[];
+  onChange: (patch: Partial<Access>) => void;
+  onPassword?: (password: string) => Promise<unknown>;
+}) {
+  const layers = [value.require_lan, value.require_device, value.require_password, value.require_login].filter(Boolean).length;
+  const accounts = users.filter((u) => u.enabled).length;
+  return (
+    <Card title="Access Control">
+      <Row title="Same network as this host" sub="Only visitors coming from this host's internet connection, or a trusted network.">
+        <Switch label="Same network as this host" on={value.require_lan} onChange={(v) => onChange({ require_lan: v })} />
+      </Row>
+      <Row title="Approved devices" sub="A new device gets an ID and waits under Devices until you approve it.">
+        <Switch label="Approved devices" on={value.require_device} onChange={(v) => onChange({ require_device: v })} />
+      </Row>
+      <Row title="Tunnel password" sub="One password for this tunnel alone, asked for before anything behind it loads.">
+        <Switch label="Tunnel password" on={value.require_password} onChange={(v) => onChange({ require_password: v })} />
+      </Row>
+      {value.require_password && (
+        <PasswordRow set={!!value.password_set} value={value.password ?? ""} onChange={onPassword ? undefined : (password) => onChange({ password })} onSave={onPassword} />
+      )}
+      <Row title="Sign-in" sub={<>People sign in with an account from <a href="#/users">Users</a>. {accounts ? `${accounts} account${accounts === 1 ? "" : "s"} so far.` : "There are none yet."}</>}>
+        <Switch label="Sign-in" on={value.require_login} onChange={(v) => onChange({ require_login: v })} />
+      </Row>
+      {layers > 1 && (
+        <Row title="Combine" sub="Whether a visitor needs every layer above, or any one of them.">
+          <Dropdown label="Combine" value={value.policy_mode} onChange={(v) => onChange({ policy_mode: v as PolicyMode })} options={[
+            { value: "all", label: "Require all", hint: "Every layer that is on" },
+            { value: "any", label: "Any one is enough", hint: "Visitors pick the one they have" },
+          ]} />
+        </Row>
+      )}
+    </Card>
+  );
+}
+
+// PasswordRow sets the tunnel password: typed into the form when publishing, or
+// saved on its own for a tunnel that exists.
+function PasswordRow({ set, value, onChange, onSave }: {
+  set: boolean;
+  value: string;
+  onChange?: (password: string) => void;
+  onSave?: (password: string) => Promise<unknown>;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [busy, setBusy] = useState(false);
+  const rating = strength(draft);
+  const notify = useNotify();
+  const update = (p: string) => {
+    setDraft(p);
+    onChange?.(p);
+  };
+  return (
+    <div className="setting nested">
+      <TextField className="grow" label={set ? "New tunnel password" : "Tunnel password"} type="password" autoComplete="new-password"
+        value={draft} onChange={update}
+        hint={draft ? (
+          <>
+            <span className={"strength " + rating.level}>{LEVELS[rating.level]}</span>
+            {rating.missing.length > 0 && <span>Needs {list(rating.missing)}.</span>}
+          </>
+        ) : set ? "A password is set. Type a new one to replace it." : "Visitors type this before the app loads."} />
+      {onSave && (
+        <button type="button" className="btn primary" disabled={busy || !rating.ok} onClick={async () => {
+          setBusy(true);
+          try {
+            await onSave(draft);
+            setDraft("");
+            notify(set ? "Tunnel password changed" : "Tunnel password set");
+          } catch (e) {
+            notify(message(e), "bad");
+          } finally {
+            setBusy(false);
+          }
+        }}>{set ? "Change" : "Set password"}</button>
+      )}
+    </div>
+  );
+}
+
+// TargetRows are where requests go: port, protocol, host, and the host name the app sees.
+function TargetRows({ value, onChange, onSave }: {
+  value: Pick<RouteEdit, "port" | "target_scheme" | "target_host" | "preserve_host">;
+  onChange: (patch: Partial<RouteEdit>) => void;
+  onSave?: (patch: Partial<RouteEdit>) => Promise<unknown>;
+}) {
+  const write = (patch: Partial<RouteEdit>) => (onSave ? onSave(patch) : Promise.resolve(onChange(patch)));
+  return (
+    <>
+      {onSave && (
+        <Row title="Port">
+          <SaveField label="Port" numeric mono width={110} value={String(value.port)} onSave={(v) => write({ port: Number(v) })} />
+        </Row>
+      )}
+      <Row title="Protocol" sub="Choose https when the app serves it itself. Self-signed certificates are fine.">
+        <Dropdown label="Protocol" value={value.target_scheme} options={[{ value: "http", label: "http" }, { value: "https", label: "https" }]}
+          onChange={(v) => write({ target_scheme: v as RouteEdit["target_scheme"] })} />
+      </Row>
+      <Row title="Host" sub="Leave empty for this computer. Or a container name, or another machine on the network.">
+        <SaveField label="Host" mono width={220} placeholder="This computer" value={value.target_host ?? ""} onSave={(v) => write({ target_host: v.trim() || null })} />
+      </Row>
+      <Row title="Pass the public address" sub="Off, the app sees itself opened on this computer, which apps that only answer to localhost need. On, it sees the public address, for apps set up with it.">
+        <Switch label="Pass the public address" on={value.preserve_host} onChange={(v) => write({ preserve_host: v })} />
+      </Row>
+    </>
+  );
+}
+
+// ---- publishing ----
+
+// NewTunnel publishes a port: the address on top, then who can open it and,
+// folded away, where requests go.
+export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: () => Promise<void> }) {
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [zone, setZone] = useState("");
   const [sub, setSub] = useState("");
   const [port, setPort] = useState("");
+  const [access, setAccess] = useState<Access>({ require_lan: false, require_device: false, require_password: false, require_login: false, policy_mode: "all" });
+  const [targetOpts, setTargetOpts] = useState({ target_scheme: "http" as RouteEdit["target_scheme"], target_host: null as string | null, preserve_host: false });
+  const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
 
@@ -87,60 +215,81 @@ function Publish({ onPublished }: { onPublished: () => Promise<void> }) {
     }).catch((e) => notify(message(e), "bad"));
   }, [notify]);
 
+  const passwordOk = !access.require_password || strength(access.password ?? "").ok;
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!sub || !port || !zone) return;
+    if (!sub || !port || !zone || !passwordOk) return;
     setBusy(true);
     try {
-      const route = await api.publish({ subdomain: sub, zone_id: zone, port: Number(port) });
-      setSub("");
-      setPort("");
+      const route = await api.publish({ subdomain: sub, zone_id: zone, port: Number(port), ...targetOpts, ...access });
       await onPublished();
       notify(`Published ${route.hostname}`);
+      go(`#/tunnels/${route.id}`);
     } catch (err) {
       notify(message(err), "bad");
-    } finally {
       setBusy(false);
     }
   };
 
   return (
-    <form className="card composer" onSubmit={submit}>
-      <div className="composer-row">
-        <TextField className="grow" label="Subdomain" placeholder="app1" autoComplete="off" value={sub}
-          onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
-        <span className="composer-dot">.</span>
-        <div className="tf static grow">
-          <div className="tf-box">
-            {zones && zones.length > 0 ? (
-              <Dropdown label="Domain" value={zone} options={zones.map((z) => ({ value: z.id, label: z.name }))} onChange={setZone} />
-            ) : (
-              <span className="dropdown placeholder">{zones ? "No domains on this account" : "Loading domains"}</span>
-            )}
-            <span className="tf-label">Domain</span>
+    <form onSubmit={submit}>
+      <div className="page-head">
+        <a className="icon-btn" href="#/" aria-label="All tunnels" title="All tunnels"><Icon name="arrow_back" /></a>
+        <div className="page-head-main">
+          <h1>New tunnel</h1>
+          <div className="page-sub">Publish a port on one of your domains.</div>
+        </div>
+      </div>
+      <div className="page-body stack">
+        <div className="card composer">
+          <div className="composer-row">
+            <TextField className="grow" label="Subdomain" placeholder="app1" autoComplete="off" autoFocus value={sub}
+              onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
+            <span className="composer-dot">.</span>
+            <div className="tf static grow">
+              <div className="tf-box">
+                {zones && zones.length > 0 ? (
+                  <Dropdown label="Domain" value={zone} options={zones.map((z) => ({ value: z.id, label: z.name }))} onChange={setZone} />
+                ) : (
+                  <span className="dropdown placeholder">{zones ? "No domains on this account" : "Loading domains"}</span>
+                )}
+                <span className="tf-label">Domain</span>
+              </div>
+            </div>
+            <Icon name="arrow_forward" className="composer-arrow" />
+            <TextField className="port" label="Local port" placeholder="8080" mono inputMode="numeric" value={port}
+              onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
+            <button className="btn primary composer-go" disabled={busy || !sub || !port || !zone || !passwordOk}>
+              {busy ? <span className="spinner small on-accent" /> : <Icon name="add" size={18} />}Publish
+            </button>
           </div>
         </div>
-        <Icon name="arrow_forward" className="composer-arrow" />
-        <TextField className="port" label="Local port" placeholder="8080" mono inputMode="numeric" value={port}
-          onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
-        <button className="btn primary composer-go" disabled={busy || !sub || !port || !zone}>
-          {busy ? <span className="spinner small on-accent" /> : <Icon name="add" size={18} />}Publish
-        </button>
+
+        <AccessCard value={access} users={users} onChange={(patch) => setAccess((a) => ({ ...a, ...patch }))} />
+
+        <Card title="Local app" sub="Where requests go. The defaults suit an app on this computer."
+          action={<button type="button" className="icon-btn" aria-expanded={more} aria-label={more ? "Hide" : "Show"} onClick={() => setMore((m) => !m)}><Icon name="chevron_right" className={"fold-caret" + (more ? " open" : "")} /></button>}>
+          {more && <TargetRows value={{ port: Number(port) || 0, ...targetOpts }} onChange={(patch) => setTargetOpts((t) => ({ ...t, ...patch }))} />}
+        </Card>
       </div>
     </form>
   );
 }
 
-// TunnelPage is one tunnel: what it points at and who may open it, each
-// change saved as it is made.
-export function TunnelPage({ route, devices, onChanged }: { route: Route; devices: Device[]; onChanged: () => Promise<void> }) {
+// ---- one tunnel ----
+
+// TunnelPage is one tunnel: what it points at and who may open it, each change
+// saved as it is made.
+export function TunnelPage({ route, devices, users, onChanged }: { route: Route; devices: Device[]; users: User[]; onChanged: () => Promise<void> }) {
   const [edit, setEdit] = useState<RouteEdit>(() => editOf(route));
   const notify = useNotify();
   useEffect(() => setEdit(editOf(route)), [route]);
 
   const save = async (change: Partial<RouteEdit>) => {
     const next = { ...edit, ...change };
-    setEdit(next);
+    // A new tunnel password goes once; sent again, it would sign everyone out.
+    setEdit({ ...next, password: undefined });
     try {
       await api.editRoute(route.id, next);
       await onChanged();
@@ -150,6 +299,19 @@ export function TunnelPage({ route, devices, onChanged }: { route: Route; device
     }
   };
   const quietly = (change: Partial<RouteEdit>) => save(change).catch((e) => notify(message(e), "bad"));
+
+  const [editing, setEditing] = useState<"" | "address" | "target">("");
+
+  // Turning on the tunnel password waits for one to be set.
+  const [asking, setAsking] = useState(false);
+  const access = (patch: Partial<Access>) => {
+    if (patch.require_password && !route.password_set) {
+      setAsking(true);
+      return;
+    }
+    if (patch.require_password === false) setAsking(false);
+    quietly(patch);
+  };
 
   const remove = async () => {
     try {
@@ -163,10 +325,19 @@ export function TunnelPage({ route, devices, onChanged }: { route: Route; device
   };
 
   const approved = devices.filter((d) => d.status === "approved");
-  const grant = async (device: Device, on: boolean) => {
+  const grantDevice = async (device: Device, on: boolean) => {
     const ids = on ? [...device.route_ids, route.id] : device.route_ids.filter((r) => r !== route.id);
     try {
       await api.editDevice(device.id, { route_ids: ids });
+      await onChanged();
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+  };
+  const grantUser = async (user: User, on: boolean) => {
+    const ids = on ? [...user.route_ids, route.id] : user.route_ids.filter((r) => r !== route.id);
+    try {
+      await api.editUser(user.id, { route_ids: ids });
       await onChanged();
     } catch (e) {
       notify(message(e), "bad");
@@ -178,10 +349,22 @@ export function TunnelPage({ route, devices, onChanged }: { route: Route; device
       <div className="page-head">
         <a className="icon-btn" href="#/" aria-label="All tunnels" title="All tunnels"><Icon name="arrow_back" /></a>
         <div className="page-head-main">
-          <h1><Copy text={route.hostname} copyText={`https://${route.hostname}`} plain /></h1>
-          <div className="page-sub">
-            <span>to <span className="mono">{target(route)}</span></span>
-          </div>
+          {editing === "address" ? (
+            <AddressEditor route={route} onDone={() => setEditing("")} onChanged={onChanged} />
+          ) : (
+            <div className="inline-edit">
+              <h1>{route.hostname}</h1>
+              <button type="button" className="icon-btn" aria-label="Change address" title="Change address" onClick={() => setEditing("address")}><Icon name="edit" size={20} /></button>
+            </div>
+          )}
+          {editing === "target" ? (
+            <TargetEditor edit={edit} onDone={() => setEditing("")} onSave={save} />
+          ) : (
+            <div className="page-sub inline-edit">
+              <span>to <span className="mono">{target(route)}</span></span>
+              <button type="button" className="icon-btn small" aria-label="Change where it goes" title="Change where it goes" onClick={() => setEditing("target")}><Icon name="edit" size={18} /></button>
+            </div>
+          )}
         </div>
         <div className="page-actions">
           <Switch label={edit.enabled ? "Live, switch off" : "Off, switch live"} on={edit.enabled} onChange={(v) => quietly({ enabled: v })} />
@@ -190,46 +373,125 @@ export function TunnelPage({ route, devices, onChanged }: { route: Route; device
         </div>
       </div>
       <div className="page-body stack">
-        <Card title="Local app" sub="Where requests to this address go.">
-          <Row title="Port">
-            <SaveField label="Port" numeric mono width={110} value={String(edit.port)} onSave={(v) => save({ port: Number(v) })} />
-          </Row>
-          <Row title="Protocol" sub="Choose https when the app serves it itself. Self-signed certificates are fine.">
-            <Dropdown label="Protocol" value={edit.target_scheme} options={[{ value: "http", label: "http" }, { value: "https", label: "https" }]}
-              onChange={(v) => quietly({ target_scheme: v as RouteEdit["target_scheme"] })} />
-          </Row>
-          <Row title="Host" sub="Leave empty for the apps host from Settings. Or a container name, or another machine on the network.">
-            <SaveField label="Host" mono width={220} placeholder="Apps host" value={edit.target_host ?? ""} onSave={(v) => save({ target_host: v.trim() || null })} />
-          </Row>
-        </Card>
+        <AccessCard value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} onChange={access}
+          onPassword={async (password) => {
+            await save({ require_password: true, password });
+            setAsking(false);
+          }} />
 
-        <Card title="Who can open it" sub="On top of the app's own login, if it has one.">
-          <Row title="Same network as this host" sub="Only visitors coming from this host's internet connection, or a trusted network.">
-            <Switch label="Same network as this host" on={edit.require_lan} onChange={(v) => quietly({ require_lan: v })} />
-          </Row>
-          <Row title="Approved devices" sub="A new device gets an ID and waits under Devices until you approve it.">
-            <Switch label="Approved devices" on={edit.require_device} onChange={(v) => quietly({ require_device: v })} />
-          </Row>
-          {edit.require_lan && edit.require_device && (
-            <Row title="Combine" sub="Whether a visitor needs both, or either one.">
-              <Dropdown label="Combine" value={edit.policy_mode} onChange={(v) => quietly({ policy_mode: v as RouteEdit["policy_mode"] })} options={[
-                { value: "all", label: "Require both", hint: "Approved device on the home network" },
-                { value: "any", label: "Either is enough", hint: "Home network, or an approved device anywhere" },
-              ]} />
-            </Row>
-          )}
-        </Card>
+        {edit.require_login && (
+          <Card title="Accounts allowed" sub={users.length ? "Accounts that may sign in here." : <>No accounts yet. Add one under <a href="#/users">Users</a>.</>}>
+            {users.map((u) => (
+              <Row key={u.id} title={<a href={`#/users/${u.id}`}>{u.name || u.username}</a>} sub={u.all_routes ? "Allowed on every tunnel" : u.email ?? u.username}>
+                <Switch label={`Allow ${u.username}`} on={u.all_routes || u.route_ids.includes(route.id)} disabled={u.all_routes} onChange={(v) => grantUser(u, v)} />
+              </Row>
+            ))}
+          </Card>
+        )}
 
         {edit.require_device && (
           <Card title="Devices allowed" sub={approved.length ? "Approved devices that may open this tunnel." : "No device is approved yet. Open the address on a device and approve it under Devices."}>
             {approved.map((d) => (
-              <Row key={d.id} title={<a href={`#/devices/${d.id}`}>{d.name || d.id}</a>} sub={d.all_routes ? "Allowed on every tunnel" : d.info?.platform}>
-                <Switch label={`Allow ${d.name || d.id}`} on={d.all_routes || d.route_ids.includes(route.id)} disabled={d.all_routes} onChange={(v) => grant(d, v)} />
+              <Row key={d.id} title={<a href={`#/devices/${d.id}`}>{d.name || shortId(d.id)}</a>} sub={d.all_routes ? "Allowed on every tunnel" : d.info?.platform}>
+                <Switch label={`Allow ${d.name || shortId(d.id)}`} on={d.all_routes || d.route_ids.includes(route.id)} disabled={d.all_routes} onChange={(v) => grantDevice(d, v)} />
               </Row>
             ))}
           </Card>
         )}
       </div>
     </>
+  );
+}
+
+// AddressEditor changes a tunnel's subdomain and domain in place of its title.
+function AddressEditor({ route, onDone, onChanged }: { route: Route; onDone: () => void; onChanged: () => Promise<void> }) {
+  const [zones, setZones] = useState<Zone[] | null>(null);
+  const [zone, setZone] = useState(route.zone_id);
+  const [sub, setSub] = useState(route.subdomain);
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+
+  useEffect(() => {
+    api.zones().then(setZones).catch((e) => notify(message(e), "bad"));
+  }, [notify]);
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const moved = await api.moveRoute(route.id, sub, zone);
+      await onChanged();
+      notify(`Moved to ${moved.hostname}`);
+      onDone();
+    } catch (err) {
+      notify(message(err), "bad");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="edit-row" onSubmit={save}>
+      <TextField className="grow" label="Subdomain" autoFocus autoComplete="off" value={sub}
+        onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
+      <span className="composer-dot">.</span>
+      <div className="tf static grow">
+        <div className="tf-box">
+          {zones ? (
+            <Dropdown label="Domain" value={zone} options={zones.map((z) => ({ value: z.id, label: z.name }))} onChange={setZone} />
+          ) : (
+            <span className="dropdown placeholder">Loading domains</span>
+          )}
+          <span className="tf-label">Domain</span>
+        </div>
+      </div>
+      <button type="button" className="btn text" onClick={onDone}>Cancel</button>
+      <button className="btn primary" disabled={busy || !sub || !zone}>{busy && <span className="spinner small on-accent" />}Save</button>
+    </form>
+  );
+}
+
+// TargetEditor changes where a tunnel goes: its port, and the protocol, host and
+// host name the app sees.
+function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () => void; onSave: (change: Partial<RouteEdit>) => Promise<void> }) {
+  const [port, setPort] = useState(String(edit.port));
+  const [scheme, setScheme] = useState(edit.target_scheme);
+  const [host, setHost] = useState(edit.target_host ?? "");
+  const [preserve, setPreserve] = useState(edit.preserve_host);
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await onSave({ port: Number(port), target_scheme: scheme, target_host: host.trim() || null, preserve_host: preserve });
+      onDone();
+    } catch (err) {
+      notify(message(err), "bad");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="edit-block" onSubmit={save}>
+      <div className="edit-row">
+        <TextField className="port" label="Port" mono inputMode="numeric" autoFocus value={port} onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
+        <div className="tf static protocol">
+          <div className="tf-box">
+            <Dropdown label="Protocol" value={scheme} options={[{ value: "http", label: "http" }, { value: "https", label: "https" }]} onChange={(v) => setScheme(v as RouteEdit["target_scheme"])} />
+            <span className="tf-label">Protocol</span>
+          </div>
+        </div>
+        <TextField className="grow" label="Host" placeholder="This computer" mono value={host} onChange={setHost} />
+      </div>
+      <label className="edit-switch">
+        <Switch label="Pass the public address" on={preserve} onChange={setPreserve} />
+        <span>Pass the public address to the app, for apps set up with it</span>
+      </label>
+      <div className="edit-actions">
+        <button type="button" className="btn text" onClick={onDone}>Cancel</button>
+        <button className="btn primary" disabled={busy || !port}>{busy && <span className="spinner small on-accent" />}Save</button>
+      </div>
+    </form>
   );
 }

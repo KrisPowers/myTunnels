@@ -7,67 +7,148 @@
 <title>{{TITLE}}</title>
 <style>
 :root {
-  --bg: #f4f5f7; --card: #ffffff; --text: #16191d; --muted: #5d6573; --line: #e2e5ea;
-  --ok: #1d8a4e; --warn: #a86200; --bad: #c2362d; --accent: #2b62e3;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0e1013; --card: #171a1f; --text: #e7e9ed; --muted: #98a0ad; --line: #272c33;
-    --ok: #4cc184; --warn: #e3a43a; --bad: #ef6a60; --accent: #6f9bff;
-  }
+  color-scheme: light dark;
+  --bg: light-dark(#f0f4f9, #131314); --card: light-dark(#ffffff, #1e1f20);
+  --text: light-dark(#1f1f1f, #e3e3e3); --muted: light-dark(#444746, #c4c7c5); --faint: light-dark(#747775, #8e918f);
+  --line: light-dark(#c4c7c5, #5e5e5e); --accent: light-dark(#0b57d0, #a8c7fa); --on-accent: light-dark(#ffffff, #062e6f);
+  --ok: light-dark(#188038, #81c995); --warn: light-dark(#b06000, #fdd663); --bad: light-dark(#d93025, #f28b82);
 }
 * { box-sizing: border-box; }
 body {
   margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
   background: var(--bg); color: var(--text);
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 14px/1.5 "Roboto", "Segoe UI", system-ui, -apple-system, sans-serif;
 }
-main {
-  width: 100%; max-width: 420px; padding: 28px;
-  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-}
-.host { margin-bottom: 18px; color: var(--muted); font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-h1 { margin: 0 0 6px; font-size: 18px; }
+main { width: 100%; max-width: 440px; padding: 36px 40px 32px; background: var(--card); border-radius: 28px; }
+.host { margin-bottom: 20px; color: var(--faint); font: 13px ui-monospace, Consolas, monospace; }
+h1 { margin: 0 0 6px; font-size: 24px; font-weight: 400; }
 p { margin: 0; color: var(--muted); }
-#device { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+form, #device { margin-top: 28px; }
+.tf { position: relative; margin-bottom: 16px; }
+.tf input {
+  width: 100%; height: 56px; padding: 0 16px; border: 0; border-radius: 4px; background: transparent; color: var(--text);
+  font-size: 16px; font-family: inherit; box-shadow: inset 0 0 0 1px var(--line); transition: box-shadow .15s;
+}
+.tf input:hover { box-shadow: inset 0 0 0 1px var(--text); }
+.tf input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+.tf label {
+  position: absolute; left: 12px; top: 28px; padding: 0 4px; transform: translateY(-50%); background: var(--card);
+  color: var(--muted); font-size: 16px; pointer-events: none; transition: top .15s, font-size .15s, color .15s;
+}
+.tf input:focus + label, .tf input:not(:placeholder-shown) + label { top: 0; font-size: 12px; }
+.tf input:focus + label { color: var(--accent); }
+.row { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 8px; }
+button {
+  height: 40px; padding: 0 24px; border: 0; border-radius: 999px; background: var(--accent); color: var(--on-accent);
+  font-weight: 500; font-size: 14px; font-family: inherit; cursor: pointer;
+}
+button:disabled { opacity: .5; cursor: default; }
+button.text { padding: 0 12px; background: transparent; color: var(--accent); }
+.error { min-height: 20px; margin: 4px 0 0; color: var(--bad); font-size: 13px; }
 .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
 .id-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 16px; }
-#id { font: 600 28px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .05em; }
-button {
-  padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px;
-  background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
-}
-button:hover { border-color: var(--muted); }
-.state { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+#id { font: 500 28px/1.2 ui-monospace, Consolas, monospace; letter-spacing: .05em; }
+.state { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
 .state[data-tone="ok"] .dot { background: var(--ok); }
 .state[data-tone="bad"] .dot { background: var(--bad); }
 .state[data-tone="warn"] .dot { animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .3; } }
-@media (prefers-reduced-motion: reduce) { .state[data-tone="warn"] .dot { animation: none; } }
+.others { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.others a { color: var(--accent); text-decoration: none; margin-right: 16px; }
+.others a:hover { text-decoration: underline; }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
-<body data-mode="{{MODE}}">
+<body data-mode="{{MODE}}" data-others="{{OTHERS}}">
 <main>
   <div class="host">{{HOST}}</div>
   <h1>{{TITLE}}</h1>
   <p>{{TEXT}}</p>
+
+  <form id="password" hidden>
+    <div class="tf"><input id="pw" type="password" placeholder=" " autocomplete="current-password" required><label for="pw">Password</label></div>
+    <div class="error" id="password-error" role="alert"></div>
+    <div class="row"><button type="submit">Continue</button></div>
+  </form>
+
+  <form id="login" hidden>
+    <div class="tf"><input id="user" type="text" placeholder=" " autocomplete="username" autocapitalize="off" spellcheck="false" required><label for="user">Email or username</label></div>
+    <div class="tf"><input id="secret" type="password" placeholder=" " autocomplete="current-password" required><label for="secret">Password</label></div>
+    <div class="error" id="login-error" role="alert"></div>
+    <div class="row"><button type="submit">Sign in</button></div>
+  </form>
+
   <div id="device" hidden>
     <div class="label">Device ID</div>
-    <div class="id-row"><span id="id">....-....</span><button id="copy" type="button">Copy</button></div>
+    <div class="id-row"><span id="id">....-....</span><button id="copy" class="text" type="button">Copy</button></div>
     <div class="state" id="state" data-tone="warn"><span class="dot"></span><span id="state-text">Checking this device</span></div>
   </div>
+
+  <div class="others" id="others" hidden>Or <span id="other-links"></span></div>
 </main>
 <script>
 (function () {
-  if (document.body.dataset.mode !== 'device') return;
-  var KEY = 'gate.device';
+  var body = document.body, mode = body.dataset.mode;
   var $ = function (id) { return document.getElementById(id); };
-  $('device').hidden = false;
+  var KEY = 'gate.device';
+  var LABELS = { login: 'sign in with an account', password: 'use the tunnel password', device: 'use an approved device' };
 
+  // Where to land once through: this page without the choice of method.
+  function back() {
+    var params = new URLSearchParams(location.search);
+    params.delete('__gate');
+    var q = params.toString();
+    location.replace(location.pathname + (q ? '?' + q : '') + location.hash);
+  }
+
+  function post(path, data) {
+    return fetch(path, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(data)
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (b) { b.ok = b.ok || r.ok; return b; });
+    });
+  }
+
+  function form(id, build) {
+    var el = $(id), error = $(id + '-error'), button = el.querySelector('button');
+    el.hidden = false;
+    el.querySelector('input').focus();
+    el.addEventListener('submit', function (e) {
+      e.preventDefault();
+      button.disabled = true;
+      error.textContent = '';
+      post('/__gate/' + id, build()).then(function (r) {
+        if (r.ok) return back();
+        error.textContent = r.error || 'That did not work. Try again.';
+        button.disabled = false;
+      }).catch(function () {
+        error.textContent = 'Could not reach the gateway. Try again.';
+        button.disabled = false;
+      });
+    });
+  }
+
+  var others = (body.dataset.others || '').split(' ').filter(Boolean);
+  if (others.length) {
+    $('others').hidden = false;
+    $('other-links').innerHTML = others.map(function (kind) {
+      var params = new URLSearchParams(location.search);
+      params.set('__gate', kind);
+      return '<a href="?' + params.toString() + '">' + LABELS[kind] + '</a>';
+    }).join('');
+  }
+
+  if (mode === 'password') form('password', function () { return { password: $('pw').value }; });
+  if (mode === 'login') form('login', function () { return { login: $('user').value, password: $('secret').value }; });
+  if (mode !== 'device') return;
+
+  $('device').hidden = false;
+  var fullId = '';
   function load() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
   function save(token) { try { localStorage.setItem(KEY, token); } catch (e) {} }
-
   function gpu() {
     try {
       var gl = document.createElement('canvas').getContext('webgl');
@@ -79,7 +160,6 @@ button:hover { border-color: var(--muted); }
       };
     } catch (e) { return {}; }
   }
-
   function info() {
     var n = navigator, ua = n.userAgentData, g = gpu();
     return {
@@ -96,43 +176,32 @@ button:hover { border-color: var(--muted); }
       webglRenderer: g.renderer || ''
     };
   }
-
   function show(s) {
     var text = 'Waiting for approval', tone = 'warn';
     if (s.allowed) { text = 'Approved, opening'; tone = 'ok'; }
     else if (s.status === 'approved') { text = 'Approved, but not for this app'; tone = 'bad'; }
     else if (s.status === 'denied') { text = 'Access denied'; tone = 'bad'; }
     else if (s.note) { text = s.note + ', waiting for review'; }
-    $('id').textContent = s.id;
+    fullId = s.id;
+    $('id').textContent = s.id.length > 12 ? s.id.slice(0, 8) + '...' : s.id;
     $('state-text').textContent = text;
     $('state').dataset.tone = tone;
   }
-
   function check() {
-    fetch('/__gate/enroll', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: load(), info: info() })
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (s) {
-        if (s.token) save(s.token);
-        if (!s.id) throw new Error(s.error || 'unavailable');
-        show(s);
-        if (s.allowed) { location.reload(); return; }
-        if (s.status !== 'denied') setTimeout(check, 5000);
-      })
-      .catch(function (e) {
-        $('state-text').textContent = 'Could not reach the gateway (' + e.message + '), retrying';
-        setTimeout(check, 10000);
-      });
+    post('/__gate/enroll', { token: load(), info: info() }).then(function (s) {
+      if (s.token) save(s.token);
+      if (!s.id) throw new Error(s.error || 'unavailable');
+      show(s);
+      if (s.allowed) return back();
+      if (s.status !== 'denied') setTimeout(check, 5000);
+    }).catch(function (e) {
+      $('state-text').textContent = 'Could not reach the gateway (' + e.message + '), retrying';
+      setTimeout(check, 10000);
+    });
   }
-
   $('copy').addEventListener('click', function () {
-    if (navigator.clipboard) navigator.clipboard.writeText($('id').textContent);
+    if (navigator.clipboard) navigator.clipboard.writeText(fullId);
   });
-
   check();
 })();
 </script>
