@@ -175,7 +175,7 @@ export function NewUser({ routes, onAdded }: { routes: Route[]; onAdded: () => P
             <PasswordField label="Password" value={password} onChange={setPassword} hint="Generate one, or type at least 10 characters with upper and lower case, a number and a symbol." />
           </div>
         </Card>
-        <Grants all={all} ids={ids} routes={routes} onAll={setAll} onPick={(id, on) => setIds((had) => (on ? [...had, id] : had.filter((x) => x !== id)))} />
+        <Grants ids={ids} routes={routes} onPick={(id, on) => setIds((had) => (on ? [...had, id] : had.filter((x) => x !== id)))} />
         <div className="form-foot">
           <a className="btn text" href="#/users">Cancel</a>
           <button className="btn primary" disabled={busy || !ready}>{busy && <span className="spinner small on-accent" />}Add user</button>
