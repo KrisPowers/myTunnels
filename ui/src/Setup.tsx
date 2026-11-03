@@ -192,7 +192,7 @@ function CloudflareStep({ auth, onBack, onDone }: { auth: Auth; onBack: () => vo
       const list = await api.accounts(withToken);
       setAccounts(list);
       if (list.length === 0) {
-        setProblem("This token can't see any Cloudflare account. Make it again with the link above.");
+        setProblem("Cloudflare accepted the token, but it reaches no account or domain. Make it again with the link above and keep All zones selected.");
         setPhase("idle");
       } else if (list.length === 1) {
         await connect(list[0], withToken);
