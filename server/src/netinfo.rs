@@ -172,6 +172,22 @@ mod tests {
     }
 
     #[test]
+    fn default_gateway_reads_the_route_table() {
+        let table = "Iface	Destination	Gateway 	Flags
+                     eth0	00000000	010011AC	0003
+                     eth0	000011AC	00000000	0001
+";
+        assert_eq!(default_gateway(table), Some("172.17.0.1".parse().unwrap()));
+        assert_eq!(
+            default_gateway(
+                "Iface	Destination
+"
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn parse_networks_reports_bad_entries() {
         assert_eq!(
             parse_networks("10.0.0.0/8, 192.168.0.0/16\n")
