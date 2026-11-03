@@ -132,7 +132,6 @@ export function NewUser({ routes, onAdded }: { routes: Route[]; onAdded: () => P
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [all, setAll] = useState(false);
   const [ids, setIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
