@@ -197,6 +197,38 @@ impl AppState {
             || netinfo::same_network(&self.public_ips(), ip)
     }
 
+    /// True once `key` has failed too often in the current window.
+    pub fn locked_out(&self, key: &str) -> bool {
+        let now = now();
+        lock(&self.failures)
+            .get(key)
+            .is_some_and(|(count, since)| *count >= MAX_FAILURES && now - since < FAILURE_WINDOW)
+    }
+
+    pub fn record_failure(&self, key: &str) {
+        let now = now();
+        let mut failures = lock(&self.failures);
+        failures.retain(|_, (_, since)| now - *since < FAILURE_WINDOW);
+        let entry = failures.entry(key.to_owned()).or_insert((0, now));
+        entry.0 += 1;
+    }
+
+    pub fn clear_failures(&self, key: &str) {
+        lock(&self.failures).remove(key);
+    }
+
+    pub fn put_hop(&self, id: String, hop: Hop) {
+        let now = now();
+        let mut hops = lock(&self.hops);
+        hops.retain(|_, h| h.expires() > now);
+        hops.insert(id, hop);
+    }
+
+    /// Takes a hop once; an expired one is gone.
+    pub fn take_hop(&self, id: &str) -> Option<Hop> {
+        lock(&self.hops).remove(id).filter(|h| h.expires() > now())
+    }
+
     pub fn cloudflare(&self) -> Result<CfSettings, ApiError> {
         let get = |key| self.db.setting(key).map_err(ApiError::from);
         match (
