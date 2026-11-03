@@ -1,2 +1,107 @@
 # myTunnels
 
+A self-hosted gateway for publishing homelab apps through Cloudflare Tunnel. Pick a local
+port, type a subdomain, choose one of your domains, and the app is reachable at
+`https://<subdomain>.<domain>` without opening a single port on your router. Every request
+passes through an access gateway that can require the visitor to be on your home network,
+to use an approved device, or both.
+
+## How it works
+
+```text
+browser ──https──> Cloudflare edge ──tunnel──> cloudflared ──> gateway ──> 127.0.0.1:8080
+                                                 (inside this container)     (your app)
+```
+
+- One container runs the admin panel, the gateway, and a supervised `cloudflared` connector.
+- The tunnel is created and configured through the Cloudflare API. Adding a tunnel in the
+  panel creates the proxied DNS record and the ingress rule. Removing it deletes both.
+- `cloudflared` sends every published hostname to the gateway. The gateway looks up the
+  tunnel by hostname, applies its access rules, then forwards the request (WebSockets
+  included) to the local port.
+- The gateway only listens on the container's loopback interface, so nothing reaches it
+  except through Cloudflare.
+
+## Quick start
+
+```sh
+docker compose up -d --build
+```
+
+Open `http://<host>:7070`, create the admin password, then in **Settings**:
+
+1. Create a Cloudflare API token (My Profile, API Tokens, Create Token, Custom token) with
+   - Account, Cloudflare Tunnel, Edit
+   - Zone, DNS, Edit
+   - Zone, Zone, Read
+2. Paste the token, press **Find accounts**, pick the account, keep or change the tunnel
+   name, and press **Connect**. The tunnel is created if it does not exist and the
+   connector starts.
+
+Then in **Tunnels** enter the subdomain, pick the domain, enter the port, choose who can
+open it, and press **Publish**.
+
+## Access rules
+
+Each tunnel can require nothing, or any combination of:
+
+| Rule | Passes when |
+| --- | --- |
+| Same network as this host | The visitor's public address (as reported by Cloudflare) is this host's public IPv4 address, inside this host's IPv6 /64, or inside a network listed under **Settings, Network** |
+| Approved device | The browser holds a session for a device that is approved for this tunnel |
+
+With both rules on, choose **Require both** or **Either is enough**. Either way the app's
+own login still applies; the gateway is an extra layer in front of it.
+
+### Device approval
+
+1. A browser opens a tunnel that requires approved devices.
+2. The gateway shows a page with a short device ID. The browser is assigned a 256 character
+   letter and number key, kept in its local storage and in a cookie for the domain.
+3. The device appears under **Devices** with what the browser reported (platform, GPU, CPU
+   threads, memory, screen, time zone, languages, user agent) and where it connected from
+   (IP address and country).
+4. Approve it for every tunnel or for selected ones. The waiting page opens the app on its
+   own within a few seconds.
+
+The key is never stored on the server, only its SHA-256 hash. One approval covers every
+tunnel on the same domain. If an approved key later shows up with different hardware
+(platform, touch support, or GPU), the device goes back to waiting and is flagged for
+review, which stops a copied key from working on another machine.
+
+## Configuration
+
+Settings made in the panel are stored in `/data/gateway.db`. The container reads these
+environment variables:
+
+| Variable | Default in the image | Meaning |
+| --- | --- | --- |
+| `ADMIN_ADDR` | `0.0.0.0:7070` | Admin panel address |
+| `GATE_ADDR` | `127.0.0.1:7080` | Gateway address, reached only by cloudflared |
+| `UPSTREAM_HOST` | `host.docker.internal` | Default host for tunnel ports, changeable in Settings |
+| `DATA_DIR` | `/data` | Database location |
+| `METRICS_ADDR` | `127.0.0.1:20241` | cloudflared metrics, used for the health indicator |
+| `RUST_LOG` | `info` | Log level |
+
+`compose.yaml` maps `host.docker.internal` to the Docker host, so a port published by any
+container (or any program) on the host works as a target. A tunnel can also point at
+another host, such as a container name on a shared network or another machine on the LAN,
+under **Show target options**.
+
+## Notes
+
+- Keep the admin panel on your LAN. It is not published through a tunnel.
+- The same network check compares public addresses. Behind carrier grade NAT, other
+  customers of your ISP can share your public IPv4 address, so prefer device approval there.
+- The Cloudflare API token is stored in the database volume. Treat the volume as secret.
+
+## Development
+
+```sh
+cd server && cargo run          # admin on :7070, reads ../ui/dist
+cd ui && npm install && npm run dev   # Vite dev server, proxies /api to :7070
+```
+
+## License
+
+Apache 2.0, see [LICENSE](LICENSE).
