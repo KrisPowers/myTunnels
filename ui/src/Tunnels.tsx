@@ -445,7 +445,7 @@ export function TunnelPage({ route, page, devices, users, onChanged }: { route: 
 
         {current === "access" && <People route={route} users={users} onGrant={grantUser} />}
 
-        {current === "activity" && <TunnelActivity route={route} users={users} />}
+        {current === "logs" && <TunnelLogs route={route} users={users} />}
 
         {current === "devices" && (!edit.require_device ? (
           <div className="card welcome">
