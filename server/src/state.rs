@@ -100,6 +100,8 @@ pub struct Inner {
     started: i64,
     pub hops: Mutex<HashMap<String, Hop>>,
     failures: Mutex<HashMap<String, (u32, i64)>>,
+    /// Requests counted per key and window, for rate limits.
+    hits: Mutex<HashMap<String, (u32, i64)>>,
     snapshot: RwLock<Arc<Snapshot>>,
 }
 
@@ -157,6 +159,7 @@ impl AppState {
             started: now(),
             hops: Mutex::new(HashMap::new()),
             failures: Mutex::new(HashMap::new()),
+            hits: Mutex::new(HashMap::new()),
             snapshot: RwLock::new(Arc::new(Snapshot {
                 routes: HashMap::new(),
                 devices: HashMap::new(),
@@ -246,6 +249,21 @@ impl AppState {
         failures.retain(|_, (_, since)| now - *since < FAILURE_WINDOW);
         let entry = failures.entry(key.to_owned()).or_insert((0, now));
         entry.0 += 1;
+    }
+
+    /// Counts a request under `key`; false once more than `max` came in `window` seconds.
+    pub fn allow(&self, key: &str, max: u32, window: i64) -> bool {
+        let now = now();
+        let mut hits = lock(&self.hits);
+        if hits.len() > 50_000 {
+            hits.retain(|_, (_, since)| now - *since < 3600);
+        }
+        let entry = hits.entry(key.to_owned()).or_insert((0, now));
+        if now - entry.1 >= window {
+            *entry = (0, now);
+        }
+        entry.0 += 1;
+        entry.0 <= max
     }
 
     pub fn clear_failures(&self, key: &str) {

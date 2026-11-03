@@ -1,13 +1,14 @@
 //! The admin panel's API and static files.
 
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
-use axum::extract::{Path, Request, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::extract::{ConnectInfo, Path, Request, State};
+use axum::http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post, put};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
@@ -48,13 +49,79 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/setup", post(setup))
         .route("/auth/login", post(login))
         .route("/auth/logout", post(logout))
-        .merge(protected);
+        .merge(protected)
+        .layer(middleware::from_fn_with_state(state.clone(), guard_api));
     let ui = &state.config.ui_dir;
     let spa = ServeDir::new(ui).fallback(ServeFile::new(ui.join("index.html")));
     Router::new()
         .nest("/api", api)
         .fallback_service(spa)
+        .layer(middleware::from_fn(harden))
         .with_state(state)
+}
+
+/// Requests from one address each minute, and of those, sign-in and setup attempts.
+const API_PER_MINUTE: u32 = 600;
+const AUTH_PER_MINUTE: u32 = 10;
+
+/// The address a request to the panel came from.
+#[derive(Clone, Copy)]
+struct Peer(IpAddr);
+
+/// Rate limits every call, refuses changes a page on another site could send (it
+/// cannot set the header the panel sends), and keeps answers out of caches.
+async fn guard_api(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
+    let ip = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map_or(IpAddr::from([0, 0, 0, 0]), |c| c.0.ip());
+    req.extensions_mut().insert(Peer(ip));
+    let changes = !matches!(*req.method(), Method::GET | Method::HEAD);
+    let auth = changes && req.uri().path().starts_with("/auth/");
+    if !state.allow(&format!("api:{ip}"), API_PER_MINUTE, 60)
+        || (auth && !state.allow(&format!("api-auth:{ip}"), AUTH_PER_MINUTE, 60))
+    {
+        return ApiError(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many requests. Wait a minute and try again.".into(),
+        )
+        .into_response();
+    }
+    if changes && !req.headers().contains_key("x-requested-with") {
+        return ApiError(
+            StatusCode::FORBIDDEN,
+            "Refused: not sent by the panel".into(),
+        )
+        .into_response();
+    }
+    let mut response = next.run(req).await;
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+/// Headers that keep the panel from being framed, sniffed or loading anything but
+/// its own files.
+async fn harden(req: Request, next: Next) -> Response {
+    let mut response = next.run(req).await;
+    let headers = response.headers_mut();
+    for (name, value) in [
+        (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        (header::X_FRAME_OPTIONS, "DENY"),
+        (header::REFERRER_POLICY, "no-referrer"),
+        (
+            header::CONTENT_SECURITY_POLICY,
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+        ),
+        (
+            HeaderName::from_static("permissions-policy"),
+            "camera=(), microphone=(), geolocation=(), payment=()",
+        ),
+    ] {
+        headers.insert(name, HeaderValue::from_static(value));
+    }
+    response
 }
 
 // Auth
@@ -122,23 +189,25 @@ async fn setup(
 
 async fn login(
     State(state): State<AppState>,
+    Extension(Peer(ip)): Extension<Peer>,
     Json(body): Json<PasswordBody>,
 ) -> ApiResult<Response> {
     let Some(hash) = state.db.setting("admin_password")? else {
         return Err(ApiError::bad("Set a password first"));
     };
-    if state.locked_out("admin") {
+    let key = format!("admin:{ip}");
+    if state.locked_out(&key) {
         return Err(ApiError(
             StatusCode::TOO_MANY_REQUESTS,
             "Too many wrong tries. Wait 15 minutes and try again.".into(),
         ));
     }
     if !secret::verify(&body.password, &hash) {
-        state.record_failure("admin");
+        state.record_failure(&key);
         tokio::time::sleep(Duration::from_millis(800)).await;
         return Err(ApiError(StatusCode::UNAUTHORIZED, "Wrong password".into()));
     }
-    state.clear_failures("admin");
+    state.clear_failures(&key);
     start_session(&state)
 }
 

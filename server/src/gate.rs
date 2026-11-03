@@ -42,6 +42,10 @@ pub const DEVICE_ID_LEN: usize = 256;
 const MAX_PENDING: i64 = 100;
 const MAX_SEEN: i64 = 500;
 const TEMPLATE: &str = include_str!("gate.html");
+/// Requests one visitor address may make through the gateway each minute, and how
+/// many of those may be key, password and sign-in steps.
+const REQUESTS_PER_MINUTE: u32 = 1200;
+const ACTIONS_PER_MINUTE: u32 = 30;
 
 /// Browser properties that should not change for the life of a device.
 const FINGERPRINT_KEYS: [&str; 5] = [
@@ -73,8 +77,17 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
         );
     }
     let ip = client_ip(req.headers());
+    let from = ip.map(|ip| ip.to_string()).unwrap_or_default();
+    if !state.allow(&format!("gate:{from}"), REQUESTS_PER_MINUTE, 60) {
+        return too_many();
+    }
     if let Some(action) = req.uri().path().strip_prefix("/__gate/").map(str::to_owned) {
-        return action_response(&state, &route, ip, &action, req).await;
+        if !state.allow(&format!("gate-action:{from}"), ACTIONS_PER_MINUTE, 60) {
+            return too_many();
+        }
+        let mut response = action_response(&state, &route, ip, &action, req).await;
+        harden(&mut response);
+        return response;
     }
     if !route.enabled {
         // A tunnel switched off answers as if it did not exist.
@@ -92,9 +105,17 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
 
     let verdict = check(&state, &snap, &route, ip, req.headers());
     let mut response = if verdict.allowed() {
-        proxy::forward(&state, &snap, &route, ip, req).await
+        let mut response = proxy::forward(&state, &snap, &route, ip, req).await;
+        // Tunnels are only ever reached over HTTPS.
+        response
+            .headers_mut()
+            .entry(header::STRICT_TRANSPORT_SECURITY)
+            .or_insert(HeaderValue::from_static("max-age=31536000"));
+        response
     } else {
-        refuse(&state, &route, ip, &host, &verdict, &req)
+        let mut response = refuse(&state, &route, ip, &host, &verdict, &req);
+        harden(&mut response);
+        response
     };
     if let Some(value) = new_cookie {
         response.headers_mut().append(header::SET_COOKIE, value);
@@ -381,6 +402,35 @@ fn redirect(to: &str, cookies: Vec<HeaderValue>) -> Response {
     for value in cookies {
         response.headers_mut().append(header::SET_COOKIE, value);
     }
+    response
+}
+
+/// The gateway's own pages: never framed, cached or sniffed, and HTTPS only.
+fn harden(response: &mut Response) {
+    let headers = response.headers_mut();
+    for (name, value) in [
+        (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        (header::X_FRAME_OPTIONS, "DENY"),
+        (header::REFERRER_POLICY, "same-origin"),
+        (
+            header::CONTENT_SECURITY_POLICY,
+            "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
+        ),
+        (header::STRICT_TRANSPORT_SECURITY, "max-age=31536000"),
+        (header::CACHE_CONTROL, "no-store"),
+    ] {
+        headers.insert(name, HeaderValue::from_static(value));
+    }
+}
+
+fn too_many() -> Response {
+    let mut response = (
+        StatusCode::TOO_MANY_REQUESTS,
+        [(header::RETRY_AFTER, "60")],
+        "Too many requests. Wait a minute and try again.",
+    )
+        .into_response();
+    harden(&mut response);
     response
 }
 
