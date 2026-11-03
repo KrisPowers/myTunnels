@@ -833,8 +833,8 @@ async fn create_user(
             "Username: 2 to 40 letters, digits, '.', '-' or '_'",
         ));
     }
-    let email = clean_email(body.email)?;
-    check_unique(&state, "", &username, email.as_deref())?;
+    let email = clean_email(&body.email)?;
+    check_unique(&state, "", &username, &email)?;
     if !secret::strong(&body.password) {
         return Err(ApiError::bad(secret::RULE));
     }
