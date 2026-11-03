@@ -100,7 +100,6 @@ export const api = {
   createPassword: (password: string) => call("/auth/setup", "POST", { password }),
   login: (password: string) => call("/auth/login", "POST", { password }),
   logout: () => call("/auth/logout", "POST"),
-  finishSetup: () => call("/setup/finish", "POST"),
 
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),
