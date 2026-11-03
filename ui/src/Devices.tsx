@@ -4,15 +4,16 @@ import { Icon } from "./Icon";
 import { go } from "./route";
 import { ArmedButton, Callout, Card, Copy, Row, SaveField, Switch, useNotify } from "./ui";
 
-const FILTERS: [DeviceStatus, string][] = [
-  ["pending", "Waiting"],
+// Two lists: devices let in, and every other device met, waiting to be decided.
+type Tab = "approved" | "requests";
+const TABS: [Tab, string][] = [
   ["approved", "Approved"],
-  ["seen", "Seen"],
-  ["denied", "Denied"],
+  ["requests", "Requests"],
 ];
+const inTab = (tab: Tab, d: Device) => (tab === "approved") === (d.status === "approved");
 
 const TONE: Record<DeviceStatus, string> = { seen: "", pending: "warn", approved: "ok", denied: "bad" };
-const LABEL: Record<DeviceStatus, string> = { seen: "Seen", pending: "Waiting", approved: "Approved", denied: "Denied" };
+const LABEL: Record<DeviceStatus, string> = { seen: "Request", pending: "Request", approved: "Approved", denied: "Denied" };
 
 function summary(d: Device) {
   const i = d.info ?? {};
@@ -36,14 +37,13 @@ function useApprove(routes: Route[], onChanged: () => Promise<void>) {
   };
 }
 
-// Devices is every browser that asked to open a tunnel needing an approved
-// device, a filter per state.
+// Devices is every browser met so far: those approved, and requests.
 export function Devices({ devices, routes, onChanged }: { devices: Device[] | null; routes: Route[]; onChanged: () => Promise<void> }) {
   const all = devices ?? [];
-  const count = (s: DeviceStatus) => all.filter((d) => d.status === s).length;
-  const [filter, setFilter] = useState<DeviceStatus>(count("pending") || !all.length ? "pending" : "approved");
+  const count = (tab: Tab) => all.filter((d) => inTab(tab, d)).length;
+  const [tab, setTab] = useState<Tab>(all.some((d) => d.status === "pending") ? "requests" : "approved");
   const approve = useApprove(routes, onChanged);
-  const shown = all.filter((d) => d.status === filter);
+  const shown = all.filter((d) => inTab(tab, d));
 
   return (
     <>
@@ -51,15 +51,15 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
         <div className="page-head-main">
           <h1>Devices</h1>
           <div className="page-sub">
-            <span><b>{count("pending")}</b> waiting for approval</span>
             <span><b>{count("approved")}</b> approved</span>
+            <span><b>{count("requests")}</b> requests</span>
           </div>
         </div>
       </div>
       <div className="page-body">
         <div className="filters" role="tablist">
-          {FILTERS.map(([key, label]) => (
-            <button key={key} type="button" role="tab" className="filter" aria-selected={filter === key} onClick={() => setFilter(key)}>
+          {TABS.map(([key, label]) => (
+            <button key={key} type="button" role="tab" className="filter" aria-selected={tab === key} onClick={() => setTab(key)}>
               {label}<span>{count(key)}</span>
             </button>
           ))}
@@ -67,8 +67,8 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
         {devices && shown.length === 0 && (
           <div className="card welcome">
             <Icon name="devices" size={40} />
-            <h2>{filter === "pending" ? "No device is waiting" : `No ${LABEL[filter].toLowerCase()} devices`}</h2>
-            {filter === "pending" && <p className="muted">Turn on Approved devices for a tunnel, then open its address on the device you want to add. Its ID shows up here.</p>}
+            <h2>{tab === "requests" ? "No requests" : "No approved devices"}</h2>
+            {tab === "requests" && <p className="muted">A device shows up here the first time it opens one of your tunnels.</p>}
           </div>
         )}
         {shown.length > 0 && (
@@ -84,7 +84,7 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
                     </span>
                     <span className="result-service">{summary(d)}</span>
                     <span className="result-meta">{ago(d.last_seen)}</span>
-                    {d.status === "pending" || d.status === "seen" ? (
+                    {d.status !== "approved" ? (
                       <button type="button" className="btn primary small" onClick={(e) => {
                         e.preventDefault();
                         approve(d);
