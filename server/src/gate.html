@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{TITLE}}</title>
+<style>
+:root {
+  --bg: #f4f5f7; --card: #ffffff; --text: #16191d; --muted: #5d6573; --line: #e2e5ea;
+  --ok: #1d8a4e; --warn: #a86200; --bad: #c2362d; --accent: #2b62e3;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1013; --card: #171a1f; --text: #e7e9ed; --muted: #98a0ad; --line: #272c33;
+    --ok: #4cc184; --warn: #e3a43a; --bad: #ef6a60; --accent: #6f9bff;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+  background: var(--bg); color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main {
+  width: 100%; max-width: 420px; padding: 28px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+}
+.host { margin-bottom: 18px; color: var(--muted); font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+h1 { margin: 0 0 6px; font-size: 18px; }
+p { margin: 0; color: var(--muted); }
+#device { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.id-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 16px; }
+#id { font: 600 28px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .05em; }
+button {
+  padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px;
+  background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+.state { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+.state[data-tone="ok"] .dot { background: var(--ok); }
+.state[data-tone="bad"] .dot { background: var(--bad); }
+.state[data-tone="warn"] .dot { animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .state[data-tone="warn"] .dot { animation: none; } }
+</style>
+</head>
+<body data-mode="{{MODE}}">
+<main>
+  <div class="host">{{HOST}}</div>
+  <h1>{{TITLE}}</h1>
+  <p>{{TEXT}}</p>
+  <div id="device" hidden>
+    <div class="label">Device ID</div>
+    <div class="id-row"><span id="id">....-....</span><button id="copy" type="button">Copy</button></div>
+    <div class="state" id="state" data-tone="warn"><span class="dot"></span><span id="state-text">Checking this device</span></div>
+  </div>
+</main>
+<script>
+(function () {
+  if (document.body.dataset.mode !== 'device') return;
+  var KEY = 'gate.device';
+  var $ = function (id) { return document.getElementById(id); };
+  $('device').hidden = false;
+
+  function load() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+  function save(token) { try { localStorage.setItem(KEY, token); } catch (e) {} }
+
+  function gpu() {
+    try {
+      var gl = document.createElement('canvas').getContext('webgl');
+      if (!gl) return {};
+      var ext = gl.getExtension('WEBGL_debug_renderer_info');
+      return {
+        vendor: gl.getParameter(ext ? ext.UNMASKED_VENDOR_WEBGL : gl.VENDOR),
+        renderer: gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER)
+      };
+    } catch (e) { return {}; }
+  }
+
+  function info() {
+    var n = navigator, ua = n.userAgentData, g = gpu();
+    return {
+      userAgent: n.userAgent,
+      platform: (ua && ua.platform) || n.platform || '',
+      mobile: ua ? !!ua.mobile : null,
+      languages: n.languages ? Array.prototype.slice.call(n.languages) : [n.language],
+      hardwareConcurrency: n.hardwareConcurrency || null,
+      deviceMemory: n.deviceMemory || null,
+      maxTouchPoints: n.maxTouchPoints || 0,
+      screen: { width: screen.width, height: screen.height, colorDepth: screen.colorDepth, pixelRatio: window.devicePixelRatio },
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      webglVendor: g.vendor || '',
+      webglRenderer: g.renderer || ''
+    };
+  }
+
+  function show(s) {
+    var text = 'Waiting for approval', tone = 'warn';
+    if (s.allowed) { text = 'Approved, opening'; tone = 'ok'; }
+    else if (s.status === 'approved') { text = 'Approved, but not for this app'; tone = 'bad'; }
+    else if (s.status === 'denied') { text = 'Access denied'; tone = 'bad'; }
+    else if (s.note) { text = s.note + ', waiting for review'; }
+    $('id').textContent = s.id;
+    $('state-text').textContent = text;
+    $('state').dataset.tone = tone;
+  }
+
+  function check() {
+    fetch('/__gate/enroll', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: load(), info: info() })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (s) {
+        if (s.token) save(s.token);
+        if (!s.id) throw new Error(s.error || 'unavailable');
+        show(s);
+        if (s.allowed) { location.reload(); return; }
+        if (s.status !== 'denied') setTimeout(check, 5000);
+      })
+      .catch(function (e) {
+        $('state-text').textContent = 'Could not reach the gateway (' + e.message + '), retrying';
+        setTimeout(check, 10000);
+      });
+  }
+
+  $('copy').addEventListener('click', function () {
+    if (navigator.clipboard) navigator.clipboard.writeText($('id').textContent);
+  });
+
+  check();
+})();
+</script>
+</body>
+</html>
