@@ -11,14 +11,41 @@ export interface Route {
   target_scheme: "http" | "https";
   require_lan: boolean;
   require_device: boolean;
+  require_password: boolean;
+  require_login: boolean;
+  password_set: boolean;
   policy_mode: PolicyMode;
   enabled: boolean;
+  preserve_host: boolean;
   created_at: number;
 }
 
-export type RouteEdit = Pick<Route, "target_host" | "target_scheme" | "require_lan" | "require_device" | "policy_mode" | "enabled"> & { port: number };
+// Who may open a tunnel, as sent when publishing or editing one. `password` is a
+// new tunnel password; left out, the one set stays.
+export interface Access {
+  require_lan: boolean;
+  require_device: boolean;
+  require_password: boolean;
+  require_login: boolean;
+  policy_mode: PolicyMode;
+  password?: string;
+}
 
-export type DeviceStatus = "pending" | "approved" | "denied";
+export type RouteEdit = Pick<Route, "target_host" | "target_scheme" | "enabled" | "preserve_host"> & Access & { port: number };
+
+export interface User {
+  id: string;
+  username: string;
+  email: string | null;
+  name: string;
+  enabled: boolean;
+  all_routes: boolean;
+  route_ids: string[];
+  created_at: number;
+  last_login: number | null;
+}
+
+export type DeviceStatus = "seen" | "pending" | "approved" | "denied";
 
 export interface DeviceInfo {
   userAgent?: string;
