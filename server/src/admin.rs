@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::cloudflare::{Account, Cloudflare, Zone};
-use crate::db::{Device, Route, SignIn, User};
+use crate::db::{Device, Event, Route, SignIn, User};
 use crate::netinfo;
 use crate::state::AppState;
 use crate::util::{cookie, lock, now, random_hex, valid_host, ApiError, ApiResult};
