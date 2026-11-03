@@ -862,7 +862,6 @@ struct UserEdit {
     name: Option<String>,
     password: Option<String>,
     enabled: Option<bool>,
-    all_routes: Option<bool>,
     route_ids: Option<Vec<String>>,
 }
 
