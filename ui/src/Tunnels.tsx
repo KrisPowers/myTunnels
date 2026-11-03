@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useState, type FormEvent } from "react";
 import { ago, api, editOf, LEVELS, list, message, shortId, strength, type Access, type Device, type PolicyMode, type Route, type RouteEdit, type Status, type TunnelEvent, type User, type Zone } from "./api";
-import { useDismiss } from "./dismiss";
 import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Avatar, Card, LogTable, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
+import { AddMenu, ArmedButton, Avatar, Card, LogTable, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
 
 // Chips saying who may open a tunnel.
 export function AccessChips({ route }: { route: Route }) {
@@ -551,102 +549,28 @@ function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () =>
 // People are the accounts that may sign in at this tunnel, added one by one: a
 // plus beside the heading opens a menu to find someone, then a row per person.
 function People({ route, users, onGrant }: { route: Route; users: User[]; onGrant: (user: User, on: boolean) => Promise<void> }) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const [active, setActive] = useState(0);
-  const wrap = useRef<HTMLDivElement>(null);
-  const panel = useRef<HTMLDivElement>(null);
-  const [at, setAt] = useState({ top: 0, left: 0 });
-  const close = useCallback(() => {
-    setOpen(false);
-    setQ("");
-  }, []);
-  useDismiss(open, close, wrap, panel);
-
-  // The menu is drawn over the page, under the plus, so no card or scroll area
-  // cuts it off; scrolling or resizing closes it.
-  useLayoutEffect(() => {
-    if (!open || !wrap.current) return;
-    const r = wrap.current.getBoundingClientRect();
-    setAt({ top: r.bottom + 4, left: Math.max(8, Math.min(r.right - 300, innerWidth - 308)) });
-    // Scrolling the menu's own list keeps it open.
-    const away = (e: Event) => {
-      if (!panel.current?.contains(e.target as Node)) close();
-    };
-    addEventListener("scroll", away, true);
-    addEventListener("resize", close);
-    return () => {
-      removeEventListener("scroll", away, true);
-      removeEventListener("resize", close);
-    };
-  }, [open, close]);
-
   const members = users.filter((u) => u.route_ids.includes(route.id));
-  const needle = q.trim().toLowerCase();
-  // Everyone matching, those with access already shown but not pickable.
-  const matches = users
-    .filter((u) => !needle || [u.name, u.username, u.email].some((v) => v.toLowerCase().includes(needle)))
-    // Most active first: latest sign-in, then never signed in.
-    .sort((a, b) => (b.last_login ?? 0) - (a.last_login ?? 0))
-    .slice(0, 8);
-
-  const add = async (u: User) => {
-    close();
-    await onGrant(u, true);
-  };
-
-  const menu = (
-    <div className="menu-wrap" ref={wrap}>
-      <button type="button" className={"icon-btn" + (open ? " on" : "")} aria-label="Add people" title="Add people" aria-expanded={open}
-        onClick={() => (open ? close() : setOpen(true))}>
-        <Icon name="add" />
-      </button>
-      {open && createPortal(
-        <div ref={panel} className="menu people-menu" style={{ top: at.top, left: at.left }}>
-          {users.length === 0 ? (
-            <a className="menu-item" href="#/users/new"><Icon name="add" size={18} />New user</a>
-          ) : (
-            <>
-              <input className="menu-search" type="text" placeholder="Name or email" aria-label="Find people" autoFocus autoComplete="off" spellCheck={false}
-                value={q}
-                onChange={(e) => {
-                  setQ(e.target.value);
-                  setActive(0);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                    e.preventDefault();
-                    setActive((i) => Math.max(0, Math.min(matches.length - 1, i + (e.key === "ArrowDown" ? 1 : -1))));
-                  } else if (e.key === "Enter" && matches[active] && !matches[active].route_ids.includes(route.id)) {
-                    e.preventDefault();
-                    add(matches[active]);
-                  }
-                }} />
-              {matches.length === 0 && <div className="menu-note">No one by that name</div>}
-              {matches.map((u, i) => {
-                const has = u.route_ids.includes(route.id);
-                return (
-                  <button key={u.id} type="button" className={"menu-item person-item" + (i === active ? " active" : "")} disabled={has}
-                    onMouseEnter={() => setActive(i)} onClick={() => add(u)}>
-                    <Avatar name={u.name || u.username} />
-                    <span className="person">
-                      <span>{u.name || u.username}</span>
-                      <small>{has ? "Has access" : u.email}</small>
-                    </span>
-                  </button>
-                );
-              })}
-            </>
-          )}
-        </div>,
-        document.body,
-      )}
-    </div>
-  );
-
+  // Most active first: latest sign-in, then never signed in.
+  const ranked = [...users].sort((a, b) => (b.last_login ?? 0) - (a.last_login ?? 0));
   return (
-    <Card title="People with access" action={menu}
-      sub={!route.require_login ? "Sign-in is off, so no one is asked for an account yet." : members.length ? undefined : "No one yet."}>
+    <Card title="People with access"
+      sub={!route.require_login ? "Sign-in is off, so no one is asked for an account yet." : members.length ? undefined : "No one yet."}
+      action={
+        <AddMenu label="Add people" placeholder="Name or email"
+          empty={<a className="menu-item" href="#/users/new"><Icon name="add" size={18} />New user</a>}
+          onPick={(id) => {
+            const u = users.find((x) => x.id === id);
+            if (u) onGrant(u, true);
+          }}
+          items={ranked.map((u) => ({
+            id: u.id,
+            label: u.name || u.username,
+            sub: u.email,
+            avatar: u.name || u.username,
+            disabled: u.route_ids.includes(route.id),
+            note: "Has access",
+          }))} />
+      }>
       {members.length > 0 && (
         <ul className="people">
           {members.map((u) => (

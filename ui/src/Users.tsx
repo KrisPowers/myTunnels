@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ago, api, LEVELS, list, message, shortId, strength, type Route, type SignIn, type User } from "./api";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Avatar, Card, LogTable, Row, SaveField, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
+import { AddMenu, Avatar, Card, LogTable, MoreMenu, Row, SubNav, Switch, TextField, useNotify, ValueRow, type LogEntry } from "./ui";
 
 function state(u: User): [string, string] {
   if (u.note) return ["bad", "Held for review"];
@@ -195,19 +195,16 @@ const USER_PAGES: [string, string, IconName][] = [
 
 export function UserPage({ user, page, routes, onChanged }: { user: User; page: string; routes: Route[]; onChanged: () => Promise<void> }) {
   const notify = useNotify();
-  const [password, setPassword] = useState("");
   const current = USER_PAGES.some(([k]) => k === page) ? page : "profile";
   const [tone, label] = state(user);
+  const theirs = routes.filter((r) => user.route_ids.includes(r.id));
 
   const edit = async (patch: Parameters<typeof api.editUser>[1]) => {
-    try {
-      await api.editUser(user.id, patch);
-      await onChanged();
-    } catch (e) {
-      notify(message(e), "bad");
-      throw e;
-    }
+    await api.editUser(user.id, patch);
+    await onChanged();
   };
+  const quietly = (patch: Parameters<typeof api.editUser>[1], done?: string) =>
+    edit(patch).then(() => done && notify(done)).catch((e) => notify(message(e), "bad"));
 
   const remove = async () => {
     try {
@@ -234,55 +231,106 @@ export function UserPage({ user, page, routes, onChanged }: { user: User; page: 
           </div>
         </div>
         <div className="page-actions">
-          <Switch label={user.enabled ? "Active, turn off" : "Turned off, turn on"} on={user.enabled} onChange={(v) => edit({ enabled: v }).catch(() => {})} />
-          <ArmedButton icon="delete" label="Remove" armedLabel="Remove for good" onConfirm={remove} />
+          <MoreMenu label="Account actions" actions={[
+            user.enabled
+              ? { label: "Turn off", icon: "block", onClick: () => quietly({ enabled: false }, "Turned off") }
+              : { label: user.note ? "Unlock" : "Turn on", icon: "check_circle", onClick: () => quietly({ enabled: true }, user.note ? "Unlocked" : "Turned on") },
+            { label: "Sign out everywhere", icon: "logout", onClick: () => api.signOutUser(user.id).then(() => notify("Signed out everywhere")).catch((e) => notify(message(e), "bad")) },
+            { label: "Remove", icon: "delete", danger: true, confirm: "Remove for good", onClick: remove },
+          ]} />
         </div>
       </div>
       <SubNav back="#/users" backLabel="Users" base={`#/users/${user.id}`} items={USER_PAGES} current={current} />
 
-      <div className="page-body stack" key={current}>
+      <div className="page-body stack plain" key={current}>
         {user.note && (
           <div className="callout bad held">
             <Icon name="warning" />
-            <span><b>Held for review.</b> {user.note}. Its sign-ins ended. Check Activity, then unlock it if it was them.</span>
-            <button type="button" className="btn" onClick={() => edit({ enabled: true }).then(() => notify("Unlocked")).catch(() => {})}>Unlock</button>
+            <span><b>Held for review.</b> {user.note}. Its sign-ins ended. Check Activity, then unlock it from the menu if it was them.</span>
           </div>
         )}
 
         {current === "profile" && (
           <>
-            <Card title="Who they are">
-              <Row title="Full name"><SaveField label="Full name" width={260} placeholder="None" value={user.name} onSave={(v) => edit({ name: v })} /></Row>
-              <Row title="Username"><SaveField label="Username" width={260} value={user.username} onSave={(v) => edit({ username: v })} /></Row>
-              <Row title="Email" sub="What they sign in with."><SaveField label="Email" width={260} value={user.email} onSave={(v) => edit({ email: v })} /></Row>
+            <Card title="Details">
+              <ValueRow title="Full name" value={user.name} onSave={(v) => edit({ name: v })} />
+              <ValueRow title="Username" value={user.username} onSave={(v) => edit({ username: v })} />
+              <ValueRow title="Email" value={user.email} type="email" hint="What they sign in with" onSave={(v) => edit({ email: v })} />
             </Card>
-            <Card title="Password">
-              <div className="setting nested">
-                <PasswordField label="New password" value={password} onChange={setPassword} hint="Changing it signs them out everywhere." />
-                <button type="button" className="btn primary" disabled={!strength(password).ok} onClick={() => edit({ password }).then(() => {
-                  setPassword("");
-                  notify("Password changed");
-                }).catch(() => {})}>Change</button>
-              </div>
-            </Card>
-            <Card title="Sessions">
-              <Row title="Sign out everywhere" sub="Ends every sign-in of this account. The password stays.">
-                <button type="button" className="btn" onClick={() => api.signOutUser(user.id).then(() => notify("Signed out everywhere")).catch((e) => notify(message(e), "bad"))}>
-                  <Icon name="logout" size={18} />Sign out
-                </button>
-              </Row>
+            <Card title="Security">
+              <PasswordValue onSave={(password) => edit({ password })} />
+              <Row title="Last signed in" sub={user.last_login ? ago(user.last_login) : "Never"} />
             </Card>
           </>
         )}
 
         {current === "access" && (
-          <Grants ids={user.route_ids} routes={routes}
-            onPick={(id, on) => edit({ route_ids: on ? [...user.route_ids, id] : user.route_ids.filter((x) => x !== id) }).catch(() => {})} />
+          <Card title="Tunnels" sub={theirs.length ? undefined : "None yet. Add the tunnels this account may sign in at."}
+            action={
+              <AddMenu label="Add a tunnel" placeholder="Find a tunnel" onPick={(id) => quietly({ route_ids: [...user.route_ids, id] })}
+                empty={<div className="menu-note">There are no tunnels yet</div>}
+                items={routes.map((r) => ({ id: r.id, label: r.hostname, sub: r.require_login ? undefined : "Sign-in is off here", disabled: user.route_ids.includes(r.id), note: "Already added" }))} />
+            }>
+            {theirs.length > 0 && (
+              <ul className="people">
+                {theirs.map((r) => (
+                  <li key={r.id} className="person-row">
+                    <span className={"dot " + (r.enabled ? "ok" : "")} />
+                    <a className="person" href={`#/tunnels/${r.id}`}>
+                      <span className="scan-target">{r.hostname}</span>
+                      <small>{r.require_login ? "Asks for sign-in" : "Sign-in is off"}</small>
+                    </a>
+                    <button type="button" className="icon-btn danger" aria-label={`Remove ${r.hostname}`} title="Remove"
+                      onClick={() => quietly({ route_ids: user.route_ids.filter((x) => x !== r.id) })}>
+                      <Icon name="close" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
         )}
 
         {current === "activity" && <Activity user={user} />}
       </div>
     </>
+  );
+}
+
+// PasswordValue shows that a password is set, and changes it from an edit button.
+function PasswordValue({ onSave }: { onSave: (password: string) => Promise<unknown> }) {
+  const [editing, setEditing] = useState(false);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+  if (!editing) {
+    return (
+      <Row title="Password" sub="Set">
+        <button type="button" className="icon-btn" aria-label="Change password" title="Change password" onClick={() => setEditing(true)}>
+          <Icon name="edit" size={20} />
+        </button>
+      </Row>
+    );
+  }
+  return (
+    <form className="setting nested" onSubmit={async (e) => {
+      e.preventDefault();
+      setBusy(true);
+      try {
+        await onSave(password);
+        notify("Password changed. They were signed out everywhere.");
+        setPassword("");
+        setEditing(false);
+      } catch (err) {
+        notify(message(err), "bad");
+      } finally {
+        setBusy(false);
+      }
+    }}>
+      <PasswordField label="New password" value={password} onChange={setPassword} hint="Changing it signs them out everywhere." />
+      <button type="button" className="btn text" onClick={() => setEditing(false)}>Cancel</button>
+      <button className="btn primary" disabled={busy || !strength(password).ok}>Save</button>
+    </form>
   );
 }
 
