@@ -79,7 +79,7 @@ export interface Status {
 
 export interface Auth {
   authenticated: boolean;
-  setup: { password: boolean; token: boolean; cloudflare: boolean; network: boolean; done: boolean };
+  setup: { password: boolean; token: boolean; cloudflare: boolean; done: boolean };
 }
 
 async function call<T>(path: string, method = "GET", body?: unknown): Promise<T> {
