@@ -72,6 +72,18 @@ CREATE TABLE IF NOT EXISTS sign_ins (
 );
 CREATE INDEX IF NOT EXISTS sign_ins_user ON sign_ins (user_id, at);
 CREATE INDEX IF NOT EXISTS sign_ins_device ON sign_ins (device_id, at);
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    user_id TEXT,
+    device_id TEXT,
+    ip TEXT,
+    country TEXT,
+    at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS events_route ON events (route_id, at);
 CREATE TABLE IF NOT EXISTS user_routes (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
@@ -136,12 +148,29 @@ pub struct User {
     #[serde(skip)]
     pub password_hash: String,
     pub enabled: bool,
+    /// Kept for the column; accounts are added to each tunnel, so it stays false.
+    #[serde(skip)]
     pub all_routes: bool,
     pub route_ids: Vec<String>,
     pub created_at: i64,
     pub last_login: Option<i64>,
     /// Why the account was locked, while it is.
     pub note: Option<String>,
+}
+
+/// Something that happened at a tunnel's door: a sign-in or password attempt, a
+/// visitor turned away, a device asking for approval.
+#[derive(Clone, Serialize)]
+pub struct Event {
+    pub route_id: String,
+    /// "sign-in", "password", "visit" or "device".
+    pub kind: String,
+    pub outcome: String,
+    pub user_id: Option<String>,
+    pub device_id: Option<String>,
+    pub ip: Option<String>,
+    pub country: Option<String>,
+    pub at: i64,
 }
 
 /// One attempt to sign in to an account: where from, and how it went
@@ -297,6 +326,13 @@ impl Db {
                 params![old, new],
             )?;
         }
+        // Accounts are added to each tunnel; any that could open every tunnel keep
+        // exactly the tunnels there are now.
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO user_routes (user_id, route_id)
+                 SELECT u.id, r.id FROM users u, routes r WHERE u.all_routes = 1;
+             UPDATE users SET all_routes = 0 WHERE all_routes = 1;",
+        )?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(Self(Mutex::new(conn)))
     }
@@ -662,6 +698,51 @@ impl Db {
                     country: r.get(3)?,
                     at: r.get(4)?,
                     outcome: r.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(list)
+    }
+
+    /// Records what happened at a tunnel, keeping 90 days of it.
+    pub fn add_event(&self, e: &Event) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO events (route_id, kind, outcome, user_id, device_id, ip, country, at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                e.route_id,
+                e.kind,
+                e.outcome,
+                e.user_id,
+                e.device_id,
+                e.ip,
+                e.country,
+                e.at
+            ],
+        )?;
+        conn.execute("DELETE FROM events WHERE at < ?1", [e.at - 90 * 86_400])?;
+        Ok(())
+    }
+
+    /// A tunnel's latest events, newest first.
+    pub fn events(&self, route_id: &str, limit: i64) -> Result<Vec<Event>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT route_id, kind, outcome, user_id, device_id, ip, country, at FROM events
+             WHERE route_id = ?1 ORDER BY at DESC, id DESC LIMIT ?2",
+        )?;
+        let list = stmt
+            .query_map(params![route_id, limit], |r| {
+                Ok(Event {
+                    route_id: r.get(0)?,
+                    kind: r.get(1)?,
+                    outcome: r.get(2)?,
+                    user_id: r.get(3)?,
+                    device_id: r.get(4)?,
+                    ip: r.get(5)?,
+                    country: r.get(6)?,
+                    at: r.get(7)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;

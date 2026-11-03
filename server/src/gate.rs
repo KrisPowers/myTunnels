@@ -16,7 +16,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::db::{Device, Route, SignIn};
+use crate::db::{Device, Event, Route, SignIn};
 use crate::proxy;
 use crate::state::{open_session, session, touch_session, AppState, Hop, Snapshot};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
@@ -105,7 +105,7 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
     let mut response = if verdict.allowed() {
         proxy::forward(&state, &snap, &route, ip, req).await
     } else {
-        refuse(&host, &verdict, &req)
+        refuse(&state, &route, ip, &host, &verdict, &req)
     };
     if let Some(value) = new_cookie {
         response.headers_mut().append(header::SET_COOKIE, value);
@@ -222,7 +222,7 @@ fn user_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &
         .users
         .get(&s.subject)
         .filter(|u| secret::tag(&u.password_hash) == s.tag)
-        .is_some_and(|u| u.enabled && (u.all_routes || u.route_ids.contains(&route.id)));
+        .is_some_and(|u| u.enabled && u.route_ids.contains(&route.id));
     if ok {
         touch_session(&state.user_sessions, sid);
     }
@@ -235,7 +235,14 @@ fn may_open(device: &Device, route: &Route) -> bool {
 
 /// What a visitor who did not pass sees: the network notice, or the page for one of
 /// the checks they can pass here. `?__gate=password` picks another of those.
-fn refuse(host: &str, verdict: &Verdict, req: &Request) -> Response {
+fn refuse(
+    state: &AppState,
+    route: &Route,
+    ip: Option<IpAddr>,
+    host: &str,
+    verdict: &Verdict,
+    req: &Request,
+) -> Response {
     let html = req.method() == Method::GET
         && req
             .headers()
@@ -244,6 +251,15 @@ fn refuse(host: &str, verdict: &Verdict, req: &Request) -> Response {
             .is_some_and(|v| v.contains("text/html"));
     let open = verdict.open();
     let network_only = verdict.lan == Some(false) && (!verdict.any || open.is_empty());
+    // Page loads turned away are logged; the files a page asks for are not.
+    if html {
+        let asked = if network_only {
+            "network"
+        } else {
+            open.first().copied().unwrap_or("network")
+        };
+        log(state, route, "visit", asked, None, ip, req.headers());
+    }
     if network_only {
         return if html {
             page(
@@ -549,7 +565,7 @@ async fn action_response(
             Err(status) => status.into_response(),
         },
         ("password", true) => match body::<PasswordRequest>(req).await {
-            Ok((_, body)) => password(state, route, ip, body).await,
+            Ok((headers, body)) => password(state, route, ip, &headers, body).await,
             Err(status) => status.into_response(),
         },
         ("login", true) => match body::<LoginRequest>(req).await {
@@ -675,6 +691,7 @@ fn register(
             }
             if device.status == "seen" {
                 device.status = "pending".into();
+                log(state, route, "device", "asked", None, ip, headers);
             }
             device.info = body.info;
             device.last_ip = ip.map(|ip| ip.to_string()).or(device.last_ip);
@@ -690,7 +707,11 @@ fn register(
             }
             (device, token)
         }
-        None => new_device(state, route, ip, headers, "pending", body.info)?,
+        None => {
+            let made = new_device(state, route, ip, headers, "pending", body.info)?;
+            log(state, route, "device", "asked", None, ip, headers);
+            made
+        }
     };
 
     let allowed = may_open(&device, route);
@@ -744,6 +765,7 @@ async fn password(
     state: &AppState,
     route: &Route,
     ip: Option<IpAddr>,
+    headers: &HeaderMap,
     body: PasswordRequest,
 ) -> Response {
     let Some(hash) = route
@@ -759,16 +781,19 @@ async fn password(
         ip.map(|ip| ip.to_string()).unwrap_or_default()
     );
     if state.locked_out(&key) {
+        log(state, route, "password", "locked", None, ip, headers);
         return json_error(
             StatusCode::TOO_MANY_REQUESTS,
             "Too many wrong tries. Wait 15 minutes and try again.",
         );
     }
     if !secret::verify(&body.password, hash) {
+        log(state, route, "password", "failed", None, ip, headers);
         state.record_failure(&key);
         tokio::time::sleep(Duration::from_millis(700)).await;
         return json_error(StatusCode::UNAUTHORIZED, "That password is not right.");
     }
+    log(state, route, "password", "ok", None, ip, headers);
     state.clear_failures(&key);
     let sid = open_session(
         &state.pass_sessions,
@@ -826,6 +851,7 @@ async fn login(
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
     let record = |user_id: &str, outcome: &str| {
+        log(state, route, "sign-in", outcome, Some(user_id), ip, headers);
         let _ = state.db.add_sign_in(&SignIn {
             user_id: user_id.to_owned(),
             device_id: device_id.clone(),
@@ -847,7 +873,7 @@ async fn login(
     };
     state.clear_failures(&by_address);
     state.clear_failures(&by_account);
-    if !(account.all_routes || account.route_ids.contains(&route.id)) {
+    if !account.route_ids.contains(&route.id) {
         return json_error(StatusCode::FORBIDDEN, "This account cannot open this app.");
     }
 
@@ -891,6 +917,40 @@ async fn login(
             .map(|v| (header::SET_COOKIE, v)),
     );
     response
+}
+
+// ---- the tunnel's log ----
+
+/// Notes an event at this tunnel, with whoever and wherever it came from.
+fn log(
+    state: &AppState,
+    route: &Route,
+    kind: &str,
+    outcome: &str,
+    user_id: Option<&str>,
+    ip: Option<IpAddr>,
+    headers: &HeaderMap,
+) {
+    let device_id = cookie(headers, DEVICE_COOKIE)
+        .filter(|t| valid_token(t))
+        .and_then(|t| state.db.device_by_token(&sha256_hex(t)).ok().flatten())
+        .map(|d| d.id);
+    let event = Event {
+        route_id: route.id.clone(),
+        kind: kind.to_owned(),
+        outcome: outcome.to_owned(),
+        user_id: user_id.map(str::to_owned),
+        device_id,
+        ip: ip.map(|ip| ip.to_string()),
+        country: headers
+            .get("cf-ipcountry")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned),
+        at: now(),
+    };
+    if let Err(err) = state.db.add_event(&event) {
+        tracing::warn!("could not log a {kind} event: {err:#}");
+    }
 }
 
 // ---- the dashboard's own device ----
