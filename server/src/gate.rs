@@ -919,6 +919,40 @@ async fn login(
     response
 }
 
+// ---- the tunnel's log ----
+
+/// Notes an event at this tunnel, with whoever and wherever it came from.
+fn log(
+    state: &AppState,
+    route: &Route,
+    kind: &str,
+    outcome: &str,
+    user_id: Option<&str>,
+    ip: Option<IpAddr>,
+    headers: &HeaderMap,
+) {
+    let device_id = cookie(headers, DEVICE_COOKIE)
+        .filter(|t| valid_token(t))
+        .and_then(|t| state.db.device_by_token(&sha256_hex(t)).ok().flatten())
+        .map(|d| d.id);
+    let event = Event {
+        route_id: route.id.clone(),
+        kind: kind.to_owned(),
+        outcome: outcome.to_owned(),
+        user_id: user_id.map(str::to_owned),
+        device_id,
+        ip: ip.map(|ip| ip.to_string()),
+        country: headers
+            .get("cf-ipcountry")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned),
+        at: now(),
+    };
+    if let Err(err) = state.db.add_event(&event) {
+        tracing::warn!("could not log a {kind} event: {err:#}");
+    }
+}
+
 // ---- the dashboard's own device ----
 
 /// Registers the browser the admin uses, approved for every tunnel, and returns its key.
