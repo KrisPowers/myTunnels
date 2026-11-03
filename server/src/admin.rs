@@ -535,6 +535,15 @@ async fn update_route(
     route.require_device = body.require_device;
     route.policy_mode = body.policy_mode;
     route.enabled = body.enabled;
+    route.password_hash = tunnel_password(
+        body.require_password,
+        body.password,
+        route.password_hash.take(),
+    )?;
+    route.password_set = route.password_hash.is_some();
+    route.require_password = body.require_password;
+    route.require_login = body.require_login;
+    route.preserve_host = body.preserve_host;
     state.db.update_route(&route)?;
     state.reload()?;
     Ok(Json(route))
