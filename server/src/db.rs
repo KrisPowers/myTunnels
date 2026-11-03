@@ -146,7 +146,11 @@ pub struct Device {
 }
 
 const ROUTE_COLS: &str = "id, subdomain, zone_id, zone_name, hostname, target_host, target_port, \
-     target_scheme, require_lan, require_device, policy_mode, enabled, dns_record_id, created_at";
+     target_scheme, require_lan, require_device, policy_mode, enabled, dns_record_id, created_at, \
+     preserve_host, require_password, password_hash, require_login";
+
+const USER_COLS: &str =
+    "id, username, email, name, password_hash, enabled, all_routes, created_at, last_login";
 
 const DEVICE_COLS: &str = "id, name, status, all_routes, fingerprint, info, note, first_ip, \
      last_ip, country, first_host, created_at, last_seen";
