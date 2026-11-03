@@ -441,22 +441,9 @@ export function TunnelPage({ route, page, devices, users, onChanged }: { route: 
             }} />
         )}
 
-        {current === "signin" && (!edit.require_login ? (
-          <div className="card welcome">
-            <Icon name="login" size={40} />
-            <h2>Sign-in is off</h2>
-            <p className="muted">Turn it on to ask visitors to sign in with an account.</p>
-            <button type="button" className="btn primary" onClick={() => quietly({ require_login: true })}>Turn on sign-in</button>
-          </div>
-        ) : (
-          <Card title="Accounts allowed" sub={users.length ? undefined : <>No accounts yet. Add one under <a href="#/users">Users</a>.</>}>
-            {users.map((u) => (
-              <Row key={u.id} title={<a href={`#/users/${u.id}`}>{u.name || u.username}</a>} sub={u.all_routes ? "Allowed on every tunnel" : u.email}>
-                <Switch label={`Allow ${u.username}`} on={u.all_routes || u.route_ids.includes(route.id)} disabled={u.all_routes} onChange={(v) => grantUser(u, v)} />
-              </Row>
-            ))}
-          </Card>
-        ))}
+        {current === "access" && <People route={route} users={users} onGrant={grantUser} />}
+
+        {current === "activity" && <TunnelActivity route={route} users={users} />}
 
         {current === "devices" && (!edit.require_device ? (
           <div className="card welcome">
