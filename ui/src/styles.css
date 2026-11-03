@@ -634,7 +634,6 @@ a.result:hover { background: var(--hover); }
   .result.tunnel-row .result-service, .result.device-row .result-meta { display: none; }
   .result.tunnel-row .result-what, .result.device-row .result-service { grid-column: 2; grid-row: 2; }
   .tally.three { grid-template-columns: minmax(0, 1fr); }
-  .header-new { width: 40px; padding: 0; justify-content: center; font-size: 0; gap: 0; }
   .edit-row { flex-wrap: wrap; }
   .edit-row .grow { flex-basis: 100%; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
@@ -649,10 +648,6 @@ a.result:hover { background: var(--hover); }
   .step-label { display: none; }
   .step { justify-content: center; }
 }
-
-/* New tunnel, in the header beside help and settings. */
-.header-new { height: 40px; margin-right: 8px; padding: 0 20px 0 16px; }
-.header-new:hover { text-decoration: none; }
 
 /* A title or line with its edit button beside it, and the form that replaces it. */
 .inline-edit { display: flex; align-items: center; gap: 4px; min-width: 0; }
