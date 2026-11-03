@@ -276,7 +276,7 @@ export function UserPage({ user, page, routes, onChanged }: { user: User; page: 
         )}
 
         {current === "access" && (
-          <Grants all={user.all_routes} ids={user.route_ids} routes={routes} onAll={(v) => edit({ all_routes: v }).catch(() => {})}
+          <Grants ids={user.route_ids} routes={routes}
             onPick={(id, on) => edit({ route_ids: on ? [...user.route_ids, id] : user.route_ids.filter((x) => x !== id) }).catch(() => {})} />
         )}
 
