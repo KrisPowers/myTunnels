@@ -683,38 +683,173 @@ fn register(
     .into_response();
     let out = response.headers_mut();
     out.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    set_cookie(
-        out,
-        DEVICE_COOKIE,
-        &token,
-        &route.zone_name,
-        DEVICE_COOKIE_TTL,
+    out.extend(
+        cookie_value(
+            DEVICE_COOKIE,
+            &token,
+            Some(&route.zone_name),
+            DEVICE_COOKIE_TTL,
+        )
+        .map(|v| (header::SET_COOKIE, v)),
     );
     if allowed {
-        let sid = random_hex(32);
-        let mut sessions = lock(&state.gate_sessions);
-        sessions.retain(|_, s| s.expires > now);
-        sessions.insert(
-            sid.clone(),
-            GateSession {
-                device_id: device.id.clone(),
-                expires: now + SESSION_TTL,
-            },
+        let sid = open_session(&state.device_sessions, &device.id, "", DEVICE_SESSION_TTL);
+        out.extend(
+            cookie_value(
+                SESSION_COOKIE,
+                &sid,
+                Some(&route.zone_name),
+                DEVICE_SESSION_TTL,
+            )
+            .map(|v| (header::SET_COOKIE, v)),
         );
-        drop(sessions);
-        set_cookie(out, SESSION_COOKIE, &sid, &route.zone_name, SESSION_TTL);
     }
     Ok(response)
 }
 
-/// Cookies are scoped to the whole domain so one approval covers every tunnel on it.
-fn set_cookie(headers: &mut HeaderMap, name: &str, value: &str, domain: &str, max_age: i64) {
-    let cookie = format!(
-        "{name}={value}; Domain={domain}; Path=/; Max-Age={max_age}; HttpOnly; Secure; SameSite=Lax"
+#[derive(Deserialize)]
+struct PasswordRequest {
+    password: String,
+}
+
+/// The tunnel's own password. Its session stays on this host alone.
+async fn password(
+    state: &AppState,
+    route: &Route,
+    ip: Option<IpAddr>,
+    body: PasswordRequest,
+) -> Response {
+    let Some(hash) = route
+        .password_hash
+        .as_deref()
+        .filter(|_| route.require_password)
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let key = format!(
+        "password:{}:{}",
+        route.id,
+        ip.map(|ip| ip.to_string()).unwrap_or_default()
     );
-    if let Ok(value) = HeaderValue::from_str(&cookie) {
-        headers.append(header::SET_COOKIE, value);
+    if state.locked_out(&key) {
+        return json_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many wrong tries. Wait 15 minutes and try again.",
+        );
     }
+    if !secret::verify(&body.password, hash) {
+        state.record_failure(&key);
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        return json_error(StatusCode::UNAUTHORIZED, "That password is not right.");
+    }
+    state.clear_failures(&key);
+    let sid = open_session(
+        &state.pass_sessions,
+        &route.id,
+        &secret::tag(hash),
+        PASS_TTL,
+    );
+    let mut response = Json(json!({ "ok": true })).into_response();
+    response
+        .headers_mut()
+        .extend(cookie_value(PASS_COOKIE, &sid, None, PASS_TTL).map(|v| (header::SET_COOKIE, v)));
+    response
+}
+
+#[derive(Deserialize)]
+struct LoginRequest {
+    login: String,
+    password: String,
+}
+
+/// Sign-in with an account. One sign-in covers every tunnel on the domain the
+/// account may open.
+async fn login(
+    state: &AppState,
+    route: &Route,
+    ip: Option<IpAddr>,
+    body: LoginRequest,
+) -> Response {
+    if !route.require_login {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let by_address = format!("login:{}", ip.map(|ip| ip.to_string()).unwrap_or_default());
+    let by_account = format!("login-account:{}", body.login.trim().to_ascii_lowercase());
+    if state.locked_out(&by_address) || state.locked_out(&by_account) {
+        return json_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many wrong tries. Wait 15 minutes and try again.",
+        );
+    }
+    let account = state.db.user_by_login(&body.login).ok().flatten();
+    let valid = secret::verify_or_waste(
+        &body.password,
+        account.as_ref().map(|u| u.password_hash.as_str()),
+    );
+    let Some(mut account) = account.filter(|u| valid && u.enabled) else {
+        state.record_failure(&by_address);
+        state.record_failure(&by_account);
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        return json_error(StatusCode::UNAUTHORIZED, "Those details are not right.");
+    };
+    state.clear_failures(&by_address);
+    state.clear_failures(&by_account);
+    if !(account.all_routes || account.route_ids.contains(&route.id)) {
+        return json_error(StatusCode::FORBIDDEN, "This account cannot open this app.");
+    }
+    account.last_login = Some(now());
+    let _ = state.db.save_user(&account);
+    let sid = open_session(
+        &state.user_sessions,
+        &account.id,
+        &secret::tag(&account.password_hash),
+        USER_TTL,
+    );
+    let mut response = Json(json!({ "ok": true })).into_response();
+    response.headers_mut().extend(
+        cookie_value(USER_COOKIE, &sid, Some(&route.zone_name), USER_TTL)
+            .map(|v| (header::SET_COOKIE, v)),
+    );
+    response
+}
+
+// ---- the dashboard's own device ----
+
+/// Registers the browser the admin uses, approved for every tunnel, and returns its key.
+pub fn dashboard_device(
+    state: &AppState,
+    token: Option<String>,
+    info: Value,
+) -> ApiResult<(Device, String)> {
+    if let Some(token) = token.filter(|t| valid_token(t)) {
+        if let Some(mut device) = state.db.device_by_token(&sha256_hex(&token))? {
+            device.info = info;
+            device.last_seen = now();
+            state.db.save_device(&device)?;
+            return Ok((device, token));
+        }
+    }
+    let token = random_alnum(TOKEN_LEN);
+    let now = now();
+    let device = Device {
+        id: random_alnum(DEVICE_ID_LEN),
+        name: "This computer".into(),
+        status: "approved".into(),
+        all_routes: true,
+        route_ids: Vec::new(),
+        fingerprint: fingerprint(&info),
+        info,
+        note: None,
+        first_ip: None,
+        last_ip: None,
+        country: None,
+        first_host: None,
+        created_at: now,
+        last_seen: now,
+    };
+    state.db.insert_device(&device, &sha256_hex(&token))?;
+    state.reload()?;
+    Ok((device, token))
 }
 
 #[cfg(test)]
