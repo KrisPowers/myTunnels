@@ -76,6 +76,7 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
+  const [waiting, setWaiting] = useState<{ ticket: string; sentTo: string } | null>(null);
   const rating = strength(password);
   const ready = create
     ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && username.trim().length >= 2 && rating.ok
@@ -87,13 +88,24 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
     setBusy(true);
     setProblem("");
     try {
-      await (create ? api.createAccount(email.trim(), username.trim(), password) : api.login(login.trim(), password));
+      if (create) {
+        await api.createAccount(email.trim(), username.trim(), password);
+      } else {
+        const r = await api.login(login.trim(), password);
+        if (r.code_required && r.ticket) {
+          setWaiting({ ticket: r.ticket, sentTo: r.sent_to ?? "your email" });
+          setBusy(false);
+          return;
+        }
+      }
       await onDone();
     } catch (err) {
       setProblem(message(err));
       setBusy(false);
     }
   };
+
+  if (waiting) return <CodeStep ticket={waiting.ticket} sentTo={waiting.sentTo} onDone={onDone} onBack={() => setWaiting(null)} />;
 
   return (
     <form onSubmit={submit}>
@@ -123,6 +135,41 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
       <div className="setup-foot">
         <button className="btn primary" disabled={busy || !ready}>
           {busy && <span className="spinner small on-accent" />}{create ? "Create account" : "Sign in"}<Icon name="arrow_forward" size={18} />
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// The emailed code that finishes signing in, when Two-Factor Auth asks for one.
+function CodeStep({ ticket, sentTo, onDone, onBack }: { ticket: string; sentTo: string; onDone: () => Promise<void>; onBack: () => void }) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setProblem("");
+    try {
+      await api.loginCode(ticket, code);
+      await onDone();
+    } catch (err) {
+      setProblem(message(err));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit}>
+      <StepHead title="Check your email" sub={<>Enter the code sent to <b>{sentTo}</b>.</>} />
+      <TextField label="6-digit code" mono autoFocus inputMode="numeric" autoComplete="one-time-code" value={code}
+        onChange={(v) => setCode(v.replace(/\D/g, "").slice(0, 6))} />
+      {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
+      <div className="setup-foot">
+        <button type="button" className="btn text" onClick={onBack}>Back</button>
+        <button className="btn primary" disabled={busy || code.length !== 6}>
+          {busy && <span className="spinner small on-accent" />}Verify<Icon name="arrow_forward" size={18} />
         </button>
       </div>
     </form>
