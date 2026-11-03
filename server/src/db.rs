@@ -484,6 +484,93 @@ impl Db {
         Ok(())
     }
 
+    /// Keeps at most `keep` devices that were only ever seen, dropping the longest
+    /// unseen, so passing visitors cannot fill the database.
+    pub fn prune_seen(&self, keep: i64) -> Result<()> {
+        self.conn().execute(
+            "DELETE FROM devices WHERE id IN (
+                 SELECT id FROM devices WHERE status = 'seen'
+                 ORDER BY last_seen DESC LIMIT -1 OFFSET ?1)",
+            [keep],
+        )?;
+        Ok(())
+    }
+
+    pub fn users(&self) -> Result<Vec<User>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!("SELECT {USER_COLS} FROM users ORDER BY username"))?;
+        let mut users = stmt
+            .query_map([], user_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut stmt = conn.prepare("SELECT user_id, route_id FROM user_routes")?;
+        let pairs = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for user in &mut users {
+            user.route_ids = pairs
+                .iter()
+                .filter(|(owner, _)| *owner == user.id)
+                .map(|(_, route)| route.clone())
+                .collect();
+        }
+        Ok(users)
+    }
+
+    pub fn user(&self, id: &str) -> Result<Option<User>> {
+        Ok(self.users()?.into_iter().find(|u| u.id == id))
+    }
+
+    /// The account a sign-in names, by username or email.
+    pub fn user_by_login(&self, login: &str) -> Result<Option<User>> {
+        let login = login.trim();
+        Ok(self.users()?.into_iter().find(|u| {
+            u.username.eq_ignore_ascii_case(login)
+                || u.email
+                    .as_deref()
+                    .is_some_and(|e| e.eq_ignore_ascii_case(login))
+        }))
+    }
+
+    pub fn save_user(&self, u: &User) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute(
+            &format!(
+                "INSERT INTO users ({USER_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 ON CONFLICT(id) DO UPDATE SET username = excluded.username,
+                     email = excluded.email, name = excluded.name,
+                     password_hash = excluded.password_hash, enabled = excluded.enabled,
+                     all_routes = excluded.all_routes, last_login = excluded.last_login"
+            ),
+            params![
+                u.id,
+                u.username,
+                u.email,
+                u.name,
+                u.password_hash,
+                u.enabled,
+                u.all_routes,
+                u.created_at,
+                u.last_login,
+            ],
+        )?;
+        tx.execute("DELETE FROM user_routes WHERE user_id = ?1", [&u.id])?;
+        for route_id in &u.route_ids {
+            tx.execute(
+                "INSERT OR IGNORE INTO user_routes (user_id, route_id) VALUES (?1, ?2)",
+                params![u.id, route_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn delete_user(&self, id: &str) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM users WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
     pub fn pending_count(&self) -> Result<i64> {
         let count = self.conn().query_row(
             "SELECT COUNT(*) FROM devices WHERE status = 'pending'",
