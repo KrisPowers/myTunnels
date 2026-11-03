@@ -180,10 +180,9 @@ function CloudflareStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<vo
     }
   };
 
+  // A token saved on an earlier visit is picked up again on arrival.
   useEffect(() => {
-    if (auth.setup.cloudflare) api.settings().then(setSettings).catch(() => {});
-    else if (auth.setup.token) check(null);
-    // Once, on arrival.
+    if (auth.setup.token) check(null);
   }, []);
 
   // A pasted token is checked once typing stops.
