@@ -126,8 +126,19 @@ impl<'a> Cloudflare<'a> {
         Ok(out)
     }
 
+    /// The accounts this token works on. Listing accounts needs Account Settings Read,
+    /// which a token made just for tunnels does not have, so the owners of the zones
+    /// it can see are counted too.
     pub async fn accounts(&self) -> Result<Vec<Account>> {
-        self.all("/accounts").await
+        let listed = self.all::<Account>("/accounts").await;
+        let owners = self.all::<ZoneOwner>("/zones").await;
+        match (listed, owners) {
+            (Err(err), Err(_)) => Err(err),
+            (listed, owners) => Ok(merge_accounts(
+                listed.unwrap_or_default(),
+                owners.unwrap_or_default().into_iter().map(|z| z.account),
+            )),
+        }
     }
 
     pub async fn zones(&self, account_id: &str) -> Result<Vec<Zone>> {
