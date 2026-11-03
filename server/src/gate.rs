@@ -16,7 +16,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::db::{Device, Route, SignIn};
+use crate::db::{Device, Event, Route, SignIn};
 use crate::proxy;
 use crate::state::{open_session, session, touch_session, AppState, Hop, Snapshot};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
