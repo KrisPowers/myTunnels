@@ -67,6 +67,36 @@ pub fn same_network(public: &[IpAddr], ip: IpAddr) -> bool {
     })
 }
 
+/// Finds where local ports live, as seen from here. The configured host is kept
+/// when it resolves, as host.docker.internal does under Docker Desktop and with
+/// compose's host-gateway mapping. Otherwise, inside a container, the default
+/// gateway is the Docker host; and outside one, ports are on this machine.
+pub async fn detect_upstream(configured: &str) -> String {
+    if configured.parse::<IpAddr>().is_ok()
+        || tokio::net::lookup_host((configured, 80)).await.is_ok()
+    {
+        return configured.to_owned();
+    }
+    let gateway = std::fs::read_to_string("/proc/net/route")
+        .ok()
+        .and_then(|table| default_gateway(&table));
+    let found = gateway.map_or_else(|| "127.0.0.1".to_owned(), |ip| ip.to_string());
+    tracing::info!("{configured} does not resolve, sending tunnels to {found}");
+    found
+}
+
+/// The default route's gateway from a Linux routing table (/proc/net/route).
+fn default_gateway(table: &str) -> Option<std::net::Ipv4Addr> {
+    table.lines().skip(1).find_map(|line| {
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        if cols.get(1) != Some(&"00000000") {
+            return None;
+        }
+        let raw = u32::from_str_radix(cols.get(2)?, 16).ok()?;
+        Some(std::net::Ipv4Addr::from(raw.to_le_bytes()))
+    })
+}
+
 /// Keeps the host's public addresses current so "same network" checks stay correct.
 pub fn spawn(state: AppState) {
     tokio::spawn(async move {
