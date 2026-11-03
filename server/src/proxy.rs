@@ -63,6 +63,21 @@ pub async fn forward(
     }
     headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
     headers.insert(HOP_HEADER, HeaderValue::from_static("1"));
+    // The app sees the request as if opened on this machine, which apps that
+    // only answer to localhost need; the public name travels as X-Forwarded-Host.
+    let local = format!(
+        "{}:{}",
+        route.target_host.as_deref().unwrap_or("localhost"),
+        route.target_port
+    );
+    let local_origin = format!("{}://{local}", route.target_scheme);
+    let public_origin = format!("https://{}", route.hostname);
+    if let Ok(value) = HeaderValue::from_str(&local) {
+        headers.insert(header::HOST, value);
+    }
+    for name in [header::ORIGIN, header::REFERER] {
+        swap_origin(&mut headers, name, &public_origin, &local_origin);
+    }
     if let Some(original_host) = original_host {
         headers.insert("x-forwarded-host", original_host);
     }
@@ -115,10 +130,35 @@ pub async fn forward(
     }
 
     strip_hop_by_hop(&mut response_headers, false);
+    // Redirects to the app's local address go to the public one instead.
+    for from in [
+        local_origin.clone(),
+        format!("{}://127.0.0.1:{}", route.target_scheme, route.target_port),
+    ] {
+        swap_origin(
+            &mut response_headers,
+            header::LOCATION,
+            &from,
+            &public_origin,
+        );
+    }
     let mut response = Response::new(Body::from_stream(upstream.bytes_stream()));
     *response.status_mut() = status;
     *response.headers_mut() = response_headers;
     response
+}
+
+/// Replaces a leading `from` origin in a header with `to`.
+fn swap_origin(headers: &mut HeaderMap, name: HeaderName, from: &str, to: &str) {
+    let swapped = headers
+        .get(&name)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix(from))
+        .filter(|rest| rest.is_empty() || rest.starts_with('/') || rest.starts_with('?'))
+        .and_then(|rest| HeaderValue::from_str(&format!("{to}{rest}")).ok());
+    if let Some(value) = swapped {
+        headers.insert(name, value);
+    }
 }
 
 fn is_upgrade(headers: &HeaderMap) -> bool {
@@ -181,6 +221,40 @@ fn strip_gate_cookies(headers: &mut HeaderMap) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn origins_swap_only_on_a_whole_origin() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::LOCATION,
+            HeaderValue::from_static("http://localhost:8090/login?x=1"),
+        );
+        swap_origin(
+            &mut headers,
+            header::LOCATION,
+            "http://localhost:8090",
+            "https://app.example.com",
+        );
+        assert_eq!(
+            headers.get(header::LOCATION).unwrap(),
+            "https://app.example.com/login?x=1"
+        );
+
+        headers.insert(
+            header::LOCATION,
+            HeaderValue::from_static("http://localhost:80901/x"),
+        );
+        swap_origin(
+            &mut headers,
+            header::LOCATION,
+            "http://localhost:8090",
+            "https://app.example.com",
+        );
+        assert_eq!(
+            headers.get(header::LOCATION).unwrap(),
+            "http://localhost:80901/x"
+        );
+    }
 
     #[test]
     fn gate_cookies_never_reach_the_app() {
