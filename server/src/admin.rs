@@ -795,18 +795,16 @@ fn known_routes(state: &AppState, ids: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-/// Usernames and emails both sign in, so neither may belong to another account.
-fn check_unique(state: &AppState, id: &str, username: &str, email: Option<&str>) -> ApiResult<()> {
+/// Each username and each email belongs to one account.
+fn check_unique(state: &AppState, id: &str, username: &str, email: &str) -> ApiResult<()> {
     for other in state.db.users()?.iter().filter(|u| u.id != id) {
-        let names = [Some(other.username.as_str()), other.email.as_deref()];
-        for taken in names.into_iter().flatten() {
-            if taken.eq_ignore_ascii_case(username)
-                || email.is_some_and(|e| taken.eq_ignore_ascii_case(e))
-            {
-                return Err(ApiError::conflict(
-                    "Another account already uses that name or email",
-                ));
-            }
+        if other.username.eq_ignore_ascii_case(username) {
+            return Err(ApiError::conflict(
+                "Another account already has that username",
+            ));
+        }
+        if other.email.eq_ignore_ascii_case(email) {
+            return Err(ApiError::conflict("Another account already has that email"));
         }
     }
     Ok(())
