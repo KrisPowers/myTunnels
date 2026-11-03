@@ -730,16 +730,20 @@ a.result:hover { background: var(--hover); }
 .page-body.plain .card-pad { padding-left: 0; padding-right: 0; }
 .page-body.plain .card-head { align-items: center; }
 
-/* A tunnel's log: a day heading, then one quiet line per event. */
+/* Logs as a table, from the shared dashboard style: columns fit their content,
+   the event takes the spare width, a hover tint per row. */
 .log-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-.log-day + .log-day { margin-top: 24px; }
-.log-day h3 { margin: 0 0 4px; color: var(--text-2); font-size: 13px; font-weight: 500; }
-.log-list { list-style: none; margin: 0; padding: 0; }
-.log-line { display: flex; align-items: center; gap: 14px; min-height: 36px; border-bottom: 1px solid var(--line); }
-.log-line .dot { width: 8px; height: 8px; }
-.log-time { width: 72px; flex-shrink: 0; color: var(--text-3); font: 12px var(--mono); font-variant-numeric: tabular-nums; }
-.log-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.log-where { color: var(--text-3); font: 12px var(--mono); white-space: nowrap; }
+.table-wrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { height: 48px; padding: 0 24px 0 12px; border-top: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.table th:first-child, .table td:first-child { padding-left: 12px; }
+.table th:not(.grow) { width: 1%; }
+.table th { height: 40px; border-top: 0; color: var(--text-2); font-size: 12px; font-weight: 500; }
+.table tbody tr:hover td { background: var(--hover); }
+.log-time { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.log-event { display: inline-flex; align-items: center; gap: 10px; }
+.log-event .dot { width: 8px; height: 8px; }
+.card .table-wrap { padding: 0 12px 12px; }
 
 /* Fields set straight on a card, under its heading. */
 .card-pad { padding: 0 24px 16px; }
