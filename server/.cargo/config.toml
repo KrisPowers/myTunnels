@@ -1,0 +1,4 @@
+# Rust's bundled linker links far faster than link.exe, which matters most
+# in dev mode, where every save relinks the server.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
