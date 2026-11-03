@@ -332,12 +332,20 @@ export function NewTunnel({ users, onPublished }: { users: User[]; onPublished: 
 
 // ---- one tunnel ----
 
-// TunnelPage is one tunnel: what it points at and who may open it, each change
-// saved as it is made.
-export function TunnelPage({ route, devices, users, onChanged }: { route: Route; devices: Device[]; users: User[]; onChanged: () => Promise<void> }) {
+const TUNNEL_PAGES: [string, string, IconName][] = [
+  ["access", "Access Control", "shield"],
+  ["signin", "Sign-in", "login"],
+  ["devices", "Devices", "devices"],
+];
+
+// TunnelPage is one tunnel: its address and target in the heading, each with an
+// edit button, then its sub-pages under a bar.
+export function TunnelPage({ route, page, devices, users, onChanged }: { route: Route; page: string; devices: Device[]; users: User[]; onChanged: () => Promise<void> }) {
   const [edit, setEdit] = useState<RouteEdit>(() => editOf(route));
+  const [editing, setEditing] = useState<"" | "address" | "target">("");
   const notify = useNotify();
   useEffect(() => setEdit(editOf(route)), [route]);
+  const current = TUNNEL_PAGES.some(([k]) => k === page) ? page : "access";
 
   const save = async (change: Partial<RouteEdit>) => {
     const next = { ...edit, ...change };
