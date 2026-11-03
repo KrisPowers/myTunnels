@@ -227,11 +227,14 @@ export function UserPage({ user, page, routes, onChanged }: { user: User; page: 
   return (
     <>
       <div className="page-head">
-        <a className="icon-btn" href="#/users" aria-label="All users" title="All users"><Icon name="arrow_back" /></a>
-        <div className="page-head-main">
-          <h1>{user.name || user.username}</h1>
-          <div className="page-sub">
-            <span>{user.last_login ? `Signed in ${ago(user.last_login)}` : "Never signed in"}</span>
+        <div className="page-head-main person-head">
+          <Avatar name={user.name || user.username} big />
+          <div>
+            <h1>{user.name || user.username}</h1>
+            <div className="page-sub">
+              <span>{user.email}</span>
+              <span className={"chip " + tone}>{label}</span>
+            </div>
           </div>
         </div>
         <div className="page-actions">
