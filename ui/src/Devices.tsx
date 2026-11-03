@@ -79,12 +79,12 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
                   <a className="result device-row" href={`#/devices/${d.id}`}>
                     <span className={"dot " + TONE[d.status]} role="img" aria-label={LABEL[d.status]} title={LABEL[d.status]} />
                     <span className="device-name">
-                      <span className="scan-target mono">{d.id}</span>
+                      <span className="scan-target mono">{shortId(d.id)}</span>
                       {d.name && <small>{d.name}</small>}
                     </span>
                     <span className="result-service">{summary(d)}</span>
                     <span className="result-meta">{ago(d.last_seen)}</span>
-                    {d.status === "pending" ? (
+                    {d.status === "pending" || d.status === "seen" ? (
                       <button type="button" className="btn primary small" onClick={(e) => {
                         e.preventDefault();
                         approve(d);
