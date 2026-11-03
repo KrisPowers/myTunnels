@@ -731,7 +731,7 @@ a.result:hover { background: var(--hover); }
 .page-body.plain .card-head { align-items: center; }
 
 /* A tunnel's log: a day heading, then one quiet line per event. */
-.log-bar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.log-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .log-day + .log-day { margin-top: 24px; }
 .log-day h3 { margin: 0 0 4px; color: var(--text-2); font-size: 13px; font-weight: 500; }
 .log-list { list-style: none; margin: 0; padding: 0; }
