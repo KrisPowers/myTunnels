@@ -65,6 +65,8 @@ pub fn router(state: AppState) -> Router {
         .route("/storage/rules", post(add_rule))
         .route("/storage/rules/{id}", patch(edit_rule).delete(delete_rule))
         .route("/storage/fs/{op}", any(storage_fs))
+        .route("/media/fs/{op}", any(media_fs))
+        .route("/drive/fs/{op}", any(drive_fs))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_admin));
     let api = Router::new()
         .route("/auth", get(auth_state))
@@ -135,7 +137,7 @@ async fn harden(req: Request, next: Next) -> Response {
         (header::REFERRER_POLICY, "no-referrer"),
         (
             header::CONTENT_SECURITY_POLICY,
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
         ),
         (
             HeaderName::from_static("permissions-policy"),
@@ -1231,7 +1233,15 @@ async fn storage_fs(
     Path(op): Path<String>,
     req: Request,
 ) -> Response {
-    storage::fs(&state, storage::Who::Admin, &op, req).await
+    storage::fs(&state, storage::Who::Admin, storage::Space::Files, &op, req).await
+}
+
+async fn media_fs(State(state): State<AppState>, Path(op): Path<String>, req: Request) -> Response {
+    storage::fs(&state, storage::Who::Admin, storage::Space::Media, &op, req).await
+}
+
+async fn drive_fs(State(state): State<AppState>, Path(op): Path<String>, req: Request) -> Response {
+    storage::fs(&state, storage::Who::Admin, storage::Space::Drive, &op, req).await
 }
 
 // Devices
