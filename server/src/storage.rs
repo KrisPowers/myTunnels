@@ -872,7 +872,7 @@ fn io_error(err: std::io::Error) -> ApiError {
     };
     let text = match err.kind() {
         ErrorKind::NotFound => "It is not there any more".to_owned(),
-        ErrorKind::PermissionDenied => "This host does not allow that here".to_owned(),
+        ErrorKind::PermissionDenied => format!("This host does not allow that here: {err}"),
         _ => err.to_string(),
     };
     ApiError(status, text)
