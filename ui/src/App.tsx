@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent } from "react";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type OAuthProvider, type Route, type Status, type User } from "./api";
+import { DashboardPage } from "./Dashboard";
 import { DevicePage, Devices } from "./Devices";
 import { Icon, type IconName } from "./Icon";
 import { go, readHash } from "./route";
@@ -146,6 +147,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
             </>
           ) : (
             <>
+              <NavItem to="#/dashboard" icon="dashboard" label="Dashboard" on={view === "dashboard"} />
               <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels" || view === "new"} />
               <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={pending || undefined} />
               <NavItem to="#/users" icon="group" label="Users" on={view === "users"} />
@@ -158,6 +160,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
 
         <main className="page" key={view + id}>
           {view === "tunnels" && !id && <Tunnels routes={routes} status={status} />}
+          {view === "dashboard" && <DashboardPage />}
           {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} />}
           {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
           {view === "devices" && !id && <Devices devices={devices} routes={routes ?? []} onChanged={load} />}

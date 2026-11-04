@@ -4,6 +4,7 @@ import type { IconName } from "./Icon";
 // The sections, in the order the sidebar lists them.
 export const DOCS: [string, string, IconName][] = [
   ["start", "Getting started", "info"],
+  ["dashboard", "Dashboard", "dashboard"],
   ["publish", "Publishing", "public"],
   ["access", "Access Control", "shield"],
   ["devices", "Devices", "devices"],
@@ -51,6 +52,19 @@ const CONTENT: Record<string, ReactNode> = {
       </Doc>
       <Doc title="Changing the Cloudflare connection">
         <p>Settings, Cloudflare holds the account and tunnel. A new API token can replace the old one at any time. Switching to another account or tunnel needs every tunnel removed first, since their DNS records live in the old one.</p>
+      </Doc>
+    </>
+  ),
+  dashboard: (
+    <>
+      <Doc title="What it shows">
+        <p><b>Dashboard</b> reads the host every two seconds and draws the last five minutes: CPU overall and per logical processor, memory, network traffic and the processor's temperature. Under them are each core's usage, clock and temperature, every container, every disk and every temperature sensor. Point at a chart to read any moment of it.</p>
+      </Doc>
+      <Doc title="Where the figures come from">
+        <p>Processors, memory, disks and temperatures are the host's own, even from inside the container. Network traffic is what passes through myTunnels. Containers come from the Docker API, through the <code>docker</code> service in <code>compose.yaml</code>, which only lets myTunnels read them.</p>
+      </Doc>
+      <Doc title="No temperatures">
+        <p>Temperatures need sensors the host exposes under <code>/sys/class/hwmon</code>. A Linux host does; Docker Desktop runs containers in a virtual machine, which has none.</p>
       </Doc>
     </>
   ),
