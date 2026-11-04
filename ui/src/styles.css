@@ -43,6 +43,10 @@
   --warn-bg: color-mix(in srgb, var(--warn) 18%, transparent);
   --bad-bg: color-mix(in srgb, var(--bad) 16%, transparent);
   --code: var(--card-2);
+  /* Chart lines, in this order: blue, orange, aqua. */
+  --s1: light-dark(#2a78d6, #3987e5);
+  --s2: light-dark(#eb6834, #d95926);
+  --s3: light-dark(#1baf7a, #199e70);
   --bone: light-dark(#e1e8f1, #2a2b2d);
   --bone-shine: light-dark(#f0f4f9, #3a3b3d);
   --shadow: 0 1px 3px light-dark(rgba(60, 64, 67, .3), rgba(0, 0, 0, .5)), 0 4px 8px 3px light-dark(rgba(60, 64, 67, .15), rgba(0, 0, 0, .3));
@@ -842,6 +846,86 @@ a.result:hover { background: var(--hover); }
 .flow .doc p b, .flow .doc li b { color: var(--text); font-weight: 500; }
 .bullets { display: grid; gap: 10px; margin: 0; padding-left: 20px; color: var(--text-2); line-height: 1.6; }
 .flow p code, .flow li code { padding: 2px 6px; border-radius: 3px; background: var(--code); font-size: 12.5px; }
+
+/* ---- the dashboard: the host and its containers ---- */
+.stat-tiles { margin-bottom: 0; }
+.tally-item.stat { position: relative; gap: 0; padding: 16px 18px 0; overflow: hidden; text-transform: none; }
+.tally-item.stat > span { font-size: 13px; font-weight: 500; }
+.tally-item.stat > b { margin-top: 2px; }
+.tally-item.stat > small { color: var(--text-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tally-item.stat .spark { height: 44px; margin: 8px -18px 0; width: calc(100% + 36px); }
+
+.spark { display: block; width: 100%; height: 32px; }
+.spark-area { fill: currentColor; opacity: .14; }
+.spark-line { fill: none; stroke: currentColor; stroke-width: 1.5px; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+/* A new sample slides in from the right over one sampling interval. */
+.slide { animation: slide 2s linear both; }
+@keyframes slide { from { transform: translateX(1px); } }
+
+.dash-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.chart-now { color: var(--text); font-size: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chart { padding: 0 24px 16px; }
+.chart-plot { position: relative; height: 180px; touch-action: pan-y; cursor: crosshair; }
+.chart-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+.chart-area { fill: currentColor; opacity: .12; }
+.chart-line { fill: none; stroke: currentColor; stroke-width: 2px; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.chart-grid { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--line); pointer-events: none; }
+.chart-grid.base { top: 100%; border-color: var(--line-strong); }
+.chart-grid span {
+  position: absolute; right: 0; bottom: 2px; padding-left: 6px; background: var(--card);
+  color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.chart-cross { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line-strong); pointer-events: none; }
+.chart-dot {
+  position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--card); pointer-events: none;
+}
+.chart-tip {
+  position: absolute; top: 8px; z-index: 2; min-width: 150px; margin-left: 12px; padding: 8px 12px; border-radius: var(--round);
+  background: var(--raised); box-shadow: var(--shadow); font-size: 12px; pointer-events: none; animation: fade .12s both;
+}
+.chart-tip.flip { transform: translateX(calc(-100% - 24px)); }
+.chart-tip-time { margin-bottom: 4px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.chart-tip-row { display: flex; align-items: center; gap: 8px; height: 20px; color: var(--text-2); }
+.chart-tip-row i, .legend i { width: 12px; height: 3px; border-radius: 2px; flex-shrink: 0; }
+.chart-tip-row b { margin-left: auto; padding-left: 12px; color: var(--text); font-variant-numeric: tabular-nums; }
+.chart-axis { display: flex; justify-content: space-between; padding-top: 6px; color: var(--text-3); font-size: 11px; }
+.legend { display: inline-flex; flex-wrap: wrap; gap: 6px 16px; padding-top: 6px; color: var(--text-2); font-size: 12px; }
+.legend > span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* One tile per logical processor. */
+.cores { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; padding: 0 16px 16px; }
+.core { display: grid; gap: 2px; min-width: 0; padding: 12px 14px 10px; border-radius: 12px; background: var(--bg); }
+.core-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; color: var(--text-2); font-size: 12px; font-weight: 500; }
+.core-top .chip { height: 20px; padding: 0 8px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.core > b { font-size: 22px; font-weight: 400; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.core .spark { height: 28px; margin: 4px 0 2px; }
+.core small { color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* A bar for a share of something, with its figure beside it. */
+.meter-cell { display: inline-flex; align-items: center; gap: 10px; }
+.meter { display: block; width: 96px; height: 6px; border-radius: 3px; background: var(--card-2); overflow: hidden; }
+.meter > span { display: block; height: 100%; border-radius: 3px; background: var(--s1); transition: width .6s var(--ease); }
+.meter.warn > span { background: var(--warn); }
+.meter.bad > span { background: var(--bad); }
+.num { font-variant-numeric: tabular-nums; }
+.table td.num { color: var(--text-2); font-size: 13px; line-height: 1.4; }
+.name-cell { max-width: 320px; }
+.name-cell small { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--text-3); font-size: 12px; }
+.name-line { display: inline-flex; align-items: center; gap: 10px; font-weight: 500; }
+.name-line .dot { width: 8px; height: 8px; }
+.name-cell .mono + small { margin-top: 1px; }
+.table.containers td { height: 60px; }
+.table.containers tr.stopped td { color: var(--text-3); }
+.cpu-cell { display: inline-flex; align-items: center; gap: 10px; }
+.cpu-cell .spark { width: 80px; height: 24px; }
+.cpu-cell .num { min-width: 44px; }
+
+@media (max-width: 900px) {
+  .tally.four.stat-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dash-grid { grid-template-columns: minmax(0, 1fr); }
+  .chart { padding: 0 16px 12px; }
+}
 
 /* Compact density, picked in Settings. */
 :root[data-density="compact"] .result { min-height: 44px; }

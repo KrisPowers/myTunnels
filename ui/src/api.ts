@@ -136,6 +136,50 @@ export interface Status {
   public_ips: string[];
 }
 
+// What the Dashboard shows, sampled on the server every `every` seconds, the
+// last `keep` samples kept. Sizes are bytes, rates bytes a second.
+export interface Sample {
+  at: number;
+  cpu: number;
+  cores: number[];
+  memory: number;
+  swap: number;
+  rx: number;
+  tx: number;
+  temp: number | null;
+}
+
+export interface ContainerStats {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  cpu: number;
+  memory: number;
+  memory_limit: number;
+  rx: number;
+  tx: number;
+  read: number;
+  write: number;
+  history: number[];
+}
+
+export interface Metrics {
+  every: number;
+  keep: number;
+  host: { name: string | null; os: string | null; kernel: string | null; arch: string; cpu: string | null; threads: number; cores: number | null; docker: string | null };
+  uptime: number;
+  load: [number, number, number] | null;
+  memory_total: number;
+  swap_total: number;
+  history: Sample[];
+  cores: { usage: number; mhz: number; temp: number | null }[];
+  sensors: { label: string; temp: number; max: number | null; critical: number | null }[];
+  disks: { name: string; mount: string; fs: string; total: number; available: number }[];
+  docker: { reachable: boolean; error: string | null; containers: ContainerStats[] };
+}
+
 // A way to sign in at tunnels through another service, set up once and offered
 // by the tunnels that switch it on. The secret stays on the server;
 // `secret_set` says one is saved.
@@ -214,6 +258,7 @@ export const api = {
 
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),
+  metrics: () => call<Metrics>("/metrics"),
   accounts: (token: string | null) => call<Account[]>("/cloudflare/accounts", "POST", { api_token: token }),
   connect: (token: string | null, accountId: string, tunnelName: string) =>
     call("/settings/cloudflare", "PUT", { api_token: token, account_id: accountId, tunnel_name: tunnelName }),

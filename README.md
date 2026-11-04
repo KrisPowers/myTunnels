@@ -44,6 +44,22 @@ step at a time, each saved as soon as it is done, so it can be left and resumed:
 Then, on **Tunnels**, type the subdomain, pick the domain, enter the port and press
 **Publish**. Open the tunnel to choose who can open it.
 
+## Dashboard
+
+**Dashboard** reads out the host and its containers, every two seconds, with the last five
+minutes drawn as charts:
+
+- **CPU**, overall and per logical processor, with each core's clock and temperature.
+- **Memory**, **network** traffic and the processor's **temperature** over time.
+- **Disks**, how full each one is, and every **temperature sensor** the host exposes.
+- **Containers**, each one's CPU, memory, network and disk traffic, and its state.
+
+Inside the container, processors, memory and temperatures are the host's own. Network
+traffic is what passes through myTunnels. Containers come from the Docker API through the
+`docker` service in `compose.yaml`, which allows reading containers and nothing else.
+Temperatures need sensors the host exposes under `/sys/class/hwmon`, which a Linux host
+does and Docker Desktop does not.
+
 ## Access rules
 
 Each tunnel can require nothing, or any combination of:
@@ -111,6 +127,7 @@ environment variables:
 | `GATE_ADDR` | `127.0.0.1:7080` | Gateway address, reached only by cloudflared |
 | `UPSTREAM_HOST` | `host.docker.internal` | Default host for tunnel ports, changeable in Settings |
 | `DATA_DIR` | `/data` | Database location |
+| `DOCKER_HOST` | `tcp://docker:2375` in `compose.yaml` | Docker API the Dashboard reads containers from (`unix://`, `npipe://` or `tcp://`) |
 | `RUST_LOG` | `info` | Log level |
 
 `compose.yaml` maps `host.docker.internal` to the Docker host, so a port published by any

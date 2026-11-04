@@ -20,7 +20,7 @@ use crate::netinfo;
 use crate::oauth::{self, Provider};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
-use crate::{codes, gate, secret, tunnel};
+use crate::{codes, gate, metrics, secret, tunnel};
 
 const ADMIN_COOKIE: &str = "admin_session";
 const ADMIN_TTL: i64 = 7 * 86_400;
@@ -39,6 +39,7 @@ pub fn router(state: AppState) -> Router {
         .route("/cloudflare/accounts", post(cloudflare_accounts))
         .route("/zones", get(zones))
         .route("/status", get(status))
+        .route("/metrics", get(metrics))
         .route("/routes", get(list_routes).post(create_route))
         .route("/routes/{id}", patch(update_route).delete(delete_route))
         .route("/routes/{id}/address", put(move_route))
@@ -719,6 +720,10 @@ async fn status(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         "logs": view.logs,
         "public_ips": public_ips,
     })))
+}
+
+async fn metrics() -> Json<Value> {
+    Json(metrics::view())
 }
 
 // Tunnels
