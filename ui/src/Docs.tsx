@@ -6,6 +6,7 @@ export const DOCS: [string, string, IconName][] = [
   ["start", "Getting started", "info"],
   ["dashboard", "Dashboard", "dashboard"],
   ["containers", "Containers", "deployed_code"],
+  ["media", "Media and Drive", "photo_library"],
   ["publish", "Publishing", "public"],
   ["access", "Access Control", "shield"],
   ["devices", "Devices", "devices"],
@@ -79,6 +80,19 @@ const CONTENT: Record<string, ReactNode> = {
       </Doc>
       <Doc title="What Docker allows">
         <p>myTunnels reaches Docker through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers and the engine's info and nothing else, so images, volumes and networks cannot be changed from here.</p>
+      </Doc>
+    </>
+  ),
+  media: (
+    <>
+      <Doc title="Media">
+        <p><b>Media</b> keeps photos and videos on this host, in myTunnels' own data folder rather than one you pick. They show newest first, by month, like a photo library. Open one to see it full size and step through with the arrow keys; tick several to download or delete them together. Uploads keep the date each was last changed on the device they came from.</p>
+      </Doc>
+      <Doc title="Drive">
+        <p><b>Drive</b> keeps documents, spreadsheets, presentations and PDFs, in folders of your own. A chip for each kind shows only that kind. PDFs and text files open in a new tab; the rest download, to open in the app that made them.</p>
+      </Doc>
+      <Doc title="From anywhere">
+        <p>Both are part of this dashboard. Publish the dashboard through a tunnel, under <b>Runs on</b>, to reach them away from home.</p>
       </Doc>
     </>
   ),

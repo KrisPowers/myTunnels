@@ -106,6 +106,28 @@ In the container, `compose.yaml` mounts the host's filesystem at `/host/root` an
 Desktop's drives at `/host/drives`. On Docker Desktop the drives are what File System lists; on
 Linux it is the filesystem from `/`, writable where user 10001 may write.
 
+### Media
+
+**Media** is a home cloud for photos and videos, not tied to any folder you pick: everything
+uploaded is kept by myTunnels in `/data/media`. It is laid out like a photo library: newest
+first, grouped by month, with **All**, **Photos** and **Videos** to narrow it. Open one to see
+it full size, step through with the arrow keys, download or delete it. Tick several to
+download or delete them together. **Upload**, or drag photos and videos onto the page; each
+keeps the date it was last changed on the device it came from, and the browser makes a small
+preview of it as it goes up.
+
+### Drive
+
+**Drive** keeps documents: Word and other text documents, spreadsheets, presentations and
+PDFs, in folders of your own, in `/data/drive`. Each kind has its colour and a chip to show
+only that kind; files show as cards or as a list, by name or by when they last changed. PDFs
+and text files open in a new tab, the rest download. **New** makes a folder or uploads files,
+which can also be dragged onto the page; right-click an item to open, download, rename or
+delete it.
+
+Media and Drive take only their own kinds of file, and both are in the dashboard alone, so
+publish the dashboard through a tunnel to reach them from anywhere.
+
 ## Access rules
 
 Each tunnel can require nothing, or any combination of:
