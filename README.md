@@ -204,7 +204,8 @@ The whole app on `http://localhost:7070`, live as you save, with no image build:
 
 - A change under `server/` is rebuilt incrementally and swapped in while the old build keeps
   serving, then every open page reloads. Only the first run compiles the dependencies.
-- A change under `ui/` shows straight away through hot reload.
+- A change under `ui/` shows straight away through hot reload. The storage tunnel serves a
+  built copy that is rebuilt as you save, so there a change shows on the next reload.
 - cloudflared runs under the server as it does in the container, so tunnels work too. It is
   used from `PATH`, or fetched once.
 
