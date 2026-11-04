@@ -7,7 +7,7 @@ use axum::extract::{ConnectInfo, Path, Request, State};
 use axum::http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, patch, post, put};
+use axum::routing::{any, get, patch, post, put};
 use axum::{Extension, Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -20,7 +20,7 @@ use crate::netinfo;
 use crate::oauth::{self, Provider};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
-use crate::{codes, gate, metrics, secret, tunnel};
+use crate::{codes, gate, metrics, secret, storage, tunnel};
 
 const ADMIN_COOKIE: &str = "admin_session";
 const ADMIN_TTL: i64 = 7 * 86_400;
@@ -52,6 +52,11 @@ pub fn router(state: AppState) -> Router {
         .route("/users/{id}/signout", post(sign_out_user))
         .route("/users/{id}/activity", get(user_activity))
         .route("/devices/{id}/activity", get(device_activity))
+        .route("/storage", get(storage_overview).put(save_storage))
+        .route("/storage/browse", get(browse_host))
+        .route("/storage/rules", post(add_rule))
+        .route("/storage/rules/{id}", patch(edit_rule).delete(delete_rule))
+        .route("/storage/fs/{op}", any(storage_fs))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_admin));
     let api = Router::new()
         .route("/auth", get(auth_state))
@@ -738,7 +743,7 @@ fn valid_label(label: &str) -> bool {
 }
 
 fn check_target(host: Option<String>, scheme: &str, mode: &str) -> ApiResult<Option<String>> {
-    if scheme != "http" && scheme != "https" {
+    if !matches!(scheme, "http" | "https" | "storage") {
         return Err(ApiError::bad("Scheme must be http or https"));
     }
     if mode != "all" && mode != "any" {
@@ -869,8 +874,13 @@ async fn create_route(
             "Subdomain: lowercase letters, digits and '-', up to 63 characters",
         ));
     }
-    if body.port == 0 {
+    // Storage is served by the gateway itself, at one address.
+    let storage = body.target_scheme == "storage";
+    if body.port == 0 && !storage {
         return Err(ApiError::bad("Port must be between 1 and 65535"));
+    }
+    if storage && storage::route(&state).is_some() {
+        return Err(ApiError::conflict("Storage already has an address"));
     }
     let target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
     check_not_self(&state, target_host.as_deref(), body.port)?;
@@ -978,7 +988,11 @@ async fn update_route(
     Json(body): Json<RouteEdit>,
 ) -> ApiResult<Json<Route>> {
     let mut route = state.db.route(&id)?.ok_or_else(ApiError::not_found)?;
-    if body.port == 0 {
+    // A tunnel stays an app or Storage; only where an app runs can change.
+    if (route.target_scheme == "storage") != (body.target_scheme == "storage") {
+        return Err(ApiError::bad("Storage and apps are published separately"));
+    }
+    if body.port == 0 && body.target_scheme != "storage" {
         return Err(ApiError::bad("Port must be between 1 and 65535"));
     }
     route.target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
@@ -1111,6 +1125,62 @@ async fn delete_route(
     }
     tracing::info!("removed {}", route.hostname);
     Ok(Json(json!({ "ok": true })))
+}
+
+// Storage
+
+async fn storage_overview(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    storage::overview(&state).await
+}
+
+async fn save_storage(
+    State(state): State<AppState>,
+    Json(body): Json<storage::Settings>,
+) -> ApiResult<Json<Value>> {
+    storage::save(&state, body).await
+}
+
+#[derive(Deserialize)]
+struct BrowseQuery {
+    #[serde(default)]
+    path: String,
+}
+
+async fn browse_host(
+    State(state): State<AppState>,
+    axum::extract::Query(q): axum::extract::Query<BrowseQuery>,
+) -> ApiResult<Json<Value>> {
+    storage::browse(&state, &q.path).await
+}
+
+async fn add_rule(
+    State(state): State<AppState>,
+    Json(body): Json<storage::RuleBody>,
+) -> ApiResult<Json<Value>> {
+    storage::save_rule(&state, None, body).await
+}
+
+async fn edit_rule(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<storage::RuleBody>,
+) -> ApiResult<Json<Value>> {
+    storage::save_rule(&state, Some(id), body).await
+}
+
+async fn delete_rule(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    storage::delete_rule(&state, &id).await
+}
+
+async fn storage_fs(
+    State(state): State<AppState>,
+    Path(op): Path<String>,
+    req: Request,
+) -> Response {
+    storage::fs(&state, storage::Who::Admin, &op, req).await
 }
 
 // Devices
