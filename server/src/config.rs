@@ -12,6 +12,10 @@ pub struct Config {
     /// Host that tunnel ports point at unless a tunnel names its own.
     pub default_upstream_host: String,
     pub cloudflared_bin: String,
+    /// Where this host's files are mounted when running in a container: `root`
+    /// for its whole filesystem, `drives` for Docker Desktop's drive letters.
+    /// Unset, the files are the ones this process sees.
+    pub host_root: Option<PathBuf>,
 }
 
 impl Config {
@@ -31,6 +35,10 @@ impl Config {
             ui_dir: var("UI_DIR", "../ui/dist").into(),
             default_upstream_host: var("UPSTREAM_HOST", "127.0.0.1"),
             cloudflared_bin: var("CLOUDFLARED_BIN", "cloudflared"),
+            host_root: std::env::var("HOST_ROOT")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .map(PathBuf::from),
         }
     }
 }

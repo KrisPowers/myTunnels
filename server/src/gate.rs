@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 use crate::db::{Device, Event, Route, SignIn, User};
 use crate::state::{AppState, Hop, Outcome, Snapshot};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
-use crate::{codes, guard, secret};
+use crate::{codes, guard, secret, storage};
 use crate::{oauth, proxy};
 
 pub const DEVICE_COOKIE: &str = "__gate_device";
@@ -115,7 +115,15 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
     }
 
     let verdict = check(&state, &snap, &route, ip, req.headers());
-    let mut response = if verdict.allowed() {
+    let mut response = if verdict.allowed() && route.target_scheme == "storage" {
+        // Who is signed in decides which folders they see.
+        let user = if route.require_login {
+            user_session(&state, &snap, req.headers(), &route)
+        } else {
+            None
+        };
+        storage::visit(&state, user, &state.config.ui_dir, req).await
+    } else if verdict.allowed() {
         let mut response = proxy::forward(&state, &snap, &route, ip, req).await;
         // Tunnels are only ever reached over HTTPS.
         response
@@ -198,7 +206,7 @@ fn check(
             .then(|| password_session(state, headers, route)),
         login: route
             .require_login
-            .then(|| user_session(state, snap, headers, route)),
+            .then(|| user_session(state, snap, headers, route).is_some()),
     }
 }
 
@@ -218,39 +226,40 @@ fn password_session(state: &AppState, headers: &HeaderMap, route: &Route) -> boo
         .is_some_and(|s| s.subject == route.id && s.tag == secret::tag(hash))
 }
 
-/// A signed-in account that may open this tunnel, within the tunnel's limits on how
-/// long ago it signed in and how long it has been idle.
-fn user_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &Route) -> bool {
-    let Some(sid) = cookie(headers, USER_COOKIE) else {
-        return false;
-    };
-    let Some(s) = state.session(&state.user_sessions, sid) else {
-        return false;
-    };
+/// The signed-in account, if it may open this tunnel, within the tunnel's limits on
+/// how long ago it signed in and how long it has been idle.
+fn user_session(
+    state: &AppState,
+    snap: &Snapshot,
+    headers: &HeaderMap,
+    route: &Route,
+) -> Option<String> {
+    let s = state.session(&state.user_sessions, cookie(headers, USER_COOKIE)?)?;
     let here = cookie(headers, DEVICE_COOKIE)
         .map(sha256_hex)
         .unwrap_or_default();
     if !s.device.is_empty() && s.device != here {
-        return false;
+        return None;
     }
     if route.require_code && !s.mfa {
-        return false;
+        return None;
     }
     let now = now();
     if (route.login_max > 0 && now - s.created > route.login_max)
         || (route.login_idle > 0 && now - s.seen > route.login_idle)
     {
-        return false;
+        return None;
     }
     let ok = snap
         .users
         .get(&s.subject)
         .filter(|u| secret::tag(&u.password_hash) == s.tag)
         .is_some_and(|u| u.enabled && u.route_ids.contains(&route.id));
-    if ok {
-        state.touch_session(&state.user_sessions, &s);
+    if !ok {
+        return None;
     }
-    ok
+    state.touch_session(&state.user_sessions, &s);
+    Some(s.subject)
 }
 
 fn may_open(device: &Device, route: &Route) -> bool {

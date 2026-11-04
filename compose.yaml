@@ -7,8 +7,13 @@ services:
       - "7070:7070"
     volumes:
       - data:/data
+      # Storage: this host's files, for the folder picked on the Storage page.
+      # On Linux the whole filesystem; on Docker Desktop each drive letter.
+      - /:/host/root
+      - /run/desktop/mnt/host:/host/drives
     environment:
       DOCKER_HOST: tcp://docker:2375
+      HOST_ROOT: /host
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

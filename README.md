@@ -60,6 +60,33 @@ traffic is what passes through myTunnels. Containers come from the Docker API th
 Temperatures need sensors the host exposes under `/sys/class/hwmon`, which a Linux host
 does and Docker Desktop does not.
 
+## Storage
+
+**Storage** turns a folder of this host into a drive in the browser. It starts off. Press
+**Enable storage**, then:
+
+1. **Folder.** Pick the folder Storage shows: any folder, a whole drive such as `C:`, or the
+   top of the host (every drive, or everything from `/`), which is not recommended.
+2. **Address.** A subdomain on one of your domains, `storage` to start with.
+
+After that, **Files** is a file explorer laid out like Windows': back, forward and up, the
+address bar, search, folders down the left, details or large icons, sorting and a filter by
+kind, a status bar with the free space. New folder, upload files or whole folders (also by
+dragging them in), download, rename, cut, copy, paste, delete and dragging items onto a
+folder all work, with the usual keys (Ctrl+A, Ctrl+X/C/V, Del, F2, Enter, Backspace).
+Uploads go in pieces of 48 MB, under Cloudflare's 100 MB limit on a request, so files of any
+size go up from anywhere.
+
+**Access Control** has the same layers as any tunnel, then **People with access**: each
+person, or **Everyone** who gets through, with the folders they may open, each **Read only**
+or **Read and write**. A folder given covers everything in it; the folders on the way to it
+show only the way there. At the storage address people see the same explorer, limited to
+their folders. **Activity** is the address's log, as for a tunnel.
+
+In the container, `compose.yaml` mounts the host's filesystem at `/host/root` and Docker
+Desktop's drives at `/host/drives`. On Docker Desktop the drives are what Storage lists; on
+Linux it is the filesystem from `/`, writable where user 10001 may write.
+
 ## Access rules
 
 Each tunnel can require nothing, or any combination of:
@@ -128,6 +155,7 @@ environment variables:
 | `UPSTREAM_HOST` | `host.docker.internal` | Default host for tunnel ports, changeable in Settings |
 | `DATA_DIR` | `/data` | Database location |
 | `DOCKER_HOST` | `tcp://docker:2375` in `compose.yaml` | Docker API the Dashboard reads containers from (`unix://`, `npipe://` or `tcp://`) |
+| `HOST_ROOT` | `/host` in `compose.yaml` | Where the host's files are mounted for Storage; unset, Storage uses the files this process sees |
 | `RUST_LOG` | `info` | Log level |
 
 `compose.yaml` maps `host.docker.internal` to the Docker host, so a port published by any

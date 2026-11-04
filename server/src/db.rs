@@ -99,6 +99,13 @@ CREATE TABLE IF NOT EXISTS user_routes (
     route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
     PRIMARY KEY (user_id, route_id)
 );
+CREATE TABLE IF NOT EXISTS storage_rules (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
 ";
 
 /// Columns added to `routes` after its first release, with how to add each.
@@ -201,6 +208,18 @@ pub struct SignIn {
     pub country: Option<String>,
     pub at: i64,
     pub outcome: String,
+}
+
+/// A folder in Storage someone may open: `user_id` is an account, or `*` for
+/// everyone who gets through; `path` is under the storage folder, `""` for all of
+/// it; `mode` is "read" or "write".
+#[derive(Clone, Serialize)]
+pub struct Rule {
+    pub id: String,
+    pub user_id: String,
+    pub path: String,
+    pub mode: String,
+    pub created_at: i64,
 }
 
 /// A browser that has asked for access through the gateway.
@@ -842,8 +861,45 @@ impl Db {
     }
 
     pub fn delete_user(&self, id: &str) -> Result<()> {
+        let conn = self.conn();
+        conn.execute("DELETE FROM users WHERE id = ?1", [id])?;
+        conn.execute("DELETE FROM storage_rules WHERE user_id = ?1", [id])?;
+        Ok(())
+    }
+
+    pub fn rules(&self) -> Result<Vec<Rule>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, user_id, path, mode, created_at FROM storage_rules
+             ORDER BY created_at, id",
+        )?;
+        let rules = stmt
+            .query_map([], |r| {
+                Ok(Rule {
+                    id: r.get(0)?,
+                    user_id: r.get(1)?,
+                    path: r.get(2)?,
+                    mode: r.get(3)?,
+                    created_at: r.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rules)
+    }
+
+    pub fn save_rule(&self, r: &Rule) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO storage_rules (id, user_id, path, mode, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(id) DO UPDATE SET path = excluded.path, mode = excluded.mode",
+            params![r.id, r.user_id, r.path, r.mode, r.created_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_rule(&self, id: &str) -> Result<()> {
         self.conn()
-            .execute("DELETE FROM users WHERE id = ?1", [id])?;
+            .execute("DELETE FROM storage_rules WHERE id = ?1", [id])?;
         Ok(())
     }
 

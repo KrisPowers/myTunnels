@@ -5,6 +5,7 @@ import { DevicePage, Devices } from "./Devices";
 import { Icon, type IconName } from "./Icon";
 import { go, readHash } from "./route";
 import { SETTINGS, Settings } from "./Settings";
+import { StoragePage } from "./Storage";
 import { Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
 import { NewTunnel, TunnelPage, Tunnels } from "./Tunnels";
@@ -105,13 +106,15 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
 
   const { view, id, page } = place;
   const pending = devices?.filter((d) => d.status === "pending").length ?? 0;
-  const route = view === "tunnels" && id ? routes?.find((r) => r.id === id) : undefined;
+  // Storage's address is a tunnel kept on its own page.
+  const apps = routes?.filter((r) => r.target_scheme !== "storage") ?? null;
+  const route = view === "tunnels" && id ? apps?.find((r) => r.id === id) : undefined;
   const device = view === "devices" && id ? devices?.find((d) => d.id === id) : undefined;
   const user = view === "users" && id && id !== "new" ? users?.find((u) => u.id === id) : undefined;
 
   // A tunnel, device or account that is gone goes back to its list.
   useEffect(() => {
-    if (view === "tunnels" && id && routes && !route) go("#/");
+    if (view === "tunnels" && id && routes && !route) go(routes.some((r) => r.id === id) ? "#/storage/access" : "#/");
     if (view === "devices" && id && devices && !device) go("#/devices");
     if (view === "users" && id && id !== "new" && users && !user) go("#/users");
   }, [view, id, routes, devices, users, route, device, user]);
@@ -127,7 +130,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           </button>
           <a className="brand" href="#/"><span className="brand-mark"><Icon name="public" size={20} /></span><span className="brand-name">myTunnels</span></a>
         </div>
-        <Search routes={routes} devices={devices} />
+        <Search routes={apps} devices={devices} />
         <div className="header-actions">
           <a className={"icon-btn" + (view === "new" ? " on" : "")} href="#/new" aria-label="New tunnel" title="New tunnel"><Icon name="add" /></a>
           <a className={"icon-btn" + (view === "docs" ? " on" : "")} href="#/docs" aria-label="Help" title="Help"><Icon name="help" /></a>
@@ -149,6 +152,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
             <>
               <NavItem to="#/dashboard" icon="dashboard" label="Dashboard" on={view === "dashboard"} />
               <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels" || view === "new"} />
+              <NavItem to="#/storage" icon="hard_drive" label="Storage" on={view === "storage"} />
               <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={pending || undefined} />
               <NavItem to="#/users" icon="group" label="Users" on={view === "users"} />
               <NavItem to="#/oauth" icon="key" label="Third-Party OAuth" on={view === "oauth"} />
@@ -159,7 +163,8 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
 
         <main className="page" key={view + id}>
-          {view === "tunnels" && !id && <Tunnels routes={routes} status={status} />}
+          {view === "tunnels" && !id && <Tunnels routes={apps} status={status} />}
+          {view === "storage" && <StoragePage page={id} users={users ?? []} providers={providers} onChanged={load} />}
           {view === "dashboard" && <DashboardPage />}
           {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} />}
           {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
