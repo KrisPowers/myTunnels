@@ -182,6 +182,46 @@ export interface Metrics {
   docker: { reachable: boolean; error: string | null; containers: ContainerStats[] };
 }
 
+// A container as the Containers page lists it. `own` is the one myTunnels runs in.
+export interface Port { private: number; public: number | null; type: string }
+
+export interface Container {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  created: number;
+  ports: Port[];
+  project: string | null;
+  service: string | null;
+  own: boolean;
+}
+
+export interface ContainerDetail {
+  id: string;
+  name: string;
+  image: string;
+  created: string;
+  state: string;
+  started: string;
+  finished: string;
+  exit_code: number;
+  health: string | null;
+  restarts: number;
+  restart_policy: string;
+  command: string;
+  workdir: string;
+  ports: Port[];
+  mounts: { kind: string; source: string; destination: string; writable: boolean }[];
+  networks: { name: string; ip: string }[];
+  project: string | null;
+  service: string | null;
+  own: boolean;
+}
+
+export type ContainerAction = "start" | "stop" | "restart" | "pause" | "unpause" | "kill";
+
 // Storage: one folder of the host, opened on the dashboard and at its own
 // address. Paths are `/`-separated under that folder, "" for the folder itself;
 // host paths start at the top of the host, with a drive (`C:/Users`) where it
@@ -300,6 +340,11 @@ export const api = {
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),
   metrics: () => call<Metrics>("/metrics"),
+  containers: () => call<Container[]>("/containers"),
+  container: (id: string) => call<ContainerDetail>(`/containers/${encodeURIComponent(id)}`),
+  containerLogs: (id: string, tail: number) => call<{ lines: string[] }>(`/containers/${encodeURIComponent(id)}/logs?tail=${tail}`),
+  containerAction: (id: string, action: ContainerAction) => call(`/containers/${encodeURIComponent(id)}/${action}`, "POST"),
+  removeContainer: (id: string) => call(`/containers/${encodeURIComponent(id)}`, "DELETE"),
   accounts: (token: string | null) => call<Account[]>("/cloudflare/accounts", "POST", { api_token: token }),
   connect: (token: string | null, accountId: string, tunnelName: string) =>
     call("/settings/cloudflare", "PUT", { api_token: token, account_id: accountId, tunnel_name: tunnelName }),
