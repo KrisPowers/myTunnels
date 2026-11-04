@@ -156,7 +156,7 @@ type AccessValue = Access & { password_set?: boolean };
 // AccessCard holds a tunnel's access layers. A tunnel password is asked for when
 // that layer is turned on with none set; `onPassword` stores one on its own, from
 // a dialog, and `onPasswordCancel` drops a password layer that never got one.
-function AccessCard({ value, users, providers, hostname, onChange, onPassword, onPasswordCancel, signInElsewhere }: {
+export function AccessCard({ value, users, providers, hostname, onChange, onPassword, onPasswordCancel, signInElsewhere }: {
   value: AccessValue;
   users: User[];
   // Third-party providers that are set up, to offer here.
@@ -519,7 +519,7 @@ export function TunnelPage({ route, page, devices, users, providers, onChanged }
 }
 
 // AddressEditor changes a tunnel's subdomain and domain, in a dialog.
-function AddressEditor({ route, onDone, onChanged }: { route: Route; onDone: () => void; onChanged: () => Promise<void> }) {
+export function AddressEditor({ route, onDone, onChanged }: { route: Route; onDone: () => void; onChanged: () => Promise<void> }) {
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [zone, setZone] = useState(route.zone_id);
   const [sub, setSub] = useState(route.subdomain);
@@ -699,7 +699,7 @@ function line(e: TunnelEvent): [string, string] {
 
 // TunnelLogs is what happened at the tunnel's door, newest first and grouped by
 // day: one line each, refreshed as it runs.
-function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
+export function TunnelLogs({ route, users }: { route: Route; users: User[] }) {
   const [events, setEvents] = useState<TunnelEvent[] | null>(null);
   const [kinds, setKinds] = useState<TunnelEvent["kind"][]>([]);
   useEffect(() => {
