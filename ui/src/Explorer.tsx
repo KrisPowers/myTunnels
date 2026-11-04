@@ -141,7 +141,7 @@ export function Explorer({ title }: { title: string }) {
   const [searching, setSearching] = useState(false);
   const [clip, setClip] = useState<{ cut: boolean; paths: string[] } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [asking, setAsking] = useState<null | "folder" | "delete">(null);
+  const [asking, setAsking] = useState<null | "folder" | "file" | "delete">(null);
   const [replacing, setReplacing] = useState<{ picked: Picked[]; into: string; clashes: string[] } | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [uploads, setUploads] = useState<Upload[]>([]);
@@ -419,7 +419,12 @@ export function Explorer({ title }: { title: string }) {
   const totalSize = pickedFiles.reduce((n, e) => n + e.size, 0);
 
   return (
-    <div className="explorer" ref={box} tabIndex={0} onKeyDown={onKey}>
+    <div className="explorer" ref={box} tabIndex={0} onKeyDown={onKey}
+      onContextMenu={(e) => {
+        // Menus and dialogs are drawn outside the explorer and keep their own.
+        const t = e.target as HTMLElement;
+        if (box.current?.contains(t) && !t.closest("input, textarea")) contextMenu(e, null);
+      }}>
       <div className="ex-bar">
         <div className="ex-nav">
           <button type="button" className="icon-btn" aria-label="Back" title="Back (Alt+Left)" disabled={!back.length} onClick={goBack}><Icon name="arrow_back" /></button>
@@ -449,8 +454,14 @@ export function Explorer({ title }: { title: string }) {
       </div>
 
       <div className="ex-commands" role="toolbar" aria-label="Commands">
-        <button type="button" className="ex-cmd" disabled={!canWrite} onClick={() => setAsking("folder")}><Icon name="create_new_folder" size={20} /><span>New folder</span></button>
-        <UploadMenu disabled={!canWrite} onFiles={() => filesInput.current?.click()} onFolder={() => folderInput.current?.click()} />
+        <MenuButton icon="add" label="New" disabled={!canWrite} items={[
+          { label: "Folder", icon: "create_new_folder", run: () => setAsking("folder") },
+          { label: "File", icon: "draft", run: () => setAsking("file") },
+        ]} />
+        <MenuButton icon="upload" label="Upload" disabled={!canWrite} items={[
+          { label: "Files", icon: "upload_file", run: () => filesInput.current?.click() },
+          { label: "Folder", icon: "folder", run: () => folderInput.current?.click() },
+        ]} />
         <span className="ex-sep" />
         <button type="button" className="icon-btn" aria-label="Cut" title="Cut (Ctrl+X)" disabled={!canWrite || !picked.length} onClick={() => setClip({ cut: true, paths: pickedPaths })}><Icon name="content_cut" /></button>
         <button type="button" className="icon-btn" aria-label="Copy" title="Copy (Ctrl+C)" disabled={access === "browse" || !picked.length} onClick={() => setClip({ cut: false, paths: pickedPaths })}><Icon name="content_copy" /></button>
@@ -600,6 +611,7 @@ export function Explorer({ title }: { title: string }) {
           { label: "Delete", icon: "delete", danger: true, hidden: !canWrite, run: () => setAsking("delete") },
         ] : [
           { label: "New folder", icon: "create_new_folder", hidden: !canWrite, run: () => setAsking("folder") },
+          { label: "New file", icon: "draft", hidden: !canWrite, run: () => setAsking("file") },
           { label: "Upload files", icon: "upload_file", hidden: !canWrite, run: () => filesInput.current?.click() },
           { label: "Upload folder", icon: "upload", hidden: !canWrite, run: () => folderInput.current?.click() },
           { label: "Paste", icon: "content_paste", hidden: !canWrite || !clip, run: () => paste() },
@@ -612,6 +624,15 @@ export function Explorer({ title }: { title: string }) {
         <NameDialog title="New folder" label="Folder name" initial="New folder" action="Create" onClose={() => setAsking(null)}
           onSave={async (name) => {
             await files.folder(join(path, name));
+            setAsking(null);
+            await load(path);
+            setSelected(new Set([name]));
+          }} />
+      )}
+      {asking === "file" && (
+        <NameDialog title="New file" label="File name" initial="New file.txt" action="Create" onClose={() => setAsking(null)}
+          onSave={async (name) => {
+            await upload(new File([], name), join(path, name), false, () => {}, () => false);
             setAsking(null);
             await load(path);
             setSelected(new Set([name]));
@@ -804,30 +825,32 @@ function NameDialog({ title, label, initial, action, onSave, onClose }: {
   );
 }
 
-// UploadMenu is the Upload command: files, or a whole folder.
-function UploadMenu({ disabled, onFiles, onFolder }: { disabled: boolean; onFiles: () => void; onFolder: () => void }) {
-  const [open, setOpen] = useState(false);
-  const wrap = useRef<HTMLDivElement>(null);
-  const close = useCallback(() => setOpen(false), []);
-  useDismiss(open, close, wrap);
+// MenuButton is a command that opens a menu of `items` under it, drawn over
+// the page so nothing below cuts it off.
+function MenuButton({ icon, label, disabled, items }: { icon: IconName; label: string; disabled: boolean; items: MenuItem[] }) {
+  const [at, setAt] = useState<Menu | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  // A press on the button while open closes the menu; the click after must not reopen it.
+  const wasOpen = useRef(false);
+  const close = useCallback(() => setAt(null), []);
   return (
-    <div className="menu-wrap" ref={wrap}>
-      <button type="button" className="ex-cmd" disabled={disabled} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <Icon name="upload" size={20} /><span>Upload</span><Icon name="expand_more" size={18} />
+    <>
+      <button ref={button} type="button" className="ex-cmd" disabled={disabled} aria-haspopup="menu" aria-expanded={!!at}
+        onMouseDown={() => {
+          wasOpen.current = !!at;
+        }}
+        onClick={() => {
+          const r = button.current?.getBoundingClientRect();
+          if (wasOpen.current || !r) {
+            wasOpen.current = false;
+            return setAt(null);
+          }
+          setAt({ x: r.left, y: r.bottom + 4, on: false });
+        }}>
+        <Icon name={icon} size={20} /><span>{label}</span><Icon name="expand_more" size={18} />
       </button>
-      {open && (
-        <div className="menu ex-upload-menu" role="menu">
-          <button type="button" role="menuitem" className="menu-item" onClick={() => {
-            close();
-            onFiles();
-          }}><Icon name="upload_file" size={20} />Files</button>
-          <button type="button" role="menuitem" className="menu-item" onClick={() => {
-            close();
-            onFolder();
-          }}><Icon name="folder" size={20} />Folder</button>
-        </div>
-      )}
-    </div>
+      {at && <ContextMenu at={at} items={items} onClose={close} />}
+    </>
   );
 }
 
@@ -841,10 +864,15 @@ function ContextMenu({ at, items, onClose }: { at: Menu; items: MenuItem[]; onCl
   useLayoutEffect(() => {
     const r = panel.current?.getBoundingClientRect();
     if (r) setPos({ left: Math.min(at.x, innerWidth - r.width - 8), top: Math.min(at.y, innerHeight - r.height - 8) });
-    addEventListener("scroll", onClose, true);
+    // The wheel, not scrolling: focusing the explorer on the click that opened
+    // the menu can scroll the page, which would close it at once.
+    const wheel = (e: WheelEvent) => {
+      if (!panel.current?.contains(e.target as Node)) onClose();
+    };
+    addEventListener("wheel", wheel, true);
     addEventListener("resize", onClose);
     return () => {
-      removeEventListener("scroll", onClose, true);
+      removeEventListener("wheel", wheel, true);
       removeEventListener("resize", onClose);
     };
   }, [at, onClose]);

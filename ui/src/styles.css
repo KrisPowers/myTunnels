@@ -991,8 +991,7 @@ a.result:hover { background: var(--hover); }
 .ex-cmd .icon { color: var(--text-2); }
 .ex-sep { width: 1px; height: 22px; margin: 0 6px; background: var(--line-strong); flex-shrink: 0; }
 .ex-pick .dropdown { height: 36px; min-width: 150px; border-radius: var(--round); }
-.ex-upload-menu { left: 0; right: auto; transform-origin: top left; min-width: 180px; }
-.ex-upload-menu .menu-item, .ex-context .menu-item { gap: 14px; }
+.ex-context .menu-item { gap: 14px; }
 .ex-context .menu-item .icon { color: var(--text-2); }
 .ex-context .menu-item.danger .icon { color: var(--bad); }
 
