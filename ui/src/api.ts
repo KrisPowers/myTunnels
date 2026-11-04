@@ -8,8 +8,9 @@ export interface Route {
   hostname: string;
   target_host: string | null;
   target_port: number;
-  // "storage" is the Storage page's address, served by myTunnels itself.
-  target_scheme: "http" | "https" | "storage";
+  // "storage" is the Storage page's address and "dashboard" this dashboard,
+  // both served by myTunnels itself.
+  target_scheme: "http" | "https" | "storage" | "dashboard";
   require_lan: boolean;
   require_device: boolean;
   require_password: boolean;
