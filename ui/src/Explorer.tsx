@@ -942,7 +942,7 @@ export function StorageApp() {
     <Notices>
       <div className="storage-app">
         <header className="storage-top">
-          <span className="brand"><span className="brand-mark"><Icon name="hard_drive" size={20} /></span><span className="brand-name">Storage</span></span>
+          <span className="brand"><span className="brand-mark"><Icon name="hard_drive" size={20} /></span><span className="brand-name">File System</span></span>
           <span className="ex-grow" />
           {user && (
             <>
@@ -951,7 +951,7 @@ export function StorageApp() {
             </>
           )}
         </header>
-        <Explorer title="Storage" />
+        <Explorer title="File System" />
       </div>
     </Notices>
   );

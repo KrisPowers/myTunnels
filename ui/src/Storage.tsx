@@ -19,7 +19,7 @@ const MODES: Option<StorageRule["mode"]>[] = [
   { value: "write", label: "Read and write", hint: "Upload, rename, move and delete as well" },
 ];
 
-// StoragePage turns a folder of this host into storage. It starts off; once
+// StoragePage is File System: a folder of this host, opened in the browser. It starts off; once
 // enabled, setup asks for the folder and then the address, and after that the
 // page is the folder itself, who may open which part of it, and what happened.
 export function StoragePage({ page, users, providers, onChanged }: { page: string; users: User[]; providers: OAuthProvider[]; onChanged: () => Promise<void> }) {
@@ -55,7 +55,7 @@ export function StoragePage({ page, users, providers, onChanged }: { page: strin
   const head = (
     <div className="page-head">
       <div className="page-head-main">
-        <h1>Storage</h1>
+        <h1>File System</h1>
         {state.enabled && state.path !== null && state.route && (
           <div className="page-sub">
             <span className="inline-edit">
@@ -71,7 +71,7 @@ export function StoragePage({ page, users, providers, onChanged }: { page: strin
       </div>
       {state.enabled && (
         <div className="page-actions">
-          <Switch label="Storage on, switch off" on onChange={() => save({ enabled: false })} />
+          <Switch label="File System on, switch off" on onChange={() => save({ enabled: false })} />
           {state.route && <a className="btn" href={`https://${state.route.hostname}`} target="_blank" rel="noreferrer"><Icon name="open_in_new" size={18} />Open</a>}
         </div>
       )}
@@ -85,9 +85,9 @@ export function StoragePage({ page, users, providers, onChanged }: { page: strin
         <div className="page-body">
           <div className="card welcome">
             <Icon name="hard_drive" size={40} />
-            <h2>Storage is off</h2>
+            <h2>File System is off</h2>
             <p className="muted">Open a folder of this host from here and from its own address, with the folders each person may use.</p>
-            <button type="button" className="btn primary" onClick={() => save({ enabled: true })}>Enable storage</button>
+            <button type="button" className="btn primary" onClick={() => save({ enabled: true })}>Enable File System</button>
           </div>
         </div>
       </>
@@ -100,7 +100,7 @@ export function StoragePage({ page, users, providers, onChanged }: { page: strin
       <>
         {head}
         <div className="page-body storage-setup">
-          <ol className="steps" aria-label="Storage setup">
+          <ol className="steps" aria-label="File System setup">
             {STEPS.map((label, i) => (
               <li key={label} className={"step " + (i === step ? "now" : i < step ? "done" : "later")} aria-current={i === step ? "step" : undefined}>
                 <span className="step-mark">{i < step ? <Icon name="check" size={16} /> : i + 1}</span>
@@ -113,7 +113,7 @@ export function StoragePage({ page, users, providers, onChanged }: { page: strin
               <>
                 <div className="step-head">
                   <h1>Choose the folder</h1>
-                  <p className="muted">What Storage shows and changes. A drive works too.</p>
+                  <p className="muted">What File System shows and changes. A drive works too.</p>
                 </div>
                 <FolderPicker drives={state.drives} action="Use this folder" onPick={(path) => save({ path })} />
               </>
@@ -143,7 +143,7 @@ export function StoragePage({ page, users, providers, onChanged }: { page: strin
         ))}
       </nav>
       <div className="page-body stack plain" key={current}>
-        {current === "files" && <Explorer title={state.display ?? "Storage"} />}
+        {current === "files" && <Explorer title={state.display ?? "File System"} />}
         {current === "access" && (
           <StorageAccess route={route} rules={state.rules} users={users} providers={providers}
             onChanged={async () => {
@@ -205,7 +205,7 @@ function FolderPicker({ drives, start = "", action, onPick }: { drives: boolean;
       </div>
       {at === "" && (
         <Callout tone="warn" icon="warning">
-          Not recommended: {drives ? "every drive" : "everything on this host"} would be in Storage.
+          Not recommended: {drives ? "every drive" : "everything on this host"} would be in File System.
         </Callout>
       )}
       <ul className="picker-list">
@@ -273,7 +273,7 @@ function AddressStep({ onDone }: { onDone: () => Promise<void> }) {
     <form onSubmit={submit}>
       <div className="step-head">
         <h1>Choose the address</h1>
-        <p className="muted">Where Storage opens from anywhere.</p>
+        <p className="muted">Where File System opens from anywhere.</p>
       </div>
       <div className="edit-row">
         <TextField className="grow" label="Subdomain" autoFocus autoComplete="off" value={sub}
@@ -466,7 +466,7 @@ function RuleDialog({ who, onSave, onClose }: { who: string; onSave: (path: stri
       <div className="folder-picker">
         <div className="ex-address picker-path">
           <Icon name="hard_drive" size={18} />
-          {["Storage", ...parts].map((name, i) => (
+          {["File System", ...parts].map((name, i) => (
             <span key={i} className="ex-crumb-wrap">
               {i > 0 && <Icon name="chevron_right" size={16} className="ex-crumb-sep" />}
               <button type="button" className="ex-crumb" onClick={() => setAt(parts.slice(0, i).join("/"))}>{name}</button>

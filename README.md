@@ -75,12 +75,16 @@ asks once more.
 The `docker` service in `compose.yaml` allows containers and the engine's info, nothing else,
 so images, volumes and networks cannot be changed from the panel.
 
-## Storage
+## Storage & Media
 
-**Storage** turns a folder of this host into a drive in the browser. It starts off. Press
-**Enable storage**, then:
+The sidebar keeps these pages together under **Storage & Media**; the heading folds them away.
 
-1. **Folder.** Pick the folder Storage shows: any folder, a whole drive such as `C:`, or the
+### File System
+
+**File System** turns a folder of this host into a drive in the browser. It starts off. Press
+**Enable File System**, then:
+
+1. **Folder.** Pick the folder File System shows: any folder, a whole drive such as `C:`, or the
    top of the host (every drive, or everything from `/`), which is not recommended.
 2. **Address.** A subdomain on one of your domains, `storage` to start with.
 
@@ -99,7 +103,7 @@ show only the way there. At the storage address people see the same explorer, li
 their folders. **Activity** is the address's log, as for a tunnel.
 
 In the container, `compose.yaml` mounts the host's filesystem at `/host/root` and Docker
-Desktop's drives at `/host/drives`. On Docker Desktop the drives are what Storage lists; on
+Desktop's drives at `/host/drives`. On Docker Desktop the drives are what File System lists; on
 Linux it is the filesystem from `/`, writable where user 10001 may write.
 
 ## Access rules
@@ -174,7 +178,7 @@ environment variables:
 | `UPSTREAM_HOST` | `host.docker.internal` | Default host for tunnel ports, changeable in Settings |
 | `DATA_DIR` | `/data` | Database location |
 | `DOCKER_HOST` | `tcp://docker:2375` in `compose.yaml` | Docker API the Dashboard reads containers from (`unix://`, `npipe://` or `tcp://`) |
-| `HOST_ROOT` | `/host` in `compose.yaml` | Where the host's files are mounted for Storage; unset, Storage uses the files this process sees |
+| `HOST_ROOT` | `/host` in `compose.yaml` | Where the host's files are mounted for File System; unset, it uses the files this process sees |
 | `RUST_LOG` | `info` | Log level |
 
 `compose.yaml` maps `host.docker.internal` to the Docker host, so a port published by any
@@ -220,7 +224,7 @@ The whole app on `http://localhost:7070`, live as you save, with no image build:
 
 - A change under `server/` is rebuilt incrementally and swapped in while the old build keeps
   serving, then every open page reloads. Only the first run compiles the dependencies.
-- A change under `ui/` shows straight away through hot reload. The storage tunnel serves a
+- A change under `ui/` shows straight away through hot reload. The File System address serves a
   built copy that is rebuilt as you save, so there a change shows on the next reload.
 - cloudflared runs under the server as it does in the container, so tunnels work too. It is
   used from `PATH`, or fetched once.
