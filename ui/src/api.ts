@@ -8,7 +8,8 @@ export interface Route {
   hostname: string;
   target_host: string | null;
   target_port: number;
-  target_scheme: "http" | "https";
+  // "storage" is the Storage page's address, served by myTunnels itself.
+  target_scheme: "http" | "https" | "storage";
   require_lan: boolean;
   require_device: boolean;
   require_password: boolean;
@@ -180,6 +181,45 @@ export interface Metrics {
   docker: { reachable: boolean; error: string | null; containers: ContainerStats[] };
 }
 
+// Storage: one folder of the host, opened on the dashboard and at its own
+// address. Paths are `/`-separated under that folder, "" for the folder itself;
+// host paths start at the top of the host, with a drive (`C:/Users`) where it
+// has drives.
+export interface StorageRule {
+  id: string;
+  // An account, or "*" for everyone who gets through.
+  user_id: string;
+  path: string;
+  mode: "read" | "write";
+  created_at: number;
+}
+
+export interface StorageState {
+  enabled: boolean;
+  path: string | null;
+  display: string | null;
+  drives: boolean;
+  route: Route | null;
+  rules: StorageRule[];
+}
+
+export interface HostFolder { path: string; display: string; parent: string | null; folders: string[] }
+
+export interface FileEntry { name: string; dir: boolean; size: number; modified: number }
+
+export interface Listing {
+  path: string;
+  // "browse" is a folder only passed through on the way to one given.
+  access: "browse" | "read" | "write";
+  entries: FileEntry[];
+  space: { free: number; total: number } | null;
+  // At the storage address, the account signed in.
+  user: string | null;
+}
+
+export const fileUrl = (path: string, inline = false) =>
+  `/api/storage/fs/file?path=${encodeURIComponent(path)}${inline ? "&inline=true" : ""}`;
+
 // A way to sign in at tunnels through another service, set up once and offered
 // by the tunnels that switch it on. The secret stays on the server;
 // `secret_set` says one is saved.
@@ -289,7 +329,81 @@ export const api = {
   signOutUser: (id: string) => call(`/users/${id}/signout`, "POST"),
   userActivity: (id: string) => call<SignIn[]>(`/users/${id}/activity`),
   deviceActivity: (id: string) => call<SignIn[]>(`/devices/${id}/activity`),
+
+  storage: () => call<StorageState>("/storage"),
+  saveStorage: (body: { enabled?: boolean; path?: string }) => call<StorageState>("/storage", "PUT", body),
+  browseHost: (path: string) => call<HostFolder>(`/storage/browse?path=${encodeURIComponent(path)}`),
+  addRule: (body: { user_id: string; path: string; mode: StorageRule["mode"] }) => call<StorageState>("/storage/rules", "POST", body),
+  editRule: (id: string, patch: Partial<Pick<StorageRule, "path" | "mode">>) => call<StorageState>(`/storage/rules/${id}`, "PATCH", patch),
+  removeRule: (id: string) => call<StorageState>(`/storage/rules/${id}`, "DELETE"),
 };
+
+// The files in Storage, the same calls on the dashboard and at the storage address.
+export const files = {
+  list: (path: string) => call<Listing>(`/storage/fs/list?path=${encodeURIComponent(path)}`),
+  folder: (path: string) => call<{ path: string }>("/storage/fs/folder", "POST", { path }),
+  rename: (path: string, name: string) => call<{ path: string }>("/storage/fs/rename", "POST", { path, name }),
+  move: (paths: string[], to: string, copy: boolean) => call<{ done: number }>("/storage/fs/move", "POST", { paths, to, copy }),
+  remove: (paths: string[]) => call<{ done: number }>("/storage/fs/delete", "POST", { paths }),
+};
+
+// Uploads go in pieces well under Cloudflare's 100 MB limit on a request.
+const PIECE = 48 * 1024 * 1024;
+
+function put(url: string, body: Blob, onSent: (bytes: number) => void): Promise<{ status: number; data: { error?: string; received?: number } }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.setRequestHeader("X-Requested-With", "fetch");
+    xhr.upload.onprogress = (e) => onSent(e.loaded);
+    xhr.onload = () => {
+      let data: { error?: string; received?: number } = {};
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        // Not JSON, such as the gateway asking to sign in again.
+      }
+      resolve({ status: xhr.status, data });
+    };
+    xhr.onerror = () => reject(new Error("The connection dropped"));
+    xhr.onabort = () => reject(new Error("Cancelled"));
+    xhr.send(body);
+  });
+}
+
+// upload sends a file to `path` piece by piece, picking up where the server
+// says it got to if a piece is lost. `onProgress` gets the bytes sent so far.
+export async function upload(file: File, path: string, replace: boolean, onProgress: (sent: number) => void, cancelled: () => boolean) {
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
+  let offset = 0;
+  do {
+    if (cancelled()) throw new Error("Cancelled");
+    const end = Math.min(offset + PIECE, file.size);
+    const url = `/api/storage/fs/upload?path=${encodeURIComponent(path)}&id=${id}&offset=${offset}&total=${file.size}&replace=${replace}`;
+    const start = offset;
+    const res = await put(url, file.slice(start, end), (sent) => onProgress(start + sent));
+    if (res.status === 409 && typeof res.data.received === "number") {
+      offset = res.data.received;
+      continue;
+    }
+    if (res.status === 401) dispatchEvent(new Event("signed-out"));
+    if (res.status < 200 || res.status >= 300) throw new Error(res.data.error ?? `The server answered ${res.status}`);
+    offset = end;
+    onProgress(offset);
+  } while (offset < file.size);
+}
+
+export function bytes(n: number) {
+  if (n < 1024) return `${n} bytes`;
+  const units = ["KB", "MB", "GB", "TB", "PB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}
 
 export function editOf(r: Route): RouteEdit {
   return {
