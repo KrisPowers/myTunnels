@@ -19,8 +19,9 @@ services:
     depends_on:
       - docker
 
-  # The Dashboard's view of the containers: the Docker API with only listing
-  # containers, their stats and the engine's info allowed, all read only, so
+  # The Dashboard and Containers pages' view of Docker: the API with only
+  # containers and the engine's info allowed. Containers can be started,
+  # stopped and removed; images, volumes, networks and exec stay refused, and
   # the gateway never holds the Docker socket itself.
   docker:
     image: tecnativa/docker-socket-proxy:latest
@@ -28,7 +29,7 @@ services:
     environment:
       CONTAINERS: 1
       INFO: 1
-      POST: 0
+      POST: 1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
