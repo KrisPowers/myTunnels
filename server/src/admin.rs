@@ -929,7 +929,7 @@ async fn create_route(
         return Err(ApiError::bad("Port must be between 1 and 65535"));
     }
     if storage && storage::route(&state).is_some() {
-        return Err(ApiError::conflict("Storage already has an address"));
+        return Err(ApiError::conflict("File System already has an address"));
     }
     let target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
     check_not_self(&state, target_host.as_deref(), body.port)?;
@@ -1039,7 +1039,9 @@ async fn update_route(
     let mut route = state.db.route(&id)?.ok_or_else(ApiError::not_found)?;
     // A tunnel stays an app or Storage; only where an app runs can change.
     if (route.target_scheme == "storage") != (body.target_scheme == "storage") {
-        return Err(ApiError::bad("Storage and apps are published separately"));
+        return Err(ApiError::bad(
+            "File System and apps are published separately",
+        ));
     }
     if body.port == 0 && !served_here(&body.target_scheme) {
         return Err(ApiError::bad("Port must be between 1 and 65535"));

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode } from "react";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { ContainersPage } from "./Containers";
 import { DashboardPage } from "./Dashboard";
@@ -176,11 +176,13 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
               <NavItem to="#/dashboard" icon="dashboard" label="Dashboard" on={view === "dashboard"} />
               <NavItem to="#/containers" icon="deployed_code" label="Containers" on={view === "containers"} />
               <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels" || view === "new"} />
-              <NavItem to="#/storage" icon="hard_drive" label="Storage" on={view === "storage"} />
               <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={pending || undefined} />
               <NavItem to="#/users" icon="group" label="Users" on={view === "users"} />
               <NavItem to="#/oauth" icon="key" label="Third-Party OAuth" on={view === "oauth"} />
               <NavItem to="#/twofactor" icon="lock" label="Two-Factor Auth" on={view === "twofactor"} />
+              <NavGroup id="storage" label="Storage & Media">
+                <NavItem to="#/storage" icon="hard_drive" label="File System" on={view === "storage"} />
+              </NavGroup>
             </>
           )}
         </nav>
@@ -204,6 +206,36 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           {view === "docs" && <Docs section={id} />}
         </main>
       </div>
+    </div>
+  );
+}
+
+// NavGroup is a category of pages under its name, which folds it away; the
+// fold is remembered in this browser.
+function NavGroup({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+  const key = `nav.folded.${id}`;
+  const [folded, setFolded] = useState(() => {
+    try {
+      return localStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggle = () => {
+    setFolded(!folded);
+    try {
+      localStorage.setItem(key, folded ? "0" : "1");
+    } catch {
+      // Kept until the page closes.
+    }
+  };
+  return (
+    <div className="nav-group">
+      <button type="button" className="nav-group-head" aria-expanded={!folded} onClick={toggle}>
+        <span>{label}</span>
+        <Icon name="expand_more" size={18} className={folded ? "folded" : undefined} />
+      </button>
+      {!folded && children}
     </div>
   );
 }

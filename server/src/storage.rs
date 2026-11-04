@@ -207,7 +207,7 @@ impl Store {
         let path = state.db.setting("storage_path")?.ok_or_else(|| {
             ApiError(
                 StatusCode::PRECONDITION_FAILED,
-                "Choose the storage folder first".into(),
+                "Choose the File System folder first".into(),
             )
         })?;
         Ok(Self {
@@ -245,7 +245,7 @@ impl Store {
             if !found.is_some_and(|f| f.starts_with(&limit)) {
                 return Err(ApiError(
                     StatusCode::FORBIDDEN,
-                    "That leads outside the storage folder".into(),
+                    "That leads outside the File System folder".into(),
                 ));
             }
         }
@@ -256,7 +256,7 @@ impl Store {
     /// storage folder itself, nor a drive.
     fn item(&self, rel: &[String]) -> ApiResult<PathBuf> {
         if rel.is_empty() {
-            return Err(ApiError::bad("That is the storage folder itself"));
+            return Err(ApiError::bad("That is the File System folder itself"));
         }
         if self.real(&rel[..rel.len() - 1])?.is_none() {
             return Err(ApiError::bad("A drive cannot be changed here"));
@@ -381,7 +381,7 @@ pub fn enabled(state: &AppState) -> bool {
 /// One file operation, `op`, for `who`.
 pub async fn fs(state: &AppState, who: Who, op: &str, req: Request) -> Response {
     if !enabled(state) {
-        return ApiError(StatusCode::NOT_FOUND, "Storage is off".into()).into_response();
+        return ApiError(StatusCode::NOT_FOUND, "File System is off".into()).into_response();
     }
     let result = async {
         let store = Store::open(state)?;
