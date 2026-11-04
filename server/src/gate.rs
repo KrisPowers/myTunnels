@@ -106,7 +106,15 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
     }
 
     let mut new_cookie = None;
-    if req.method() == Method::GET && wants_identity(req.headers()) {
+    let known = |token: &str| {
+        state
+            .db
+            .device_by_token(&sha256_hex(token))
+            .ok()
+            .flatten()
+            .is_some()
+    };
+    if req.method() == Method::GET && wants_identity(req.headers(), known) {
         match identify(&state, &snap, &route, ip, &req) {
             Identity::Here(value) => new_cookie = Some(value),
             Identity::Away(response) => return response,
@@ -532,15 +540,18 @@ fn has_hardware(info: &Value) -> bool {
     info.get("platform").is_some()
 }
 
-/// A page load that should leave with a device key: a browser opening a page without one.
-fn wants_identity(headers: &HeaderMap) -> bool {
+/// A page load that should leave with a device key: a browser opening a page without
+/// one, or with one no device has any more, such as a device removed.
+fn wants_identity(headers: &HeaderMap, known: impl FnOnce(&str) -> bool) -> bool {
     let text = |name| {
         headers
             .get(name)
             .and_then(|v: &HeaderValue| v.to_str().ok())
             .unwrap_or("")
     };
-    cookie(headers, DEVICE_COOKIE).is_none_or(|t| !valid_token(t))
+    cookie(headers, DEVICE_COOKIE)
+        .filter(|t| valid_token(t))
+        .is_none_or(|t| !known(t))
         && cookie(headers, TRIED_COOKIE).is_none()
         && text("accept").contains("text/html")
         && text("user-agent").starts_with("Mozilla/")
@@ -674,6 +685,7 @@ async fn action_response(
     match (action, post) {
         ("id", false) => hub_hand_out(state, route, ip, &req),
         ("claim", false) => claim(state, route, &req),
+        ("plant", false) => plant(state, route, &req),
         ("logout", false) => redirect(
             "/",
             cookie_value(USER_COOKIE, "", Some(&route.zone_name), 0)
@@ -735,7 +747,17 @@ fn hub_hand_out(state: &AppState, route: &Route, ip: Option<IpAddr>, req: &Reque
         return redirect("/", Vec::new());
     };
     let mut cookies = Vec::new();
-    let token = match cookie(req.headers(), DEVICE_COOKIE).filter(|t| valid_token(t)) {
+    let held = cookie(req.headers(), DEVICE_COOKIE)
+        .filter(|t| valid_token(t))
+        .filter(|t| {
+            state
+                .db
+                .device_by_token(&sha256_hex(t))
+                .ok()
+                .flatten()
+                .is_some()
+        });
+    let token = match held {
         Some(token) => token.to_owned(),
         None => match new_device(state, route, ip, req.headers(), "seen", Value::Null) {
             Ok((_, token)) => {
@@ -783,6 +805,83 @@ fn claim(state: &AppState, route: &Route, req: &Request) -> Response {
     }
 }
 
+/// On one tunnel per domain, in turn: the dashboard's device key becomes this
+/// browser's key here. A different device this browser was known as here is folded
+/// into the dashboard's, so its accounts and approvals carry over.
+fn plant(state: &AppState, route: &Route, req: &Request) -> Response {
+    let Some(Hop::Plant {
+        token, hosts, back, ..
+    }) = query(req.uri().query(), "c").and_then(|c| state.take_hop(&c))
+    else {
+        return redirect("/", Vec::new());
+    };
+    if hosts.first() != Some(&route.hostname) {
+        return redirect("/", Vec::new());
+    }
+    let Some(planted) = state.db.device_by_token(&sha256_hex(&token)).ok().flatten() else {
+        return redirect(&back, Vec::new());
+    };
+    let before = cookie(req.headers(), DEVICE_COOKIE)
+        .filter(|t| valid_token(t))
+        .and_then(|t| state.db.device_by_token(&sha256_hex(t)).ok().flatten());
+    if let Some(old) = before.filter(|d| d.id != planted.id) {
+        match state.db.merge_device(&old.id, &planted.id) {
+            Ok(()) => {
+                state.end_sessions_of(&state.device_sessions, &old.id);
+                let _ = state.reload();
+                tracing::info!("device {} is now {}", old.id, planted.id);
+            }
+            Err(err) => tracing::warn!("could not merge device {}: {err:#}", old.id),
+        }
+    }
+    let cookies = cookie_value(
+        DEVICE_COOKIE,
+        &token,
+        Some(&route.zone_name),
+        DEVICE_COOKIE_TTL,
+    )
+    .into_iter()
+    .collect();
+    let rest = hosts[1..].to_vec();
+    let next = match rest.first().cloned() {
+        Some(host) => {
+            let code = random_hex(16);
+            state.put_hop(
+                code.clone(),
+                Hop::Plant {
+                    token,
+                    hosts: rest,
+                    back,
+                    expires: now() + HOP_TTL,
+                },
+            );
+            format!("https://{host}/__gate/plant?c={code}")
+        }
+        None => back,
+    };
+    redirect(&next, cookies)
+}
+
+/// One tunnel per domain, the hub's first: where the dashboard's device key goes.
+pub fn planting_hosts(snap: &Snapshot) -> Vec<String> {
+    let mut routes: Vec<&Route> = snap.routes.values().filter(|r| r.enabled).collect();
+    routes.sort_by_key(|r| {
+        (
+            snap.hub.as_deref() != Some(r.hostname.as_str()),
+            r.created_at,
+        )
+    });
+    let mut zones = Vec::new();
+    let mut hosts = Vec::new();
+    for r in routes {
+        if !zones.contains(&r.zone_name) {
+            zones.push(r.zone_name.clone());
+            hosts.push(r.hostname.clone());
+        }
+    }
+    hosts
+}
+
 #[derive(Deserialize)]
 struct EnrollRequest {
     token: Option<String>,
@@ -799,15 +898,39 @@ fn register(
     headers: &HeaderMap,
     body: EnrollRequest,
 ) -> ApiResult<Response> {
-    let known = body
-        .token
+    // The cookie, shared by every tunnel on the domain, says which device this is.
+    // The copy the page keeps only stands in when the cookie is gone.
+    let lookup = |token: String| {
+        state
+            .db
+            .device_by_token(&sha256_hex(&token))
+            .ok()
+            .flatten()
+            .map(|d| (d, token))
+    };
+    let shared = cookie(headers, DEVICE_COOKIE)
         .filter(|t| valid_token(t))
-        .or_else(|| {
-            cookie(headers, DEVICE_COOKIE)
-                .filter(|t| valid_token(t))
-                .map(str::to_owned)
-        })
-        .and_then(|token| Some((state.db.device_by_token(&sha256_hex(&token)).ok()??, token)));
+        .map(str::to_owned)
+        .and_then(lookup);
+    let own = body.token.filter(|t| valid_token(t)).and_then(lookup);
+    // A page that kept a key of its own made this browser a second device; the
+    // two become the one the cookie names.
+    if let (Some((kept, _)), Some((extra, _))) = (&shared, &own) {
+        if kept.id != extra.id {
+            match state.db.merge_device(&extra.id, &kept.id) {
+                Ok(()) => {
+                    state.end_sessions_of(&state.device_sessions, &extra.id);
+                    state.reload()?;
+                    tracing::info!("device {} is now {}", extra.id, kept.id);
+                }
+                Err(err) => tracing::warn!("could not merge device {}: {err:#}", extra.id),
+            }
+        }
+    }
+    let known = match shared {
+        Some((device, token)) => state.db.device(&device.id)?.map(|d| (d, token)),
+        None => own,
+    };
     let (device, token) = match known {
         Some((mut device, token)) => {
             let was = device.status.clone();
@@ -1553,11 +1676,25 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(header::ACCEPT, HeaderValue::from_static("text/html"));
         headers.insert(header::USER_AGENT, HeaderValue::from_static("Mozilla/5.0"));
-        assert!(wants_identity(&headers));
+        assert!(wants_identity(&headers, |_| true));
         headers.insert("sec-fetch-mode", HeaderValue::from_static("cors"));
-        assert!(!wants_identity(&headers));
+        assert!(!wants_identity(&headers, |_| true));
         headers.remove("sec-fetch-mode");
         headers.insert(header::USER_AGENT, HeaderValue::from_static("curl/8"));
-        assert!(!wants_identity(&headers));
+        assert!(!wants_identity(&headers, |_| true));
+    }
+
+    #[test]
+    fn a_key_no_device_has_is_replaced() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::ACCEPT, HeaderValue::from_static("text/html"));
+        headers.insert(header::USER_AGENT, HeaderValue::from_static("Mozilla/5.0"));
+        let key = "a".repeat(TOKEN_LEN);
+        headers.insert(
+            header::COOKIE,
+            HeaderValue::from_str(&format!("{DEVICE_COOKIE}={key}")).unwrap(),
+        );
+        assert!(!wants_identity(&headers, |_| true));
+        assert!(wants_identity(&headers, |_| false));
     }
 }

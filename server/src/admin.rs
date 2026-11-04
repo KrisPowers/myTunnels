@@ -47,6 +47,7 @@ pub fn router(state: AppState) -> Router {
         .route("/devices", get(list_devices))
         .route("/devices/{id}", patch(update_device).delete(delete_device))
         .route("/device", post(this_device))
+        .route("/device/plant", post(plant_device))
         .route("/users", get(list_users).post(create_user))
         .route("/users/{id}", patch(update_user).delete(delete_user))
         .route("/users/{id}/signout", post(sign_out_user))
@@ -1258,7 +1259,53 @@ async fn this_device(
     Json(body): Json<ThisDevice>,
 ) -> ApiResult<Json<Value>> {
     let (device, token) = gate::dashboard_device(&state, body.token, body.info)?;
-    Ok(Json(json!({ "id": device.id, "token": token })))
+    Ok(Json(json!({
+        "id": device.id,
+        "token": token,
+        "hosts": gate::planting_hosts(&state.snapshot()),
+    })))
+}
+
+#[derive(Deserialize)]
+struct PlantBody {
+    token: String,
+    /// The dashboard page to come back to.
+    back: String,
+}
+
+/// Starts carrying this browser's dashboard key to one tunnel on each domain, so it
+/// is the same device on the dashboard and on every tunnel.
+async fn plant_device(
+    State(state): State<AppState>,
+    Json(body): Json<PlantBody>,
+) -> ApiResult<Json<Value>> {
+    if !(body.back.starts_with("http://") || body.back.starts_with("https://")) {
+        return Err(ApiError::bad("Bad return address"));
+    }
+    if state
+        .db
+        .device_by_token(&crate::util::sha256_hex(&body.token))?
+        .is_none()
+    {
+        return Err(ApiError::bad("Unknown device"));
+    }
+    let hosts = gate::planting_hosts(&state.snapshot());
+    let Some(first) = hosts.first().cloned() else {
+        return Err(ApiError::bad("No tunnel is live"));
+    };
+    let code = random_hex(16);
+    state.put_hop(
+        code.clone(),
+        crate::state::Hop::Plant {
+            token: body.token,
+            hosts,
+            back: body.back,
+            expires: now() + 60,
+        },
+    );
+    Ok(Json(
+        json!({ "url": format!("https://{first}/__gate/plant?c={code}") }),
+    ))
 }
 
 // Users: accounts that sign in at tunnels asking for one

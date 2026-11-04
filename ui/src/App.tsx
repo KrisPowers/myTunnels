@@ -78,7 +78,9 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
     return () => clearInterval(t);
   }, [load]);
 
-  // The browser the admin uses gets its device key here, the first time.
+  // The browser the admin uses gets its device key here, the first time. The
+  // same key then goes to one tunnel on each domain and comes back, once per set
+  // of domains, so this browser is one device on the dashboard and every tunnel.
   useEffect(() => {
     let token: string | null = null;
     try {
@@ -86,12 +88,32 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
     } catch {
       // Kept for this visit only.
     }
-    api.thisDevice(token, deviceInfo()).then((d) => {
+    api.thisDevice(token, deviceInfo()).then(async (d) => {
+      const planted = `${d.id}|${d.hosts.join(",")}`;
+      const done = () => {
+        try {
+          return localStorage.getItem("gate.device.planted") === planted;
+        } catch {
+          return true;
+        }
+      };
       try {
         localStorage.setItem("gate.device", d.token);
       } catch {
-        // As above.
+        return;
       }
+      if (!d.hosts.length || done()) return;
+      // Only while the tunnels answer, so the trip never ends on an error page.
+      const s = await api.status();
+      if (!s.connections) return;
+      const { url } = await api.plantDevice(d.token, location.href);
+      try {
+        localStorage.setItem("gate.device.planted", planted);
+      } catch {
+        return;
+      }
+      // Only once that is kept, or every visit would go round again.
+      if (done()) location.assign(url);
     }).catch(() => {});
   }, []);
 

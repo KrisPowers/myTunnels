@@ -58,6 +58,14 @@ pub enum Hop {
         token: String,
         expires: i64,
     },
+    /// The dashboard's device key, going to each of `hosts` in turn (one per domain)
+    /// so this browser is one device there too, then back to `back`.
+    Plant {
+        token: String,
+        hosts: Vec<String>,
+        back: String,
+        expires: i64,
+    },
     /// A visitor at tunnel `host` went to sign in with `provider`, from this device.
     OAuth {
         provider: String,
@@ -85,6 +93,7 @@ impl Hop {
         match self {
             Hop::Return { expires, .. }
             | Hop::Claim { expires, .. }
+            | Hop::Plant { expires, .. }
             | Hop::OAuth { expires, .. } => *expires,
         }
     }

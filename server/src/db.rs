@@ -673,6 +673,42 @@ impl Db {
         Ok(())
     }
 
+    /// Makes `from` and `into` one device, `into`: its accounts, tunnels and history
+    /// move over, it keeps the wider approval of the two, and `from` is gone.
+    pub fn merge_device(&self, from: &str, into: &str) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT OR IGNORE INTO user_devices (user_id, device_id)
+                 SELECT user_id, ?2 FROM user_devices WHERE device_id = ?1",
+            params![from, into],
+        )?;
+        tx.execute(
+            "INSERT OR IGNORE INTO device_routes (device_id, route_id)
+                 SELECT ?2, route_id FROM device_routes WHERE device_id = ?1",
+            params![from, into],
+        )?;
+        tx.execute(
+            "UPDATE sign_ins SET device_id = ?2 WHERE device_id = ?1",
+            params![from, into],
+        )?;
+        tx.execute(
+            "UPDATE events SET device_id = ?2 WHERE device_id = ?1",
+            params![from, into],
+        )?;
+        tx.execute(
+            "UPDATE devices SET
+                 all_routes = MAX(all_routes, (SELECT all_routes FROM devices WHERE id = ?1)),
+                 status = CASE WHEN (SELECT status FROM devices WHERE id = ?1) = 'approved'
+                     THEN 'approved' ELSE status END
+             WHERE id = ?2",
+            params![from, into],
+        )?;
+        tx.execute("DELETE FROM devices WHERE id = ?1", [from])?;
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn delete_device(&self, id: &str) -> Result<()> {
         self.conn()
             .execute("DELETE FROM devices WHERE id = ?1", [id])?;
