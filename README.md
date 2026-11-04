@@ -60,9 +60,20 @@ minutes drawn as charts:
 
 Inside the container, processors, memory and temperatures are the host's own. Network
 traffic is what passes through myTunnels. Containers come from the Docker API through the
-`docker` service in `compose.yaml`, which allows reading containers and nothing else.
+`docker` service in `compose.yaml`, which allows containers and nothing else.
 Temperatures need sensors the host exposes under `/sys/class/hwmon`, which a Linux host
 does and Docker Desktop does not.
+
+## Containers
+
+**Containers** lists every container on the host, grouped by Compose project, with its
+published ports, CPU, memory and status. Start and stop are on each row; restart, pause, kill
+and remove are under the three dots. Open a container for its image, command, ports, volumes,
+networks and logs. The container myTunnels runs in is marked, and anything that would stop it
+asks once more.
+
+The `docker` service in `compose.yaml` allows containers and the engine's info, nothing else,
+so images, volumes and networks cannot be changed from the panel.
 
 ## Storage
 

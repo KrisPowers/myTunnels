@@ -5,6 +5,7 @@ import type { IconName } from "./Icon";
 export const DOCS: [string, string, IconName][] = [
   ["start", "Getting started", "info"],
   ["dashboard", "Dashboard", "dashboard"],
+  ["containers", "Containers", "deployed_code"],
   ["publish", "Publishing", "public"],
   ["access", "Access Control", "shield"],
   ["devices", "Devices", "devices"],
@@ -61,10 +62,23 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Dashboard</b> reads the host every two seconds and draws the last five minutes: CPU overall and per logical processor, memory, network traffic and the processor's temperature. Under them are each core's usage, clock and temperature, every container, every disk and every temperature sensor. Point at a chart to read any moment of it.</p>
       </Doc>
       <Doc title="Where the figures come from">
-        <p>Processors, memory, disks and temperatures are the host's own, even from inside the container. Network traffic is what passes through myTunnels. Containers come from the Docker API, through the <code>docker</code> service in <code>compose.yaml</code>, which only lets myTunnels read them.</p>
+        <p>Processors, memory, disks and temperatures are the host's own, even from inside the container. Network traffic is what passes through myTunnels. Containers come from the Docker API, through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers and nothing else.</p>
       </Doc>
       <Doc title="No temperatures">
         <p>Temperatures need sensors the host exposes under <code>/sys/class/hwmon</code>. A Linux host does; Docker Desktop runs containers in a virtual machine, which has none.</p>
+      </Doc>
+    </>
+  ),
+  containers: (
+    <>
+      <Doc title="What it shows">
+        <p><b>Containers</b> lists every container on this host, grouped by Compose project, with its published ports, CPU, memory and status. Open one for its image, command, ports, volumes and networks, and its logs, followed as it runs.</p>
+      </Doc>
+      <Doc title="Managing them">
+        <p>Start and stop sit on each row; restart, pause, kill and remove are under the three dots. Removing takes a stopped container away and leaves its volumes. The container myTunnels runs in is marked, and anything that would stop it asks once more.</p>
+      </Doc>
+      <Doc title="What Docker allows">
+        <p>myTunnels reaches Docker through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers and the engine's info and nothing else, so images, volumes and networks cannot be changed from here.</p>
       </Doc>
     </>
   ),
