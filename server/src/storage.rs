@@ -1,5 +1,7 @@
-//! Storage: one folder of this host, browsed and changed from the dashboard, and
-//! from its own address by the people given folders in it.
+//! File System: one folder of this host, browsed and changed from the dashboard,
+//! and from its own address by the people given folders in it. Media and Drive
+//! are the same files API over collections myTunnels keeps in its data folder,
+//! for photos and videos, and for documents.
 //!
 //! Paths in the API are under the storage folder, `/`-separated, `""` for the
 //! folder itself. Host paths are the same kind of list from the top of the host:
@@ -194,16 +196,81 @@ fn joined(segs: &[String]) -> String {
     segs.join("/")
 }
 
-// ---- the storage folder ----
+// ---- the collections ----
 
-/// The storage folder, with the host it is on.
+/// Which files a request is about: the host folder File System opens, or one of
+/// the collections kept in the data folder.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Space {
+    Files,
+    Media,
+    Drive,
+}
+
+const MEDIA_KINDS: &[&str] = &[
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "avif", "heic", "heif", "tif", "tiff", "mp4",
+    "mov", "m4v", "webm", "mkv", "avi", "3gp", "mts", "m2ts", "wmv",
+];
+const DRIVE_KINDS: &[&str] = &[
+    "doc", "docx", "docm", "dot", "dotx", "odt", "rtf", "txt", "md", "pdf", "xls", "xlsx", "xlsm",
+    "xlt", "xltx", "ods", "csv", "tsv", "ppt", "pptx", "pptm", "pps", "ppsx", "odp", "key",
+    "pages", "numbers", "epub",
+];
+
+impl Space {
+    /// Where a collection is kept, under the data folder.
+    fn folder(self) -> Option<&'static str> {
+        match self {
+            Space::Files => None,
+            Space::Media => Some("media"),
+            Space::Drive => Some("drive"),
+        }
+    }
+
+    /// Refuses a file a collection does not keep, by its ending.
+    fn takes(self, name: &str) -> ApiResult<()> {
+        let ext = name
+            .rsplit_once('.')
+            .map(|(_, e)| e.to_ascii_lowercase())
+            .unwrap_or_default();
+        let (kinds, what) = match self {
+            Space::Files => return Ok(()),
+            Space::Media => (MEDIA_KINDS, "Media keeps photos and videos"),
+            Space::Drive => (
+                DRIVE_KINDS,
+                "Drive keeps documents, spreadsheets, presentations and PDFs",
+            ),
+        };
+        if kinds.contains(&ext.as_str()) {
+            Ok(())
+        } else {
+            Err(ApiError::bad(format!("{what}, not {name}")))
+        }
+    }
+}
+
+/// The folder a request works in, with the host it is on: the File System
+/// folder, or a collection's own folder.
 struct Store {
     host: Host,
     root: Vec<String>,
+    space: Space,
+    /// A collection's folder; `None` for File System, which is found on the host.
+    fixed: Option<PathBuf>,
 }
 
 impl Store {
-    fn open(state: &AppState) -> ApiResult<Self> {
+    fn open(state: &AppState, space: Space) -> ApiResult<Self> {
+        if let Some(folder) = space.folder() {
+            let dir = state.config.data_dir.join(folder);
+            std::fs::create_dir_all(&dir).map_err(io_error)?;
+            return Ok(Self {
+                host: Host::of(&state.config),
+                root: Vec::new(),
+                space,
+                fixed: Some(dir),
+            });
+        }
         let path = state.db.setting("storage_path")?.ok_or_else(|| {
             ApiError(
                 StatusCode::PRECONDITION_FAILED,
@@ -213,7 +280,20 @@ impl Store {
         Ok(Self {
             host: Host::of(&state.config),
             root: segments(&path)?,
+            space,
+            fixed: None,
         })
+    }
+
+    /// Where a photo's or video's preview is kept, beside the collection.
+    fn thumb(&self, rel: &[String]) -> Option<PathBuf> {
+        let base = self.fixed.as_ref().filter(|_| self.space == Space::Media)?;
+        let mut path = base.join(".thumbs");
+        for seg in rel {
+            path.push(seg);
+        }
+        path.as_mut_os_string().push(".jpg");
+        Some(path)
     }
 
     fn full(&self, rel: &[String]) -> ApiResult<Vec<String>> {
@@ -225,10 +305,21 @@ impl Store {
     /// The real path of a path in storage, refused if it leads outside the storage
     /// folder; `None` for a list of drives.
     fn real(&self, rel: &[String]) -> ApiResult<Option<PathBuf>> {
-        let Some(path) = self.host.real(&self.full(rel)?) else {
-            return Ok(None);
+        let (path, limit) = match &self.fixed {
+            Some(base) => (
+                rel.iter().fold(base.clone(), |path, seg| path.join(seg)),
+                Some(base.clone()),
+            ),
+            None => {
+                let Some(path) = self.host.real(&self.full(rel)?) else {
+                    return Ok(None);
+                };
+                (
+                    path,
+                    self.host.real(&self.root).or_else(|| self.host.bound()),
+                )
+            }
         };
-        let limit = self.host.real(&self.root).or_else(|| self.host.bound());
         if let Some(limit) = limit {
             let limit = std::fs::canonicalize(&limit).unwrap_or(limit);
             // A path that is not there yet is judged by the folder it would go in.
@@ -245,7 +336,7 @@ impl Store {
             if !found.is_some_and(|f| f.starts_with(&limit)) {
                 return Err(ApiError(
                     StatusCode::FORBIDDEN,
-                    "That leads outside the File System folder".into(),
+                    "That leads outside this folder".into(),
                 ));
             }
         }
@@ -256,7 +347,7 @@ impl Store {
     /// storage folder itself, nor a drive.
     fn item(&self, rel: &[String]) -> ApiResult<PathBuf> {
         if rel.is_empty() {
-            return Err(ApiError::bad("That is the File System folder itself"));
+            return Err(ApiError::bad("That is the folder itself"));
         }
         if self.real(&rel[..rel.len() - 1])?.is_none() {
             return Err(ApiError::bad("A drive cannot be changed here"));
@@ -378,13 +469,13 @@ pub fn enabled(state: &AppState) -> bool {
         == Some("1")
 }
 
-/// One file operation, `op`, for `who`.
-pub async fn fs(state: &AppState, who: Who, op: &str, req: Request) -> Response {
-    if !enabled(state) {
+/// One file operation, `op`, in `space`, for `who`.
+pub async fn fs(state: &AppState, who: Who, space: Space, op: &str, req: Request) -> Response {
+    if space == Space::Files && !enabled(state) {
         return ApiError(StatusCode::NOT_FOUND, "File System is off".into()).into_response();
     }
     let result = async {
-        let store = Store::open(state)?;
+        let store = Store::open(state, space)?;
         let grants = Grants::of(state, &who)?;
         // The account signed in at the storage address, by the name it shows.
         let user = match &who {
@@ -406,6 +497,8 @@ pub async fn fs(state: &AppState, who: Who, op: &str, req: Request) -> Response 
             (Method::POST, "move") => relocate(&store, &grants, body(req).await?).await,
             (Method::POST, "delete") => delete(&store, &grants, body(req).await?).await,
             (Method::PUT, "upload") => upload(&store, &grants, req).await,
+            (Method::GET | Method::HEAD, "thumb") => thumb(&store, req).await,
+            (Method::PUT, "thumb") => save_thumb(&store, req).await,
             _ => Err(ApiError::not_found()),
         }
     }
@@ -491,7 +584,8 @@ async fn list(store: &Store, grants: &Grants, user: Option<String>, at: At) -> A
                     }
                     continue;
                 }
-                if !shown(&name) {
+                // A collection's own workings, such as its previews, stay out of sight.
+                if !shown(&name) || (store.fixed.is_some() && name.starts_with('.')) {
                     continue;
                 }
                 entries.push(Entry {
@@ -652,12 +746,21 @@ async fn rename(store: &Store, grants: &Grants, body: Rename) -> ApiResult<Respo
     let mut target = parent(&rel).to_vec();
     target.push(new[0].clone());
     let to = store.item(&target)?;
+    if !from.is_dir() {
+        store.space.takes(name)?;
+    }
     // Only the case changing is the same file on Windows and macOS.
     let same = rel.last().is_some_and(|old| old.eq_ignore_ascii_case(name));
     if !same && tokio::fs::symlink_metadata(&to).await.is_ok() {
         return Err(ApiError::conflict(format!("{name} already exists")));
     }
     tokio::fs::rename(&from, &to).await.map_err(io_error)?;
+    if let (Some(old), Some(new)) = (store.thumb(&rel), store.thumb(&target)) {
+        if let Some(dir) = new.parent() {
+            let _ = tokio::fs::create_dir_all(dir).await;
+        }
+        let _ = tokio::fs::rename(old, new).await;
+    }
     Ok(Json(json!({ "path": joined(&target) })).into_response())
 }
 
@@ -752,10 +855,15 @@ fn remove(path: &Path) -> std::io::Result<()> {
 
 async fn delete(store: &Store, grants: &Grants, body: Paths) -> ApiResult<Response> {
     let mut targets = Vec::new();
+    let mut thumbs = Vec::new();
     for path in &body.paths {
         let rel = segments(path)?;
         grants.need(parent(&rel), Level::Write)?;
         targets.push(store.item(&rel)?);
+        thumbs.extend(store.thumb(&rel));
+    }
+    for thumb in thumbs {
+        let _ = tokio::fs::remove_file(thumb).await;
     }
     let count = targets.len();
     tokio::task::spawn_blocking(move || targets.iter().try_for_each(|t| remove(t)))
@@ -776,6 +884,9 @@ struct Piece {
     /// Replace a file of the same name.
     #[serde(default)]
     replace: bool,
+    /// When the file was last changed where it came from, in Unix seconds, so a
+    /// photo keeps its date.
+    modified: Option<u64>,
 }
 
 /// One piece of a file being uploaded, at `offset`. The file appears, under its
@@ -792,6 +903,7 @@ async fn upload(store: &Store, grants: &Grants, req: Request) -> ApiResult<Respo
     if rel.is_empty() {
         return Err(ApiError::bad("Name the file"));
     }
+    store.space.takes(&rel[rel.len() - 1])?;
     grants.need(parent(&rel), Level::Write)?;
     let target = store.item(&rel)?;
     let dir = target.parent().ok_or_else(ApiError::not_found)?.to_owned();
@@ -859,7 +971,55 @@ async fn upload(store: &Store, grants: &Grants, req: Request) -> ApiResult<Respo
         tokio::fs::remove_file(&target).await.map_err(io_error)?;
     }
     tokio::fs::rename(&temp, &target).await.map_err(io_error)?;
+    if let Some(at) = piece.modified {
+        let at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(at);
+        if let Ok(file) = std::fs::File::options().write(true).open(&target) {
+            let _ = file.set_modified(at);
+        }
+    }
     Ok(Json(json!({ "received": received, "done": true, "path": joined(&rel) })).into_response())
+}
+
+/// The most a preview may weigh; the page makes them a few dozen KB.
+const MAX_THUMB: usize = 2 * 1024 * 1024;
+
+/// A photo's or video's preview, made by the page that uploaded it.
+async fn thumb(store: &Store, req: Request) -> ApiResult<Response> {
+    let at: At = query(&req)?;
+    let path = store
+        .thumb(&segments(&at.path)?)
+        .ok_or_else(ApiError::not_found)?;
+    let mut response = ServeFile::new(&path)
+        .try_call(req)
+        .await
+        .map_err(io_error)?
+        .map(Body::new);
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-cache"),
+    );
+    Ok(response)
+}
+
+async fn save_thumb(store: &Store, req: Request) -> ApiResult<Response> {
+    let at: At = query(&req)?;
+    let rel = segments(&at.path)?;
+    let real = store.real(&rel)?.ok_or_else(ApiError::not_found)?;
+    if !real.is_file() {
+        return Err(ApiError::not_found());
+    }
+    let path = store.thumb(&rel).ok_or_else(ApiError::not_found)?;
+    let bytes = axum::body::to_bytes(req.into_body(), MAX_THUMB)
+        .await
+        .map_err(|_| ApiError(StatusCode::PAYLOAD_TOO_LARGE, "Too much at once".into()))?;
+    if !bytes.starts_with(&[0xFF, 0xD8]) {
+        return Err(ApiError::bad("A preview is a JPEG"));
+    }
+    if let Some(dir) = path.parent() {
+        tokio::fs::create_dir_all(dir).await.map_err(io_error)?;
+    }
+    tokio::fs::write(&path, &bytes).await.map_err(io_error)?;
+    Ok(Json(json!({ "ok": true })).into_response())
 }
 
 fn io_error(err: std::io::Error) -> ApiError {
@@ -1045,7 +1205,7 @@ pub async fn visit(
             )
             .into_response()
         } else {
-            let mut response = fs(state, Who::Visitor(user), &op, req).await;
+            let mut response = fs(state, Who::Visitor(user), Space::Files, &op, req).await;
             response
                 .headers_mut()
                 .entry(header::CACHE_CONTROL)
@@ -1128,6 +1288,18 @@ mod tests {
         assert_eq!(host.display(&segs("C:/Users/Kris")), "C:\\Users\\Kris");
         assert_eq!(host.display(&segs("D:")), "D:\\");
         assert!(host.real(&[]).is_none());
+    }
+
+    #[test]
+    fn collections_keep_their_own_kinds() {
+        assert!(Space::Media.takes("IMG_0001.HEIC").is_ok());
+        assert!(Space::Media.takes("clip.mp4").is_ok());
+        assert!(Space::Media.takes("notes.docx").is_err());
+        assert!(Space::Drive.takes("Budget.xlsx").is_ok());
+        assert!(Space::Drive.takes("deck.pptx").is_ok());
+        assert!(Space::Drive.takes("setup.exe").is_err());
+        assert!(Space::Drive.takes("README").is_err());
+        assert!(Space::Files.takes("anything.bin").is_ok());
     }
 
     #[test]

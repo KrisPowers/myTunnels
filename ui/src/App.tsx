@@ -3,7 +3,9 @@ import { api, deviceInfo, message, shortId, type Auth, type Device, type OAuthPr
 import { ContainersPage } from "./Containers";
 import { DashboardPage } from "./Dashboard";
 import { DevicePage, Devices } from "./Devices";
+import { DrivePage } from "./Drive";
 import { Icon, type IconName } from "./Icon";
+import { MediaPage } from "./Media";
 import { go, readHash } from "./route";
 import { SETTINGS, Settings } from "./Settings";
 import { StoragePage } from "./Storage";
@@ -182,6 +184,8 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
               <NavItem to="#/twofactor" icon="lock" label="Two-Factor Auth" on={view === "twofactor"} />
               <NavGroup id="storage" label="Storage & Media">
                 <NavItem to="#/storage" icon="hard_drive" label="File System" on={view === "storage"} />
+                <NavItem to="#/media" icon="photo_library" label="Media" on={view === "media"} />
+                <NavItem to="#/drive" icon="cloud" label="Drive" on={view === "drive"} />
               </NavGroup>
             </>
           )}
@@ -192,6 +196,8 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           {view === "tunnels" && !id && <Tunnels routes={apps} status={status} />}
           {view === "storage" && <StoragePage page={id} users={users ?? []} providers={providers} onChanged={load} />}
           {view === "dashboard" && <DashboardPage />}
+          {view === "media" && <MediaPage />}
+          {view === "drive" && <DrivePage />}
           {view === "containers" && <ContainersPage id={id} page={page} />}
           {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} />}
           {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
