@@ -1143,3 +1143,23 @@ a.result:hover { background: var(--hover); }
   .storage-app { padding: 0 8px 8px; }
   .rules { margin-left: 0; }
 }
+
+/* ---- Containers ---- */
+.table.containers .name-line { color: var(--text); }
+.table.containers .name-line:hover { color: var(--accent); }
+.table.containers .chip { height: 20px; padding: 0 8px; font-size: 11px; text-transform: none; }
+.table.containers .chip.mono { font-family: var(--mono); }
+.table .group-row td { height: 40px; background: var(--card-2); }
+.table tbody tr.group-row:hover td { background: var(--card-2); }
+.group-row td > * { vertical-align: middle; }
+.group-row .icon { display: inline-block; margin-right: 10px; color: var(--text-2); }
+.group-row span { font-weight: 500; }
+.group-row small { margin-left: 12px; color: var(--text-3); font-size: 12px; }
+.row-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px; min-width: 84px; }
+.row-actions .spinner { margin: 0 14px; }
+.logs {
+  margin: 0; height: calc(100vh - 300px); min-height: 320px; overflow: auto; padding: 12px 16px;
+  border-radius: var(--card-round); background: var(--card); color: var(--text);
+  font: 12.5px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.log-time { margin-right: 12px; color: var(--text-3); user-select: none; }

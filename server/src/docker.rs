@@ -1,5 +1,6 @@
-//! Reads the Docker Engine API, over the socket, a named pipe or TCP, as
-//! `DOCKER_HOST` says. Only GET requests are ever sent.
+//! The Docker Engine API, over the socket, a named pipe or TCP, as
+//! `DOCKER_HOST` says: read by the Dashboard, and containers started, stopped
+//! and removed from the Containers page.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -7,7 +8,7 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use http_body_util::{BodyExt, Empty};
 use hyper::body::Bytes;
-use hyper::Request;
+use hyper::{Method, Request};
 use hyper_util::rt::TokioIo;
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -49,27 +50,43 @@ impl Endpoint {
 
 /// The JSON the engine answers `path` with.
 pub async fn get(endpoint: &Endpoint, path: &str) -> Result<Value> {
-    tokio::time::timeout(TIMEOUT, fetch(endpoint, path))
+    let body = call(endpoint, Method::GET, path, TIMEOUT).await?;
+    Ok(serde_json::from_slice(&body)?)
+}
+
+/// Sends `method` to `path` and returns the body of a successful answer,
+/// waiting at most `wait`; an engine's refusal comes back with its reason.
+pub async fn call(
+    endpoint: &Endpoint,
+    method: Method,
+    path: &str,
+    wait: Duration,
+) -> Result<Bytes> {
+    tokio::time::timeout(wait, fetch(endpoint, method, path))
         .await
         .context("Docker did not answer in time")?
 }
 
-async fn fetch(endpoint: &Endpoint, path: &str) -> Result<Value> {
+async fn fetch(endpoint: &Endpoint, method: Method, path: &str) -> Result<Bytes> {
     match endpoint {
-        Endpoint::Tcp(addr) => send(tokio::net::TcpStream::connect(addr).await?, path).await,
+        Endpoint::Tcp(addr) => {
+            send(tokio::net::TcpStream::connect(addr).await?, method, path).await
+        }
         #[cfg(unix)]
-        Endpoint::Unix(socket) => send(tokio::net::UnixStream::connect(socket).await?, path).await,
+        Endpoint::Unix(socket) => {
+            send(tokio::net::UnixStream::connect(socket).await?, method, path).await
+        }
         #[cfg(windows)]
         Endpoint::Pipe(pipe) => {
             let client = tokio::net::windows::named_pipe::ClientOptions::new().open(pipe)?;
-            send(client, path).await
+            send(client, method, path).await
         }
         #[allow(unreachable_patterns)]
         _ => bail!("this kind of DOCKER_HOST does not work on this system"),
     }
 }
 
-async fn send<S>(stream: S, path: &str) -> Result<Value>
+async fn send<S>(stream: S, method: Method, path: &str) -> Result<Bytes>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -77,16 +94,24 @@ where
     tokio::spawn(async move {
         let _ = conn.await;
     });
-    let request = Request::get(path)
+    let request = Request::builder()
+        .method(method)
+        .uri(path)
         .header(hyper::header::HOST, "docker")
         .body(Empty::<Bytes>::new())?;
     let response = sender.send_request(request).await?;
     let status = response.status();
     let body = response.into_body().collect().await?.to_bytes();
     if !status.is_success() {
-        bail!("Docker answered {status}");
+        let reason = serde_json::from_slice::<Value>(&body)
+            .ok()
+            .and_then(|v| v["message"].as_str().map(str::to_owned));
+        match reason {
+            Some(reason) => bail!("{reason}"),
+            None => bail!("Docker answered {status}"),
+        }
     }
-    Ok(serde_json::from_slice(&body)?)
+    Ok(body)
 }
 
 #[cfg(test)]

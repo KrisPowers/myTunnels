@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent } from "react";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type OAuthProvider, type Route, type Status, type User } from "./api";
+import { ContainersPage } from "./Containers";
 import { DashboardPage } from "./Dashboard";
 import { DevicePage, Devices } from "./Devices";
 import { Icon, type IconName } from "./Icon";
@@ -173,6 +174,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           ) : (
             <>
               <NavItem to="#/dashboard" icon="dashboard" label="Dashboard" on={view === "dashboard"} />
+              <NavItem to="#/containers" icon="deployed_code" label="Containers" on={view === "containers"} />
               <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels" || view === "new"} />
               <NavItem to="#/storage" icon="hard_drive" label="Storage" on={view === "storage"} />
               <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={pending || undefined} />
@@ -188,6 +190,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           {view === "tunnels" && !id && <Tunnels routes={apps} status={status} />}
           {view === "storage" && <StoragePage page={id} users={users ?? []} providers={providers} onChanged={load} />}
           {view === "dashboard" && <DashboardPage />}
+          {view === "containers" && <ContainersPage id={id} page={page} />}
           {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} />}
           {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
           {view === "devices" && !id && <Devices devices={devices} routes={routes ?? []} onChanged={load} />}

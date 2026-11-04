@@ -20,7 +20,7 @@ use crate::netinfo;
 use crate::oauth::{self, Provider};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
-use crate::{codes, gate, metrics, secret, storage, tunnel};
+use crate::{codes, containers, gate, metrics, secret, storage, tunnel};
 
 const ADMIN_COOKIE: &str = "admin_session";
 const ADMIN_TTL: i64 = 7 * 86_400;
@@ -40,6 +40,13 @@ pub fn router(state: AppState) -> Router {
         .route("/zones", get(zones))
         .route("/status", get(status))
         .route("/metrics", get(metrics))
+        .route("/containers", get(list_containers))
+        .route(
+            "/containers/{id}",
+            get(inspect_container).delete(remove_container),
+        )
+        .route("/containers/{id}/logs", get(container_logs))
+        .route("/containers/{id}/{action}", post(container_action))
         .route("/routes", get(list_routes).post(create_route))
         .route("/routes/{id}", patch(update_route).delete(delete_route))
         .route("/routes/{id}/address", put(move_route))
@@ -730,6 +737,41 @@ async fn status(State(state): State<AppState>) -> ApiResult<Json<Value>> {
 
 async fn metrics() -> Json<Value> {
     Json(metrics::view())
+}
+
+// Containers
+
+async fn list_containers() -> ApiResult<Json<Value>> {
+    containers::list().await
+}
+
+async fn inspect_container(Path(id): Path<String>) -> ApiResult<Json<Value>> {
+    containers::inspect(&id).await
+}
+
+async fn remove_container(Path(id): Path<String>) -> ApiResult<Json<Value>> {
+    containers::remove(&id).await
+}
+
+async fn container_action(Path((id, action)): Path<(String, String)>) -> ApiResult<Json<Value>> {
+    containers::act(&id, &action).await
+}
+
+#[derive(Deserialize)]
+struct LogQuery {
+    #[serde(default = "default_tail")]
+    tail: u32,
+}
+
+fn default_tail() -> u32 {
+    500
+}
+
+async fn container_logs(
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<LogQuery>,
+) -> ApiResult<Json<Value>> {
+    containers::logs(&id, q.tail).await
 }
 
 // Tunnels
