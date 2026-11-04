@@ -3,9 +3,11 @@ mod cloudflare;
 mod codes;
 mod config;
 mod db;
+mod docker;
 mod gate;
 mod guard;
 mod mail;
+mod metrics;
 mod netinfo;
 mod oauth;
 mod proxy;
@@ -49,6 +51,7 @@ async fn main() -> Result<()> {
 
     tunnel::spawn(state.clone());
     netinfo::spawn(state.clone());
+    metrics::spawn();
 
     let admin = axum::serve(
         admin_listener,
