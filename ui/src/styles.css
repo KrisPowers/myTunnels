@@ -563,7 +563,10 @@ a.result:hover { background: var(--hover); }
 .composer-go { height: 56px; padding: 0 24px; border-radius: var(--radius); }
 
 /* Rows in the tunnel and device lists. */
-.result.tunnel-row { grid-template-columns: 16px minmax(0, 1.2fr) minmax(0, .8fr) minmax(0, 1fr) 24px; }
+.results:has(.tunnel-row) { padding: 0; }
+.access { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.access .chip { text-transform: none; }
+.result.tunnel-row { grid-template-columns:16px minmax(0, 1.2fr) minmax(0, .8fr) minmax(0, 1fr) 24px; }
 .result.device-row { grid-template-columns: 16px minmax(120px, .8fr) minmax(0, 1.4fr) 90px 88px; }
 .result.device-row .btn, .result.device-row .result-go { justify-self: end; }
 .scan-target { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }

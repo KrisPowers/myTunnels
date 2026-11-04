@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { ago, api, editOf, LEVELS, list, message, redirectUrl, shortId, strength, type Access, type Device, type OAuthProvider, type PolicyMode, type Route, type RouteEdit, type Status, type TunnelEvent, type User, type Zone } from "./api";
 import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
@@ -14,23 +14,22 @@ export function AccessChips({ route }: { route: Route }) {
     route.require_password && "Password",
     route.require_login && (route.require_code ? "Sign-in with code" : "Sign-in"),
   ].filter((p): p is string => Boolean(p));
-  if (!parts.length) return <span className="chip">Open</span>;
   const joiner = route.policy_mode === "any" ? "or" : "and";
   return (
-    <span className="chips">
-      {parts.map((p, i) => (
-        <span key={p} className="chips">
+    <span className="access">
+      {parts.length ? parts.map((p, i) => (
+        <Fragment key={p}>
           {i > 0 && <span className="joiner">{joiner}</span>}
-          <span className="chip plain">{p}</span>
-        </span>
-      ))}
+          <span className="chip">{p}</span>
+        </Fragment>
+      )) : <span className="chip">Open</span>}
     </span>
   );
 }
 
 function target(route: Route) {
   const scheme = route.target_scheme === "https" ? "https://" : "";
-  return route.target_host ? `${scheme}${route.target_host}:${route.target_port}` : `${scheme}port ${route.target_port}`;
+  return route.target_host ? `${scheme}${route.target_host}:${route.target_port}` : String(route.target_port);
 }
 
 // Tunnels is the home page: every tunnel published.
