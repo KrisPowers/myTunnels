@@ -318,7 +318,9 @@ export const api = {
   editDevice: (id: string, patch: Partial<Pick<Device, "name" | "status" | "all_routes" | "route_ids">>) =>
     call<Device>(`/devices/${id}`, "PATCH", patch),
   forgetDevice: (id: string) => call(`/devices/${id}`, "DELETE"),
-  thisDevice: (token: string | null, info: unknown) => call<{ id: string; token: string }>("/device", "POST", { token, info }),
+  // `hosts` is one tunnel per domain, where this browser's key has to be too.
+  thisDevice: (token: string | null, info: unknown) => call<{ id: string; token: string; hosts: string[] }>("/device", "POST", { token, info }),
+  plantDevice: (token: string, back: string) => call<{ url: string }>("/device/plant", "POST", { token, back }),
 
   users: () => call<User[]>("/users"),
   addUser: (body: { username: string; email: string; password: string; device_id: string }) =>
