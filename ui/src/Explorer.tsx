@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type KeyboardEvent as KeyEvent, type MouseEvent as PointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { bytes, fileUrl, files, message, upload, type FileEntry, type Listing } from "./api";
+import { bytes, fileUrl, files, message, upload, type FileEntry, type Listing, type Space } from "./api";
 import { useDismiss } from "./dismiss";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
@@ -10,7 +10,7 @@ import { Dialog, Notices, TextField, useNotify } from "./ui";
 
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 const parentOf = (path: string) => path.split("/").slice(0, -1).join("/");
-const extOf = (name: string) => {
+export const extOf = (name: string) => {
   const dot = name.lastIndexOf(".");
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
 };
@@ -86,7 +86,7 @@ function remember(key: string, value: string) {
 
 // ---- uploads ----
 
-interface Upload {
+export interface Upload {
   id: number;
   name: string;
   size: number;
@@ -95,10 +95,10 @@ interface Upload {
   error?: string;
 }
 
-interface Picked { file: File; rel: string }
+export interface Picked { file: File; rel: string }
 
 // What was dropped, folders walked into, each file with its path inside the drop.
-async function dropped(items: DataTransferItemList): Promise<Picked[]> {
+export async function dropped(items: DataTransferItemList): Promise<Picked[]> {
   const entries = Array.from(items).map((i) => i.webkitGetAsEntry?.()).filter((e): e is FileSystemEntry => !!e);
   const out: Picked[] = [];
   const walk = async (entry: FileSystemEntry, prefix: string): Promise<void> => {
@@ -120,7 +120,7 @@ async function dropped(items: DataTransferItemList): Promise<Picked[]> {
 
 // ---- the explorer ----
 
-interface Menu { x: number; y: number; on: boolean }
+export interface Menu { x: number; y: number; on: boolean }
 
 // Explorer is a file explorer over Storage, laid out like Windows': back,
 // forward and up beside the address bar, a command bar, folders down the
@@ -792,7 +792,7 @@ function Rename({ name, onDone, onCancel }: { name: string; onDone: (name: strin
   );
 }
 
-function NameDialog({ title, label, initial, action, onSave, onClose }: {
+export function NameDialog({ title, label, initial, action, onSave, onClose }: {
   title: string;
   label: string;
   initial: string;
@@ -827,7 +827,7 @@ function NameDialog({ title, label, initial, action, onSave, onClose }: {
 
 // MenuButton is a command that opens a menu of `items` under it, drawn over
 // the page so nothing below cuts it off.
-function MenuButton({ icon, label, disabled, items }: { icon: IconName; label: string; disabled: boolean; items: MenuItem[] }) {
+export function MenuButton({ icon, label, disabled, items }: { icon: IconName; label: string; disabled: boolean; items: MenuItem[] }) {
   const [at, setAt] = useState<Menu | null>(null);
   const button = useRef<HTMLButtonElement>(null);
   // A press on the button while open closes the menu; the click after must not reopen it.
@@ -854,10 +854,10 @@ function MenuButton({ icon, label, disabled, items }: { icon: IconName; label: s
   );
 }
 
-interface MenuItem { label: string; icon: IconName; run: () => void; hidden?: boolean; danger?: boolean }
+export interface MenuItem { label: string; icon: IconName; run: () => void; hidden?: boolean; danger?: boolean }
 
 // ContextMenu is the right-click menu, at the pointer, kept inside the window.
-function ContextMenu({ at, items, onClose }: { at: Menu; items: MenuItem[]; onClose: () => void }) {
+export function ContextMenu({ at, items, onClose }: { at: Menu; items: MenuItem[]; onClose: () => void }) {
   const panel = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: at.x, top: at.y });
   useDismiss(true, onClose, panel);
@@ -893,8 +893,53 @@ function ContextMenu({ at, items, onClose }: { at: Menu; items: MenuItem[]; onCl
   );
 }
 
+// useUploads sends picked files into `space` one at a time, keeping the list
+// the Uploads panel shows. `done` runs after each batch.
+export function useUploads(space: Space, done: () => unknown, after?: (item: Picked, path: string) => Promise<unknown>) {
+  const [list, setList] = useState<Upload[]>([]);
+  const cancelled = useRef(new Set<number>());
+  const nextId = useRef(1);
+  const send = async (items: { item: Picked; path: string }[]) => {
+    const batch = items.map((x) => ({ ...x, id: nextId.current++ }));
+    setList((u) => [...u.filter((x) => x.state !== "done"), ...batch.map((b) => ({ id: b.id, name: b.item.rel, size: b.item.file.size, sent: 0, state: "waiting" as const }))]);
+    const patch = (id: number, change: Partial<Upload>) => setList((u) => u.map((x) => (x.id === id ? { ...x, ...change } : x)));
+    for (const b of batch) {
+      if (cancelled.current.has(b.id)) continue;
+      patch(b.id, { state: "sending" });
+      try {
+        await upload(b.item.file, b.path, false, (sent) => patch(b.id, { sent }), () => cancelled.current.has(b.id), space, true);
+        await after?.(b.item, b.path);
+        patch(b.id, { state: "done", sent: b.item.file.size });
+      } catch (e) {
+        patch(b.id, { state: "failed", error: message(e) });
+      }
+    }
+    await done();
+  };
+  const panel = list.length > 0 && (
+    <Uploads list={list}
+      onCancel={(id) => {
+        cancelled.current.add(id);
+        setList((u) => u.map((x) => (x.id === id && x.state === "waiting" ? { ...x, state: "failed", error: "Cancelled" } : x)));
+      }}
+      onClear={() => setList((u) => u.filter((x) => x.state === "waiting" || x.state === "sending"))} />
+  );
+  return { send, panel };
+}
+
+// A name not yet in `taken`, as "photo (2).jpg" after "photo.jpg".
+export function freeName(name: string, taken: Set<string>) {
+  if (!taken.has(name)) return name;
+  const dot = name.lastIndexOf(".");
+  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+  for (let n = 2; ; n++) {
+    const next = `${stem} (${n})${ext}`;
+    if (!taken.has(next)) return next;
+  }
+}
+
 // Uploads is the panel of files going up, at the bottom right.
-function Uploads({ list, onCancel, onClear }: { list: Upload[]; onCancel: (id: number) => void; onClear: () => void }) {
+export function Uploads({ list, onCancel, onClear }: { list: Upload[]; onCancel: (id: number) => void; onClear: () => void }) {
   const [small, setSmall] = useState(false);
   const left = list.filter((u) => u.state === "waiting" || u.state === "sending").length;
   const failed = list.filter((u) => u.state === "failed").length;

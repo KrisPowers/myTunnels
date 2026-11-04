@@ -258,8 +258,14 @@ export interface Listing {
   user: string | null;
 }
 
-export const fileUrl = (path: string, inline = false) =>
-  `/api/storage/fs/file?path=${encodeURIComponent(path)}${inline ? "&inline=true" : ""}`;
+// Where files are: File System's folder, or the Media and Drive collections.
+export type Space = "storage" | "media" | "drive";
+
+export const fileUrl = (path: string, inline = false, space: Space = "storage") =>
+  `/api/${space}/fs/file?path=${encodeURIComponent(path)}${inline ? "&inline=true" : ""}`;
+
+// A photo's or video's preview in Media.
+export const thumbUrl = (path: string) => `/api/media/fs/thumb?path=${encodeURIComponent(path)}`;
 
 // A way to sign in at tunnels through another service, set up once and offered
 // by the tunnels that switch it on. The secret stays on the server;
@@ -386,14 +392,21 @@ export const api = {
   removeRule: (id: string) => call<StorageState>(`/storage/rules/${id}`, "DELETE"),
 };
 
-// The files in Storage, the same calls on the dashboard and at the storage address.
-export const files = {
-  list: (path: string) => call<Listing>(`/storage/fs/list?path=${encodeURIComponent(path)}`),
-  folder: (path: string) => call<{ path: string }>("/storage/fs/folder", "POST", { path }),
-  rename: (path: string, name: string) => call<{ path: string }>("/storage/fs/rename", "POST", { path, name }),
-  move: (paths: string[], to: string, copy: boolean) => call<{ done: number }>("/storage/fs/move", "POST", { paths, to, copy }),
-  remove: (paths: string[]) => call<{ done: number }>("/storage/fs/delete", "POST", { paths }),
-};
+// The files in a space, the same calls on the dashboard and at the storage address.
+export const filesIn = (space: Space) => ({
+  list: (path: string) => call<Listing>(`/${space}/fs/list?path=${encodeURIComponent(path)}`),
+  folder: (path: string) => call<{ path: string }>(`/${space}/fs/folder`, "POST", { path }),
+  rename: (path: string, name: string) => call<{ path: string }>(`/${space}/fs/rename`, "POST", { path, name }),
+  move: (paths: string[], to: string, copy: boolean) => call<{ done: number }>(`/${space}/fs/move`, "POST", { paths, to, copy }),
+  remove: (paths: string[]) => call<{ done: number }>(`/${space}/fs/delete`, "POST", { paths }),
+});
+
+export const files = filesIn("storage");
+
+// Saves a preview made in the browser beside a photo or video in Media.
+export async function saveThumb(path: string, jpeg: Blob) {
+  await fetch(thumbUrl(path), { method: "PUT", credentials: "same-origin", headers: { "X-Requested-With": "fetch" }, body: jpeg });
+}
 
 // Uploads go in pieces well under Cloudflare's 100 MB limit on a request.
 const PIECE = 48 * 1024 * 1024;
@@ -419,15 +432,17 @@ function put(url: string, body: Blob, onSent: (bytes: number) => void): Promise<
   });
 }
 
-// upload sends a file to `path` piece by piece, picking up where the server
-// says it got to if a piece is lost. `onProgress` gets the bytes sent so far.
-export async function upload(file: File, path: string, replace: boolean, onProgress: (sent: number) => void, cancelled: () => boolean) {
+// upload sends a file to `path` in `space` piece by piece, picking up where the
+// server says it got to if a piece is lost. `onProgress` gets the bytes sent so
+// far. With `keepDate`, the file keeps the date it was last changed.
+export async function upload(file: File, path: string, replace: boolean, onProgress: (sent: number) => void, cancelled: () => boolean, space: Space = "storage", keepDate = false) {
   const id = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
   let offset = 0;
   do {
     if (cancelled()) throw new Error("Cancelled");
     const end = Math.min(offset + PIECE, file.size);
-    const url = `/api/storage/fs/upload?path=${encodeURIComponent(path)}&id=${id}&offset=${offset}&total=${file.size}&replace=${replace}`;
+    const date = keepDate && file.lastModified ? `&modified=${Math.floor(file.lastModified / 1000)}` : "";
+    const url = `/api/${space}/fs/upload?path=${encodeURIComponent(path)}&id=${id}&offset=${offset}&total=${file.size}&replace=${replace}${date}`;
     const start = offset;
     const res = await put(url, file.slice(start, end), (sent) => onProgress(start + sent));
     if (res.status === 409 && typeof res.data.received === "number") {
