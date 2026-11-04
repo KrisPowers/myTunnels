@@ -2,10 +2,10 @@
 // one, `#/tunnels/<id>/<page>` one tunnel; `#/devices` and `#/users`, with
 // `/<id>/<page>` for one; `#/oauth`, `#/twofactor`; `#/settings/<section>` and
 // `#/docs/<section>`; `#/dashboard`, the host and its containers;
-// `#/storage/<page>`, the host's folder; `#/containers`, with `/<id>/<page>`
+// `#/storage/<page>`, the host's folder; `#/media` and `#/drive`; `#/containers`, with `/<id>/<page>`
 // for one.
 
-export type View = "tunnels" | "dashboard" | "containers" | "storage" | "new" | "devices" | "users" | "oauth" | "twofactor" | "settings" | "docs";
+export type View = "tunnels" | "dashboard" | "containers" | "storage" | "media" | "drive" | "new" | "devices" | "users" | "oauth" | "twofactor" | "settings" | "docs";
 
 export interface Place {
   view: View;
@@ -16,7 +16,7 @@ export interface Place {
 
 export function readHash(): Place {
   const [first = "", second = "", third = ""] = location.hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
-  if (first === "new" || first === "dashboard" || first === "oauth" || first === "twofactor") return { view: first, id: "", page: "" };
+  if (first === "new" || first === "dashboard" || first === "oauth" || first === "twofactor" || first === "media" || first === "drive") return { view: first, id: "", page: "" };
   if (first === "devices" || first === "users" || first === "settings" || first === "docs" || first === "storage" || first === "containers") return { view: first, id: second, page: third };
   return { view: "tunnels", id: first === "tunnels" ? second : "", page: third };
 }
