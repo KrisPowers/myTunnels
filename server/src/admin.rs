@@ -744,7 +744,7 @@ fn valid_label(label: &str) -> bool {
 }
 
 fn check_target(host: Option<String>, scheme: &str, mode: &str) -> ApiResult<Option<String>> {
-    if !matches!(scheme, "http" | "https" | "storage") {
+    if !matches!(scheme, "http" | "https" | "storage" | "dashboard") {
         return Err(ApiError::bad("Scheme must be http or https"));
     }
     if mode != "all" && mode != "any" {
@@ -754,6 +754,11 @@ fn check_target(host: Option<String>, scheme: &str, mode: &str) -> ApiResult<Opt
         Some(h) if !valid_host(&h) => Err(ApiError::bad("Target host is not a valid host name")),
         other => Ok(other),
     }
+}
+
+/// Targets myTunnels serves itself, with no port: Storage and the dashboard.
+fn served_here(scheme: &str) -> bool {
+    matches!(scheme, "storage" | "dashboard")
 }
 
 /// Refuses a tunnel aimed at one of myTunnels' own ports on this machine.
@@ -875,9 +880,10 @@ async fn create_route(
             "Subdomain: lowercase letters, digits and '-', up to 63 characters",
         ));
     }
-    // Storage is served by the gateway itself, at one address.
+    // Storage is served by the gateway itself, at one address; the dashboard
+    // by the gateway too, with no port.
     let storage = body.target_scheme == "storage";
-    if body.port == 0 && !storage {
+    if body.port == 0 && !served_here(&body.target_scheme) {
         return Err(ApiError::bad("Port must be between 1 and 65535"));
     }
     if storage && storage::route(&state).is_some() {
@@ -993,7 +999,7 @@ async fn update_route(
     if (route.target_scheme == "storage") != (body.target_scheme == "storage") {
         return Err(ApiError::bad("Storage and apps are published separately"));
     }
-    if body.port == 0 && body.target_scheme != "storage" {
+    if body.port == 0 && !served_here(&body.target_scheme) {
         return Err(ApiError::bad("Port must be between 1 and 65535"));
     }
     route.target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;

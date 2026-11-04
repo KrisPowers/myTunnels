@@ -6,15 +6,16 @@
 //! from the hub (the oldest tunnel's host) with a one-minute, one-use code, so one
 //! browser is one device everywhere.
 
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
-use axum::extract::{Request, State};
+use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use tower::ServiceExt;
 
 use crate::db::{Device, Event, Route, SignIn, User};
 use crate::state::{AppState, Hop, Outcome, Snapshot};
@@ -58,11 +59,22 @@ const FINGERPRINT_KEYS: [&str; 5] = [
     "webglRenderer",
 ];
 
-pub fn router(state: AppState) -> Router {
-    Router::new().fallback(handle).with_state(state)
+/// The panel, served to tunnels aimed at the dashboard.
+#[derive(Clone)]
+struct Panel(Router);
+
+pub fn router(state: AppState, panel: Router) -> Router {
+    Router::new()
+        .fallback(handle)
+        .layer(Extension(Panel(panel)))
+        .with_state(state)
 }
 
-async fn handle(State(state): State<AppState>, req: Request) -> Response {
+async fn handle(
+    State(state): State<AppState>,
+    Extension(Panel(panel)): Extension<Panel>,
+    req: Request,
+) -> Response {
     let host = request_host(&req);
     let snap = state.snapshot();
     let Some(route) = snap.routes.get(&host).cloned() else {
@@ -131,6 +143,8 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
             None
         };
         storage::visit(&state, user, &state.config.ui_dir, req).await
+    } else if verdict.allowed() && route.target_scheme == "dashboard" {
+        dashboard(panel, ip, req).await
     } else if verdict.allowed() {
         let mut response = proxy::forward(&state, &snap, &route, ip, req).await;
         // Tunnels are only ever reached over HTTPS.
@@ -147,6 +161,22 @@ async fn handle(State(state): State<AppState>, req: Request) -> Response {
     if let Some(value) = new_cookie {
         response.headers_mut().append(header::SET_COOKIE, value);
     }
+    response
+}
+
+/// The panel, as at its own address, for a visitor that passed the tunnel's
+/// checks. Its sign-in and limits still apply, counted by the visitor's address.
+async fn dashboard(panel: Router, ip: Option<IpAddr>, mut req: Request) -> Response {
+    let peer = SocketAddr::new(ip.unwrap_or(IpAddr::from([0, 0, 0, 0])), 0);
+    req.extensions_mut().insert(ConnectInfo(peer));
+    let mut response = match panel.oneshot(req).await {
+        Ok(response) => response,
+        Err(never) => match never {},
+    };
+    response.headers_mut().insert(
+        header::STRICT_TRANSPORT_SECURITY,
+        HeaderValue::from_static("max-age=31536000"),
+    );
     response
 }
 

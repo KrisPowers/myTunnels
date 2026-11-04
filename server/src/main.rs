@@ -58,7 +58,11 @@ async fn main() -> Result<()> {
         admin_listener,
         admin::router(state.clone()).into_make_service_with_connect_info::<SocketAddr>(),
     );
-    let gate = axum::serve(gate_listener, gate::router(state.clone()));
+    // The gateway serves the panel itself to tunnels aimed at the dashboard.
+    let gate = axum::serve(
+        gate_listener,
+        gate::router(state.clone(), admin::router(state.clone())),
+    );
     tokio::select! {
         result = admin => result?,
         result = gate => result?,
