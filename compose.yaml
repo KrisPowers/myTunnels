@@ -7,8 +7,25 @@ services:
       - "7070:7070"
     volumes:
       - data:/data
+    environment:
+      DOCKER_HOST: tcp://docker:2375
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - docker
+
+  # The Dashboard's view of the containers: the Docker API with only listing
+  # containers, their stats and the engine's info allowed, all read only, so
+  # the gateway never holds the Docker socket itself.
+  docker:
+    image: tecnativa/docker-socket-proxy:latest
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      INFO: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
 volumes:
   data:
