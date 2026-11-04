@@ -44,6 +44,10 @@ step at a time, each saved as soon as it is done, so it can be left and resumed:
 Then, on **Tunnels**, type the subdomain, pick the domain, enter the port and press
 **Publish**. Open the tunnel to choose who can open it.
 
+To manage myTunnels from anywhere, publish the dashboard itself: under **Local app**, set
+**Runs on** to **This dashboard**, with no port. It takes the same access rules as any
+tunnel, and the dashboard's own sign-in (and emailed code, when on) still applies behind them.
+
 ## Dashboard
 
 **Dashboard** reads out the host and its containers, every two seconds, with the last five
@@ -189,7 +193,8 @@ Nothing here needs setting up; all of it is on from the first start.
 
 ## Notes
 
-- Keep the admin panel on your LAN. It is not published through a tunnel.
+- The admin panel is on your LAN at port 7070. Publish it through a tunnel only with access
+  rules in front of it, such as approved devices.
 - The same network check compares public addresses. Behind carrier grade NAT, other
   customers of your ISP can share your public IPv4 address, so prefer device approval there.
 - The Cloudflare API token is stored in the database volume. Treat the volume as secret.
