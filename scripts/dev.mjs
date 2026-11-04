@@ -20,6 +20,8 @@ const uiDir = join(root, "ui");
 const work = join(tmpdir(), "mytunnels");
 const target = join(work, "target");
 const reloadFile = join(work, "reload");
+// A built copy of the UI, for the pages the server itself serves, such as storage.
+const builtUi = join(work, "ui");
 const windows = process.platform === "win32";
 const exe = windows ? ".exe" : "";
 
@@ -58,6 +60,7 @@ const env = {
   ADMIN_ADDR: "127.0.0.1:7071",
   GATE_ADDR: "127.0.0.1:7080",
   UPSTREAM_HOST: "127.0.0.1",
+  UI_DIR: builtUi,
   CLOUDFLARED_BIN: await cloudflared(),
 };
 
@@ -157,9 +160,18 @@ const ui = spawn(process.execPath, [join(uiDir, "node_modules", "vite", "bin", "
   stdio: "inherit",
 });
 
+// The storage tunnel serves the built UI, so a copy is kept built as you save.
+// A change there shows on the next reload of that page.
+const uiBuild = spawn(
+  process.execPath,
+  [join(uiDir, "node_modules", "vite", "bin", "vite.js"), "build", "--watch", "--outDir", builtUi, "--emptyOutDir", "--logLevel", "warn"],
+  { cwd: uiDir, stdio: "inherit" },
+);
+
 const quit = () => {
   stop(running);
   ui.kill();
+  uiBuild.kill();
   process.exit(0);
 };
 process.on("SIGINT", quit);
