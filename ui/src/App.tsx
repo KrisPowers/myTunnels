@@ -8,7 +8,7 @@ import { SETTINGS, Settings } from "./Settings";
 import { StoragePage } from "./Storage";
 import { Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
-import { NewTunnel, TunnelPage, Tunnels } from "./Tunnels";
+import { NewTunnel, target, TunnelPage, Tunnels } from "./Tunnels";
 import { NewUser, UserPage, Users } from "./Users";
 import { OAuth } from "./OAuth";
 import { TwoFactorPage } from "./TwoFactor";
@@ -237,8 +237,8 @@ function Search({ routes, devices }: { routes: Route[] | null; devices: Device[]
   const needle = q.trim().toLowerCase();
   const items: { key: string; icon: IconName; label: string; sub: string; to: string }[] = needle ? [
     ...(routes ?? [])
-      .filter((r) => r.hostname.includes(needle) || String(r.target_port).includes(needle))
-      .map((r) => ({ key: "r" + r.id, icon: "public" as IconName, label: r.hostname, sub: `port ${r.target_port}`, to: `#/tunnels/${r.id}` })),
+      .filter((r) => r.hostname.includes(needle) || target(r).toLowerCase().includes(needle))
+      .map((r) => ({ key: "r" + r.id, icon: "public" as IconName, label: r.hostname, sub: r.target_scheme === "dashboard" ? target(r) : `port ${r.target_port}`, to: `#/tunnels/${r.id}` })),
     ...(devices ?? [])
       .filter((d) => d.id.toLowerCase().includes(needle) || d.name.toLowerCase().includes(needle))
       .map((d) => ({ key: "d" + d.id, icon: "devices" as IconName, label: d.name || shortId(d.id), sub: d.name ? shortId(d.id) : d.status, to: `#/devices/${d.id}` })),

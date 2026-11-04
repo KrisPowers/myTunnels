@@ -27,7 +27,8 @@ export function AccessChips({ route }: { route: Route }) {
   );
 }
 
-function target(route: Route) {
+export function target(route: Route) {
+  if (route.target_scheme === "dashboard") return "This dashboard";
   const scheme = route.target_scheme === "https" ? "https://" : "";
   return route.target_host ? `${scheme}${route.target_host}:${route.target_port}` : String(route.target_port);
 }
@@ -83,24 +84,42 @@ export function Tunnels({ routes, status }: { routes: Route[] | null; status: St
 
 // ---- where requests go ----
 
-type Place = "here" | "machine" | "container";
+type Place = "here" | "machine" | "container" | "dashboard";
 
 const PLACES: Option<Place>[] = [
   { value: "here", label: "This computer", hint: "The app runs on the machine myTunnels runs on", icon: "devices" },
   { value: "machine", label: "Another machine", hint: "A computer or device on your network", icon: "router" },
   { value: "container", label: "A container", hint: "A container on the same Docker network", icon: "dns" },
+  { value: "dashboard", label: "This dashboard", hint: "myTunnels itself, to manage it from anywhere", icon: "dashboard" },
 ];
 
 type Target = Pick<RouteEdit, "target_host" | "target_scheme" | "preserve_host">;
 
+const isDashboard = (t: Pick<Target, "target_scheme">) => t.target_scheme === "dashboard";
+
 // LocalApp picks where the app runs, in one row like the address row: this
-// computer, another machine on the network, or a container; then its protocol.
+// computer, another machine on the network, a container, or this dashboard;
+// then its protocol.
 function LocalApp({ value, onChange }: { value: Target; onChange: (patch: Partial<Target>) => void }) {
-  const [place, setPlace] = useState<Place>(value.target_host ? "machine" : "here");
+  const [place, setPlace] = useState<Place>(isDashboard(value) ? "dashboard" : value.target_host ? "machine" : "here");
   const pick = (p: Place) => {
     setPlace(p);
-    if (p === "here") onChange({ target_host: null });
+    if (p === "dashboard") onChange({ target_host: null, target_scheme: "dashboard", preserve_host: false });
+    else if (isDashboard(value)) onChange({ target_host: null, target_scheme: "http" });
+    else if (p === "here") onChange({ target_host: null });
   };
+  if (place === "dashboard") {
+    return (
+      <div className="edit-row">
+        <div className="tf static place">
+          <div className="tf-box">
+            <Dropdown label="Runs on" value={place} options={PLACES} onChange={pick} />
+            <span className="tf-label">Runs on</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <>
       <div className="edit-row">
@@ -322,13 +341,15 @@ export function NewTunnel({ users, providers, onPublished }: { users: User[]; pr
   }, [notify]);
 
   const passwordOk = !access.require_password || strength(access.password ?? "").ok;
+  const dashboard = isDashboard(where);
+  const ready = !!sub && (dashboard || !!port) && !!zone && passwordOk;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!sub || !port || !zone || !passwordOk) return;
+    if (!ready) return;
     setBusy(true);
     try {
-      const route = await api.publish({ subdomain: sub, zone_id: zone, port: Number(port), ...where, ...access });
+      const route = await api.publish({ subdomain: sub, zone_id: zone, port: dashboard ? 0 : Number(port), ...where, ...access });
       await onPublished();
       notify(`Published ${route.hostname}`);
       go(`#/tunnels/${route.id}`);
@@ -363,10 +384,14 @@ export function NewTunnel({ users, providers, onPublished }: { users: User[]; pr
                 <span className="tf-label">Domain</span>
               </div>
             </div>
-            <Icon name="arrow_forward" className="composer-arrow" />
-            <TextField className="port" label="Local port" placeholder="8080" mono inputMode="numeric" value={port}
-              onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
-            <button className="btn primary composer-go" disabled={busy || !sub || !port || !zone || !passwordOk}>
+            {!dashboard && (
+              <>
+                <Icon name="arrow_forward" className="composer-arrow" />
+                <TextField className="port" label="Local port" placeholder="8080" mono inputMode="numeric" value={port}
+                  onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
+              </>
+            )}
+            <button className="btn primary composer-go" disabled={busy || !ready}>
               {busy ? <span className="spinner small on-accent" /> : <Icon name="add" size={18} />}Publish
             </button>
           </div>
@@ -579,11 +604,12 @@ function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () =>
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
 
+  const dashboard = isDashboard(where);
   const save = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     try {
-      await onSave({ port: Number(port), ...where });
+      await onSave({ port: dashboard ? 0 : Number(port), ...where });
       onDone();
     } catch (err) {
       notify(message(err), "bad");
@@ -594,13 +620,15 @@ function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () =>
   return (
     <Dialog title="Change where it goes" onClose={onDone}>
       <form className="edit-block" onSubmit={save}>
-        <div className="edit-row">
-          <TextField className="port" label="Port" mono inputMode="numeric" autoFocus value={port} onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
-        </div>
+        {!dashboard && (
+          <div className="edit-row">
+            <TextField className="port" label="Port" mono inputMode="numeric" autoFocus value={port === "0" ? "" : port} onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
+          </div>
+        )}
         <LocalApp value={where} onChange={(patch) => setWhere((w) => ({ ...w, ...patch }))} />
         <div className="edit-actions">
           <button type="button" className="btn text" onClick={onDone}>Cancel</button>
-          <button className="btn primary" disabled={busy || !port}>{busy && <span className="spinner small on-accent" />}Save</button>
+          <button className="btn primary" disabled={busy || (!dashboard && (!port || port === "0"))}>{busy && <span className="spinner small on-accent" />}Save</button>
         </div>
       </form>
     </Dialog>

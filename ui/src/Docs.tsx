@@ -76,6 +76,9 @@ const CONTENT: Record<string, ReactNode> = {
       <Doc title="Where requests go">
         <p>By default a tunnel sends requests to the port on this computer. Under <b>Local app</b> it can point at a container name or another machine instead, and use https when the app serves it itself. Self-signed certificates are accepted.</p>
       </Doc>
+      <Doc title="This dashboard">
+        <p>Pick <b>This dashboard</b> under <b>Runs on</b> to publish myTunnels itself, with no port, and manage it from anywhere. It takes the same access layers as any tunnel, and the dashboard's own sign-in, two-factor code included, still applies behind them.</p>
+      </Doc>
       <Doc title="How the app sees a visit">
         <p>Many apps only answer requests addressed to <code>localhost</code>. So myTunnels presents each visit to the app as if it were opened on this computer, and turns the app's redirects back into the public address. Apps set up with their public address should have <b>Pass the public address</b> turned on instead.</p>
       </Doc>
