@@ -6,6 +6,7 @@ export const DOCS: [string, string, IconName][] = [
   ["start", "Getting started", "info"],
   ["dashboard", "Dashboard", "dashboard"],
   ["containers", "Containers", "deployed_code"],
+  ["code", "Code", "code"],
   ["media", "Media and Drive", "photo_library"],
   ["publish", "Publishing", "public"],
   ["access", "Access Control", "shield"],
@@ -80,6 +81,19 @@ const CONTENT: Record<string, ReactNode> = {
       </Doc>
       <Doc title="What Docker allows">
         <p>myTunnels reaches Docker through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers and the engine's info and nothing else, so images, volumes and networks cannot be changed from here.</p>
+      </Doc>
+    </>
+  ),
+  code: (
+    <>
+      <Doc title="Repositories">
+        <p><b>Code</b> keeps git repositories on this host for your codebases. Make one with <b>New repository</b>, then browse its files on any branch or tag, read a file, or step through its commits and the changes in each.</p>
+      </Doc>
+      <Doc title="Signing git in">
+        <p>Git signs in with a token from <b>Tokens</b>, made for the admin or for an account from Users and shown once. When git asks, give any username and the token as the password. On this network git reaches Code at <code>/git/</code> on this dashboard's address; <b>Publish an address</b> to reach it from anywhere.</p>
+      </Doc>
+      <Doc title="Who may open what">
+        <p>At Code's address, Access Control has the same layers as any tunnel for browsers, then the repositories each person may open, read only or read and write. Git skips the browser layers, signs in with its token and is held to the same repositories; only Same network still applies to it. A single push over 100 MB is refused by Cloudflare, so push a very large repository over this network the first time.</p>
       </Doc>
     </>
   ),
