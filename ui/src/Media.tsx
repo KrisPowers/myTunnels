@@ -4,6 +4,7 @@ import { bytes, fileUrl, filesIn, message, saveThumb, thumbUrl, type FileEntry, 
 import { MultiDropdown, type Option } from "./Dropdown";
 import { ContextMenu, dropped, extOf, freeName, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Files";
 import { Icon } from "./Icon";
+import { useCan } from "./me";
 import { Callout, Dialog, useNotify } from "./ui";
 
 const media = filesIn("media");
@@ -80,6 +81,7 @@ const dayOf = (at: number) => new Date(at * 1000).toLocaleDateString([], { dateS
 // MediaPage is a home cloud for photos and videos: everything uploaded, newest
 // first and grouped by month, opened one at a time in a viewer.
 export function MediaPage() {
+  const can = useCan();
   const [listing, setListing] = useState<Listing | null>(null);
   const [problem, setProblem] = useState("");
   const [kinds, setKinds] = useState<Kind[]>(["photos", "videos"]);
@@ -176,7 +178,7 @@ export function MediaPage() {
   const menuItems = (name: string | null): MenuItem[] => {
     if (!name) {
       return [
-        { label: "Upload", icon: "cloud_upload", run: () => input.current?.click() },
+        { label: "Upload", icon: "cloud_upload", hidden: !can("media.upload"), run: () => input.current?.click() },
         { label: "Select all", icon: "select_all", hidden: !items.length, run: () => setSelected(new Set(items.map((e) => e.name))) },
         { label: "Clear selection", icon: "close", hidden: !selected.size, run: () => setSelected(new Set()) },
       ];
@@ -187,7 +189,7 @@ export function MediaPage() {
       { label: "Open", icon: "open_in_new", hidden: targets.length > 1, run: () => setViewing(items.findIndex((e) => e.name === name)) },
       { label: selected.has(name) ? "Unselect" : "Select", icon: "check_circle", run: () => toggle(name) },
       { label: "Download" + many, icon: "download", run: () => download(targets) },
-      { label: "Delete" + many, icon: "delete", danger: true, run: () => setRemoving(targets) },
+      { label: "Delete" + many, icon: "delete", danger: true, hidden: !can("media.delete"), run: () => setRemoving(targets) },
     ];
   };
 
@@ -221,7 +223,7 @@ export function MediaPage() {
             <>
               <span className="m-picked">{selected.size} selected</span>
               <button type="button" className="icon-btn" aria-label="Download" title="Download" onClick={() => download([...selected])}><Icon name="download" /></button>
-              <button type="button" className="icon-btn danger" aria-label="Delete" title="Delete" onClick={() => setRemoving([...selected])}><Icon name="delete" /></button>
+              {can("media.delete") && <button type="button" className="icon-btn danger" aria-label="Delete" title="Delete" onClick={() => setRemoving([...selected])}><Icon name="delete" /></button>}
               <button type="button" className="icon-btn" aria-label="Clear selection" title="Clear selection" onClick={() => setSelected(new Set())}><Icon name="close" /></button>
             </>
           ) : (
@@ -229,7 +231,7 @@ export function MediaPage() {
               <div className="ex-pick">
                 <MultiDropdown label="Show" values={kinds} options={KINDS} allLabel="Photos and videos" onChange={setKinds} />
               </div>
-              <button type="button" className="btn primary" onClick={() => input.current?.click()}><Icon name="cloud_upload" size={18} />Upload</button>
+              {can("media.upload") && <button type="button" className="btn primary" onClick={() => input.current?.click()}><Icon name="cloud_upload" size={18} />Upload</button>}
             </>
           )}
         </div>
@@ -243,7 +245,7 @@ export function MediaPage() {
               <Icon name="photo_library" size={40} />
               <h2>Your photos and videos</h2>
               <p className="muted">Upload them here, or drag them onto this page, and they are kept on this host, by the date each was taken.</p>
-              <button type="button" className="btn primary" onClick={() => input.current?.click()}><Icon name="cloud_upload" size={18} />Upload</button>
+              {can("media.upload") && <button type="button" className="btn primary" onClick={() => input.current?.click()}><Icon name="cloud_upload" size={18} />Upload</button>}
             </div>
           ) : items.length === 0 ? (
             <p className="muted">No {kinds[0]} yet.</p>

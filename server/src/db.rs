@@ -99,13 +99,6 @@ CREATE TABLE IF NOT EXISTS user_routes (
     route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
     PRIMARY KEY (user_id, route_id)
 );
-CREATE TABLE IF NOT EXISTS repo_access (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    repo TEXT NOT NULL,
-    mode TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-);
 CREATE TABLE IF NOT EXISTS git_tokens (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -189,6 +182,8 @@ pub struct User {
     pub last_login: Option<i64>,
     /// Why the account was locked, while it is.
     pub note: Option<String>,
+    /// What it may do on the dashboard (see `permissions`).
+    pub permissions: Vec<String>,
 }
 
 /// Something that happened at a tunnel's door: a sign-in or password attempt, a
@@ -216,18 +211,6 @@ pub struct SignIn {
     pub country: Option<String>,
     pub at: i64,
     pub outcome: String,
-}
-
-/// A repository someone may open in Code: `user_id` is an account, or `*` for
-/// everyone who gets through; `repo` is its name, `""` for every one; `mode` is
-/// "read" or "write".
-#[derive(Clone, Serialize)]
-pub struct Rule {
-    pub id: String,
-    pub user_id: String,
-    pub repo: String,
-    pub mode: String,
-    pub created_at: i64,
 }
 
 /// A key git signs in with, as the password: `owner` is "admin" or an account.
@@ -269,7 +252,8 @@ const ROUTE_COLS: &str = "id, subdomain, zone_id, zone_name, hostname, target_ho
      preserve_host, require_password, password_hash, require_login, login_max, login_idle,      require_code, oauth";
 
 const USER_COLS: &str =
-    "id, username, email, name, password_hash, enabled, all_routes, created_at, last_login, note";
+    "id, username, email, name, password_hash, enabled, all_routes, created_at, last_login, note, \
+     permissions";
 
 const DEVICE_COLS: &str = "id, name, status, all_routes, fingerprint, info, note, first_ip, \
      last_ip, country, first_host, created_at, last_seen";
@@ -321,6 +305,12 @@ fn user_row(r: &Row) -> rusqlite::Result<User> {
         created_at: r.get(7)?,
         last_login: r.get(8)?,
         note: r.get(9)?,
+        permissions: r
+            .get::<_, String>(10)?
+            .split(',')
+            .filter(|p| !p.is_empty())
+            .map(str::to_owned)
+            .collect(),
     })
 }
 
@@ -364,6 +354,7 @@ impl Db {
         conn.execute_batch(
             "UPDATE routes SET target_scheme = 'code' WHERE target_scheme = 'storage';
              DROP TABLE IF EXISTS storage_rules;
+             DROP TABLE IF EXISTS repo_access;
              DELETE FROM settings WHERE key IN ('storage_path', 'storage_enabled');",
         )?;
         let user_columns: Vec<String> = conn
@@ -372,6 +363,11 @@ impl Db {
             .collect::<rusqlite::Result<_>>()?;
         if !user_columns.iter().any(|c| c == "note") {
             conn.execute_batch("ALTER TABLE users ADD COLUMN note TEXT;")?;
+        }
+        if !user_columns.iter().any(|c| c == "permissions") {
+            conn.execute_batch(
+                "ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '';",
+            )?;
         }
         let have: Vec<String> = conn
             .prepare("SELECT name FROM pragma_table_info('routes')")?
@@ -802,12 +798,12 @@ impl Db {
         let tx = conn.transaction()?;
         tx.execute(
             &format!(
-                "INSERT INTO users ({USER_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                "INSERT INTO users ({USER_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                  ON CONFLICT(id) DO UPDATE SET username = excluded.username,
                      email = excluded.email, name = excluded.name,
                      password_hash = excluded.password_hash, enabled = excluded.enabled,
                      all_routes = excluded.all_routes, last_login = excluded.last_login,
-                     note = excluded.note"
+                     note = excluded.note, permissions = excluded.permissions"
             ),
             params![
                 u.id,
@@ -820,6 +816,7 @@ impl Db {
                 u.created_at,
                 u.last_login,
                 u.note,
+                u.permissions.join(","),
             ],
         )?;
         tx.execute("DELETE FROM user_devices WHERE user_id = ?1", [&u.id])?;
@@ -927,51 +924,7 @@ impl Db {
     pub fn delete_user(&self, id: &str) -> Result<()> {
         let conn = self.conn();
         conn.execute("DELETE FROM users WHERE id = ?1", [id])?;
-        conn.execute("DELETE FROM repo_access WHERE user_id = ?1", [id])?;
         conn.execute("DELETE FROM git_tokens WHERE owner = ?1", [id])?;
-        Ok(())
-    }
-
-    pub fn rules(&self) -> Result<Vec<Rule>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT id, user_id, repo, mode, created_at FROM repo_access
-             ORDER BY created_at, id",
-        )?;
-        let rules = stmt
-            .query_map([], |r| {
-                Ok(Rule {
-                    id: r.get(0)?,
-                    user_id: r.get(1)?,
-                    repo: r.get(2)?,
-                    mode: r.get(3)?,
-                    created_at: r.get(4)?,
-                })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(rules)
-    }
-
-    pub fn save_rule(&self, r: &Rule) -> Result<()> {
-        self.conn().execute(
-            "INSERT INTO repo_access (id, user_id, repo, mode, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(id) DO UPDATE SET repo = excluded.repo, mode = excluded.mode",
-            params![r.id, r.user_id, r.repo, r.mode, r.created_at],
-        )?;
-        Ok(())
-    }
-
-    pub fn delete_rule(&self, id: &str) -> Result<()> {
-        self.conn()
-            .execute("DELETE FROM repo_access WHERE id = ?1", [id])?;
-        Ok(())
-    }
-
-    /// Forgets who may open a repository that is gone.
-    pub fn delete_repo_rules(&self, repo: &str) -> Result<()> {
-        self.conn()
-            .execute("DELETE FROM repo_access WHERE repo = ?1", [repo])?;
         Ok(())
     }
 

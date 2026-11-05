@@ -3,6 +3,7 @@ import { bytes, fileUrl, filesIn, message, type FileEntry, type Listing } from "
 import { Dropdown, type Option } from "./Dropdown";
 import { ContextMenu, dropped, extOf, NameDialog, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Files";
 import { Icon, type IconName } from "./Icon";
+import { useCan } from "./me";
 import { Callout, Dialog, useNotify } from "./ui";
 
 const drive = filesIn("drive");
@@ -40,6 +41,7 @@ function remembered(): "grid" | "list" {
 // DrivePage keeps documents, spreadsheets, presentations and PDFs on this
 // host, in folders, each kind in its own colour.
 export function DrivePage() {
+  const can = useCan();
   const [path, setPath] = useState("");
   const [listing, setListing] = useState<Listing | null>(null);
   const [problem, setProblem] = useState("");
@@ -116,11 +118,11 @@ export function DrivePage() {
   const items = (entry: FileEntry | null): MenuItem[] => entry ? [
     { label: "Open", icon: entry.dir ? "folder" : opens(entry.name) ? "open_in_new" : "download", run: () => open(entry) },
     { label: "Download", icon: "download", hidden: entry.dir, run: () => download(entry) },
-    { label: "Rename", icon: "edit", run: () => setAsking({ rename: entry }) },
-    { label: "Delete", icon: "delete", danger: true, run: () => setAsking({ remove: entry }) },
+    { label: "Rename", icon: "edit", hidden: !can("drive.edit"), run: () => setAsking({ rename: entry }) },
+    { label: "Delete", icon: "delete", danger: true, hidden: !can("drive.delete"), run: () => setAsking({ remove: entry }) },
   ] : [
-    { label: "New folder", icon: "create_new_folder", run: () => setAsking("folder") },
-    { label: "Upload files", icon: "upload_file", run: () => input.current?.click() },
+    { label: "New folder", icon: "create_new_folder", hidden: !can("drive.edit"), run: () => setAsking("folder") },
+    { label: "Upload files", icon: "upload_file", hidden: !can("drive.edit"), run: () => input.current?.click() },
   ];
 
   const crumbs = path ? path.split("/") : [];
@@ -168,10 +170,10 @@ export function DrivePage() {
               // Kept until the page closes.
             }
           }}><Icon name={view === "grid" ? "view_list" : "grid_view"} /></button>
-          <button type="button" className="btn primary" onClick={(e) => {
+          {can("drive.edit") && <button type="button" className="btn primary" onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             setMenu({ x: r.left, y: r.bottom + 4, on: false, entry: null });
-          }}><Icon name="add" size={18} />New</button>
+          }}><Icon name="add" size={18} />New</button>}
         </div>
       </div>
       <div className="d-chips" role="group" aria-label="Type">
@@ -190,7 +192,7 @@ export function DrivePage() {
               <Icon name="cloud" size={40} />
               <h2>{kind ? `No ${KINDS[kind].label.toLowerCase()} here` : path ? "This folder is empty" : "Your documents"}</h2>
               <p className="muted">Word documents, spreadsheets, presentations and PDFs, kept on this host. Upload them, or drag them onto this page.</p>
-              <button type="button" className="btn primary" onClick={() => input.current?.click()}><Icon name="upload_file" size={18} />Upload files</button>
+              {can("drive.edit") && <button type="button" className="btn primary" onClick={() => input.current?.click()}><Icon name="upload_file" size={18} />Upload files</button>}
             </div>
           ) : view === "grid" ? (
             <>

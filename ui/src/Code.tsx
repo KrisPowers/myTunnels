@@ -1,19 +1,16 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ago, api, editOf, message, repos, type Access, type CodeState, type OAuthProvider, type Repo, type RepoRule, type Route, type RouteEdit, type User, type Zone } from "./api";
+import { useCallback, useContext, useEffect, useState, type FormEvent } from "react";
+import { ago, api, editOf, message, repos, type Access, type CodeState, type OAuthProvider, type Repo, type Route, type RouteEdit, type User, type Zone } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { NameDialog } from "./Files";
 import { Icon, type IconName } from "./Icon";
 import { RepoList, RepoView } from "./Repo";
 import { AccessCard, AddressEditor, TunnelLogs } from "./Tunnels";
-import { AddMenu, Avatar, Callout, Card, Copy, Dialog, Row, Switch, TextField, useNotify } from "./ui";
-
-const MODES: Option<RepoRule["mode"]>[] = [
-  { value: "read", label: "Read only", hint: "Browse and clone" },
-  { value: "write", label: "Read and write", hint: "Push as well" },
-];
+import { MeContext, useCan } from "./me";
+import { Callout, Card, Copy, Dialog, Row, TextField, useNotify } from "./ui";
 
 // CodePage is Code: git repositories kept on this host, the tokens git signs
-// in with, and, once it has an address, who may open which repository there.
+// in with, and, once it has an address, the layers in front of it there. Who
+// may view, push, create or delete is each account's Code permissions.
 // `#/code/repos/<name>` is one repository.
 export function CodePage({ id, page, users, providers, onChanged }: { id: string; page: string; users: User[]; providers: OAuthProvider[]; onChanged: () => Promise<void> }) {
   const [state, setState] = useState<CodeState | null>(null);
@@ -21,6 +18,7 @@ export function CodePage({ id, page, users, providers, onChanged }: { id: string
   const [problem, setProblem] = useState("");
   const [asking, setAsking] = useState<"" | "repo" | "address" | "move">("");
   const notify = useNotify();
+  const can = useCan();
 
   const load = useCallback(async () => {
     try {
@@ -43,14 +41,14 @@ export function CodePage({ id, page, users, providers, onChanged }: { id: string
   ];
 
   if (id === "repos" && page) {
-    return <RepoView name={page} back="#/code" cloneUrls={cloneUrls(page)} admin onRemoved={() => (location.hash = "#/code")} />;
+    return <RepoView name={page} back="#/code" cloneUrls={cloneUrls(page)} admin={can("code.delete")} onRemoved={() => (location.hash = "#/code")} />;
   }
   if (!state) return problem ? <Callout tone="bad" icon="error">{problem}</Callout> : null;
 
   const pages: [string, string, IconName][] = [
     ["repos", "Repositories", "code"],
     ["tokens", "Tokens", "key"],
-    ...(route ? [["access", "Access Control", "shield"], ["activity", "Activity", "history"]] as [string, string, IconName][] : []),
+    ...(route && can("tunnels.view") ? [["access", "Access Control", "shield"], ["activity", "Activity", "history"]] as [string, string, IconName][] : []),
   ];
   const current = pages.some(([k]) => k === id) ? id : "repos";
 
@@ -63,7 +61,7 @@ export function CodePage({ id, page, users, providers, onChanged }: { id: string
             {route ? (
               <span className="inline-edit">
                 <span>{route.hostname}</span>
-                <button type="button" className="icon-btn small" aria-label="Change address" title="Change address" onClick={() => setAsking("move")}><Icon name="edit" size={18} /></button>
+                {can("tunnels.edit") && <button type="button" className="icon-btn small" aria-label="Change address" title="Change address" onClick={() => setAsking("move")}><Icon name="edit" size={18} /></button>}
               </span>
             ) : <span>On this network only</span>}
             {list && <span><b>{list.length}</b> repositor{list.length === 1 ? "y" : "ies"}</span>}
@@ -72,10 +70,10 @@ export function CodePage({ id, page, users, providers, onChanged }: { id: string
         <div className="page-actions">
           {route ? (
             <a className="btn" href={`https://${route.hostname}`} target="_blank" rel="noreferrer"><Icon name="open_in_new" size={18} />Open</a>
-          ) : (
+          ) : can("tunnels.create") && (
             <button type="button" className="btn" onClick={() => setAsking("address")}><Icon name="public" size={18} />Publish an address</button>
           )}
-          <button type="button" className="btn primary" onClick={() => setAsking("repo")}><Icon name="add" size={18} />New repository</button>
+          {can("code.create") && <button type="button" className="btn primary" onClick={() => setAsking("repo")}><Icon name="add" size={18} />New repository</button>}
         </div>
       </div>
       <nav className="sub-nav" aria-label="Sub-pages">
@@ -88,15 +86,13 @@ export function CodePage({ id, page, users, providers, onChanged }: { id: string
       </nav>
       <div className="page-body stack plain" key={current}>
         {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
-        {current === "repos" && list && <RepoList list={list} href={(name) => `#/code/repos/${name}`} onNew={() => setAsking("repo")} />}
+        {current === "repos" && list && <RepoList list={list} href={(name) => `#/code/repos/${name}`} onNew={can("code.create") ? () => setAsking("repo") : undefined} />}
         {current === "tokens" && <Tokens state={state} users={users} onState={setState} />}
         {current === "access" && route && (
-          <CodeAccess route={route} rules={state.rules} repos={list ?? []} users={users} providers={providers}
-            onChanged={async () => {
-              await onChanged();
-              await load();
-            }}
-            onRules={setState} />
+          <CodeAccess route={route} users={users} providers={providers} onChanged={async () => {
+            await onChanged();
+            await load();
+          }} />
         )}
         {current === "activity" && route && <TunnelLogs route={route} users={users} />}
       </div>
@@ -192,9 +188,12 @@ function Publish({ onClose, onDone }: { onClose: () => void; onDone: () => Promi
 // Tokens are what git signs in with, as the password: each for the admin or
 // for one account, shown once when made.
 function Tokens({ state, users, onState }: { state: CodeState; users: User[]; onState: (s: CodeState) => void }) {
+  const can = useCan();
+  const me = useContext(MeContext);
+  const self = me?.id ?? "admin";
   const [making, setMaking] = useState(false);
   const [name, setName] = useState("");
-  const [owner, setOwner] = useState("admin");
+  const [owner, setOwner] = useState(self);
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
@@ -211,7 +210,7 @@ function Tokens({ state, users, onState }: { state: CodeState; users: User[]; on
     setMaking(false);
     setSecret("");
     setName("");
-    setOwner("admin");
+    setOwner(self);
   };
 
   return (
@@ -257,12 +256,14 @@ function Tokens({ state, users, onState }: { state: CodeState; users: User[]; on
               }
             }}>
               <TextField label="Name" autoFocus autoComplete="off" placeholder="Laptop" value={name} onChange={setName} />
-              <div className="tf static">
-                <div className="tf-box">
-                  <Dropdown label="For" value={owner} options={owners} onChange={setOwner} />
-                  <span className="tf-label">For</span>
+              {can("code.tokens") && (
+                <div className="tf static">
+                  <div className="tf-box">
+                    <Dropdown label="For" value={owner} options={owners} onChange={setOwner} />
+                    <span className="tf-label">For</span>
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="edit-actions">
                 <button type="button" className="btn text" onClick={close}>Cancel</button>
                 <button className="btn primary" disabled={busy || !name.trim()}>{busy && <span className="spinner small on-accent" />}Make token</button>
@@ -275,20 +276,17 @@ function Tokens({ state, users, onState }: { state: CodeState; users: User[]; on
   );
 }
 
-// CodeAccess is who may open Code's address, as for any tunnel, then the
-// repositories each person may open there, and whether they may push.
-function CodeAccess({ route, rules, repos: all, users, providers, onChanged, onRules }: {
+// CodeAccess is the layers in front of Code's address, as for any tunnel.
+// Which accounts may open it is picked on each account; what they may do with
+// repositories is their Code permissions.
+function CodeAccess({ route, users, providers, onChanged }: {
   route: Route;
-  rules: RepoRule[];
-  repos: Repo[];
   users: User[];
   providers: OAuthProvider[];
   onChanged: () => Promise<void>;
-  onRules: (state: CodeState) => void;
 }) {
   const [edit, setEdit] = useState<RouteEdit>(() => editOf(route));
   const [asking, setAsking] = useState(false);
-  const [adding, setAdding] = useState<string | null>(null);
   const notify = useNotify();
   useEffect(() => setEdit(editOf(route)), [route]);
 
@@ -303,156 +301,24 @@ function CodeAccess({ route, rules, repos: all, users, providers, onChanged, onR
       throw e;
     }
   };
-  const quietly = (change: Partial<RouteEdit>) => save(change).catch((e) => notify(message(e), "bad"));
   const access = (patch: Partial<Access>) => {
     if (patch.require_password && !route.password_set) {
       setAsking(true);
       return;
     }
     if (patch.require_password === false) setAsking(false);
-    quietly(patch);
+    save(patch).catch((e) => notify(message(e), "bad"));
   };
-  const rulesDo = async (work: () => Promise<CodeState>) => {
-    try {
-      onRules(await work());
-    } catch (e) {
-      notify(message(e), "bad");
-    }
-  };
-  const grant = async (user: User, on: boolean) => {
-    try {
-      await api.editUser(user.id, { route_ids: on ? [...user.route_ids, route.id] : user.route_ids.filter((r) => r !== route.id) });
-      if (!on) for (const r of rules.filter((x) => x.user_id === user.id)) onRules(await api.removeRule(r.id));
-      await onChanged();
-    } catch (e) {
-      notify(message(e), "bad");
-    }
-  };
-
-  const members = users.filter((u) => u.route_ids.includes(route.id));
-  const everyone = rules.some((r) => r.user_id === "*");
-  const people: { id: string; name: string; sub: string; user?: User }[] = [
-    ...(everyone ? [{ id: "*", name: "Everyone", sub: "Anyone who gets through the access above" }] : []),
-    ...members.map((u) => ({ id: u.id, name: u.name || u.username, sub: u.email, user: u })),
-  ];
-  const ranked = [...users].sort((a, b) => (b.last_login ?? 0) - (a.last_login ?? 0));
-  const who = adding === "*" ? "Everyone" : users.find((u) => u.id === adding)?.username ?? "";
 
   return (
     <>
       <Callout icon="info">Git signs in with a token from Tokens instead of these layers; only Same network still applies to it.</Callout>
-      <AccessCard signInElsewhere value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} providers={providers} hostname={route.hostname} onChange={access}
+      <AccessCard value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} providers={providers} hostname={route.hostname} onChange={access}
         onPassword={async (password) => {
           await save({ require_password: true, password });
           setAsking(false);
         }}
         onPasswordCancel={() => setAsking(false)} />
-
-      <Card title={<>People with access<span className="title-toggle">Require sign-in<Switch label="Require sign-in" on={edit.require_login} onChange={(v) => access({ require_login: v })} /></span></>}
-        sub={people.length ? undefined : "No one yet. Add people, or Everyone, and the repositories they may open."}
-        action={
-          <AddMenu label="Add people" placeholder="Name or email"
-            empty={<a className="menu-item" href="#/users/new"><Icon name="add" size={18} />New user</a>}
-            onPick={async (pick) => {
-              const u = users.find((x) => x.id === pick);
-              if (u && !u.route_ids.includes(route.id)) await grant(u, true);
-              setAdding(pick);
-            }}
-            items={[
-              { id: "*", label: "Everyone", sub: "Anyone who gets through", disabled: everyone, note: "Listed" },
-              ...ranked.map((u) => ({ id: u.id, label: u.name || u.username, sub: u.email, avatar: u.name || u.username, disabled: u.route_ids.includes(route.id), note: "Has access" })),
-            ]} />
-        }>
-        {people.length > 0 && (
-          <ul className="people">
-            {people.map((p) => {
-              const theirs = rules.filter((r) => r.user_id === p.id);
-              return (
-                <li key={p.id} className="person-block">
-                  <div className="person-row">
-                    {p.user ? <Avatar name={p.name} /> : <span className="avatar everyone" aria-hidden><Icon name="group" size={18} /></span>}
-                    {p.user ? (
-                      <a className="person" href={`#/users/${p.id}`}><span className="scan-target">{p.name}</span><small>{p.sub}</small></a>
-                    ) : (
-                      <span className="person"><span className="scan-target">{p.name}</span><small>{p.sub}</small></span>
-                    )}
-                    <button type="button" className="icon-btn" aria-label={`Add a repository for ${p.name}`} title="Add a repository" onClick={() => setAdding(p.id)}>
-                      <Icon name="add" />
-                    </button>
-                    <button type="button" className="icon-btn danger" aria-label={`Remove ${p.name}`} title="Remove"
-                      onClick={async () => {
-                        if (p.user) return grant(p.user, false);
-                        for (const r of theirs) await rulesDo(() => api.removeRule(r.id));
-                      }}>
-                      <Icon name="close" />
-                    </button>
-                  </div>
-                  <ul className="rules">
-                    {theirs.length === 0 && <li className="rule-row muted">No repositories yet, so nothing shows.</li>}
-                    {theirs.map((r) => (
-                      <li key={r.id} className="rule-row">
-                        <Icon name="code" size={18} />
-                        <span className="rule-path mono">{r.repo || "Every repository"}</span>
-                        <div className="rule-mode">
-                          <Dropdown label={`Access to ${r.repo || "every repository"}`} value={r.mode} options={MODES} onChange={(mode) => rulesDo(() => api.editRule(r.id, { mode }))} />
-                        </div>
-                        <button type="button" className="icon-btn small danger" aria-label={`Remove ${r.repo || "every repository"}`} title="Remove" onClick={() => rulesDo(() => api.removeRule(r.id))}>
-                          <Icon name="close" size={18} />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Card>
-
-      {adding !== null && (
-        <RuleDialog who={who} repos={all} onClose={() => setAdding(null)}
-          onSave={async (repo, mode) => {
-            await rulesDo(() => api.addRule({ user_id: adding, repo, mode }));
-            setAdding(null);
-          }} />
-      )}
     </>
-  );
-}
-
-// RuleDialog picks a repository, or every one, and how much someone may do.
-function RuleDialog({ who, repos: all, onSave, onClose }: { who: string; repos: Repo[]; onSave: (repo: string, mode: RepoRule["mode"]) => Promise<void>; onClose: () => void }) {
-  const [repo, setRepo] = useState("");
-  const [mode, setMode] = useState<RepoRule["mode"]>("read");
-  const [busy, setBusy] = useState(false);
-  const options: Option<string>[] = [
-    { value: "", label: "Every repository", hint: "Those made later as well" },
-    ...all.map((r) => ({ value: r.name, label: r.name })),
-  ];
-  return (
-    <Dialog title={`A repository for ${who}`} onClose={onClose}>
-      <div className="edit-block">
-        <div className="tf static">
-          <div className="tf-box">
-            <Dropdown label="Repository" value={repo} options={options} onChange={setRepo} />
-            <span className="tf-label">Repository</span>
-          </div>
-        </div>
-        <div className="tf static">
-          <div className="tf-box">
-            <Dropdown label="Access" value={mode} options={MODES} onChange={setMode} />
-            <span className="tf-label">Access</span>
-          </div>
-        </div>
-        <div className="edit-actions">
-          <button type="button" className="btn text" onClick={onClose}>Cancel</button>
-          <button type="button" className="btn primary" disabled={busy} onClick={async () => {
-            setBusy(true);
-            await onSave(repo, mode);
-            setBusy(false);
-          }}>{busy && <span className="spinner small on-accent" />}Give access</button>
-        </div>
-      </div>
-    </Dialog>
   );
 }

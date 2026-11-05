@@ -21,7 +21,8 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio_util::io::ReaderStream;
 
-use crate::db::{Route, Rule, Token};
+use crate::db::{Route, Token};
+use crate::permissions::Caller;
 use crate::state::AppState;
 use crate::storage::{encode, segments};
 use crate::util::{now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
@@ -143,28 +144,39 @@ pub enum Level {
     Write,
 }
 
-fn level(state: &AppState, viewer: &Viewer, repo: &str) -> ApiResult<Level> {
-    let user = match viewer {
-        Viewer::Admin => return Ok(Level::Write),
-        Viewer::Person(user) => user.as_deref(),
+impl Viewer {
+    pub fn of(caller: &Caller) -> Self {
+        match caller {
+            Caller::Admin => Viewer::Admin,
+            Caller::Account(user) => Viewer::Person(Some(user.id.clone())),
+        }
+    }
+}
+
+/// What `viewer` may do with repositories: an account's Code permissions say,
+/// while it is on.
+fn level(state: &AppState, viewer: &Viewer) -> Level {
+    let id = match viewer {
+        Viewer::Admin => return Level::Write,
+        Viewer::Person(None) => return Level::None,
+        Viewer::Person(Some(id)) => id,
     };
-    let rules = state.db.rules()?;
-    Ok(rules
-        .iter()
-        .filter(|r| r.user_id == "*" || Some(r.user_id.as_str()) == user)
-        .filter(|r| r.repo.is_empty() || r.repo == repo)
-        .map(|r| {
-            if r.mode == "write" {
-                Level::Write
-            } else {
-                Level::Read
-            }
-        })
-        .fold(Level::None, |a, b| if b > a { b } else { a }))
+    let snap = state.snapshot();
+    let Some(user) = snap.users.get(id).filter(|u| u.enabled) else {
+        return Level::None;
+    };
+    let has = |key: &str| user.permissions.iter().any(|p| p == key);
+    if has("code.push") {
+        Level::Write
+    } else if has("code.view") {
+        Level::Read
+    } else {
+        Level::None
+    }
 }
 
 fn need(state: &AppState, viewer: &Viewer, repo: &str, want: Level) -> ApiResult<PathBuf> {
-    if level(state, viewer, repo)? < want {
+    if level(state, viewer) < want {
         // A repository someone may not open is one they cannot see.
         return Err(ApiError::not_found());
     }
@@ -186,7 +198,7 @@ pub async fn list(state: &AppState, viewer: &Viewer) -> ApiResult<Json<Value>> {
             if !valid_name(name) || !entry.path().is_dir() {
                 continue;
             }
-            let level = level(state, viewer, name)?;
+            let level = level(state, viewer);
             if level == Level::None {
                 continue;
             }
@@ -475,14 +487,17 @@ async fn commit(dir: &Path, reference: &str) -> ApiResult<Response> {
 
 // ---- the Code page ----
 
-/// Everything the Code page shows besides the repositories: the address, who
-/// may open which repository, and the tokens.
-pub async fn overview(state: &AppState) -> ApiResult<Json<Value>> {
-    Ok(Json(json!({
-        "route": route(state),
-        "rules": state.db.rules()?,
-        "tokens": state.db.tokens()?,
-    })))
+/// Everything the Code page shows besides the repositories: the address, and
+/// the tokens `caller` may see, its own or everyone's.
+pub async fn overview(state: &AppState, caller: &Caller) -> ApiResult<Json<Value>> {
+    let all = caller.can("code.tokens");
+    let tokens: Vec<Token> = state
+        .db
+        .tokens()?
+        .into_iter()
+        .filter(|t| all || t.owner == caller.id())
+        .collect();
+    Ok(Json(json!({ "route": route(state), "tokens": tokens })))
 }
 
 #[derive(Deserialize)]
@@ -529,63 +544,7 @@ pub async fn remove(state: &AppState, name: &str) -> ApiResult<Json<Value>> {
     tokio::fs::remove_dir_all(&dir)
         .await
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    state.db.delete_repo_rules(name)?;
     list(state, &Viewer::Admin).await
-}
-
-#[derive(Deserialize)]
-pub struct RuleBody {
-    user_id: Option<String>,
-    repo: Option<String>,
-    mode: Option<String>,
-}
-
-/// Gives someone a repository, or every one, or changes one given.
-pub async fn save_rule(
-    state: &AppState,
-    id: Option<String>,
-    body: RuleBody,
-) -> ApiResult<Json<Value>> {
-    let mut rule = match &id {
-        Some(id) => state
-            .db
-            .rules()?
-            .into_iter()
-            .find(|r| &r.id == id)
-            .ok_or_else(ApiError::not_found)?,
-        None => {
-            let user_id = body.user_id.clone().unwrap_or_default();
-            if user_id != "*" && state.db.user(&user_id)?.is_none() {
-                return Err(ApiError::bad("No such user"));
-            }
-            Rule {
-                id: random_hex(8),
-                user_id,
-                repo: String::new(),
-                mode: "read".into(),
-                created_at: now(),
-            }
-        }
-    };
-    if let Some(repo) = body.repo {
-        if !repo.is_empty() && !valid_name(&repo) {
-            return Err(ApiError::bad("No such repository"));
-        }
-        rule.repo = repo;
-    }
-    if let Some(mode) = body.mode {
-        if mode != "read" && mode != "write" {
-            return Err(ApiError::bad("Access is read or write"));
-        }
-        rule.mode = mode;
-    }
-    state.db.save_rule(&rule)?;
-    overview(state).await
-}
-
-pub async fn delete_rule(state: &AppState, id: &str) -> ApiResult<Json<Value>> {
-    state.db.delete_rule(id)?;
-    overview(state).await
 }
 
 #[derive(Deserialize)]
@@ -595,11 +554,22 @@ pub struct NewToken {
     owner: String,
 }
 
-/// A new token, shown once: only its hash is kept.
-pub async fn add_token(state: &AppState, body: NewToken) -> ApiResult<Json<Value>> {
+/// A new token, shown once: only its hash is kept. An account makes its own;
+/// one for someone else needs `code.tokens`.
+pub async fn add_token(
+    state: &AppState,
+    caller: &Caller,
+    body: NewToken,
+) -> ApiResult<Json<Value>> {
     let name = body.name.trim();
     if name.is_empty() || name.len() > 80 {
         return Err(ApiError::bad("Name the token, up to 80 characters"));
+    }
+    if body.owner != caller.id() && !caller.can("code.tokens") {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "You can make tokens for yourself only".into(),
+        ));
     }
     if body.owner != "admin" && state.db.user(&body.owner)?.is_none() {
         return Err(ApiError::bad("No such user"));
@@ -613,14 +583,26 @@ pub async fn add_token(state: &AppState, body: NewToken) -> ApiResult<Json<Value
         created_at: now(),
         last_used: None,
     })?;
-    let mut view = overview(state).await?.0;
+    let mut view = overview(state, caller).await?.0;
     view["secret"] = json!(secret);
     Ok(Json(view))
 }
 
-pub async fn delete_token(state: &AppState, id: &str) -> ApiResult<Json<Value>> {
+pub async fn delete_token(state: &AppState, caller: &Caller, id: &str) -> ApiResult<Json<Value>> {
+    let token = state
+        .db
+        .tokens()?
+        .into_iter()
+        .find(|t| t.id == id)
+        .ok_or_else(ApiError::not_found)?;
+    if token.owner != caller.id() && !caller.can("code.tokens") {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "You can remove your own tokens only".into(),
+        ));
+    }
     state.db.delete_token(id)?;
-    overview(state).await
+    overview(state, caller).await
 }
 
 // ---- git over HTTPS ----
@@ -720,7 +702,7 @@ pub async fn serve(
     let want = if push { Level::Write } else { Level::Read };
     match need(state, &viewer, &name, want) {
         Ok(_) => {}
-        Err(_) if push && level(state, &viewer, &name).is_ok_and(|l| l == Level::Read) => {
+        Err(_) if push && level(state, &viewer) == Level::Read => {
             return refuse(
                 StatusCode::FORBIDDEN,
                 "This token may read this repository, not push to it",

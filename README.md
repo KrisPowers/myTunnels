@@ -86,9 +86,9 @@ The sidebar keeps these pages together under **Storage & Media**; the heading fo
 its files on any branch or tag, with its README under them, read a file, or step through its
 commits and the changes in each. **Clone** gives its addresses.
 
-Git signs in with a token. Under **Tokens**, make one for the admin (every repository) or for
-an account from **Users**; it is shown once, and only its hash is kept. When git asks, give
-any username and the token as the password:
+Git signs in with a token. Under **Tokens**, each person makes their own, and the admin (or an
+account allowed to manage everyone's tokens) makes them for others; a token is shown once, and
+only its hash is kept. When git asks, give any username and the token as the password:
 
 ```sh
 git clone https://code.example.com/myapp.git      # through the tunnel
@@ -97,12 +97,11 @@ git clone http://<host>:7070/git/myapp.git        # on the LAN
 
 On the LAN, the panel takes git at `/git/` straight away. For anywhere else, **Publish an
 address** gives Code a subdomain, `code` to start with. There, **Access Control** has the same
-layers as any tunnel for browsers, then **People with access**: each person, or **Everyone**
-who gets through, with the repositories they may open (or every repository), each **Read
-only** or **Read and write**. People see those repositories in the browser at the address,
-read only. Git skips the browser layers and signs in with its token, held to the same
-repositories and to being among the address's people; only **Same network** still applies to
-it. **Activity** is the address's log, as for a tunnel.
+layers as any tunnel for browsers, and people with **View repositories** see them, read only.
+Git skips the browser layers and signs in with its token, held to the account's Code
+permissions (**View repositories** to clone, **Push** to push) and to the account having Code's
+address among its tunnels; only **Same network** still applies to it. **Activity** is the
+address's log, as for a tunnel.
 
 Cloudflare refuses a single request over 100 MB, so the first push of a very large repository
 goes over the LAN, or in parts. Code needs `git`, which the image includes.
@@ -128,6 +127,24 @@ delete it.
 
 Media and Drive take only their own kinds of file, and both are in the dashboard alone, so
 publish the dashboard through a tunnel to reach them from anywhere.
+
+## Accounts and permissions
+
+**Users**, under **Admin** in the sidebar, holds the accounts people sign in with. Open one to
+set it up:
+
+- **Permissions**, a card per feature: **Sign in to the dashboard**, then what it may do there,
+  such as viewing containers or starting and stopping them, publishing, changing or removing
+  tunnels, approving devices, managing accounts, viewing, pushing to, creating and deleting
+  repositories in Code, uploading and deleting in Media and Drive, and the settings pages.
+- **Tunnels and devices**: the tunnels it may open, and the devices it signs in from.
+
+An account with **Sign in to the dashboard** signs in there with its email or username and its
+own password (and an emailed code, when the dashboard asks for one), and sees only the pages
+and actions its permissions allow; the server checks every call the same way. The admin holds
+every permission. Anyone who manages accounts can give or take only permissions they hold
+themselves, cannot change their own, and cannot change an account that can do more than they
+can.
 
 ## Access rules
 

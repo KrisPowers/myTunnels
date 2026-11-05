@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Port } from "./api";
 import { Dropdown } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
+import { useCan } from "./me";
 import { Callout, Card, MoreMenu, Row, SubNav, Switch, useNotify, type MenuAction } from "./ui";
 
 const PAGES: [string, string, IconName][] = [
@@ -36,16 +37,16 @@ function useContainerAction(reload: () => Promise<void>) {
 
 // The less frequent actions, under the three dots. Anything that would stop
 // myTunnels itself asks once more.
-function moreActions(c: { id: string; name: string; state: string; own: boolean }, run: (action: ContainerAction | "remove") => void, logs?: string): MenuAction[] {
-  const running = c.state === "running";
+function moreActions(c: { id: string; name: string; state: string; own: boolean }, run: (action: ContainerAction | "remove") => void, can: (key: string) => boolean, logs?: string): MenuAction[] {
+  const running = c.state === "running" && can("containers.manage");
   const self = c.own ? "This stops the dashboard" : undefined;
   return [
     ...(logs ? [{ label: "Logs", icon: "terminal" as IconName, onClick: () => (location.hash = logs) }] : []),
     ...(running ? [{ label: "Restart", icon: "restart_alt" as IconName, onClick: () => run("restart"), confirm: c.own ? "Restart myTunnels" : undefined }] : []),
     ...(running ? [{ label: "Pause", icon: "pause" as IconName, onClick: () => run("pause"), confirm: self }] : []),
-    ...(c.state === "paused" ? [{ label: "Resume", icon: "play_arrow" as IconName, onClick: () => run("unpause") }] : []),
+    ...(c.state === "paused" && can("containers.manage") ? [{ label: "Resume", icon: "play_arrow" as IconName, onClick: () => run("unpause") }] : []),
     ...(running ? [{ label: "Kill", icon: "block" as IconName, danger: true, onClick: () => run("kill"), confirm: self ?? "Kill it now" }] : []),
-    ...(!running && c.state !== "paused" ? [{ label: "Remove", icon: "delete" as IconName, danger: true, onClick: () => run("remove"), confirm: "Remove for good" }] : []),
+    ...(c.state !== "running" && c.state !== "paused" && can("containers.remove") ? [{ label: "Remove", icon: "delete" as IconName, danger: true, onClick: () => run("remove"), confirm: "Remove for good" }] : []),
   ];
 }
 
@@ -154,6 +155,7 @@ function Group({ project, items, stats, busy, run }: {
   busy: string;
   run: (c: Container, action: ContainerAction | "remove") => Promise<void>;
 }) {
+  const can = useCan();
   return (
     <>
       {project && (
@@ -176,14 +178,14 @@ function Group({ project, items, stats, busy, run }: {
             <td className="muted">{c.status}</td>
             <td>
               <span className="row-actions">
-                {busy === c.id ? <span className="spinner small" /> : !c.own && (
+                {busy === c.id ? <span className="spinner small" /> : !c.own && can("containers.manage") && (
                   live ? (
                     <button type="button" className="icon-btn" aria-label={`Stop ${c.name}`} title="Stop" onClick={() => run(c, "stop")}><Icon name="stop" /></button>
                   ) : c.state !== "paused" && (
                     <button type="button" className="icon-btn" aria-label={`Start ${c.name}`} title="Start" onClick={() => run(c, "start")}><Icon name="play_arrow" /></button>
                   )
                 )}
-                <MoreMenu label={`More for ${c.name}`} actions={moreActions(c, (a) => run(c, a), `#/containers/${c.id}/logs`)} />
+                <MoreMenu label={`More for ${c.name}`} actions={moreActions(c, (a) => run(c, a), can, `#/containers/${c.id}/logs`)} />
               </span>
             </td>
           </tr>
@@ -214,6 +216,7 @@ function ContainerPage({ id, page }: { id: string; page: string }) {
     return () => clearInterval(t);
   }, [load]);
   const { busy, run } = useContainerAction(load);
+  const can = useCan();
 
   if (!c) return problem ? <Callout tone="bad" icon="error">{problem}</Callout> : null;
   const live = c.state === "running";
@@ -234,12 +237,12 @@ function ContainerPage({ id, page }: { id: string; page: string }) {
         </div>
         <div className="page-actions">
           {busy && <span className="spinner small" />}
-          {!c.own && (live ? (
+          {!c.own && can("containers.manage") && (live ? (
             <button type="button" className="btn" disabled={!!busy} onClick={() => act("stop")}><Icon name="stop" size={18} />Stop</button>
           ) : c.state !== "paused" && (
             <button type="button" className="btn primary" disabled={!!busy} onClick={() => act("start")}><Icon name="play_arrow" size={18} />Start</button>
           ))}
-          <MoreMenu label="More" actions={moreActions(c, act)} />
+          <MoreMenu label="More" actions={moreActions(c, act, can)} />
         </div>
       </div>
       <SubNav back="#/containers" backLabel="Containers" base={`#/containers/${c.id}`} items={PAGES} current={current} />

@@ -110,7 +110,7 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
   return (
     <form onSubmit={submit}>
       <StepHead title={create ? "Create the admin account" : "Sign in"}
-        sub={create ? "The account that runs this dashboard." : auth.setup.cloudflare ? "Sign in with the admin account." : "Sign in with the admin account to carry on with setup."} />
+        sub={create ? "The account that runs this dashboard." : auth.setup.cloudflare ? "Sign in with the admin account, or an account allowed on the dashboard." : "Sign in with the admin account to carry on with setup."} />
       {create && (
         <>
           <TextField label="Email" type="email" autoFocus autoComplete="email" value={email} onChange={setEmail} />

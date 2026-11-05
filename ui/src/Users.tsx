@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ago, api, LEVELS, list, message, shortId, strength, type Device, type Route, type SignIn, type User } from "./api";
+import { ago, api, LEVELS, list, message, shortId, strength, type Device, type Group, type Me, type Route, type SignIn, type User } from "./api";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
 import { Dropdown } from "./Dropdown";
-import { AddMenu, Avatar, Dialog, LogTable, MoreMenu, SubNav, TextField, useNotify, type LogEntry } from "./ui";
+import { useCan } from "./me";
+import { AddMenu, Avatar, Callout, Card, Dialog, LogTable, MoreMenu, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
 
 function state(u: User): [string, string] {
   if (u.note) return ["bad", "Held for review"];
@@ -14,6 +15,7 @@ function state(u: User): [string, string] {
 export function Users({ users, routes }: { users: User[] | null; routes: Route[] }) {
   const asking = routes.filter((r) => r.require_login).length;
   const held = users?.filter((u) => u.note).length ?? 0;
+  const can = useCan();
   return (
     <>
       <div className="page-head">
@@ -26,7 +28,7 @@ export function Users({ users, routes }: { users: User[] | null; routes: Route[]
           </div>
         </div>
         <div className="page-actions">
-          <a className="btn primary" href="#/users/new"><Icon name="add" size={18} />New user</a>
+          {can("users.manage") && <a className="btn primary" href="#/users/new"><Icon name="add" size={18} />New user</a>}
         </div>
       </div>
       <div className="page-body stack">
@@ -34,8 +36,8 @@ export function Users({ users, routes }: { users: User[] | null; routes: Route[]
           <div className="card welcome">
             <Icon name="group" size={40} />
             <h2>No accounts yet</h2>
-            <p className="muted">Add an account, then turn on Sign-in for the tunnels it should open.</p>
-            <a className="btn primary" href="#/users/new"><Icon name="add" size={18} />New user</a>
+            <p className="muted">Add an account, then pick its permissions and the tunnels it may open.</p>
+            {can("users.manage") && <a className="btn primary" href="#/users/new"><Icon name="add" size={18} />New user</a>}
           </div>
         )}
         {users && users.length > 0 && (
@@ -189,12 +191,14 @@ export function NewUser({ devices, onAdded }: { devices: Device[]; onAdded: () =
 
 const USER_PAGES: [string, string, IconName][] = [
   ["profile", "Profile", "person"],
-  ["access", "Access", "shield"],
+  ["permissions", "Permissions", "key"],
+  ["access", "Tunnels and devices", "shield"],
   ["activity", "Activity", "history"],
 ];
 
-export function UserPage({ user, page, routes, devices, onChanged }: { user: User; page: string; routes: Route[]; devices: Device[]; onChanged: () => Promise<void> }) {
+export function UserPage({ user, page, routes, devices, catalog, me, onChanged }: { user: User; page: string; routes: Route[]; devices: Device[]; catalog: Group[]; me: Me; onChanged: () => Promise<void> }) {
   const notify = useNotify();
+  const can = useCan();
   const current = USER_PAGES.some(([k]) => k === page) ? page : "profile";
   const [tone, label] = state(user);
   const theirs = routes.filter((r) => user.route_ids.includes(r.id));
@@ -232,13 +236,13 @@ export function UserPage({ user, page, routes, devices, onChanged }: { user: Use
           </div>
         </div>
         <div className="page-actions">
-          <MoreMenu label="Account actions" actions={[
+          {can("users.manage") && <MoreMenu label="Account actions" actions={[
             user.enabled
               ? { label: "Turn off", icon: "block", onClick: () => quietly({ enabled: false }, "Turned off") }
               : { label: user.note ? "Unlock" : "Turn on", icon: "check_circle", onClick: () => quietly({ enabled: true }, user.note ? "Unlocked" : "Turned on") },
             { label: "Sign out everywhere", icon: "logout", onClick: () => api.signOutUser(user.id).then(() => notify("Signed out everywhere")).catch((e) => notify(message(e), "bad")) },
-            { label: "Remove", icon: "delete", danger: true, confirm: "Remove for good", onClick: remove },
-          ]} />
+            ...(can("users.delete") ? [{ label: "Remove", icon: "delete" as IconName, danger: true, confirm: "Remove for good", onClick: remove }] : []),
+          ]} />}
         </div>
       </div>
       <SubNav back="#/users" backLabel="Users" base={`#/users/${user.id}`} items={USER_PAGES} current={current} />
@@ -252,6 +256,8 @@ export function UserPage({ user, page, routes, devices, onChanged }: { user: Use
         )}
 
         {current === "profile" && <Profile user={user} edit={edit} />}
+
+        {current === "permissions" && <Permissions user={user} catalog={catalog} me={me} onSet={(permissions) => quietly({ permissions })} />}
 
         {current === "access" && (
           <div className="profile-grid">
@@ -310,6 +316,34 @@ export function UserPage({ user, page, routes, devices, onChanged }: { user: Use
 
         {current === "activity" && <Activity user={user} />}
       </div>
+    </>
+  );
+}
+
+// Permissions are what an account may do on the dashboard, a card per
+// feature. Anyone but the admin can give only what they hold themselves, and
+// no one changes their own.
+function Permissions({ user, catalog, me, onSet }: { user: User; catalog: Group[]; me: Me; onSet: (permissions: string[]) => void }) {
+  const can = useCan();
+  const self = me.id === user.id;
+  const has = (key: string) => user.permissions.includes(key);
+  const set = (key: string, on: boolean) => onSet(on ? [...user.permissions, key] : user.permissions.filter((k) => k !== key));
+  return (
+    <>
+      {self ? (
+        <Callout icon="info">These are your own permissions. Someone else who manages accounts changes them.</Callout>
+      ) : !has("dashboard") && (
+        <Callout icon="info">Until Sign in to the dashboard is on, these apply only to git and Code's address, through Code's permissions.</Callout>
+      )}
+      {catalog.map((g) => (
+        <Card key={g.label} title={g.label}>
+          {g.permissions.map((p) => (
+            <Row key={p.key} title={p.label} sub={p.hint || undefined}>
+              <Switch label={p.label} on={has(p.key)} disabled={self || !can("users.manage") || !can(p.key)} onChange={(v) => set(p.key, v)} />
+            </Row>
+          ))}
+        </Card>
+      ))}
     </>
   );
 }
