@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { api, message, type ContainerStats, type Metrics } from "./api";
-import { Callout, Card } from "./ui";
+import { Icon } from "./Icon";
+import { Callout } from "./ui";
 
-// Chart colours, in a fixed order: the first three categorical slots.
+// Chart colours, in a fixed order: blue, magenta, orange.
 const BLUE = "var(--s1)";
-const ORANGE = "var(--s2)";
-const AQUA = "var(--s3)";
+const MAGENTA = "var(--s2)";
+const ORANGE = "var(--s3)";
 
-// DashboardPage reads out the host and its containers, refreshed as often as
-// the server samples them.
+// DashboardPage reads out the host and its containers as widgets, refreshed as
+// often as the server samples them.
 export function DashboardPage() {
   const [m, setM] = useState<Metrics | null>(null);
   const [problem, setProblem] = useState("");
@@ -45,7 +46,6 @@ export function DashboardPage() {
           {m && (
             <div className="page-sub">
               {m.host.name && <b>{m.host.name}</b>}
-              {m.host.os && <span>{m.host.os}</span>}
               <span>Up {duration(m.uptime)}</span>
               {m.load && <span>Load {m.load.map((n) => n.toFixed(2)).join("  ")}</span>}
             </div>
@@ -58,114 +58,218 @@ export function DashboardPage() {
   );
 }
 
+function Widget({ title, note, action, wide, full, flush, children }: {
+  title: string;
+  note?: ReactNode;
+  action?: ReactNode;
+  wide?: boolean;
+  full?: boolean;
+  flush?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section className={"widget" + (wide ? " wide" : "") + (full ? " full" : "")}>
+      <div className="widget-head">
+        <h2>{title}</h2>
+        {note && <small>{note}</small>}
+        {action}
+      </div>
+      <div className={"widget-body" + (flush ? " flush" : "")}>{children}</div>
+    </section>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="kv">
+      <span className="kv-label">{label}</span>
+      <span className="kv-value">{value || <span className="muted">Unknown</span>}</span>
+    </div>
+  );
+}
+
 function Board({ m }: { m: Metrics }) {
   const h = m.history;
   const last = h[h.length - 1];
   const times = h.map((s) => s.at);
   const hasTemp = h.some((s) => s.temp !== null);
+  const coreTemps = m.cores.map((c) => c.temp);
+  const hasCoreTemps = coreTemps.some((t) => t !== null);
   const chart = { times, keep: m.keep, every: m.every };
-  const memPct = m.memory_total ? (last.memory / m.memory_total) * 100 : 0;
   const netTop = nice(Math.max(...h.map((s) => Math.max(s.rx, s.tx))));
+  const free = Math.max(0, m.memory_total - last.memory);
 
   return (
-    <div className="page-body stack">
-      <div className="tally four stat-tiles">
-        <Stat label="CPU" value={pct(last.cpu)} sub={cpuSub(m)} values={h.map((s) => s.cpu)} max={100} {...chart} color={BLUE} />
-        <Stat label="Memory" value={pct(memPct)} sub={`${bytes(last.memory)} of ${bytes(m.memory_total)}`}
-          values={h.map((s) => s.memory)} max={m.memory_total} {...chart} color={ORANGE} />
-        <Stat label="Temperature" value={last.temp === null ? "None" : degrees(last.temp)}
-          sub={hasTemp ? "Processor" : "No sensor visible"} values={h.map((s) => s.temp ?? 0)} max={100} {...chart} color={AQUA} />
-        <Stat label="Network" value={`↓ ${rate(last.rx)}`} sub={`↑ ${rate(last.tx)}`}
-          values={h.map((s) => s.rx + s.tx)} max={nice(Math.max(...h.map((s) => s.rx + s.tx)))} {...chart} color={BLUE} />
-      </div>
-
-      <div className="dash-grid">
-        <Card title="CPU usage" action={<span className="chart-now">{pct(last.cpu)}</span>}>
-          <Chart {...chart} max={100} format={pct} lines={[{ label: "CPU", color: BLUE, values: h.map((s) => s.cpu) }]} />
-        </Card>
-        <Card title="Memory" action={<span className="chart-now">{bytes(last.memory)}</span>}>
-          <Chart {...chart} max={m.memory_total || 1} format={bytes}
-            lines={[{ label: "Memory", color: ORANGE, values: h.map((s) => s.memory) }]} />
-        </Card>
-        <Card title="Network" action={<Legend items={[["Download", BLUE], ["Upload", ORANGE]]} />}>
-          <Chart {...chart} max={netTop} format={rate}
-            lines={[{ label: "Download", color: BLUE, values: h.map((s) => s.rx) }, { label: "Upload", color: ORANGE, values: h.map((s) => s.tx) }]} />
-        </Card>
-        <Card title="Temperature" action={last.temp !== null && <span className="chart-now">{degrees(last.temp)}</span>}>
-          {hasTemp ? (
-            <Chart {...chart} max={Math.max(100, nice(Math.max(...h.map((s) => s.temp ?? 0))))} format={degrees}
-              lines={[{ label: "Processor", color: AQUA, values: h.map((s) => s.temp) }]} />
-          ) : (
-            <p className="card-pad empty-note">No temperature sensors are visible to myTunnels on this host.</p>
-          )}
-        </Card>
-      </div>
-
-      <Card title="Cores" sub={m.host.cpu ?? undefined}>
-        <div className="cores">
-          {m.cores.map((c, i) => (
-            <div className="core" key={i}>
-              <div className="core-top">
-                <span>CPU {i}</span>
-                {c.temp !== null && <span className={"chip " + heat(c.temp)}>{degrees(c.temp)}</span>}
-              </div>
-              <b>{pct(c.usage)}</b>
-              <Spark values={h.map((s) => s.cores[i] ?? 0)} max={100} {...chart} color={BLUE} />
-              <small>{c.mhz ? `${(c.mhz / 1000).toFixed(2)} GHz` : " "}</small>
-            </div>
-          ))}
+    <div className="page-body widgets">
+      <Widget title="System Information" wide flush>
+        <div className="system">
+          <div className="system-mark">
+            <Icon name="dns" size={56} />
+            <b>{m.host.name ?? "This host"}</b>
+            <span className="chip ok">Online</span>
+          </div>
+          <div className="system-facts">
+            <Fact label="Platform" value={m.host.os} />
+            <Fact label="Kernel" value={m.host.kernel} />
+            <Fact label="Processor" value={m.host.cpu} />
+            <Fact label="Architecture" value={m.host.arch} />
+            <Fact label="Docker" value={m.host.docker} />
+            <Fact label="Uptime" value={duration(m.uptime)} />
+          </div>
         </div>
-      </Card>
+      </Widget>
 
-      <Card title="Containers" sub={m.docker.reachable ? count(m.docker.containers) : undefined}>
+      <Widget title="CPU Usage">
+        <Gauge value={last.cpu} label="Avg usage" />
+        <p className="gauge-foot">{cpuSub(m)}</p>
+      </Widget>
+
+      <Widget title="Memory">
+        <div className="donut">
+          <div>
+            <div className="donut-big">{bytes(m.memory_total).split(" ")[0]}<small>{bytes(m.memory_total).split(" ")[1]}</small></div>
+            <p className="donut-sub">total available</p>
+            <ul className="donut-legend">
+              <li><i style={{ background: BLUE }} />In use: <b>{bytes(last.memory)}</b></li>
+              <li><i style={{ background: MAGENTA }} />Free: <b>{bytes(free)}</b></li>
+              {m.swap_total > 0 && <li><i style={{ background: ORANGE }} />Swap: <b>{bytes(last.swap)} of {bytes(m.swap_total)}</b></li>}
+            </ul>
+          </div>
+          <Donut parts={[{ value: last.memory, color: BLUE }, { value: free, color: MAGENTA }]} />
+        </div>
+      </Widget>
+
+      <Widget title="CPU Usage Per Core" note={`${m.cores.length} threads`} wide>
+        <Bars values={m.cores.map((c) => c.usage)} max={100} format={(n) => `${Math.round(n)}`} />
+      </Widget>
+
+      {hasCoreTemps && (
+        <Widget title="CPU Temperature Per Core" wide>
+          <Bars heat values={coreTemps.map((t) => t ?? 0)} max={Math.max(100, nice(Math.max(...coreTemps.map((t) => t ?? 0))))} format={(n) => `${Math.round(n)}`} />
+        </Widget>
+      )}
+
+      <Widget title="CPU Recent Usage" wide action={<span className="chart-now">{pct(last.cpu)}</span>}>
+        <Chart {...chart} max={100} format={pct} lines={[{ label: "CPU", color: BLUE, values: h.map((s) => s.cpu) }]} />
+      </Widget>
+
+      <Widget title="Network" wide action={<Legend items={[[`In ${rate(last.rx)}`, BLUE], [`Out ${rate(last.tx)}`, ORANGE]]} />}>
+        <Chart {...chart} max={netTop} format={rate}
+          lines={[{ label: "In", color: BLUE, values: h.map((s) => s.rx) }, { label: "Out", color: ORANGE, values: h.map((s) => s.tx) }]} />
+      </Widget>
+
+      <Widget title="Temperature" action={last.temp !== null && <span className="chart-now">{degrees(last.temp)}</span>}>
+        {hasTemp ? (
+          <Chart {...chart} max={Math.max(100, nice(Math.max(...h.map((s) => s.temp ?? 0))))} format={degrees}
+            lines={[{ label: "Processor", color: MAGENTA, values: h.map((s) => s.temp) }]} />
+        ) : (
+          <p className="empty-note">No temperature sensors are visible to myTunnels on this host.</p>
+        )}
+      </Widget>
+
+      <Widget title="Disks" wide flush>
+        {m.disks.length ? (
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th className="grow">Mount</th><th>Used</th><th>Free</th><th>Size</th></tr></thead>
+              <tbody>
+                {m.disks.map((d) => {
+                  const used = d.total - d.available;
+                  return (
+                    <tr key={d.name + d.mount}>
+                      <td className="name-cell"><span className="mono">{d.mount}</span><small>{d.name} · {d.fs}</small></td>
+                      <td><Meter value={used} max={d.total} label={pct((used / d.total) * 100)} /></td>
+                      <td className="num">{bytes(d.available)}</td>
+                      <td className="num">{bytes(d.total)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="empty-note card-pad">No disks found.</p>}
+      </Widget>
+
+      <Widget title="Sensors" flush>
+        {m.sensors.length ? (
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th className="grow">Sensor</th><th>Reading</th></tr></thead>
+              <tbody>
+                {m.sensors.map((s) => (
+                  <tr key={s.label}>
+                    <td>{s.label}</td>
+                    <td><Meter value={s.temp} max={s.critical ?? s.max ?? 100} label={degrees(s.temp)} tone={heat(s.temp)} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="empty-note card-pad">No sensors are visible to myTunnels on this host.</p>}
+      </Widget>
+
+      <Widget title="Containers" note={m.docker.reachable ? count(m.docker.containers) : undefined} full flush
+        action={<a className="btn small" href="#/containers">Manage</a>}>
         {m.docker.reachable
           ? <Containers list={m.docker.containers} keep={m.keep} hostMemory={m.memory_total} />
-          : <p className="card-pad empty-note">Docker is not reachable: {m.docker.error}</p>}
-      </Card>
-
-      <div className="dash-grid">
-        <Card title="Disks">
-          {m.disks.length ? (
-            <div className="table-wrap">
-              <table className="table">
-                <thead><tr><th className="grow">Mount</th><th>Used</th><th>Free</th><th>Size</th></tr></thead>
-                <tbody>
-                  {m.disks.map((d) => {
-                    const used = d.total - d.available;
-                    return (
-                      <tr key={d.name + d.mount}>
-                        <td className="name-cell"><span className="mono">{d.mount}</span><small>{d.name} · {d.fs}</small></td>
-                        <td><Meter value={used} max={d.total} label={pct((used / d.total) * 100)} /></td>
-                        <td className="num">{bytes(d.available)}</td>
-                        <td className="num">{bytes(d.total)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : <p className="card-pad empty-note">No disks found.</p>}
-        </Card>
-        <Card title="Sensors">
-          {m.sensors.length ? (
-            <div className="table-wrap">
-              <table className="table">
-                <thead><tr><th className="grow">Sensor</th><th>Reading</th><th>Critical</th></tr></thead>
-                <tbody>
-                  {m.sensors.map((s) => (
-                    <tr key={s.label}>
-                      <td>{s.label}</td>
-                      <td><Meter value={s.temp} max={s.critical ?? s.max ?? 100} label={degrees(s.temp)} tone={heat(s.temp)} /></td>
-                      <td className="num muted">{s.critical ? degrees(s.critical) : ""}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : <p className="card-pad empty-note">No sensors are visible to myTunnels on this host.</p>}
-        </Card>
-      </div>
+          : <p className="empty-note card-pad">Docker is not reachable: {m.docker.error}</p>}
+      </Widget>
     </div>
+  );
+}
+
+// Gauge is a ring filled to a share, the figure and what it is in its middle.
+function Gauge({ value, label }: { value: number; label: string }) {
+  const r = 62;
+  const c = 2 * Math.PI * r;
+  const share = Math.min(Math.max(value / 100, 0), 1);
+  return (
+    <div className="gauge">
+      <svg viewBox="0 0 150 150" role="img" aria-label={`${pct(value)} ${label}`}>
+        <circle className="gauge-track" cx="75" cy="75" r={r} />
+        <circle className="gauge-fill" cx="75" cy="75" r={r} strokeDasharray={c} strokeDashoffset={c * (1 - share)} transform="rotate(-90 75 75)" />
+        <text className="gauge-value" x="75" y="78" textAnchor="middle">{pct(value)}</text>
+        <text className="gauge-label" x="75" y="98" textAnchor="middle">{label}</text>
+      </svg>
+    </div>
+  );
+}
+
+// Donut is shares of a whole as arcs of a ring.
+function Donut({ parts }: { parts: { value: number; color: string }[] }) {
+  const r = 56;
+  const c = 2 * Math.PI * r;
+  const total = parts.reduce((n, p) => n + p.value, 0) || 1;
+  let offset = 0;
+  return (
+    <svg viewBox="0 0 150 150" aria-hidden="true">
+      {parts.map((p, i) => {
+        const len = (p.value / total) * c;
+        const arc = (
+          <circle key={i} cx="75" cy="75" r={r} fill="none" stroke={p.color} strokeWidth="26"
+            strokeDasharray={`${len} ${c - len}`} strokeDashoffset={-offset} transform="rotate(-90 75 75)" />
+        );
+        offset += len;
+        return arc;
+      })}
+    </svg>
+  );
+}
+
+// Bars is a bar per value, on a scale from nothing to `max`.
+function Bars({ values, max, format, heat }: { values: number[]; max: number; format: (n: number) => string; heat?: boolean }) {
+  return (
+    <>
+      <div className={"bars" + (heat ? " heat" : "")}>
+        <div className="bars-scale">{[1, 0.75, 0.5, 0.25, 0].map((f) => <span key={f}>{format(max * f)}</span>)}</div>
+        <div className="bars-plot">
+          {values.map((v, i) => (
+            <span key={i} style={{ height: `${Math.min(Math.max(v / (max || 1), 0), 1) * 100}%` }} title={`${i}: ${format(v)}${heat ? "°C" : "%"}`} />
+          ))}
+        </div>
+      </div>
+      <div className="bars-axis"><span>0</span><span>{values.length - 1}</span></div>
+    </>
   );
 }
 
@@ -212,17 +316,6 @@ interface Span {
   times: number[];
   keep: number;
   every: number;
-}
-
-function Stat({ label, value, sub, values, max, color, ...w }: Span & { label: string; value: string; sub: string; values: number[]; max: number; color: string }) {
-  return (
-    <div className="tally-item stat">
-      <span>{label}</span>
-      <b>{value}</b>
-      <small>{sub}</small>
-      <Spark values={values} max={max} color={color} {...w} />
-    </div>
-  );
 }
 
 // Points sit in fixed slots, the newest at the right edge, so a short history

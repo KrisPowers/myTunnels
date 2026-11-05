@@ -16,12 +16,13 @@ import { NewTunnel, target, TunnelPage, Tunnels } from "./Tunnels";
 import { NewUser, UserPage, Users } from "./Users";
 import { OAuth } from "./OAuth";
 import { TwoFactorPage } from "./TwoFactor";
-import { Callout, Notices } from "./ui";
+import { Callout, Notices, Tooltips } from "./ui";
 
 export function App() {
   return (
     <Notices>
       <Root />
+      <Tooltips />
     </Notices>
   );
 }
@@ -71,6 +72,23 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const [status, setStatus] = useState<Status | null>(null);
   const [providers, setProviders] = useState<OAuthProvider[]>([]);
   const [drawer, setDrawer] = useState(false);
+  // On wide windows the menu folds the sidebar to its icons, remembered here.
+  const [rail, setRail] = useState(() => {
+    try {
+      return localStorage.getItem("nav.rail") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const menu = () => {
+    if (matchMedia("(max-width: 900px)").matches) return setDrawer((d) => !d);
+    setRail(!rail);
+    try {
+      localStorage.setItem("nav.rail", rail ? "0" : "1");
+    } catch {
+      // Kept until the page closes.
+    }
+  };
 
   const load = useCallback(async () => {
     const [r, d, u, s, o] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status(), api.oauth()]);
@@ -175,14 +193,14 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const sections = view === "settings" ? settings : view === "docs" ? DOCS : null;
   const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
     <NavItem key={key} to={to} icon={icon} label={label} on={view === key || (key === "tunnels" && view === "new")}
-      count={key === "devices" ? pending || undefined : undefined} />
+      count={key === "devices" ? pending || undefined : undefined} rail={rail} />
   );
 
   return (
-    <div className="app">
+    <div className={"app" + (rail ? " rail" : "")}>
       <header className="header">
         <div className="header-start">
-          <button type="button" className="icon-btn menu-btn" aria-label="Menu" aria-expanded={drawer} onClick={() => setDrawer((d) => !d)}>
+          <button type="button" className="icon-btn menu-btn" aria-label="Menu" aria-expanded={drawer || !rail} onClick={menu}>
             <Icon name="menu" />
           </button>
           <a className="brand" href="#/"><span className="brand-mark"><Icon name="public" size={20} /></span><span className="brand-name">myTunnels</span></a>
@@ -192,6 +210,8 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {can("tunnels.create") && <a className={"icon-btn" + (view === "new" ? " on" : "")} href="#/new" aria-label="New tunnel" title="New tunnel"><Icon name="add" /></a>}
           <a className={"icon-btn" + (view === "docs" ? " on" : "")} href="#/docs" aria-label="Help" title="Help"><Icon name="help" /></a>
           <a className={"icon-btn" + (view === "settings" ? " on" : "")} href="#/settings" aria-label="Settings" title="Settings"><Icon name="settings" /></a>
+          <span className="header-user" title={me.admin ? "Admin" : "Signed in"}><Icon name="person" size={18} />{me.name || "Admin"}</span>
+          <button type="button" className="icon-btn" aria-label="Sign out" title="Sign out" onClick={onSignOut}><Icon name="logout" /></button>
         </div>
       </header>
 
@@ -202,7 +222,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
               <a className="nav-back" href="#/"><Icon name="arrow_back" /><span>Dashboard</span></a>
               <hr className="nav-rule" />
               {sections.map(([key, label, icon], i) => (
-                <NavItem key={key} to={`#/${view}/${key}`} icon={icon} label={label} on={id === key || (!id && i === 0)} quiet />
+                <NavItem key={key} to={`#/${view}/${key}`} icon={icon} label={label} on={id === key || (!id && i === 0)} quiet rail={rail} />
               ))}
             </>
           ) : (
@@ -269,9 +289,9 @@ function NavGroup({ id, label, children }: { id: string; label: string; children
   );
 }
 
-function NavItem({ to, icon, label, on, quiet, count }: { to: string; icon: IconName; label: string; on: boolean; quiet?: boolean; count?: number }) {
+function NavItem({ to, icon, label, on, quiet, count, rail }: { to: string; icon: IconName; label: string; on: boolean; quiet?: boolean; count?: number; rail?: boolean }) {
   return (
-    <a className={"nav-item" + (quiet ? " quiet" : "") + (on ? " on" : "")} href={to} aria-current={on ? "page" : undefined}>
+    <a className={"nav-item" + (quiet ? " quiet" : "") + (on ? " on" : "")} href={to} aria-current={on ? "page" : undefined} title={rail ? label : undefined}>
       <Icon name={icon} />
       <span className="nav-label">{label}</span>
       {count !== undefined && <span className="nav-count">{count}</span>}
