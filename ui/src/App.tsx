@@ -242,15 +242,15 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "media" && <MediaPage />}
           {view === "drive" && <DrivePage />}
           {view === "containers" && <ContainersPage id={id} page={page} />}
-          {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} />}
-          {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
+          {view === "new" && <NewTunnel users={users ?? []} providers={providers} codes={!!status?.email_codes} onPublished={load} />}
+          {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} codes={!!status?.email_codes} onChanged={load} />}
           {view === "devices" && !id && <Devices devices={devices} routes={apps ?? []} onChanged={load} />}
           {device && <DevicePage device={device} routes={apps ?? []} users={users ?? []} onChanged={load} />}
           {view === "users" && !id && <Users users={users} routes={apps ?? []} />}
           {view === "users" && id === "new" && <NewUser devices={devices ?? []} onAdded={load} />}
           {user && <UserPage user={user} page={page} routes={apps ?? []} devices={devices ?? []} catalog={catalog} me={me} onChanged={load} />}
           {view === "oauth" && <OAuth />}
-          {view === "twofactor" && <TwoFactorPage routes={apps ?? []} onChanged={load} />}
+          {view === "twofactor" && <TwoFactorPage onChanged={load} />}
           {view === "settings" && <Settings sections={settings} section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
           {view === "docs" && <Docs section={id} />}
         </main>
