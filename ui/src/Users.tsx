@@ -278,7 +278,7 @@ function Permissions({ user, catalog, me, onSet }: { user: User; catalog: Group[
       {self ? (
         <Callout icon="info">These are your own permissions. Someone else who manages accounts changes them.</Callout>
       ) : !has("dashboard") && (
-        <Callout icon="info">Until Sign in to the dashboard is on, these apply only to git and Code's address, through Code's permissions.</Callout>
+        <Callout icon="info">Until Sign in to the dashboard is on, these apply only to git, through its Git permissions.</Callout>
       )}
       {catalog.map((g) => (
         <Card key={g.label} title={g.label}>
