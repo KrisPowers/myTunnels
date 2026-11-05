@@ -8,9 +8,9 @@ export interface Route {
   hostname: string;
   target_host: string | null;
   target_port: number;
-  // "storage" is the Storage page's address and "dashboard" this dashboard,
-  // both served by myTunnels itself.
-  target_scheme: "http" | "https" | "storage" | "dashboard";
+  // "code" is Code's address and "dashboard" this dashboard, both served by
+  // myTunnels itself.
+  target_scheme: "http" | "https" | "code" | "dashboard";
   require_lan: boolean;
   require_device: boolean;
   require_password: boolean;
@@ -222,29 +222,33 @@ export interface ContainerDetail {
 
 export type ContainerAction = "start" | "stop" | "restart" | "pause" | "unpause" | "kill";
 
-// Storage: one folder of the host, opened on the dashboard and at its own
-// address. Paths are `/`-separated under that folder, "" for the folder itself;
-// host paths start at the top of the host, with a drive (`C:/Users`) where it
-// has drives.
-export interface StorageRule {
+// Code: git repositories, browsed here and at Code's own address, and used
+// with git over HTTPS signing in with a token.
+export interface Repo { name: string; branch: string; updated: number | null; empty: boolean; write: boolean }
+
+export interface RepoRule {
   id: string;
   // An account, or "*" for everyone who gets through.
   user_id: string;
-  path: string;
+  // A repository's name, or "" for every one.
+  repo: string;
   mode: "read" | "write";
   created_at: number;
 }
 
-export interface StorageState {
-  enabled: boolean;
-  path: string | null;
-  display: string | null;
-  drives: boolean;
-  route: Route | null;
-  rules: StorageRule[];
-}
+export interface GitToken { id: string; name: string; owner: string; created_at: number; last_used: number | null }
 
-export interface HostFolder { path: string; display: string; parent: string | null; folders: string[] }
+export interface CodeState { route: Route | null; rules: RepoRule[]; tokens: GitToken[] }
+
+export interface Refs { default: string; branches: { name: string; updated: number }[]; tags: { name: string; updated: number }[] }
+
+export interface TreeEntry { name: string; kind: "dir" | "file" | "module"; size: number | null }
+
+export interface BlobView { size: number; binary: boolean; too_big: boolean; text: string | null }
+
+export interface CommitLine { id: string; author: string; email: string; at: number; subject: string }
+
+export interface CommitView { id: string; parents: string[]; author: string; email: string; at: number; message: string; patch: string; truncated: boolean }
 
 export interface FileEntry { name: string; dir: boolean; size: number; modified: number }
 
@@ -254,14 +258,13 @@ export interface Listing {
   access: "browse" | "read" | "write";
   entries: FileEntry[];
   space: { free: number; total: number } | null;
-  // At the storage address, the account signed in.
   user: string | null;
 }
 
-// Where files are: File System's folder, or the Media and Drive collections.
-export type Space = "storage" | "media" | "drive";
+// Where files are: the Media and Drive collections.
+export type Space = "media" | "drive";
 
-export const fileUrl = (path: string, inline = false, space: Space = "storage") =>
+export const fileUrl = (path: string, inline: boolean, space: Space) =>
   `/api/${space}/fs/file?path=${encodeURIComponent(path)}${inline ? "&inline=true" : ""}`;
 
 // A photo's or video's preview in Media.
@@ -384,15 +387,34 @@ export const api = {
   userActivity: (id: string) => call<SignIn[]>(`/users/${id}/activity`),
   deviceActivity: (id: string) => call<SignIn[]>(`/devices/${id}/activity`),
 
-  storage: () => call<StorageState>("/storage"),
-  saveStorage: (body: { enabled?: boolean; path?: string }) => call<StorageState>("/storage", "PUT", body),
-  browseHost: (path: string) => call<HostFolder>(`/storage/browse?path=${encodeURIComponent(path)}`),
-  addRule: (body: { user_id: string; path: string; mode: StorageRule["mode"] }) => call<StorageState>("/storage/rules", "POST", body),
-  editRule: (id: string, patch: Partial<Pick<StorageRule, "path" | "mode">>) => call<StorageState>(`/storage/rules/${id}`, "PATCH", patch),
-  removeRule: (id: string) => call<StorageState>(`/storage/rules/${id}`, "DELETE"),
+  code: () => call<CodeState>("/code"),
+  createRepo: (name: string) => call<{ repos: Repo[] }>("/code/repos", "POST", { name }),
+  removeRepo: (name: string) => call<{ repos: Repo[] }>(`/code/repos/${encodeURIComponent(name)}`, "DELETE"),
+  addRule: (body: { user_id: string; repo: string; mode: RepoRule["mode"] }) => call<CodeState>("/code/rules", "POST", body),
+  editRule: (id: string, patch: Partial<Pick<RepoRule, "repo" | "mode">>) => call<CodeState>(`/code/rules/${id}`, "PATCH", patch),
+  removeRule: (id: string) => call<CodeState>(`/code/rules/${id}`, "DELETE"),
+  addToken: (name: string, owner: string) => call<CodeState & { secret: string }>("/code/tokens", "POST", { name, owner }),
+  removeToken: (id: string) => call<CodeState>(`/code/tokens/${id}`, "DELETE"),
 };
 
-// The files in a space, the same calls on the dashboard and at the storage address.
+// Reading repositories, the same calls on the dashboard and at Code's address.
+const repoPath = (name: string, op: string, q: Record<string, string | number | undefined>) => {
+  const params = Object.entries(q).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join("&");
+  return `/code/repos/${encodeURIComponent(name)}/${op}${params ? "?" + params : ""}`;
+};
+
+export const repos = {
+  list: () => call<{ repos: Repo[]; user: string | null }>("/code/repos"),
+  refs: (name: string) => call<Refs>(repoPath(name, "refs", {})),
+  tree: (name: string, ref: string, path: string) => call<{ path: string; entries: TreeEntry[] }>(repoPath(name, "tree", { ref, path })),
+  blob: (name: string, ref: string, path: string) => call<BlobView>(repoPath(name, "blob", { ref, path })),
+  log: (name: string, ref: string, skip: number) => call<{ commits: CommitLine[]; more: boolean }>(repoPath(name, "log", { ref, skip })),
+  commit: (name: string, id: string) => call<CommitView>(repoPath(name, "commit", { ref: id })),
+};
+
+export const rawUrl = (name: string, ref: string, path: string) => "/api" + repoPath(name, "blob", { ref, path, raw: "true" });
+
+// The files in a collection.
 export const filesIn = (space: Space) => ({
   list: (path: string) => call<Listing>(`/${space}/fs/list?path=${encodeURIComponent(path)}`),
   folder: (path: string) => call<{ path: string }>(`/${space}/fs/folder`, "POST", { path }),
@@ -400,8 +422,6 @@ export const filesIn = (space: Space) => ({
   move: (paths: string[], to: string, copy: boolean) => call<{ done: number }>(`/${space}/fs/move`, "POST", { paths, to, copy }),
   remove: (paths: string[]) => call<{ done: number }>(`/${space}/fs/delete`, "POST", { paths }),
 });
-
-export const files = filesIn("storage");
 
 // Saves a preview made in the browser beside a photo or video in Media.
 export async function saveThumb(path: string, jpeg: Blob) {
@@ -435,7 +455,7 @@ function put(url: string, body: Blob, onSent: (bytes: number) => void): Promise<
 // upload sends a file to `path` in `space` piece by piece, picking up where the
 // server says it got to if a piece is lost. `onProgress` gets the bytes sent so
 // far. With `keepDate`, the file keeps the date it was last changed.
-export async function upload(file: File, path: string, replace: boolean, onProgress: (sent: number) => void, cancelled: () => boolean, space: Space = "storage", keepDate = false) {
+export async function upload(file: File, path: string, replace: boolean, onProgress: (sent: number) => void, cancelled: () => boolean, space: Space, keepDate = false) {
   const id = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
   let offset = 0;
   do {

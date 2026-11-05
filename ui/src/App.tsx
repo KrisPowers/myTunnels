@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode } from "react";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type OAuthProvider, type Route, type Status, type User } from "./api";
+import { CodePage } from "./Code";
 import { ContainersPage } from "./Containers";
 import { DashboardPage } from "./Dashboard";
 import { DevicePage, Devices } from "./Devices";
@@ -8,7 +9,6 @@ import { Icon, type IconName } from "./Icon";
 import { MediaPage } from "./Media";
 import { go, readHash } from "./route";
 import { SETTINGS, Settings } from "./Settings";
-import { StoragePage } from "./Storage";
 import { Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
 import { NewTunnel, target, TunnelPage, Tunnels } from "./Tunnels";
@@ -131,15 +131,15 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
 
   const { view, id, page } = place;
   const pending = devices?.filter((d) => d.status === "pending").length ?? 0;
-  // Storage's address is a tunnel kept on its own page.
-  const apps = routes?.filter((r) => r.target_scheme !== "storage") ?? null;
+  // Code's address is a tunnel kept on its own page.
+  const apps = routes?.filter((r) => r.target_scheme !== "code") ?? null;
   const route = view === "tunnels" && id ? apps?.find((r) => r.id === id) : undefined;
   const device = view === "devices" && id ? devices?.find((d) => d.id === id) : undefined;
   const user = view === "users" && id && id !== "new" ? users?.find((u) => u.id === id) : undefined;
 
   // A tunnel, device or account that is gone goes back to its list.
   useEffect(() => {
-    if (view === "tunnels" && id && routes && !route) go(routes.some((r) => r.id === id) ? "#/storage/access" : "#/");
+    if (view === "tunnels" && id && routes && !route) go(routes.some((r) => r.id === id) ? "#/code/access" : "#/");
     if (view === "devices" && id && devices && !device) go("#/devices");
     if (view === "users" && id && id !== "new" && users && !user) go("#/users");
   }, [view, id, routes, devices, users, route, device, user]);
@@ -183,7 +183,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
               <NavItem to="#/oauth" icon="key" label="Third-Party OAuth" on={view === "oauth"} />
               <NavItem to="#/twofactor" icon="lock" label="Two-Factor Auth" on={view === "twofactor"} />
               <NavGroup id="storage" label="Storage & Media">
-                <NavItem to="#/storage" icon="hard_drive" label="File System" on={view === "storage"} />
+                <NavItem to="#/code" icon="code" label="Code" on={view === "code"} />
                 <NavItem to="#/media" icon="photo_library" label="Media" on={view === "media"} />
                 <NavItem to="#/drive" icon="cloud" label="Drive" on={view === "drive"} />
               </NavGroup>
@@ -194,7 +194,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
 
         <main className="page" key={view + id}>
           {view === "tunnels" && !id && <Tunnels routes={apps} status={status} />}
-          {view === "storage" && <StoragePage page={id} users={users ?? []} providers={providers} onChanged={load} />}
+          {view === "code" && <CodePage id={id} page={page} users={users ?? []} providers={providers} onChanged={load} />}
           {view === "dashboard" && <DashboardPage />}
           {view === "media" && <MediaPage />}
           {view === "drive" && <DrivePage />}

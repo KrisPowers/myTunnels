@@ -941,136 +941,21 @@ a.result:hover { background: var(--hover); }
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
 }
 
-/* ---- Storage: a file explorer laid out like Windows' ---- */
-.explorer {
-  display: flex; flex-direction: column; height: calc(100vh - 250px); min-height: 460px;
-  border: 1px solid var(--line); border-radius: var(--card-round); background: var(--bg); overflow: hidden;
-}
-.explorer:focus { outline: none; }
-.explorer:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* ---- Pieces Media, Drive and Code share ---- */
 .ex-grow { flex: 1; }
 .icon.flip { transform: rotate(180deg); }
-
-/* Back, forward, up and refresh, the address bar, then search. */
-.ex-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-.ex-nav { display: flex; align-items: center; }
-.ex-nav .icon-btn { width: 36px; height: 36px; }
-.ex-address {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: 2px; height: 36px; padding: 0 8px;
-  border-radius: var(--round); background: var(--field); color: var(--text-2); overflow-x: auto; scrollbar-width: none; cursor: text;
-}
-.ex-address::-webkit-scrollbar { display: none; }
-.ex-address > .icon { flex-shrink: 0; margin-right: 4px; }
-.ex-address.typing input { flex: 1; min-width: 0; height: 100%; border: 0; background: transparent; color: var(--text); font: inherit; }
-.ex-address.typing input:focus { outline: none; }
-.ex-address.typing { box-shadow: inset 0 0 0 2px var(--accent); }
 .ex-crumb-wrap { display: inline-flex; align-items: center; flex-shrink: 0; }
 .ex-crumb-sep { color: var(--text-3); }
-.ex-crumb {
-  height: 28px; padding: 0 8px; border: 0; border-radius: var(--radius); background: transparent;
-  color: var(--text); font: inherit; white-space: nowrap; cursor: pointer;
-}
-.ex-crumb:hover { background: var(--hover); }
-.ex-crumb.drop { background: var(--accent-bg); color: var(--on-accent-bg); }
-.ex-search {
-  display: flex; align-items: center; gap: 6px; width: min(260px, 40%); height: 36px; padding: 0 4px 0 10px;
-  border-radius: var(--round); background: var(--field); color: var(--text-2); box-shadow: inset 0 0 0 2px var(--accent);
-}
-.ex-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); font: inherit; }
-.ex-search input:focus { outline: none; }
-
-/* The command bar. */
-.ex-commands { display: flex; align-items: center; gap: 2px; padding: 6px 10px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
-.ex-commands .icon-btn { width: 36px; height: 36px; }
-.ex-cmd {
-  display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border: 0; border-radius: var(--round);
-  background: transparent; color: var(--text); font: 500 14px var(--font); white-space: nowrap; cursor: pointer;
-}
-.ex-cmd:hover { background: var(--hover); }
-.ex-cmd:disabled { opacity: .4; cursor: default; background: transparent; }
-.ex-cmd .icon { color: var(--text-2); }
-.ex-sep { width: 1px; height: 22px; margin: 0 6px; background: var(--line-strong); flex-shrink: 0; }
 .ex-pick .dropdown { height: 36px; min-width: 150px; border-radius: var(--round); }
 .ex-context .menu-item { gap: 14px; }
 .ex-context .menu-item .icon { color: var(--text-2); }
 .ex-context .menu-item.danger .icon { color: var(--bad); }
-
-/* Folders down the left, items on the right. */
-.ex-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 240px minmax(0, 1fr); }
-.ex-tree { overflow: auto; padding: 8px 6px; border-right: 1px solid var(--line); }
-.ex-node { display: flex; align-items: center; gap: 2px; height: 32px; border-radius: var(--round); }
-.ex-node:hover { background: var(--hover); }
-.ex-node.on { background: var(--nav-on); color: var(--on-nav-on); }
-.ex-twist {
-  display: grid; place-items: center; width: 22px; height: 22px; flex-shrink: 0; padding: 0; border: 0; border-radius: var(--radius);
-  background: transparent; color: var(--text-3); cursor: pointer; transition: transform .15s var(--ease);
-}
-.ex-twist.open { transform: rotate(90deg); }
-.ex-twist:disabled { visibility: hidden; }
-.ex-node-name {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 100%; padding: 0 6px 0 2px; border: 0;
-  background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
-}
-.ex-node-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .icon.kind { color: var(--text-2); }
 .icon.kind.folder { color: light-dark(#e8a317, #f3c247); }
 .icon.kind.image { color: var(--s3); }
 .icon.kind.video { color: var(--s2); }
 .icon.kind.audio { color: light-dark(#a142f4, #d7aefb); }
 .icon.kind.document { color: var(--s1); }
-
-.ex-items { position: relative; min-width: 0; overflow: auto; outline: none; user-select: none; }
-.ex-items.drop { box-shadow: inset 0 0 0 2px var(--accent); background: color-mix(in srgb, var(--accent) 5%, transparent); }
-.ex-empty { display: grid; place-items: center; align-content: center; gap: 10px; height: 100%; min-height: 200px; color: var(--text-2); text-align: center; padding: 24px; }
-.ex-empty .icon { color: var(--text-3); }
-
-.ex-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.ex-table th {
-  position: sticky; top: 0; z-index: 1; height: 34px; padding: 0; background: var(--bg);
-  border-bottom: 1px solid var(--line); text-align: left; font-weight: 400;
-}
-.ex-table th button {
-  display: flex; align-items: center; gap: 4px; width: 100%; height: 100%; padding: 0 12px; border: 0;
-  background: transparent; color: var(--text-2); font: 500 12px var(--font); cursor: pointer;
-}
-.ex-table th button:hover { background: var(--hover); color: var(--text); }
-.ex-table .col-name { width: auto; }
-.ex-table .col-modified { width: 170px; }
-.ex-table .col-type { width: 130px; }
-.ex-table .col-size { width: 100px; }
-.ex-table th.col-size button { justify-content: flex-end; }
-.ex-table td { height: 34px; padding: 0 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ex-table td.col-name { color: var(--text); }
-.ex-table td.col-size { text-align: right; font-variant-numeric: tabular-nums; }
-.ex-table tbody tr { cursor: default; }
-.ex-table tbody tr:hover { background: var(--hover); }
-.ex-table tbody tr.on { background: var(--nav-on); }
-.ex-table tbody tr.on td { color: var(--on-nav-on); }
-.ex-table tbody tr.cut, .ex-tile.cut { opacity: .5; }
-.ex-table tbody tr.drop { box-shadow: inset 0 0 0 2px var(--accent); }
-.ex-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.ex-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ex-rename {
-  flex: 1; min-width: 0; height: 26px; padding: 0 6px; border: 1px solid var(--accent); border-radius: var(--radius);
-  background: var(--raised); color: var(--text); font: inherit; user-select: text;
-}
-.ex-rename:focus { outline: none; }
-
-.ex-grid { list-style: none; margin: 0; padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
-.ex-tile {
-  display: grid; justify-items: center; align-content: start; gap: 6px; min-width: 0; padding: 10px 6px 8px;
-  border-radius: var(--round); text-align: center; cursor: default;
-}
-.ex-tile:hover { background: var(--hover); }
-.ex-tile.on { background: var(--nav-on); color: var(--on-nav-on); }
-.ex-tile.drop { box-shadow: inset 0 0 0 2px var(--accent); }
-.ex-thumb { display: grid; place-items: center; width: 96px; height: 80px; overflow: hidden; border-radius: var(--radius); }
-.ex-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.ex-tile .ex-label { width: 100%; font-size: 13px; white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.ex-tile .ex-rename { width: 100%; text-align: center; }
-
-.ex-status { display: flex; align-items: center; gap: 16px; min-height: 32px; padding: 4px 14px; border-top: 1px solid var(--line); color: var(--text-2); font-size: 12px; }
-.ex-status .chip { height: 20px; font-size: 11px; }
 
 /* Files going up, at the bottom right. */
 .ex-uploads {
@@ -1093,55 +978,97 @@ a.result:hover { background: var(--hover); }
 .btn.primary.danger-fill { border-color: var(--bad); background: var(--bad); color: var(--on-bad); }
 .btn.primary.danger-fill:hover { background: color-mix(in srgb, var(--bad) 88%, var(--text)); }
 
-/* The storage address: the explorer on its own, the whole window. */
-.storage-app { display: flex; flex-direction: column; height: 100vh; padding: 0 16px 16px; }
-.storage-top { display: flex; align-items: center; gap: 12px; height: var(--head); flex-shrink: 0; }
-.storage-app .explorer { flex: 1; height: auto; min-height: 0; }
-
-/* The Storage page: its sub-pages start level with the heading. */
+/* A page's own sub-pages start level with the heading. */
 .sub-nav > .sub-nav-item:first-child { padding-left: 0; }
 .sub-nav > .sub-nav-item:first-child::after { left: 0; }
-.storage-setup { max-width: 680px; }
 
-/* Picking a folder: the path, then the folders in it. */
-.folder-picker { display: grid; gap: 12px; }
-.folder-picker .callout { margin-bottom: 0; }
-.picker-path { flex: none; cursor: default; }
-.picker-list { list-style: none; margin: 0; padding: 4px; max-height: 340px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--round); }
-.picker-list.short { max-height: 260px; }
-.picker-item {
-  display: flex; align-items: center; gap: 12px; width: 100%; height: 40px; padding: 0 10px; border: 0; border-radius: var(--radius);
-  background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
-}
-.picker-item:hover { background: var(--hover); }
-.picker-item > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.picker-item > .icon { color: var(--text-2); }
-.picker-item > .icon.kind.folder { color: light-dark(#e8a317, #f3c247); }
-.picker-go { color: var(--text-3) !important; }
-.picker-note { display: flex; justify-content: center; padding: 16px; color: var(--text-2); }
-.picker-foot { align-items: center; margin-top: 8px; }
-.picker-chosen { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
-
-/* People with access to Storage, each with the folders they may open. */
+/* People with access to Code, each with the repositories they may open. */
 .person-block + .person-block { border-top: 1px solid var(--line); }
 .avatar.everyone { background: var(--accent-bg); color: var(--on-accent-bg); }
 .rules { list-style: none; margin: 0 0 10px 48px; padding: 0; }
 .rule-row { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.rule-row > .icon { color: var(--text-2); }
 .rule-row.muted { min-height: 32px; font-size: 13px; }
 .rule-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rule-mode .dropdown { height: 36px; min-width: 170px; border-radius: var(--round); }
-.rule-pick { align-items: center; }
-.rule-mode-pick { width: 200px; }
+
+/* ---- Code: repositories, their files, commits and changes ---- */
+.result.repo-row { grid-template-columns: 24px minmax(0, 1fr) auto 24px; }
+.repo-icon { color: var(--text-2); }
+.repo-row .result-meta { display: inline-flex; align-items: center; gap: 10px; }
+.repo-row .chip, .commit-row .chip, .commit-card .chip { text-transform: none; }
+.chip.mono { font-family: var(--mono); }
+.result.commit-row {
+  grid-template-columns: 24px minmax(0, 1fr) auto; width: 100%; border: 0; background: transparent;
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.result.commit-row:hover { background: var(--hover); }
+.commit-main { display: grid; min-width: 0; }
+.commit-main .scan-target { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.commit-main small { color: var(--text-3); font-size: 12px; }
+.repo-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+.repo-ref .dropdown { min-width: 200px; }
+.repo-tabs { display: inline-flex; padding: 2px; border-radius: 999px; background: var(--card); }
+.repo-tabs button {
+  display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 16px; border: 0; border-radius: 999px;
+  background: transparent; color: var(--text-2); font: 500 14px var(--font); cursor: pointer;
+}
+.repo-tabs button:hover { color: var(--text); }
+.repo-tabs button.on { background: var(--nav-on); color: var(--on-nav-on); }
+.repo-path { display: flex; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.repo-crumb {
+  height: 30px; padding: 0 8px; border: 0; border-radius: var(--radius); background: transparent;
+  color: var(--accent); font: 500 14px var(--font); cursor: pointer;
+}
+.repo-crumb:hover { background: var(--hover); }
+.repo-crumb.on { color: var(--text); cursor: default; display: inline-flex; align-items: center; }
+.repo-path > .ex-crumb-wrap:first-child .repo-crumb { margin-left: -8px; }
+.repo-tree { list-style: none; margin: 0; padding: 6px 0; }
+.repo-entry {
+  display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; height: 40px;
+  padding: 0 20px; border: 0; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.repo-entry:hover { background: var(--hover); }
+.repo-entry:disabled { cursor: default; background: none; color: var(--text-2); }
+.repo-entry span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repo-entry small { color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.repo-tree li + li .repo-entry { box-shadow: inset 0 1px 0 var(--line); }
+.repo-loading { display: grid; place-items: center; padding: 48px; color: var(--accent); }
+.readme-head { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-bottom: 1px solid var(--line); color: var(--text-2); font-weight: 500; }
+.readme pre, .commit-body { margin: 0; padding: 16px 20px; font: 13px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.commit-body { padding: 0; margin: 8px 0 12px; color: var(--text-2); }
+.file-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px 10px 20px; border-bottom: 1px solid var(--line); color: var(--text-2); font-size: 13px; }
+.file-lines { display: flex; overflow-x: auto; }
+.file-lines pre { margin: 0; padding: 12px 0; font: 12.5px/1.6 var(--mono); }
+.file-nums { flex-shrink: 0; padding: 12px 12px 12px 20px !important; color: var(--text-3); text-align: right; user-select: none; border-right: 1px solid var(--line); }
+.file-text { flex: 1; padding: 12px 20px !important; white-space: pre; }
+.commit-card { padding: 16px 24px 20px; }
+.commit-card h2 { margin: 6px 0 8px; font-size: 20px; font-weight: 400; }
+.commit-back { margin-left: -14px; }
+.diff-head { padding: 10px 20px; border-bottom: 1px solid var(--line); color: var(--text); font-weight: 500; }
+.diff-lines { margin: 0; padding: 6px 0; overflow-x: auto; font: 12.5px/1.6 var(--mono); }
+.diff-lines > div { padding: 0 20px; white-space: pre; }
+.diff-lines .add { background: var(--ok-bg); }
+.diff-lines .del { background: var(--bad-bg); }
+.diff-lines .hunk { color: var(--text-3); background: var(--card-2); }
+.repo-start h2 { margin-bottom: 8px; font-size: 16px; font-weight: 500; }
+.code-block { margin: 0 0 6px; padding: 14px 18px; border-radius: var(--round); background: var(--card); font: 13px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.clone-list { display: grid; gap: 14px; margin-bottom: 16px; }
+.clone-row { display: grid; gap: 2px; }
+.clone-row small { color: var(--text-2); font-size: 12px; }
+.clone-row .copy, .token-secret .copy { min-width: 0; text-align: left; }
+.clone-row .copy-text, .token-secret .copy-text { overflow-wrap: anywhere; }
+.token-secret { margin: 12px 0 20px; padding: 12px 16px; border-radius: var(--round); background: var(--card); }
+
+/* Code's address: the repositories on their own. */
+.code-app { max-width: 1200px; margin: 0 auto; padding: 0 16px 40px; }
+.code-top { display: flex; align-items: center; gap: 12px; height: var(--head); }
+.code-main { padding-top: 16px; }
 
 @media (max-width: 900px) {
-  .explorer { height: calc(100vh - 220px); }
-  .ex-main { grid-template-columns: minmax(0, 1fr); }
-  .ex-tree { display: none; }
-  .ex-table .col-type, .ex-table .col-modified { display: none; }
-  .ex-cmd span { display: none; }
-  .ex-pick .dropdown { min-width: 0; }
-  .storage-app { padding: 0 8px 8px; }
   .rules { margin-left: 0; }
+  .result.repo-row .result-meta span:not(.chip) { display: none; }
+  .file-nums { display: none; }
 }
 
 /* ---- Containers ---- */
