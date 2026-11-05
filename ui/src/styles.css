@@ -1177,6 +1177,8 @@ a.result:hover { background: var(--hover); }
 .nav-group-head + .nav-item { margin-top: 4px; }
 
 /* ---- Media: photos and videos, a grid by month and a viewer ---- */
+/* Media and Drive fill the window, so a right-click anywhere on them is theirs. */
+.media, .drive { min-height: calc(100vh - var(--head) - 80px); }
 .m-picked { margin-right: 4px; color: var(--text-2); font-weight: 500; }
 .m-month + .m-month { margin-top: 28px; }
 .m-month h2 { margin-bottom: 12px; font-size: 16px; font-weight: 500; }
