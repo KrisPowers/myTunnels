@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { createPortal } from "react-dom";
 import { bytes, fileUrl, filesIn, message, saveThumb, thumbUrl, type FileEntry, type Listing } from "./api";
+import { MultiDropdown, type Option } from "./Dropdown";
 import { dropped, extOf, freeName, useUploads, type Picked } from "./Explorer";
 import { Icon } from "./Icon";
 import { Callout, Dialog, useNotify } from "./ui";
@@ -16,8 +17,11 @@ const isVideo = (name: string) => VIDEOS.includes(extOf(name));
 const kept = (name: string) => PHOTOS.includes(extOf(name)) || isVideo(name);
 const shows = (name: string) => SHOWN.includes(extOf(name));
 
-type Filter = "all" | "photos" | "videos";
-const FILTERS: [Filter, string][] = [["all", "All"], ["photos", "Photos"], ["videos", "Videos"]];
+type Kind = "photos" | "videos";
+const KINDS: Option<Kind>[] = [
+  { value: "photos", label: "Photos", icon: "image" },
+  { value: "videos", label: "Videos", icon: "movie" },
+];
 
 // Waits for `event` on `el`, or gives up after a while.
 function once(el: HTMLElement, event: string, ms = 10_000) {
@@ -78,7 +82,7 @@ const dayOf = (at: number) => new Date(at * 1000).toLocaleDateString([], { dateS
 export function MediaPage() {
   const [listing, setListing] = useState<Listing | null>(null);
   const [problem, setProblem] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [kinds, setKinds] = useState<Kind[]>(["photos", "videos"]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [viewing, setViewing] = useState<number | null>(null);
   const [removing, setRemoving] = useState<string[] | null>(null);
@@ -105,7 +109,8 @@ export function MediaPage() {
 
   const all = (listing?.entries ?? []).filter((e) => !e.dir && kept(e.name)).sort((a, b) => b.modified - a.modified || a.name.localeCompare(b.name));
   const photos = all.filter((e) => !isVideo(e.name)).length;
-  const items = all.filter((e) => filter === "all" || (filter === "videos") === isVideo(e.name));
+  // Nothing picked shows everything, as both picked does.
+  const items = all.filter((e) => !kinds.length || kinds.includes(isVideo(e.name) ? "videos" : "photos"));
   const months: [string, FileEntry[]][] = [];
   for (const e of items) {
     const label = monthOf(e.modified);
@@ -194,10 +199,8 @@ export function MediaPage() {
             </>
           ) : (
             <>
-              <div className="seg" role="group" aria-label="Show">
-                {FILTERS.map(([key, label]) => (
-                  <button key={key} type="button" className={filter === key ? "on" : ""} aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}</button>
-                ))}
+              <div className="ex-pick">
+                <MultiDropdown label="Show" values={kinds} options={KINDS} allLabel="Photos and videos" onChange={setKinds} />
               </div>
               <button type="button" className="btn primary" onClick={() => input.current?.click()}><Icon name="cloud_upload" size={18} />Upload</button>
             </>
@@ -216,7 +219,7 @@ export function MediaPage() {
               <button type="button" className="btn primary" onClick={() => input.current?.click()}><Icon name="cloud_upload" size={18} />Upload</button>
             </div>
           ) : items.length === 0 ? (
-            <p className="muted">No {filter} yet.</p>
+            <p className="muted">No {kinds[0]} yet.</p>
           ) : (
             months.map(([label, list]) => (
               <section key={label} className="m-month">
