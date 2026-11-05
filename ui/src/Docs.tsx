@@ -193,7 +193,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>Codes are sent with SMTP credentials you enter on the <b>Two-Factor Auth</b> page: host, port, security, username, password and from address, from Gmail (with an app password), Outlook or any other provider. Saving signs in with them to check them, and <b>Send a test</b> emails the admin.</p>
       </Doc>
       <Doc title="Where codes are asked">
-        <p><b>Dashboard sign-in</b> sends every sign-in to this dashboard a code at the admin email. Turning it on sends a test email first, so credentials that do not deliver cannot lock you out. Each tunnel with Sign-in on can ask for a code too, sent to the account's email, from its Access Control or from the Two-Factor Auth page. This covers sign-ins through a third-party provider as well.</p>
+        <p><b>Dashboard sign-in</b> sends every sign-in to this dashboard a code at the admin email. Turning it on sends a test email first, so credentials that do not deliver cannot lock you out. Each tunnel with Sign-in on can ask for a code too, sent to the account's email, from <b>Email code</b> in its own Access Control, which stays greyed out until SMTP is set up. This covers sign-ins through a third-party provider as well.</p>
       </Doc>
     </>
   ),

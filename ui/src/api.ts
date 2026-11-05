@@ -138,6 +138,8 @@ export interface Status {
   last_error: string | null;
   logs: string[];
   public_ips: string[];
+  // SMTP is set up, so tunnels can ask for an emailed code.
+  email_codes: boolean;
 }
 
 // What the Dashboard shows, sampled on the server every `every` seconds, the

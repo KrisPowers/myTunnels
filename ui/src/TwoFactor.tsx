@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, editOf, message, type Route, type Smtp, type TwoFactor } from "./api";
+import { api, message, type Smtp, type TwoFactor } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon } from "./Icon";
 import { Card, Dialog, Row, Switch, TextField, useNotify } from "./ui";
@@ -12,17 +12,15 @@ const SECURITY: Option<Smtp["security"]>[] = [
 const PORTS: Record<Smtp["security"], number> = { starttls: 587, tls: 465, none: 25 };
 
 // TwoFactorPage sets up emailed sign-in codes: the SMTP credentials they are
-// sent with (Gmail, Outlook, any provider), then where they are asked for, the
-// dashboard and each tunnel with sign-in on.
-export function TwoFactorPage({ routes, onChanged }: { routes: Route[]; onChanged: () => Promise<void> }) {
+// sent with (Gmail, Outlook, any provider), and whether the dashboard asks for
+// one. Each tunnel switches its own on, on its page, once SMTP is set up.
+export function TwoFactorPage({ onChanged }: { onChanged: () => Promise<void> }) {
   const [tf, setTf] = useState<TwoFactor | null>(null);
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
   useEffect(() => {
     api.twoFactor().then(setTf).catch((e) => notify(message(e), "bad"));
   }, [notify]);
-
-  const signIn = routes.filter((r) => r.require_login);
 
   const dashboard = async (on: boolean) => {
     setBusy(true);
@@ -35,8 +33,6 @@ export function TwoFactorPage({ routes, onChanged }: { routes: Route[]; onChange
       setBusy(false);
     }
   };
-  const tunnel = (r: Route, on: boolean) =>
-    api.editRoute(r.id, { ...editOf(r), require_code: on }).then(onChanged).catch((e) => notify(message(e), "bad"));
 
   return (
     <>
@@ -47,8 +43,11 @@ export function TwoFactorPage({ routes, onChanged }: { routes: Route[]; onChange
       </div>
       {tf && (
         <div className="page-body stack">
-          <MailCard tf={tf} onSaved={setTf} />
-          <Card title="Where codes are asked" sub="After the password, a code is emailed and must be entered to finish signing in.">
+          <MailCard tf={tf} onSaved={(next) => {
+            setTf(next);
+            onChanged();
+          }} />
+          <Card title="Dashboard" sub="After the password, a code is emailed and must be entered to finish signing in. Tunnels with sign-in switch it on under their own Access Control.">
             <Row title="Dashboard sign-in" sub={
               !tf.smtp ? "Enter your SMTP credentials first."
                 : !tf.admin_email ? <>Set the admin email under <a href="#/settings/account">Settings, Account</a> first.</>
@@ -56,12 +55,6 @@ export function TwoFactorPage({ routes, onChanged }: { routes: Route[]; onChange
             }>
               <Switch label="Codes for the dashboard" on={tf.dashboard} disabled={busy || (!tf.dashboard && (!tf.smtp || !tf.admin_email))} onChange={dashboard} />
             </Row>
-            {signIn.map((r) => (
-              <Row key={r.id} title={<a href={`#/tunnels/${r.id}`}>{r.hostname}</a>} sub={r.require_code ? "A code to the account's email after signing in" : "Sign-in only"}>
-                <Switch label={`Email code on ${r.hostname}`} on={r.require_code} onChange={(v) => tunnel(r, v)} />
-              </Row>
-            ))}
-            {signIn.length === 0 && <Row title="Tunnels" sub="No tunnel asks for sign-in yet. Any that does can ask for a code as well." />}
           </Card>
         </div>
       )}

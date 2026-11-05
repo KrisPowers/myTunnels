@@ -216,8 +216,9 @@ good once for ten minutes, can be asked for after the password:
 
 - **Dashboard sign-in.** Every sign-in to the panel, sent to the admin email. Turning it on
   sends a test email first.
-- **Tunnels.** Any tunnel with sign-in on can turn on **Email code**, sent to the account's
-  email. It also applies to sign-ins through a third-party provider.
+- **Tunnels.** Each tunnel turns on **Email code** under its own **Access Control**, sent to
+  the account's email; it also applies to sign-ins through a third-party provider. The switch
+  stays greyed out until SMTP is set up and the tunnel asks for sign-in.
 
 ## Configuration
 

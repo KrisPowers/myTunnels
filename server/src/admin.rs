@@ -848,6 +848,8 @@ async fn status(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         "last_error": view.last_error,
         "logs": view.logs,
         "public_ips": public_ips,
+        // Whether codes can be emailed, so tunnels can offer them.
+        "email_codes": mail::load(&state.db)?.is_some(),
     })))
 }
 

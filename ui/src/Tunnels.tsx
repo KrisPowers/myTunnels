@@ -177,11 +177,13 @@ type AccessValue = Access & { password_set?: boolean };
 // AccessCard holds a tunnel's access layers. A tunnel password is asked for when
 // that layer is turned on with none set; `onPassword` stores one on its own, from
 // a dialog, and `onPasswordCancel` drops a password layer that never got one.
-export function AccessCard({ value, users, providers, hostname, onChange, onPassword, onPasswordCancel }: {
+export function AccessCard({ value, users, providers, codes, hostname, onChange, onPassword, onPasswordCancel }: {
   value: AccessValue;
   users: User[];
   // Third-party providers that are set up, to offer here.
   providers: OAuthProvider[];
+  // Whether SMTP is set up, so codes can be emailed.
+  codes: boolean;
   // The tunnel's address, once known: providers send people back to it.
   hostname?: string;
   onChange: (patch: Partial<Access>) => void;
@@ -209,6 +211,14 @@ export function AccessCard({ value, users, providers, hostname, onChange, onPass
       <Row title="Sign-in" sub={<>People sign in with an account from <a href="#/users">Users</a>; each account's tunnels are picked on its page there. {accounts ? `${accounts} account${accounts === 1 ? "" : "s"} so far.` : "There are none yet."}</>}>
         <Switch label="Sign-in" on={value.require_login} onChange={(v) => onChange({ require_login: v })} />
       </Row>
+      <Row title="Email code" sub={
+        !codes ? <>Needs SMTP, set up under <a href="#/twofactor">Two-Factor Auth</a>.</>
+          : !value.require_login ? "Needs Sign-in on: the code follows the password."
+          : "After signing in, a code sent to the account's email."
+      }>
+        <Switch label="Email code" on={value.require_code} disabled={!value.require_code && (!codes || !value.require_login)}
+          onChange={(v) => onChange({ require_code: v })} />
+      </Row>
       {value.require_login && (
         <>
           {providers.map((p) => {
@@ -224,9 +234,6 @@ export function AccessCard({ value, users, providers, hostname, onChange, onPass
           {providers.length === 0 && (
             <Row title="Third-party sign-in" sub={<>Set up GitHub, Google and others under <a href="#/oauth">Third-Party OAuth</a>, then switch them on here.</>} />
           )}
-          <Row title="Email code" sub={<>After signing in, a code sent to their email. SMTP is set up under <a href="#/twofactor">Two-Factor Auth</a>.</>}>
-            <Switch label="Email code" on={value.require_code} onChange={(v) => onChange({ require_code: v })} />
-          </Row>
           <Row title="Sign in again after" sub="How long a sign-in lasts before it is asked for again.">
             <Dropdown label="Sign in again after" value={value.login_max} options={SIGN_IN_FOR} onChange={(v) => onChange({ login_max: v })} />
           </Row>
@@ -320,7 +327,7 @@ function PasswordSetting({ set, onSave, onCancel }: { set: boolean; onSave: (pas
 
 // NewTunnel publishes a port: the address on top, then where the app runs, then
 // who can open it.
-export function NewTunnel({ users, providers, onPublished }: { users: User[]; providers: OAuthProvider[]; onPublished: () => Promise<void> }) {
+export function NewTunnel({ users, providers, codes, onPublished }: { users: User[]; providers: OAuthProvider[]; codes: boolean; onPublished: () => Promise<void> }) {
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [zone, setZone] = useState("");
   const [sub, setSub] = useState("");
@@ -403,7 +410,7 @@ export function NewTunnel({ users, providers, onPublished }: { users: User[]; pr
           </div>
         </Card>
 
-        <AccessCard value={access} users={users} providers={providers} onChange={(patch) => setAccess((a) => ({ ...a, ...patch }))}
+        <AccessCard value={access} users={users} providers={providers} codes={codes} onChange={(patch) => setAccess((a) => ({ ...a, ...patch }))}
           hostname={sub && zones ? `${sub}.${zones.find((z) => z.id === zone)?.name ?? ""}` : undefined} />
       </div>
     </form>
@@ -420,7 +427,7 @@ const TUNNEL_PAGES: [string, string, IconName][] = [
 
 // TunnelPage is one tunnel: its address and target in the heading, each with an
 // edit button, then its sub-pages under a bar.
-export function TunnelPage({ route, page, devices, users, providers, onChanged }: { route: Route; page: string; devices: Device[]; users: User[]; providers: OAuthProvider[]; onChanged: () => Promise<void> }) {
+export function TunnelPage({ route, page, devices, users, providers, codes, onChanged }: { route: Route; page: string; devices: Device[]; users: User[]; providers: OAuthProvider[]; codes: boolean; onChanged: () => Promise<void> }) {
   const can = useCan();
   const [edit, setEdit] = useState<RouteEdit>(() => editOf(route));
   const [editing, setEditing] = useState<"" | "address" | "target">("");
@@ -499,7 +506,7 @@ export function TunnelPage({ route, page, devices, users, providers, onChanged }
 
       <div className="page-body stack plain" key={current}>
         {current === "access" && (
-          <AccessCard value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} providers={providers} hostname={route.hostname} onChange={access}
+          <AccessCard value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} providers={providers} codes={codes} hostname={route.hostname} onChange={access}
             onPassword={async (password) => {
               await save({ require_password: true, password });
               setAsking(false);
