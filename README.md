@@ -66,11 +66,11 @@ does and Docker Desktop does not.
 
 ## Containers
 
-**Containers** shows the containers' CPU and memory together, then a table of every
-container on the host with its ID, image, published ports (each a link to open), CPU, memory
-and status. Compose projects fold under their name, with start and stop for the whole project.
-Search by name, image or ID, show only running ones, or tick several and start, stop, restart
-or delete them together; each row has start or stop, restart, logs and delete.
+**Containers** says how many run and their CPU and memory together, then a row per container:
+its state, name over its image, published ports (each a link to open), CPU, memory and how
+long it has run. Its menu holds logs, start or stop, restart and delete. Compose projects with
+more than one container fold under their name, with start, stop and restart for all of them.
+Search by name, image or ID, or show only running ones.
 
 Open a container for its **Logs** (followed as it runs, searchable, with or without times),
 **Inspect** (what it runs, its state, ports and networks), **Mounts** and **Stats** (CPU over

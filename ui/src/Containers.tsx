@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Metrics, type Port } from "./api";
-import { Chart, Meter, Spark } from "./Dashboard";
+import { Chart, Meter } from "./Dashboard";
 import { Dropdown } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
-import { ArmedButton, Callout, Copy, Switch, useNotify } from "./ui";
+import { ArmedButton, Callout, Copy, MoreMenu, Switch, useNotify, type MenuAction } from "./ui";
 
 type Act = ContainerAction | "remove";
 
@@ -92,15 +92,18 @@ export function ContainersPage({ id, page }: { id: string; page: string }) {
 
 // ---- the list ----
 
+type Show = "all" | "running";
+
+// ContainerList is a row per container: its state, name and image, published
+// ports, CPU, memory and how long it has run, everything else behind its
+// menu. Compose projects of two or more fold under their name.
 function ContainerList() {
   const [list, setList] = useState<Container[] | null>(null);
   const [problem, setProblem] = useState("");
   const [q, setQ] = useState("");
-  const [running, setRunning] = useState(false);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [show, setShow] = useState<Show>("all");
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const m = useMetrics();
-  const can = useCan();
 
   const load = useCallback(async () => {
     try {
@@ -117,68 +120,55 @@ function ContainerList() {
   }, [load]);
   const { busy, run } = useActions(load);
 
-  const stats = useMemo(() => Object.fromEntries((m?.docker.containers ?? []).map((s) => [s.id, s])), [m]);
+  // Usage is sampled under each container's short ID.
+  const stats = useMemo(() => Object.fromEntries((m?.docker.containers ?? []).map((s) => [shortId(s.id), s])), [m]);
   const needle = q.trim().toLowerCase();
-  const shown = (list ?? []).filter((c) => (!running || live(c)) && (!needle || [c.name, c.image, c.id, c.project ?? ""].some((v) => v.toLowerCase().includes(needle))));
-  const groups = new Map<string, Container[]>();
-  for (const c of [...shown].sort((a, b) => (a.project ?? "￿").localeCompare(b.project ?? "￿") || a.name.localeCompare(b.name))) {
-    groups.set(c.project ?? "", [...(groups.get(c.project ?? "") ?? []), c]);
-  }
-  const selected = (list ?? []).filter((c) => picked.has(c.id));
-  const toggle = (ids: string[], on: boolean) => {
-    const next = new Set(picked);
-    for (const i of ids) {
-      if (on) next.add(i);
-      else next.delete(i);
+  const shown = (list ?? []).filter((c) => (show === "all" || live(c)) && (!needle || [c.name, c.image, c.id, c.project ?? ""].some((v) => v.toLowerCase().includes(needle))));
+  const sorted = [...shown].sort((a, b) => (a.project ?? a.name).localeCompare(b.project ?? b.name) || a.name.localeCompare(b.name));
+  const counts = new Map<string, number>();
+  for (const c of sorted) if (c.project) counts.set(c.project, (counts.get(c.project) ?? 0) + 1);
+  const rows: ({ group: string; items: Container[] } | Container)[] = [];
+  for (const c of sorted) {
+    if (c.project && (counts.get(c.project) ?? 0) > 1) {
+      const last = rows[rows.length - 1];
+      if (last && "group" in last && last.group === c.project) last.items.push(c);
+      else rows.push({ group: c.project, items: [c] });
+    } else {
+      rows.push(c);
     }
-    setPicked(next);
-  };
-  const bulk = async (action: Act, targets: Container[]) => {
-    await run(targets.filter((c) => !c.own), action);
-    setPicked(new Set());
-  };
+  }
+
+  const running = (list ?? []).filter(live);
+  const cpu = running.reduce((n, c) => n + (stats[shortId(c.id)]?.cpu ?? 0), 0);
+  const memory = running.reduce((n, c) => n + (stats[shortId(c.id)]?.memory ?? 0), 0);
 
   return (
     <>
       <div className="page-head">
         <div className="page-head-main">
           <h1>Containers</h1>
-          {list && <div className="page-sub"><span><b>{list.filter(live).length}</b> running</span><span><b>{list.length}</b> in all</span></div>}
+          {list && (
+            <div className="page-sub">
+              <span><b>{running.length}</b> of {list.length} running</span>
+              {m && <span>CPU <b>{pct(cpu)}</b> of {m.host.threads * 100}%</span>}
+              {m && <span>Memory <b>{bytes(memory)}</b> of {bytes(m.memory_total)}</span>}
+            </div>
+          )}
         </div>
         <div className="page-actions">
+          <label className="ct-search">
+            <Icon name="search" size={18} />
+            <input type="search" placeholder="Search" aria-label="Search containers" value={q} onChange={(e) => setQ(e.target.value)} spellCheck={false} />
+          </label>
+          <div className="seg-tabs" role="tablist" aria-label="Show">
+            {(["all", "running"] as Show[]).map((k) => (
+              <button key={k} type="button" role="tab" aria-selected={show === k} className={show === k ? "on" : ""} onClick={() => setShow(k)}>{k === "all" ? "All" : "Running"}</button>
+            ))}
+          </div>
           <button type="button" className="icon-btn" aria-label="Refresh" title="Refresh" onClick={load}><Icon name="refresh" /></button>
         </div>
       </div>
       {problem && <Callout tone="bad" icon="error">Docker is not reachable: {problem}</Callout>}
-      {list && m && <Usage m={m} />}
-
-      <div className="ct-toolbar">
-        <label className="ct-search">
-          <Icon name="search" size={18} />
-          <input type="search" placeholder="Search name, image or ID" aria-label="Search containers" value={q} onChange={(e) => setQ(e.target.value)} spellCheck={false} />
-        </label>
-        <label className="edit-switch">
-          <Switch label="Only running" on={running} onChange={setRunning} />
-          <span>Only show running containers</span>
-        </label>
-        <span className="ex-grow" />
-        {selected.length > 0 && (
-          <div className="ct-bulk">
-            <span><b>{selected.length}</b> selected</span>
-            {can("containers.manage") && (
-              <>
-                <button type="button" className="btn small" onClick={() => bulk("start", selected.filter((c) => !live(c)))}><Icon name="play_arrow" size={16} />Start</button>
-                <button type="button" className="btn small" onClick={() => bulk("stop", selected.filter(live))}><Icon name="stop" size={16} />Stop</button>
-                <button type="button" className="btn small" onClick={() => bulk("restart", selected.filter(live))}><Icon name="restart_alt" size={16} />Restart</button>
-              </>
-            )}
-            {can("containers.remove") && (
-              <button type="button" className="btn small danger" onClick={() => bulk("remove", selected.filter((c) => !live(c) && c.state !== "paused"))}><Icon name="delete" size={16} />Delete</button>
-            )}
-            <button type="button" className="icon-btn small" aria-label="Clear selection" title="Clear selection" onClick={() => setPicked(new Set())}><Icon name="close" size={18} /></button>
-          </div>
-        )}
-      </div>
 
       {list && (list.length === 0 ? (
         <div className="card welcome">
@@ -187,44 +177,26 @@ function ContainerList() {
           <p className="muted">Containers on this host show here once Docker runs some.</p>
         </div>
       ) : (
-        <div className="card ct-card">
+        <div className="card">
           <div className="table-wrap">
             <table className="table ct-table">
               <thead>
-                <tr>
-                  <th className="ct-check">
-                    <input type="checkbox" className="check" aria-label="Select all"
-                      checked={shown.length > 0 && shown.every((c) => picked.has(c.id))}
-                      onChange={(e) => toggle(shown.map((c) => c.id), e.target.checked)} />
-                  </th>
-                  <th className="grow">Name</th>
-                  <th>Container ID</th>
-                  <th>Image</th>
-                  <th>Port(s)</th>
-                  <th>CPU (%)</th>
-                  <th>Memory</th>
-                  <th>Status</th>
-                  <th className="ct-actions-head">Actions</th>
-                </tr>
+                <tr><th className="grow">Container</th><th>Ports</th><th>CPU</th><th>Memory</th><th>Status</th><th aria-label="Actions" /></tr>
               </thead>
               <tbody>
-                {[...groups].map(([project, items]) => {
-                  const open = !folded.has(project);
-                  const cpu = items.reduce((n, c) => n + (live(c) ? stats[c.id]?.cpu ?? 0 : 0), 0);
-                  const up = items.filter(live).length;
-                  return (
-                    <GroupRows key={project || "-"} project={project} open={open} up={up} cpu={cpu} items={items}
-                      picked={picked} busy={busy} stats={stats} onPick={toggle}
-                      onFold={() => setFolded((f) => {
-                        const next = new Set(f);
-                        if (next.has(project)) next.delete(project);
-                        else next.add(project);
-                        return next;
-                      })}
-                      onRun={(targets, action) => run(targets, action)} />
-                  );
-                })}
-                {shown.length === 0 && <tr><td colSpan={9} className="empty-note ct-none">No containers match.</td></tr>}
+                {rows.map((r) => "group" in r ? (
+                  <Group key={"g-" + r.group} name={r.group} items={r.items} stats={stats} busy={busy} run={run}
+                    open={!folded.has(r.group)}
+                    onFold={() => setFolded((f) => {
+                      const next = new Set(f);
+                      if (next.has(r.group)) next.delete(r.group);
+                      else next.add(r.group);
+                      return next;
+                    })} />
+                ) : (
+                  <Row key={r.id} c={r} s={stats[shortId(r.id)]} busy={busy.has(r.id)} run={run} />
+                ))}
+                {shown.length === 0 && <tr><td colSpan={6} className="empty-note ct-none">No containers match.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -234,117 +206,90 @@ function ContainerList() {
   );
 }
 
-// Usage is the containers' CPU and memory together, as Docker Desktop shows
-// them over the list.
-function Usage({ m }: { m: Metrics }) {
-  const running = m.docker.containers.filter(live);
-  const cpu = running.reduce((n, c) => n + c.cpu, 0);
-  const memory = running.reduce((n, c) => n + c.memory, 0);
-  const longest = Math.max(0, ...running.map((c) => c.history.length));
-  const history = Array.from({ length: longest }, (_, i) =>
-    running.reduce((n, c) => n + (c.history[c.history.length - longest + i] ?? 0), 0));
-  const ceiling = m.host.threads * 100;
+// The actions a container's menu holds, by what it may do now.
+function rowActions(c: Container | ContainerDetail, run: (targets: { id: string; name: string }[], action: Act) => void, can: (key: string) => boolean): MenuAction[] {
+  const on = live(c);
+  const manage = can("containers.manage");
+  return [
+    { label: "Logs", icon: "terminal" as IconName, onClick: () => (location.hash = `#/containers/${c.id}/logs`) },
+    ...(manage && !c.own && on ? [{ label: "Stop", icon: "stop" as IconName, onClick: () => run([c], "stop") }] : []),
+    ...(manage && !c.own && c.state === "paused" ? [{ label: "Resume", icon: "play_arrow" as IconName, onClick: () => run([c], "unpause") }] : []),
+    ...(manage && !on && c.state !== "paused" ? [{ label: "Start", icon: "play_arrow" as IconName, onClick: () => run([c], "start") }] : []),
+    ...(manage && on ? [{ label: "Restart", icon: "restart_alt" as IconName, onClick: () => run([c], "restart"), confirm: c.own ? "Restart myTunnels" : undefined }] : []),
+    ...(can("containers.remove") && !c.own && !on && c.state !== "paused"
+      ? [{ label: "Delete", icon: "delete" as IconName, danger: true, onClick: () => run([c], "remove"), confirm: "Delete for good" }] : []),
+  ];
+}
+
+function Row({ c, s, busy, run, grouped }: {
+  c: Container;
+  s?: ContainerStats;
+  busy: boolean;
+  run: (targets: { id: string; name: string }[], action: Act) => void;
+  grouped?: boolean;
+}) {
+  const can = useCan();
+  const on = live(c);
   return (
-    <div className="ct-usage">
-      <div className="ct-stat">
-        <span>Container CPU usage</span>
-        <b>{pct(cpu)}<small> / {ceiling}% ({m.host.threads} CPUs available)</small></b>
-        <Spark values={history} max={Math.max(100, ...history)} keep={m.keep} times={[]} every={0} color="var(--s1)" />
-      </div>
-      <div className="ct-stat">
-        <span>Container memory usage</span>
-        <b>{bytes(memory)}<small> / {bytes(m.memory_total)}</small></b>
-        <Meter value={memory} max={m.memory_total} label={pct((memory / (m.memory_total || 1)) * 100)} />
-      </div>
-    </div>
+    <tr className={(on ? "" : "stopped") + (grouped ? " in-group" : "")}>
+      <td>
+        <a className="ct-name" href={`#/containers/${c.id}`}>
+          <span className={"dot " + tone(c.state)} title={c.state} />
+          <span className="ct-name-text">
+            <b>{c.name}{c.own && <span className="chip plain small-chip">myTunnels</span>}</b>
+            <small className="mono" title={c.image}>{c.image}</small>
+          </span>
+        </a>
+      </td>
+      <td><PortLinks ports={c.ports} max={2} /></td>
+      <td className="num">{on && s ? pct(s.cpu) : "–"}</td>
+      <td className="num">{on && s ? bytes(s.memory) : "–"}</td>
+      <td className="muted ct-status">{c.status}</td>
+      <td className="ct-menu">{busy ? <span className="spinner small" /> : <MoreMenu label={`Actions for ${c.name}`} actions={rowActions(c, run, can)} />}</td>
+    </tr>
   );
 }
 
-function GroupRows({ project, open, up, cpu, items, picked, busy, stats, onPick, onFold, onRun }: {
-  project: string;
-  open: boolean;
-  up: number;
-  cpu: number;
+function Group({ name, items, stats, busy, run, open, onFold }: {
+  name: string;
   items: Container[];
-  picked: Set<string>;
-  busy: Set<string>;
   stats: Record<string, ContainerStats>;
-  onPick: (ids: string[], on: boolean) => void;
+  busy: Set<string>;
+  run: (targets: { id: string; name: string }[], action: Act) => void;
+  open: boolean;
   onFold: () => void;
-  onRun: (targets: Container[], action: Act) => void;
 }) {
   const can = useCan();
-  const ids = items.map((c) => c.id);
+  const up = items.filter(live);
+  const cpu = up.reduce((n, c) => n + (stats[shortId(c.id)]?.cpu ?? 0), 0);
+  const memory = up.reduce((n, c) => n + (stats[shortId(c.id)]?.memory ?? 0), 0);
+  const others = items.filter((c) => !c.own);
   return (
     <>
-      {project && (
-        <tr className="ct-group">
-          <td className="ct-check"><input type="checkbox" className="check" aria-label={`Select ${project}`} checked={ids.every((i) => picked.has(i))} onChange={(e) => onPick(ids, e.target.checked)} /></td>
-          <td>
-            <button type="button" className="ct-fold" aria-expanded={open} onClick={onFold}>
-              <Icon name="chevron_right" size={18} className={open ? "open" : ""} />
-              <Icon name="deployed_code" size={18} className="ct-stack-icon" />
-              <b>{project}</b>
-            </button>
-          </td>
-          <td colSpan={3} className="muted">{items.length} container{items.length === 1 ? "" : "s"}, {up} running</td>
-          <td className="num">{up ? pct(cpu) : ""}</td>
-          <td />
-          <td><span className={"chip " + (up === items.length ? "ok" : up ? "warn" : "")}>{up === items.length ? "Running" : up ? "Partly running" : "Exited"}</span></td>
-          <td>
-            {can("containers.manage") && (
-              <span className="row-actions">
-                {up < items.length && <button type="button" className="icon-btn small" aria-label={`Start ${project}`} title="Start all" onClick={() => onRun(items.filter((c) => !live(c) && !c.own), "start")}><Icon name="play_arrow" size={18} /></button>}
-                {up > 0 && <button type="button" className="icon-btn small" aria-label={`Stop ${project}`} title="Stop all" onClick={() => onRun(items.filter((c) => live(c) && !c.own), "stop")}><Icon name="stop" size={18} /></button>}
-              </span>
-            )}
-          </td>
-        </tr>
-      )}
-      {open && items.map((c) => {
-        const s = stats[c.id];
-        const on = live(c);
-        return (
-          <tr key={c.id} className={(on ? "" : "stopped") + (project ? " in-group" : "") + (picked.has(c.id) ? " picked" : "")}>
-            <td className="ct-check"><input type="checkbox" className="check" aria-label={`Select ${c.name}`} checked={picked.has(c.id)} onChange={(e) => onPick([c.id], e.target.checked)} /></td>
-            <td className="name-cell">
-              <a className="name-line" href={`#/containers/${c.id}`}>
-                <span className={"dot " + tone(c.state)} title={c.state} />{c.name}
-                {c.own && <span className="chip plain small-chip">myTunnels</span>}
-              </a>
-            </td>
-            <td><span className="ct-id"><span className="mono">{shortId(c.id)}</span><Copy text="" copyText={c.id} plain /></span></td>
-            <td className="ct-image mono" title={c.image}>{c.image}</td>
-            <td><PortLinks ports={c.ports} /></td>
-            <td className="num">{on && s ? pct(s.cpu) : <span className="muted">N/A</span>}</td>
-            <td className="num">{on && s ? bytes(s.memory) : ""}</td>
-            <td className="muted">{c.status}</td>
-            <td>
-              <span className="row-actions">
-                {busy.has(c.id) ? <span className="spinner small" /> : (
-                  <>
-                    {can("containers.manage") && !c.own && (on ? (
-                      <button type="button" className="icon-btn small" aria-label={`Stop ${c.name}`} title="Stop" onClick={() => onRun([c], "stop")}><Icon name="stop" size={18} /></button>
-                    ) : c.state === "paused" ? (
-                      <button type="button" className="icon-btn small" aria-label={`Resume ${c.name}`} title="Resume" onClick={() => onRun([c], "unpause")}><Icon name="play_arrow" size={18} /></button>
-                    ) : (
-                      <button type="button" className="icon-btn small" aria-label={`Start ${c.name}`} title="Start" onClick={() => onRun([c], "start")}><Icon name="play_arrow" size={18} /></button>
-                    ))}
-                    {can("containers.manage") && !c.own && on && (
-                      <button type="button" className="icon-btn small" aria-label={`Restart ${c.name}`} title="Restart" onClick={() => onRun([c], "restart")}><Icon name="restart_alt" size={18} /></button>
-                    )}
-                    <a className="icon-btn small" href={`#/containers/${c.id}/logs`} aria-label={`Logs of ${c.name}`} title="Logs"><Icon name="terminal" size={18} /></a>
-                    {can("containers.remove") && !c.own && (
-                      <button type="button" className="icon-btn small danger" aria-label={`Delete ${c.name}`} title={on ? "Stop it to delete it" : "Delete"}
-                        disabled={on || c.state === "paused"} onClick={() => onRun([c], "remove")}><Icon name="delete" size={18} /></button>
-                    )}
-                  </>
-                )}
-              </span>
-            </td>
-          </tr>
-        );
-      })}
+      <tr className="ct-group">
+        <td>
+          <button type="button" className="ct-fold" aria-expanded={open} onClick={onFold}>
+            <Icon name="chevron_right" size={18} className={open ? "open" : ""} />
+            <Icon name="deployed_code" size={18} className="ct-stack-icon" />
+            <b>{name}</b>
+            <small>{up.length} of {items.length} running</small>
+          </button>
+        </td>
+        <td />
+        <td className="num">{up.length ? pct(cpu) : "–"}</td>
+        <td className="num">{up.length ? bytes(memory) : "–"}</td>
+        <td />
+        <td className="ct-menu">
+          {can("containers.manage") && others.length > 0 && (
+            <MoreMenu label={`Actions for ${name}`} actions={[
+              ...(others.some((c) => !live(c)) ? [{ label: "Start all", icon: "play_arrow" as IconName, onClick: () => run(others.filter((c) => !live(c)), "start") }] : []),
+              ...(others.some(live) ? [{ label: "Stop all", icon: "stop" as IconName, onClick: () => run(others.filter(live), "stop") }] : []),
+              ...(others.some(live) ? [{ label: "Restart all", icon: "restart_alt" as IconName, onClick: () => run(others.filter(live), "restart") }] : []),
+            ]} />
+          )}
+        </td>
+      </tr>
+      {open && items.map((c) => <Row key={c.id} c={c} s={stats[shortId(c.id)]} busy={busy.has(c.id)} run={run} grouped />)}
     </>
   );
 }
@@ -627,7 +572,7 @@ function Mounts({ c }: { c: ContainerDetail }) {
 function Stats({ id, running }: { id: string; running: boolean }) {
   const m = useMetrics();
   if (!running) return <div className="card welcome"><Icon name="dashboard" size={40} /><h2>Not running</h2><p className="muted">Usage shows while the container runs.</p></div>;
-  const s = m?.docker.containers.find((x) => x.id === id);
+  const s = m?.docker.containers.find((x) => shortId(x.id) === shortId(id));
   if (!m || !s) return <div className="repo-loading"><span className="spinner" /></div>;
   const every = m.every;
   const now = Date.now() / 1000;

@@ -74,10 +74,10 @@ const CONTENT: Record<string, ReactNode> = {
   containers: (
     <>
       <Doc title="What it shows">
-        <p><b>Containers</b> shows the containers' CPU and memory together, then every container on this host with its ID, image, published ports (each opens in a new tab), CPU, memory and status, Compose projects folded under their name. Open one for its Logs, Inspect, Mounts and Stats.</p>
+        <p><b>Containers</b> says how many run and their CPU and memory together, then a row per container with its name over its image, published ports (each opens in a new tab), CPU, memory and how long it has run. Compose projects with more than one container fold under their name. Open one for its Logs, Inspect, Mounts and Stats.</p>
       </Doc>
       <Doc title="Managing them">
-        <p>Each row has start or stop, restart, logs and delete; a project has start and stop for all of it. Tick several to start, stop, restart or delete them together, and search or show only running ones to find them. Deleting takes a stopped container away and leaves its volumes. The container myTunnels runs in is marked and is never stopped from here.</p>
+        <p>Each row's menu holds logs, start or stop, restart and delete; a project's menu starts, stops or restarts all of it. Search, or show only running ones, to find them. Deleting takes a stopped container away and leaves its volumes. The container myTunnels runs in is marked and is never stopped from here.</p>
       </Doc>
       <Doc title="What Docker allows">
         <p>myTunnels reaches Docker through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers and the engine's info and nothing else, so images, volumes and networks cannot be changed from here.</p>
