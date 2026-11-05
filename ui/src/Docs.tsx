@@ -93,7 +93,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>Git signs in with a token from <b>Tokens</b>, each person's own, shown once. When git asks, give any username and the token as the password. On this network git reaches Code at <code>/git/</code> on this dashboard's address; <b>Publish an address</b> to reach it from anywhere.</p>
       </Doc>
       <Doc title="Who may open what">
-        <p>Who may view, push to, create or delete repositories is each account's Code permissions, under Admin, Users. At Code's address, Access Control has the same layers as any tunnel for browsers. Git skips them and signs in with its token, held to the account's permissions and to the account having Code's address among its tunnels; only Same network still applies to it. A single push over 100 MB is refused by Cloudflare, so push a very large repository over this network the first time.</p>
+        <p>Who may view, push to, create or delete repositories is each account's Code permissions, under Security &amp; Roles, Users. At Code's address, Access Control has the same layers as any tunnel for browsers. Git skips them and signs in with its token, held to the account's permissions and to the account having Code's address among its tunnels; only Same network still applies to it. A single push over 100 MB is refused by Cloudflare, so push a very large repository over this network the first time.</p>
       </Doc>
     </>
   ),
@@ -161,7 +161,7 @@ const CONTENT: Record<string, ReactNode> = {
   users: (
     <>
       <Doc title="Accounts">
-        <p>Users, under Admin, holds the accounts people sign in with. Each has a username, an optional email (either signs in), and a password held to the same rule as every password here.</p>
+        <p>Users, under Security &amp; Roles, holds the accounts people sign in with. Each has a username, an optional email (either signs in), and a password held to the same rule as every password here.</p>
       </Doc>
       <Doc title="What an account opens">
         <p>On an account's <b>Profile</b>, <b>Tunnels</b> holds the tunnels it may open, and <b>Security</b> the devices it signs in from. One sign-in covers every tunnel on the same domain that the account may open. Suspending an account, or removing it, ends its sessions at once.</p>

@@ -155,17 +155,17 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
     ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
     ["containers", "Containers", "deployed_code", "#/containers", can("containers.view")],
     ["tunnels", "Tunnels", "public", "#/", can("tunnels.view")],
-    ["devices", "Devices", "devices", "#/devices", can("devices.view")],
-    ["oauth", "Third-Party OAuth", "key", "#/oauth", can("oauth.manage")],
-    ["twofactor", "Two-Factor Auth", "lock", "#/twofactor", can("twofactor.manage")],
   ];
   const storage: [string, string, IconName, string, boolean][] = [
-    ["code", "Code", "code", "#/code", can("code.view")],
     ["media", "Media", "photo_library", "#/media", can("media.view")],
     ["drive", "Drive", "cloud", "#/drive", can("drive.view")],
+    ["code", "Code", "code", "#/code", can("code.view")],
   ];
   const admin: [string, string, IconName, string, boolean][] = [
     ["users", "Users", "group", "#/users", can("users.view")],
+    ["devices", "Devices", "devices", "#/devices", can("devices.view")],
+    ["oauth", "Third-Party OAuth", "key", "#/oauth", can("oauth.manage")],
+    ["twofactor", "Two-Factor Auth", "lock", "#/twofactor", can("twofactor.manage")],
   ];
   const home = [...pages, ...storage, ...admin].find((p) => p[4])?.[3] ?? "#/settings/appearance";
   useEffect(() => {
@@ -209,7 +209,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
             <>
               {pages.map(item)}
               {storage.some((p) => p[4]) && <NavGroup id="storage" label="Storage & Media">{storage.map(item)}</NavGroup>}
-              {admin.some((p) => p[4]) && <NavGroup id="admin" label="Admin">{admin.map(item)}</NavGroup>}
+              {admin.some((p) => p[4]) && <NavGroup id="admin" label="Security & Roles">{admin.map(item)}</NavGroup>}
             </>
           )}
         </nav>
