@@ -338,7 +338,7 @@ function geometry(keep: number, values: (number | null)[], max: number) {
   return { line, area, y, offset };
 }
 
-function Spark({ values, max, color, keep, times, every }: Span & { values: number[]; max: number; color: string }) {
+export function Spark({ values, max, color, keep, times, every }: Span & { values: number[]; max: number; color: string }) {
   const { line, area } = geometry(keep, values, max);
   return (
     <svg className="spark" viewBox={`1 0 ${keep - 2} 100`} preserveAspectRatio="none" style={{ color }} aria-hidden="true">
@@ -358,7 +358,7 @@ interface Line {
 
 // Chart is a line chart over the kept window, with gridlines at the top and
 // middle, and a crosshair with every line's value under the pointer.
-function Chart({ lines, max, format, times, keep, every }: Span & { lines: Line[]; max: number; format: (n: number) => string }) {
+export function Chart({ lines, max, format, times, keep, every }: Span & { lines: Line[]; max: number; format: (n: number) => string }) {
   const plot = useRef<HTMLDivElement>(null);
   const [slot, setSlot] = useState<number | null>(null);
   const shapes = lines.map((l) => geometry(keep, l.values, max));
@@ -433,7 +433,7 @@ function Legend({ items }: { items: [string, string][] }) {
   );
 }
 
-function Meter({ value, max, label, tone }: { value: number; max: number; label: string; tone?: string }) {
+export function Meter({ value, max, label, tone }: { value: number; max: number; label: string; tone?: string }) {
   const share = max > 0 ? Math.min(value / max, 1) : 0;
   const level = tone ?? (share >= 0.9 ? "bad" : share >= 0.75 ? "warn" : "");
   return (
