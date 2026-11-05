@@ -233,13 +233,16 @@ export function UserPage({ user, page, routes, devices, catalog, me, onChanged }
           </div>
         </div>
         <div className="page-actions">
-          {can("users.manage") && <MoreMenu label="Account actions" actions={[
-            user.enabled
-              ? { label: "Suspend", icon: "block", onClick: () => quietly({ enabled: false }, "Suspended") }
-              : { label: user.note ? "Unlock" : "Reinstate", icon: "check_circle", onClick: () => quietly({ enabled: true }, user.note ? "Unlocked" : "Reinstated") },
-            { label: "Sign out everywhere", icon: "logout", onClick: () => api.signOutUser(user.id).then(() => notify("Signed out everywhere")).catch((e) => notify(message(e), "bad")) },
-            ...(can("users.delete") ? [{ label: "Remove", icon: "delete" as IconName, danger: true, confirm: "Remove for good", onClick: remove }] : []),
-          ]} />}
+          <div className="head-meta">
+            {can("users.manage") && <MoreMenu label="Account actions" actions={[
+              user.enabled
+                ? { label: "Suspend", icon: "block", onClick: () => quietly({ enabled: false }, "Suspended") }
+                : { label: user.note ? "Unlock" : "Reinstate", icon: "check_circle", onClick: () => quietly({ enabled: true }, user.note ? "Unlocked" : "Reinstated") },
+              { label: "Sign out everywhere", icon: "logout", onClick: () => api.signOutUser(user.id).then(() => notify("Signed out everywhere")).catch((e) => notify(message(e), "bad")) },
+              ...(can("users.delete") ? [{ label: "Remove", icon: "delete" as IconName, danger: true, confirm: "Remove for good", onClick: remove }] : []),
+            ]} />}
+            <small>{user.last_login ? `Signed in ${ago(user.last_login)}` : "Never signed in"}</small>
+          </div>
         </div>
       </div>
       <SubNav back="#/users" backLabel="Users" base={`#/users/${user.id}`} items={USER_PAGES} current={current} />
@@ -292,7 +295,7 @@ function Permissions({ user, catalog, me, onSet }: { user: User; catalog: Group[
 
 type Patch = Parameters<typeof api.editUser>[1];
 
-// Profile is an account at a glance: four figures, then its details and the
+// Profile is an account at a glance: its details and the
 // tunnels it may open on the left, its security and the devices it signs in
 // from on the right.
 function Profile({ user, routes, devices, edit, onChange }: {
@@ -306,22 +309,10 @@ function Profile({ user, routes, devices, edit, onChange }: {
   const manage = can("users.manage");
   const theirs = routes.filter((r) => user.route_ids.includes(r.id));
   const linked = devices.filter((d) => user.device_ids.includes(d.id));
-  const [list, setList] = useState<SignIn[] | null>(null);
-  useEffect(() => {
-    api.userActivity(user.id).then(setList).catch(() => setList([]));
-  }, [user.id, user.last_login]);
-  const month = Date.now() / 1000 - 30 * 86_400;
-  const wrong = (list ?? []).filter((s) => s.at > month && s.outcome !== "ok").length;
   const [tone, label] = state(user);
 
   return (
     <>
-      <div className="tally four">
-        <div className="tally-item plain"><b>{user.route_ids.length}</b><span>Tunnels</span></div>
-        <div className="tally-item plain"><b>{user.device_ids.length}</b><span>Devices</span></div>
-        <div className="tally-item"><b>{user.last_login ? ago(user.last_login) : "Never"}</b><span>Last sign-in</span></div>
-        <div className={"tally-item " + (wrong ? "bad" : "ok")}><b>{list ? wrong : "..."}</b><span>Refused, 30 days</span></div>
-      </div>
       <div className="profile-grid">
         <div className="profile-col">
           <section>
