@@ -1094,8 +1094,53 @@ async fn move_route(
     Path(id): Path<String>,
     Json(body): Json<AddressEdit>,
 ) -> ApiResult<Json<Route>> {
+    move_address(&state, &id, &body.subdomain, &body.zone_id)
+        .await
+        .map(Json)
+}
+
+/// Code's address took over File System's, `storage.<domain>`; once, it moves
+/// to `code.<domain>`, unless that is taken. Cloudflare must answer first, so
+/// it is tried a few times while the server starts.
+pub async fn rename_code_address(state: AppState) {
+    const DONE: &str = "code_address_renamed";
+    for _ in 0..10 {
+        if state.db.setting(DONE).ok().flatten().is_some() {
+            return;
+        }
+        let Some(route) = code::route(&state).filter(|r| r.subdomain == "storage") else {
+            let _ = state.db.set_setting(DONE, "1");
+            return;
+        };
+        match move_address(&state, &route.id, "code", &route.zone_id).await {
+            Ok(_) => {
+                let _ = state.db.set_setting(DONE, "1");
+                return;
+            }
+            Err(ApiError(StatusCode::CONFLICT, why)) => {
+                tracing::info!("Code keeps {}: {why}", route.hostname);
+                let _ = state.db.set_setting(DONE, "1");
+                return;
+            }
+            Err(ApiError(_, why)) => tracing::warn!("cannot move Code's address yet: {why}"),
+        }
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    }
+}
+
+/// Moves a tunnel to another subdomain or domain, as `move_route` does.
+async fn move_address(
+    state: &AppState,
+    id: &str,
+    subdomain: &str,
+    zone_id: &str,
+) -> ApiResult<Route> {
+    let body = AddressEdit {
+        subdomain: subdomain.to_owned(),
+        zone_id: zone_id.to_owned(),
+    };
     let cf_settings = state.cloudflare()?;
-    let mut route = state.db.route(&id)?.ok_or_else(ApiError::not_found)?;
+    let mut route = state.db.route(id)?.ok_or_else(ApiError::not_found)?;
     let subdomain = body.subdomain.trim().to_ascii_lowercase();
     if !valid_label(&subdomain) {
         return Err(ApiError::bad(
@@ -1111,7 +1156,7 @@ async fn move_route(
         .ok_or_else(|| ApiError::bad("That domain is not on this Cloudflare account"))?;
     let hostname = format!("{subdomain}.{}", zone.name);
     if hostname == route.hostname {
-        return Ok(Json(route));
+        return Ok(route);
     }
     if state.snapshot().routes.contains_key(&hostname) {
         return Err(ApiError::conflict(format!(
@@ -1141,7 +1186,7 @@ async fn move_route(
     route.hostname = hostname;
     route.dns_record_id = Some(record_id.clone());
     state.db.move_route(&route)?;
-    if let Err(err) = tunnel::sync_ingress(&state).await {
+    if let Err(err) = tunnel::sync_ingress(state).await {
         state.db.move_route(&before)?;
         if created {
             if let Err(e) = cf.delete_dns(&zone.id, &record_id).await {
@@ -1157,7 +1202,7 @@ async fn move_route(
     }
     state.reload()?;
     tracing::info!("moved {} to {}", before.hostname, route.hostname);
-    Ok(Json(route))
+    Ok(route)
 }
 
 async fn delete_route(

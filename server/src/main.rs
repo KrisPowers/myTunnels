@@ -53,6 +53,7 @@ async fn main() -> Result<()> {
     tracing::info!("gateway on {}", state.config.gate_service);
 
     tunnel::spawn(state.clone());
+    tokio::spawn(admin::rename_code_address(state.clone()));
     netinfo::spawn(state.clone());
     metrics::spawn();
 
