@@ -116,14 +116,14 @@ async fn handle(
         // A tunnel switched off answers as if it did not exist.
         return StatusCode::NOT_FOUND.into_response();
     }
-    // Git at the Code address signs in with a token, which takes the place of
-    // the layers a browser passes; only the home network still applies.
-    if route.target_scheme == "code" && code::is_git(&req) {
-        if route.require_lan && !ip.is_some_and(|ip| state.is_local(&snap, ip)) {
-            return (StatusCode::FORBIDDEN, "Only from the home network\n").into_response();
+    // Code's address is for git alone, which signs in with a token; anything
+    // else there finds nothing.
+    if route.target_scheme == "code" {
+        if !code::is_git(&req) {
+            return StatusCode::NOT_FOUND.into_response();
         }
         let path = req.uri().path().to_owned();
-        return code::serve(&state, Some(&route), ip, &path, req).await;
+        return code::serve(&state, ip, &path, req).await;
     }
 
     let mut new_cookie = None;
@@ -144,15 +144,7 @@ async fn handle(
     }
 
     let verdict = check(&state, &snap, &route, ip, req.headers());
-    let mut response = if verdict.allowed() && route.target_scheme == "code" {
-        // Who is signed in decides which repositories they see.
-        let user = if route.require_login {
-            user_session(&state, &snap, req.headers(), &route)
-        } else {
-            None
-        };
-        code::visit(&state, user, &state.config.ui_dir, req).await
-    } else if verdict.allowed() && route.target_scheme == "dashboard" {
+    let mut response = if verdict.allowed() && route.target_scheme == "dashboard" {
         dashboard(panel, ip, req).await
     } else if verdict.allowed() {
         let mut response = proxy::forward(&state, &snap, &route, ip, req).await;

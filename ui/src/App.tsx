@@ -145,7 +145,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
   // A tunnel, device or account that is gone goes back to its list.
   useEffect(() => {
-    if (view === "tunnels" && id && routes && !route) go(routes.some((r) => r.id === id) ? "#/code/access" : "#/");
+    if (view === "tunnels" && id && routes && !route) go(routes.some((r) => r.id === id) ? "#/code" : "#/");
     if (view === "devices" && id && devices && !device) go("#/devices");
     if (view === "users" && id && id !== "new" && users && !user) go("#/users");
   }, [view, id, routes, devices, users, route, device, user]);
@@ -217,20 +217,20 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
         <main className="page" key={view + id}>
           {view === "tunnels" && !id && <Tunnels routes={apps} status={status} />}
-          {view === "code" && <CodePage id={id} page={page} users={users ?? []} providers={providers} onChanged={load} />}
+          {view === "code" && <CodePage id={id} page={page} users={users ?? []} onChanged={load} />}
           {view === "dashboard" && <DashboardPage />}
           {view === "media" && <MediaPage />}
           {view === "drive" && <DrivePage />}
           {view === "containers" && <ContainersPage id={id} page={page} />}
           {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} />}
           {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
-          {view === "devices" && !id && <Devices devices={devices} routes={routes ?? []} onChanged={load} />}
-          {device && <DevicePage device={device} routes={routes ?? []} users={users ?? []} onChanged={load} />}
-          {view === "users" && !id && <Users users={users} routes={routes ?? []} />}
+          {view === "devices" && !id && <Devices devices={devices} routes={apps ?? []} onChanged={load} />}
+          {device && <DevicePage device={device} routes={apps ?? []} users={users ?? []} onChanged={load} />}
+          {view === "users" && !id && <Users users={users} routes={apps ?? []} />}
           {view === "users" && id === "new" && <NewUser devices={devices ?? []} onAdded={load} />}
-          {user && <UserPage user={user} page={page} routes={routes ?? []} devices={devices ?? []} catalog={catalog} me={me} onChanged={load} />}
+          {user && <UserPage user={user} page={page} routes={apps ?? []} devices={devices ?? []} catalog={catalog} me={me} onChanged={load} />}
           {view === "oauth" && <OAuth />}
-          {view === "twofactor" && <TwoFactorPage routes={routes ?? []} onChanged={load} />}
+          {view === "twofactor" && <TwoFactorPage routes={apps ?? []} onChanged={load} />}
           {view === "settings" && <Settings sections={settings} section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
           {view === "docs" && <Docs section={id} />}
         </main>

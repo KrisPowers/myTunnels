@@ -20,7 +20,7 @@ const uiDir = join(root, "ui");
 const work = join(tmpdir(), "mytunnels");
 const target = join(work, "target");
 const reloadFile = join(work, "reload");
-// A built copy of the UI, for the pages the server itself serves, such as Code.
+// A built copy of the UI, for the pages the server itself serves, such as the dashboard through a tunnel.
 const builtUi = join(work, "ui");
 const windows = process.platform === "win32";
 const exe = windows ? ".exe" : "";
@@ -160,7 +160,7 @@ const ui = spawn(process.execPath, [join(uiDir, "node_modules", "vite", "bin", "
   stdio: "inherit",
 });
 
-// The Code address serves the built UI, so a copy is kept built as you save.
+// The dashboard through a tunnel serves the built UI, so a copy is kept built as you save.
 // A change there shows on the next reload of that page.
 const uiBuild = spawn(
   process.execPath,

@@ -63,7 +63,7 @@ pub fn router(state: AppState) -> Router {
         .route("/devices/{id}/activity", get(device_activity))
         .route("/code", get(code_overview))
         .route("/code/repos", get(list_repos).post(create_repo))
-        .route("/code/repos/{name}", delete(remove_repo))
+        .route("/code/repos/{name}", delete(remove_repo).patch(edit_repo))
         .route("/code/repos/{name}/{op}", get(read_repo))
         .route("/code/tokens", post(add_token))
         .route("/code/tokens/{id}", delete(remove_token))
@@ -1192,20 +1192,22 @@ async fn move_route(
         .map(Json)
 }
 
-/// Code's address took over File System's, `storage.<domain>`; once, it moves
-/// to `code.<domain>`, unless that is taken. Cloudflare must answer first, so
-/// it is tried a few times while the server starts.
+/// Code's address is `git.<domain>`: one that started as File System's
+/// `storage.` or as `code.` moves there once, unless it is taken. Cloudflare
+/// must answer first, so it is tried a few times while the server starts.
 pub async fn rename_code_address(state: AppState) {
-    const DONE: &str = "code_address_renamed";
+    const DONE: &str = "code_address_git";
     for _ in 0..10 {
         if state.db.setting(DONE).ok().flatten().is_some() {
             return;
         }
-        let Some(route) = code::route(&state).filter(|r| r.subdomain == "storage") else {
+        let Some(route) =
+            code::route(&state).filter(|r| r.subdomain == "storage" || r.subdomain == "code")
+        else {
             let _ = state.db.set_setting(DONE, "1");
             return;
         };
-        match move_address(&state, &route.id, "code", &route.zone_id).await {
+        match move_address(&state, &route.id, "git", &route.zone_id).await {
             Ok(_) => {
                 let _ = state.db.set_setting(DONE, "1");
                 return;
@@ -1350,6 +1352,14 @@ async fn remove_repo(
     code::remove(&state, &name).await
 }
 
+async fn edit_repo(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    Json(body): Json<code::RepoEdit>,
+) -> ApiResult<Json<Value>> {
+    code::edit(&state, &name, body).await
+}
+
 async fn read_repo(
     State(state): State<AppState>,
     Extension(caller): Extension<Caller>,
@@ -1384,7 +1394,7 @@ async fn lan_git(
     if !code::is_git(&req) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    code::serve(&state, None, Some(peer.ip()), &format!("/{path}"), req).await
+    code::serve(&state, Some(peer.ip()), &format!("/{path}"), req).await
 }
 
 async fn media_fs(State(state): State<AppState>, Path(op): Path<String>, req: Request) -> Response {

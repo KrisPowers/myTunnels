@@ -226,13 +226,14 @@ export type ContainerAction = "start" | "stop" | "restart" | "pause" | "unpause"
 
 // Code: git repositories, browsed here and at Code's own address, and used
 // with git over HTTPS signing in with a token.
-export interface Repo { name: string; branch: string; updated: number | null; empty: boolean; write: boolean }
+// `home_only`: git reaches it only from the home network.
+export interface Repo { name: string; branch: string; updated: number | null; empty: boolean; write: boolean; home_only: boolean }
 
 export interface GitToken { id: string; name: string; owner: string; created_at: number; last_used: number | null }
 
 export interface CodeState { route: Route | null; tokens: GitToken[] }
 
-export interface Refs { default: string; branches: { name: string; updated: number }[]; tags: { name: string; updated: number }[] }
+export interface Refs { default: string; branches: { name: string; updated: number }[]; tags: { name: string; updated: number }[]; home_only: boolean }
 
 export interface TreeEntry { name: string; kind: "dir" | "file" | "module"; size: number | null }
 
@@ -390,11 +391,12 @@ export const api = {
   code: () => call<CodeState>("/code"),
   createRepo: (name: string) => call<{ repos: Repo[] }>("/code/repos", "POST", { name }),
   removeRepo: (name: string) => call<{ repos: Repo[] }>(`/code/repos/${encodeURIComponent(name)}`, "DELETE"),
+  editRepo: (name: string, patch: { home_only: boolean }) => call<{ repos: Repo[] }>(`/code/repos/${encodeURIComponent(name)}`, "PATCH", patch),
   addToken: (name: string, owner: string) => call<CodeState & { secret: string }>("/code/tokens", "POST", { name, owner }),
   removeToken: (id: string) => call<CodeState>(`/code/tokens/${id}`, "DELETE"),
 };
 
-// Reading repositories, the same calls on the dashboard and at Code's address.
+// Reading repositories.
 const repoPath = (name: string, op: string, q: Record<string, string | number | undefined>) => {
   const params = Object.entries(q).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join("&");
   return `/code/repos/${encodeURIComponent(name)}/${op}${params ? "?" + params : ""}`;

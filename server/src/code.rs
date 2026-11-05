@@ -1,8 +1,8 @@
 //! Code: git repositories kept in the data folder. They are browsed on the
-//! dashboard and at Code's own address, and cloned, pulled and pushed with git
-//! over HTTPS there, or over the LAN at the panel's `/git/`, signing in with a
-//! token. Git's own `http-backend` serves git; reading for the pages uses git
-//! as well.
+//! dashboard, and cloned, pulled and pushed with git over HTTPS at Code's own
+//! address (for git alone) or over the LAN at the panel's `/git/`, signing in
+//! with a token. Git's own `http-backend` serves git; reading for the pages uses
+//! git as well.
 
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -10,7 +10,7 @@ use std::process::Stdio;
 
 use axum::body::Body;
 use axum::extract::{Query, Request};
-use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use base64::Engine;
@@ -175,6 +175,29 @@ fn level(state: &AppState, viewer: &Viewer) -> Level {
     }
 }
 
+/// Whether git may reach `repo` only from the home network.
+fn home_only(state: &AppState, repo: &str) -> bool {
+    state
+        .db
+        .setting(&format!("code_home_only:{repo}"))
+        .ok()
+        .flatten()
+        .is_some()
+}
+
+/// True for a visitor on the home network: this host's own network, as for a
+/// tunnel's Same network layer, or an address only a LAN has, as git on the
+/// panel's `/git/` comes from.
+fn at_home(state: &AppState, ip: Option<IpAddr>) -> bool {
+    ip.map(|ip| ip.to_canonical()).is_some_and(|ip| {
+        let lan = match ip {
+            IpAddr::V4(v4) => v4.is_loopback() || v4.is_private() || v4.is_link_local(),
+            IpAddr::V6(v6) => v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00,
+        };
+        lan || state.is_local(&state.snapshot(), ip)
+    })
+}
+
 fn need(state: &AppState, viewer: &Viewer, repo: &str, want: Level) -> ApiResult<PathBuf> {
     if level(state, viewer) < want {
         // A repository someone may not open is one they cannot see.
@@ -226,6 +249,7 @@ pub async fn list(state: &AppState, viewer: &Viewer) -> ApiResult<Json<Value>> {
                 "updated": updated,
                 "empty": updated.is_none(),
                 "write": level == Level::Write,
+                "home_only": home_only(state, name),
             }));
         }
     }
@@ -281,7 +305,7 @@ pub async fn read(
             None => "HEAD".to_owned(),
         };
         match op {
-            "refs" => refs(&dir).await,
+            "refs" => refs(&dir, home_only(state, name)).await,
             "tree" => tree(&dir, &reference, &path).await,
             "blob" => blob(&dir, &reference, &path, at.raw).await,
             "log" => log(&dir, &reference, &path, at.skip).await,
@@ -293,7 +317,7 @@ pub async fn read(
     result.unwrap_or_else(IntoResponse::into_response)
 }
 
-async fn refs(dir: &Path) -> ApiResult<Response> {
+async fn refs(dir: &Path, home_only: bool) -> ApiResult<Response> {
     let head = git(dir, &["symbolic-ref", "--short", "HEAD"])
         .await
         .map(|b| text(b).trim().to_owned())
@@ -325,7 +349,13 @@ async fn refs(dir: &Path) -> ApiResult<Response> {
             tags.push(json!({ "name": t, "updated": at }));
         }
     }
-    Ok(Json(json!({ "default": head, "branches": branches, "tags": tags })).into_response())
+    Ok(Json(json!({
+        "default": head,
+        "branches": branches,
+        "tags": tags,
+        "home_only": home_only,
+    }))
+    .into_response())
 }
 
 async fn tree(dir: &Path, reference: &str, path: &str) -> ApiResult<Response> {
@@ -544,6 +574,25 @@ pub async fn remove(state: &AppState, name: &str) -> ApiResult<Json<Value>> {
     tokio::fs::remove_dir_all(&dir)
         .await
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    state.db.delete_setting(&format!("code_home_only:{name}"))?;
+    list(state, &Viewer::Admin).await
+}
+
+#[derive(Deserialize)]
+pub struct RepoEdit {
+    home_only: Option<bool>,
+}
+
+/// Changes a repository's settings: whether git reaches it only from the home
+/// network.
+pub async fn edit(state: &AppState, name: &str, body: RepoEdit) -> ApiResult<Json<Value>> {
+    dir_of(state, name)?;
+    let key = format!("code_home_only:{name}");
+    match body.home_only {
+        Some(true) => state.db.set_setting(&key, "1")?,
+        Some(false) => state.db.delete_setting(&key)?,
+        None => {}
+    }
     list(state, &Viewer::Admin).await
 }
 
@@ -645,13 +694,7 @@ fn token_of(headers: &HeaderMap) -> Option<String> {
 /// A request from git at `path` (`/<name>.git/...`): signed in with a token,
 /// held to the account's access, then handed to git's `http-backend`. At the
 /// Code address, `route` is it, and accounts must be among its people.
-pub async fn serve(
-    state: &AppState,
-    route: Option<&Route>,
-    ip: Option<IpAddr>,
-    path: &str,
-    req: Request,
-) -> Response {
+pub async fn serve(state: &AppState, ip: Option<IpAddr>, path: &str, req: Request) -> Response {
     let from = ip.map(|ip| ip.to_string()).unwrap_or_default();
     let key = format!("git:{from}");
     if state.locked_out(&key) {
@@ -688,8 +731,8 @@ pub async fn serve(
         let Some(user) = snap.users.get(&token.owner) else {
             return ask_to_sign_in("That token's account is gone");
         };
-        if !user.enabled || route.is_some_and(|r| !user.route_ids.contains(&r.id)) {
-            return refuse(StatusCode::FORBIDDEN, "This account may not use Code here");
+        if !user.enabled {
+            return refuse(StatusCode::FORBIDDEN, "This account is suspended");
         }
         (Viewer::Person(Some(user.id.clone())), user.username.clone())
     };
@@ -709,6 +752,12 @@ pub async fn serve(
             );
         }
         Err(_) => return refuse(StatusCode::NOT_FOUND, "No such repository"),
+    }
+    if home_only(state, &name) && !at_home(state, ip) {
+        return refuse(
+            StatusCode::FORBIDDEN,
+            "This repository takes git only from the home network",
+        );
     }
     let _ = state.db.touch_token(&token.id, now());
     backend(state, path, &who, &from, req).await
@@ -816,80 +865,6 @@ async fn backend(state: &AppState, path: &str, user: &str, from: &str, req: Requ
         .header(header::CACHE_CONTROL, "no-store")
         .body(Body::from_stream(ReaderStream::new(out)))
         .unwrap_or_else(|_| refuse(StatusCode::BAD_GATEWAY, "git answered oddly"))
-}
-
-// ---- the Code address in a browser ----
-
-/// A browser at the Code address that passed its checks: the repositories the
-/// account may read, or the page that shows them.
-pub async fn visit(
-    state: &AppState,
-    user: Option<String>,
-    ui_dir: &Path,
-    req: Request,
-) -> Response {
-    let path = req.uri().path().to_owned();
-    let viewer = Viewer::Person(user);
-    let mut response = if let Some(rest) = path.strip_prefix("/api/code/repos") {
-        if req.method() != Method::GET {
-            StatusCode::METHOD_NOT_ALLOWED.into_response()
-        } else {
-            let parts: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
-            let mut response = match parts.as_slice() {
-                [] => list(state, &viewer).await.into_response(),
-                [name, op] => read(state, &viewer, name, op, req).await,
-                _ => StatusCode::NOT_FOUND.into_response(),
-            };
-            response
-                .headers_mut()
-                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-            response
-        }
-    } else if req.method() != Method::GET && req.method() != Method::HEAD {
-        StatusCode::METHOD_NOT_ALLOWED.into_response()
-    } else if path.starts_with("/assets/")
-        || path.starts_with("/fonts/")
-        || path.ends_with(".js")
-        || path.ends_with(".ico")
-    {
-        match tower_http::services::ServeDir::new(ui_dir)
-            .try_call(req)
-            .await
-        {
-            Ok(response) => response.map(Body::new),
-            Err(_) => StatusCode::NOT_FOUND.into_response(),
-        }
-    } else {
-        code_page(ui_dir).await
-    };
-    let headers = response.headers_mut();
-    for (name, value) in [
-        (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
-        (header::X_FRAME_OPTIONS, "DENY"),
-        (header::REFERRER_POLICY, "no-referrer"),
-        (header::STRICT_TRANSPORT_SECURITY, "max-age=31536000"),
-    ] {
-        headers.insert(name, HeaderValue::from_static(value));
-    }
-    headers.entry(header::CONTENT_SECURITY_POLICY).or_insert(HeaderValue::from_static(
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
-    ));
-    response
-}
-
-/// The dashboard's page, marked so it opens as the repositories alone.
-async fn code_page(ui_dir: &Path) -> Response {
-    match tokio::fs::read_to_string(ui_dir.join("index.html")).await {
-        Ok(html) => (
-            [
-                (header::CONTENT_TYPE, "text/html; charset=utf-8"),
-                (header::CACHE_CONTROL, "no-store"),
-            ],
-            html.replacen("<head>", "<head><meta name=\"code\" content=\"1\">", 1),
-        )
-            .into_response(),
-        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "The page is not built").into_response(),
-    }
 }
 
 #[cfg(test)]

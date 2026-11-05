@@ -1,18 +1,18 @@
 import { useCallback, useContext, useEffect, useState, type FormEvent } from "react";
-import { ago, api, editOf, message, repos, type Access, type CodeState, type OAuthProvider, type Repo, type Route, type RouteEdit, type User, type Zone } from "./api";
+import { ago, api, message, repos, type CodeState, type Repo, type User, type Zone } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { NameDialog } from "./Files";
 import { Icon, type IconName } from "./Icon";
 import { RepoList, RepoView } from "./Repo";
-import { AccessCard, AddressEditor, TunnelLogs } from "./Tunnels";
+import { AddressEditor } from "./Tunnels";
 import { MeContext, useCan } from "./me";
 import { Callout, Card, Copy, Dialog, Row, TextField, useNotify } from "./ui";
 
-// CodePage is Code: git repositories kept on this host, the tokens git signs
-// in with, and, once it has an address, the layers in front of it there. Who
-// may view, push, create or delete is each account's Code permissions.
+// CodePage is Code: git repositories kept on this host, and the tokens git
+// signs in with. Code's address, once published, is for git alone. Who may
+// view, push, create or delete is each account's Code permissions.
 // `#/code/repos/<name>` is one repository.
-export function CodePage({ id, page, users, providers, onChanged }: { id: string; page: string; users: User[]; providers: OAuthProvider[]; onChanged: () => Promise<void> }) {
+export function CodePage({ id, page, users, onChanged }: { id: string; page: string; users: User[]; onChanged: () => Promise<void> }) {
   const [state, setState] = useState<CodeState | null>(null);
   const [list, setList] = useState<Repo[] | null>(null);
   const [problem, setProblem] = useState("");
@@ -48,7 +48,6 @@ export function CodePage({ id, page, users, providers, onChanged }: { id: string
   const pages: [string, string, IconName][] = [
     ["repos", "Repositories", "code"],
     ["tokens", "Tokens", "key"],
-    ...(route && can("tunnels.view") ? [["access", "Access Control", "shield"], ["activity", "Activity", "history"]] as [string, string, IconName][] : []),
   ];
   const current = pages.some(([k]) => k === id) ? id : "repos";
 
@@ -68,9 +67,7 @@ export function CodePage({ id, page, users, providers, onChanged }: { id: string
           </div>
         </div>
         <div className="page-actions">
-          {route ? (
-            <a className="btn" href={`https://${route.hostname}`} target="_blank" rel="noreferrer"><Icon name="open_in_new" size={18} />Open</a>
-          ) : can("tunnels.create") && (
+          {!route && can("tunnels.create") && (
             <button type="button" className="btn" onClick={() => setAsking("address")}><Icon name="public" size={18} />Publish an address</button>
           )}
           {can("code.create") && <button type="button" className="btn primary" onClick={() => setAsking("repo")}><Icon name="add" size={18} />New repository</button>}
@@ -88,13 +85,6 @@ export function CodePage({ id, page, users, providers, onChanged }: { id: string
         {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
         {current === "repos" && list && <RepoList list={list} href={(name) => `#/code/repos/${name}`} onNew={can("code.create") ? () => setAsking("repo") : undefined} />}
         {current === "tokens" && <Tokens state={state} users={users} onState={setState} />}
-        {current === "access" && route && (
-          <CodeAccess route={route} users={users} providers={providers} onChanged={async () => {
-            await onChanged();
-            await load();
-          }} />
-        )}
-        {current === "activity" && route && <TunnelLogs route={route} users={users} />}
       </div>
 
       {asking === "repo" && (
@@ -129,7 +119,7 @@ export function CodePage({ id, page, users, providers, onChanged }: { id: string
 function Publish({ onClose, onDone }: { onClose: () => void; onDone: () => Promise<void> }) {
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [zone, setZone] = useState("");
-  const [sub, setSub] = useState("code");
+  const [sub, setSub] = useState("git");
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
 
@@ -160,7 +150,7 @@ function Publish({ onClose, onDone }: { onClose: () => void; onDone: () => Promi
   return (
     <Dialog title="Publish an address" onClose={onClose}>
       <form onSubmit={submit}>
-        <p className="muted">Where git and browsers reach Code from anywhere.</p>
+        <p className="muted">Where git reaches Code from anywhere.</p>
         <div className="edit-row">
           <TextField className="grow" label="Subdomain" autoFocus autoComplete="off" value={sub}
             onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
@@ -272,53 +262,6 @@ function Tokens({ state, users, onState }: { state: CodeState; users: User[]; on
           )}
         </Dialog>
       )}
-    </>
-  );
-}
-
-// CodeAccess is the layers in front of Code's address, as for any tunnel.
-// Which accounts may open it is picked on each account; what they may do with
-// repositories is their Code permissions.
-function CodeAccess({ route, users, providers, onChanged }: {
-  route: Route;
-  users: User[];
-  providers: OAuthProvider[];
-  onChanged: () => Promise<void>;
-}) {
-  const [edit, setEdit] = useState<RouteEdit>(() => editOf(route));
-  const [asking, setAsking] = useState(false);
-  const notify = useNotify();
-  useEffect(() => setEdit(editOf(route)), [route]);
-
-  const save = async (change: Partial<RouteEdit>) => {
-    const next = { ...edit, ...change };
-    setEdit({ ...next, password: undefined });
-    try {
-      await api.editRoute(route.id, next);
-      await onChanged();
-    } catch (e) {
-      setEdit(editOf(route));
-      throw e;
-    }
-  };
-  const access = (patch: Partial<Access>) => {
-    if (patch.require_password && !route.password_set) {
-      setAsking(true);
-      return;
-    }
-    if (patch.require_password === false) setAsking(false);
-    save(patch).catch((e) => notify(message(e), "bad"));
-  };
-
-  return (
-    <>
-      <Callout icon="info">Git signs in with a token from Tokens instead of these layers; only Same network still applies to it.</Callout>
-      <AccessCard value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} providers={providers} hostname={route.hostname} onChange={access}
-        onPassword={async (password) => {
-          await save({ require_password: true, password });
-          setAsking(false);
-        }}
-        onPasswordCancel={() => setAsking(false)} />
     </>
   );
 }

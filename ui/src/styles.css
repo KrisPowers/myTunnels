@@ -1080,10 +1080,6 @@ a.result:hover { background: var(--hover); }
 .clone-row .copy-text, .token-secret .copy-text { overflow-wrap: anywhere; }
 .token-secret { margin: 12px 0 20px; padding: 12px 16px; border-radius: var(--round); background: var(--card); }
 
-/* Code's address: the repositories on their own. */
-.code-app { max-width: 1200px; margin: 0 auto; padding: 0 16px 40px; }
-.code-top { display: flex; align-items: center; gap: 12px; height: var(--head); }
-.code-main { padding-top: 16px; }
 
 @media (max-width: 900px) {
   .rules { margin-left: 0; }

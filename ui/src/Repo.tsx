@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { ago, api, bytes, message, rawUrl, repos, type BlobView, type CommitLine, type CommitView, type Refs, type Repo, type TreeEntry } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon } from "./Icon";
-import { ArmedButton, Callout, Copy, Dialog, Notices, useNotify } from "./ui";
+import { useCan } from "./me";
+import { ArmedButton, Callout, Copy, Dialog, Switch, useNotify } from "./ui";
 
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 const short = (id: string) => id.slice(0, 7);
@@ -57,6 +58,7 @@ export function RepoView({ name, back, cloneUrls, admin, onRemoved }: {
   const [cloning, setCloning] = useState(false);
   const [problem, setProblem] = useState("");
   const notify = useNotify();
+  const can = useCan();
 
   useEffect(() => {
     repos.refs(name).then((r) => {
@@ -84,6 +86,20 @@ export function RepoView({ name, back, cloneUrls, admin, onRemoved }: {
           {refs && !empty && <div className="page-sub"><span><b>{refs.branches.length}</b> branch{refs.branches.length === 1 ? "" : "es"}</span><span><b>{refs.tags.length}</b> tag{refs.tags.length === 1 ? "" : "s"}</span></div>}
         </div>
         <div className="page-actions">
+          {refs && (
+            <label className="edit-switch" title="Git reaches this repository only from this host's network or a trusted one">
+              <Switch label="Home network only" on={refs.home_only} disabled={!can("code.create")} onChange={async (on) => {
+                try {
+                  await api.editRepo(name, { home_only: on });
+                  setRefs({ ...refs, home_only: on });
+                  notify(on ? "Git reaches it only from the home network" : "Git reaches it from anywhere");
+                } catch (e) {
+                  notify(message(e), "bad");
+                }
+              }} />
+              <span>Home network only</span>
+            </label>
+          )}
           <button type="button" className="btn primary" onClick={() => setCloning(true)}><Icon name="content_copy" size={18} />Clone</button>
           {admin && (
             <ArmedButton icon="delete" label="Delete" armedLabel="Delete for good" onConfirm={async () => {
@@ -371,58 +387,5 @@ function Commit({ name, id, onBack }: { name: string; id: string; onBack: () => 
       ))}
       {c.truncated && <Callout tone="warn" icon="warning">Only the first part of these changes is shown.</Callout>}
     </div>
-  );
-}
-
-// CodeApp is Code alone, as its own address shows it: the repositories the
-// visitor may open, read only.
-export function CodeApp() {
-  const [list, setList] = useState<Repo[] | null>(null);
-  const [user, setUser] = useState<string | null>(null);
-  const [problem, setProblem] = useState("");
-  const [at, setAt] = useState(() => decodeURIComponent(location.hash.replace(/^#\/?/, "")));
-
-  useEffect(() => {
-    // A sign-in that ended sends the page back through the gateway.
-    const again = () => location.reload();
-    const moved = () => setAt(decodeURIComponent(location.hash.replace(/^#\/?/, "")));
-    addEventListener("signed-out", again);
-    addEventListener("hashchange", moved);
-    repos.list().then((r) => {
-      setList(r.repos);
-      setUser(r.user);
-    }).catch((e) => setProblem(message(e)));
-    return () => {
-      removeEventListener("signed-out", again);
-      removeEventListener("hashchange", moved);
-    };
-  }, []);
-
-  return (
-    <Notices>
-      <div className="code-app">
-        <header className="code-top">
-          <a className="brand" href="#/"><span className="brand-mark"><Icon name="code" size={20} /></span><span className="brand-name">Code</span></a>
-          <span className="ex-grow" />
-          {user && (
-            <>
-              <span className="muted">{user}</span>
-              <a className="btn text" href="/__gate/logout"><Icon name="logout" size={18} />Sign out</a>
-            </>
-          )}
-        </header>
-        <main className="code-main" key={at}>
-          {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
-          {at ? (
-            <RepoView name={at} back="#/" cloneUrls={[{ label: "Clone", url: `${location.origin}/${at}.git` }]} />
-          ) : list && (
-            <>
-              <div className="page-head"><div className="page-head-main"><h1>Repositories</h1></div></div>
-              <RepoList list={list} href={(name) => `#/${encodeURIComponent(name)}`} />
-            </>
-          )}
-        </main>
-      </div>
-    </Notices>
   );
 }
