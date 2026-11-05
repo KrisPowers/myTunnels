@@ -7,7 +7,7 @@ use axum::extract::{ConnectInfo, Path, Request, State};
 use axum::http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{any, get, patch, post, put};
+use axum::routing::{any, delete, get, patch, post, put};
 use axum::{Extension, Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -20,7 +20,7 @@ use crate::netinfo;
 use crate::oauth::{self, Provider};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
-use crate::{codes, containers, gate, metrics, secret, storage, tunnel};
+use crate::{code, codes, containers, gate, metrics, secret, storage, tunnel};
 
 const ADMIN_COOKIE: &str = "admin_session";
 const ADMIN_TTL: i64 = 7 * 86_400;
@@ -60,11 +60,14 @@ pub fn router(state: AppState) -> Router {
         .route("/users/{id}/signout", post(sign_out_user))
         .route("/users/{id}/activity", get(user_activity))
         .route("/devices/{id}/activity", get(device_activity))
-        .route("/storage", get(storage_overview).put(save_storage))
-        .route("/storage/browse", get(browse_host))
-        .route("/storage/rules", post(add_rule))
-        .route("/storage/rules/{id}", patch(edit_rule).delete(delete_rule))
-        .route("/storage/fs/{op}", any(storage_fs))
+        .route("/code", get(code_overview))
+        .route("/code/repos", get(list_repos).post(create_repo))
+        .route("/code/repos/{name}", delete(remove_repo))
+        .route("/code/repos/{name}/{op}", get(read_repo))
+        .route("/code/rules", post(add_rule))
+        .route("/code/rules/{id}", patch(edit_rule).delete(delete_rule))
+        .route("/code/tokens", post(add_token))
+        .route("/code/tokens/{id}", delete(remove_token))
         .route("/media/fs/{op}", any(media_fs))
         .route("/drive/fs/{op}", any(drive_fs))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_admin));
@@ -80,6 +83,8 @@ pub fn router(state: AppState) -> Router {
     let spa = ServeDir::new(ui).fallback(ServeFile::new(ui.join("index.html")));
     Router::new()
         .nest("/api", api)
+        // Git on the LAN, signing in with a token as at the Code address.
+        .route("/git/{*path}", any(lan_git))
         .fallback_service(spa)
         .layer(middleware::from_fn(harden))
         .with_state(state)
@@ -788,7 +793,7 @@ fn valid_label(label: &str) -> bool {
 }
 
 fn check_target(host: Option<String>, scheme: &str, mode: &str) -> ApiResult<Option<String>> {
-    if !matches!(scheme, "http" | "https" | "storage" | "dashboard") {
+    if !matches!(scheme, "http" | "https" | "code" | "dashboard") {
         return Err(ApiError::bad("Scheme must be http or https"));
     }
     if mode != "all" && mode != "any" {
@@ -800,9 +805,9 @@ fn check_target(host: Option<String>, scheme: &str, mode: &str) -> ApiResult<Opt
     }
 }
 
-/// Targets myTunnels serves itself, with no port: Storage and the dashboard.
+/// Targets myTunnels serves itself, with no port: Code and the dashboard.
 fn served_here(scheme: &str) -> bool {
-    matches!(scheme, "storage" | "dashboard")
+    matches!(scheme, "code" | "dashboard")
 }
 
 /// Refuses a tunnel aimed at one of myTunnels' own ports on this machine.
@@ -924,14 +929,13 @@ async fn create_route(
             "Subdomain: lowercase letters, digits and '-', up to 63 characters",
         ));
     }
-    // Storage is served by the gateway itself, at one address; the dashboard
-    // by the gateway too, with no port.
-    let storage = body.target_scheme == "storage";
+    // Code is served by the gateway itself, at one address; the dashboard by
+    // the gateway too, with no port.
     if body.port == 0 && !served_here(&body.target_scheme) {
         return Err(ApiError::bad("Port must be between 1 and 65535"));
     }
-    if storage && storage::route(&state).is_some() {
-        return Err(ApiError::conflict("File System already has an address"));
+    if body.target_scheme == "code" && code::route(&state).is_some() {
+        return Err(ApiError::conflict("Code already has an address"));
     }
     let target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
     check_not_self(&state, target_host.as_deref(), body.port)?;
@@ -1039,11 +1043,9 @@ async fn update_route(
     Json(body): Json<RouteEdit>,
 ) -> ApiResult<Json<Route>> {
     let mut route = state.db.route(&id)?.ok_or_else(ApiError::not_found)?;
-    // A tunnel stays an app or Storage; only where an app runs can change.
-    if (route.target_scheme == "storage") != (body.target_scheme == "storage") {
-        return Err(ApiError::bad(
-            "File System and apps are published separately",
-        ));
+    // A tunnel stays an app or Code; only where an app runs can change.
+    if (route.target_scheme == "code") != (body.target_scheme == "code") {
+        return Err(ApiError::bad("Code and apps are published separately"));
     }
     if body.port == 0 && !served_here(&body.target_scheme) {
         return Err(ApiError::bad("Port must be between 1 and 65535"));
@@ -1180,68 +1182,92 @@ async fn delete_route(
     Ok(Json(json!({ "ok": true })))
 }
 
-// Storage
+// Code
 
-async fn storage_overview(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    storage::overview(&state).await
+async fn code_overview(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    code::overview(&state).await
 }
 
-async fn save_storage(
+async fn list_repos(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    code::list(&state, &code::Viewer::Admin).await
+}
+
+async fn create_repo(
     State(state): State<AppState>,
-    Json(body): Json<storage::Settings>,
+    Json(body): Json<code::NewRepo>,
 ) -> ApiResult<Json<Value>> {
-    storage::save(&state, body).await
+    code::create(&state, body).await
 }
 
-#[derive(Deserialize)]
-struct BrowseQuery {
-    #[serde(default)]
-    path: String,
-}
-
-async fn browse_host(
+async fn remove_repo(
     State(state): State<AppState>,
-    axum::extract::Query(q): axum::extract::Query<BrowseQuery>,
+    Path(name): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    storage::browse(&state, &q.path).await
+    code::remove(&state, &name).await
+}
+
+async fn read_repo(
+    State(state): State<AppState>,
+    Path((name, op)): Path<(String, String)>,
+    req: Request,
+) -> Response {
+    code::read(&state, &code::Viewer::Admin, &name, &op, req).await
 }
 
 async fn add_rule(
     State(state): State<AppState>,
-    Json(body): Json<storage::RuleBody>,
+    Json(body): Json<code::RuleBody>,
 ) -> ApiResult<Json<Value>> {
-    storage::save_rule(&state, None, body).await
+    code::save_rule(&state, None, body).await
 }
 
 async fn edit_rule(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(body): Json<storage::RuleBody>,
+    Json(body): Json<code::RuleBody>,
 ) -> ApiResult<Json<Value>> {
-    storage::save_rule(&state, Some(id), body).await
+    code::save_rule(&state, Some(id), body).await
 }
 
 async fn delete_rule(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    storage::delete_rule(&state, &id).await
+    code::delete_rule(&state, &id).await
 }
 
-async fn storage_fs(
+async fn add_token(
     State(state): State<AppState>,
-    Path(op): Path<String>,
+    Json(body): Json<code::NewToken>,
+) -> ApiResult<Json<Value>> {
+    code::add_token(&state, body).await
+}
+
+async fn remove_token(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    code::delete_token(&state, &id).await
+}
+
+async fn lan_git(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path(path): Path<String>,
     req: Request,
 ) -> Response {
-    storage::fs(&state, storage::Who::Admin, storage::Space::Files, &op, req).await
+    if !code::is_git(&req) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    code::serve(&state, None, Some(peer.ip()), &format!("/{path}"), req).await
 }
 
 async fn media_fs(State(state): State<AppState>, Path(op): Path<String>, req: Request) -> Response {
-    storage::fs(&state, storage::Who::Admin, storage::Space::Media, &op, req).await
+    storage::fs(&state, storage::Space::Media, &op, req).await
 }
 
 async fn drive_fs(State(state): State<AppState>, Path(op): Path<String>, req: Request) -> Response {
-    storage::fs(&state, storage::Who::Admin, storage::Space::Drive, &op, req).await
+    storage::fs(&state, storage::Space::Drive, &op, req).await
 }
 
 // Devices

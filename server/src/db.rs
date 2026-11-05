@@ -99,12 +99,20 @@ CREATE TABLE IF NOT EXISTS user_routes (
     route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
     PRIMARY KEY (user_id, route_id)
 );
-CREATE TABLE IF NOT EXISTS storage_rules (
+CREATE TABLE IF NOT EXISTS repo_access (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
-    path TEXT NOT NULL,
+    repo TEXT NOT NULL,
     mode TEXT NOT NULL,
     created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS git_tokens (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    hash TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    last_used INTEGER
 );
 ";
 
@@ -210,16 +218,29 @@ pub struct SignIn {
     pub outcome: String,
 }
 
-/// A folder in Storage someone may open: `user_id` is an account, or `*` for
-/// everyone who gets through; `path` is under the storage folder, `""` for all of
-/// it; `mode` is "read" or "write".
+/// A repository someone may open in Code: `user_id` is an account, or `*` for
+/// everyone who gets through; `repo` is its name, `""` for every one; `mode` is
+/// "read" or "write".
 #[derive(Clone, Serialize)]
 pub struct Rule {
     pub id: String,
     pub user_id: String,
-    pub path: String,
+    pub repo: String,
     pub mode: String,
     pub created_at: i64,
+}
+
+/// A key git signs in with, as the password: `owner` is "admin" or an account.
+/// Only its hash is kept.
+#[derive(Clone, Serialize)]
+pub struct Token {
+    pub id: String,
+    pub name: String,
+    pub owner: String,
+    #[serde(skip)]
+    pub hash: String,
+    pub created_at: i64,
+    pub last_used: Option<i64>,
 }
 
 /// A browser that has asked for access through the gateway.
@@ -338,6 +359,13 @@ impl Db {
         let conn = Connection::open(path)?;
         conn.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()))?;
         conn.execute_batch(SCHEMA)?;
+        // File System became Code: its address carries on as the repositories',
+        // and the folders it gave out, which no repository matches, go.
+        conn.execute_batch(
+            "UPDATE routes SET target_scheme = 'code' WHERE target_scheme = 'storage';
+             DROP TABLE IF EXISTS storage_rules;
+             DELETE FROM settings WHERE key IN ('storage_path', 'storage_enabled');",
+        )?;
         let user_columns: Vec<String> = conn
             .prepare("SELECT name FROM pragma_table_info('users')")?
             .query_map([], |r| r.get(0))?
@@ -899,14 +927,15 @@ impl Db {
     pub fn delete_user(&self, id: &str) -> Result<()> {
         let conn = self.conn();
         conn.execute("DELETE FROM users WHERE id = ?1", [id])?;
-        conn.execute("DELETE FROM storage_rules WHERE user_id = ?1", [id])?;
+        conn.execute("DELETE FROM repo_access WHERE user_id = ?1", [id])?;
+        conn.execute("DELETE FROM git_tokens WHERE owner = ?1", [id])?;
         Ok(())
     }
 
     pub fn rules(&self) -> Result<Vec<Rule>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT id, user_id, path, mode, created_at FROM storage_rules
+            "SELECT id, user_id, repo, mode, created_at FROM repo_access
              ORDER BY created_at, id",
         )?;
         let rules = stmt
@@ -914,7 +943,7 @@ impl Db {
                 Ok(Rule {
                     id: r.get(0)?,
                     user_id: r.get(1)?,
-                    path: r.get(2)?,
+                    repo: r.get(2)?,
                     mode: r.get(3)?,
                     created_at: r.get(4)?,
                 })
@@ -925,17 +954,72 @@ impl Db {
 
     pub fn save_rule(&self, r: &Rule) -> Result<()> {
         self.conn().execute(
-            "INSERT INTO storage_rules (id, user_id, path, mode, created_at)
+            "INSERT INTO repo_access (id, user_id, repo, mode, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(id) DO UPDATE SET path = excluded.path, mode = excluded.mode",
-            params![r.id, r.user_id, r.path, r.mode, r.created_at],
+             ON CONFLICT(id) DO UPDATE SET repo = excluded.repo, mode = excluded.mode",
+            params![r.id, r.user_id, r.repo, r.mode, r.created_at],
         )?;
         Ok(())
     }
 
     pub fn delete_rule(&self, id: &str) -> Result<()> {
         self.conn()
-            .execute("DELETE FROM storage_rules WHERE id = ?1", [id])?;
+            .execute("DELETE FROM repo_access WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    /// Forgets who may open a repository that is gone.
+    pub fn delete_repo_rules(&self, repo: &str) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM repo_access WHERE repo = ?1", [repo])?;
+        Ok(())
+    }
+
+    pub fn tokens(&self) -> Result<Vec<Token>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, owner, hash, created_at, last_used FROM git_tokens
+             ORDER BY created_at, id",
+        )?;
+        let tokens = stmt
+            .query_map([], token_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(tokens)
+    }
+
+    pub fn token_by_hash(&self, hash: &str) -> Result<Option<Token>> {
+        let token = self
+            .conn()
+            .query_row(
+                "SELECT id, name, owner, hash, created_at, last_used FROM git_tokens
+                 WHERE hash = ?1",
+                [hash],
+                token_row,
+            )
+            .optional()?;
+        Ok(token)
+    }
+
+    pub fn insert_token(&self, t: &Token) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO git_tokens (id, name, owner, hash, created_at, last_used)
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL)",
+            params![t.id, t.name, t.owner, t.hash, t.created_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn touch_token(&self, id: &str, at: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE git_tokens SET last_used = ?2 WHERE id = ?1",
+            params![id, at],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_token(&self, id: &str) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM git_tokens WHERE id = ?1", [id])?;
         Ok(())
     }
 
@@ -947,4 +1031,15 @@ impl Db {
         )?;
         Ok(count)
     }
+}
+
+fn token_row(r: &rusqlite::Row) -> rusqlite::Result<Token> {
+    Ok(Token {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        owner: r.get(2)?,
+        hash: r.get(3)?,
+        created_at: r.get(4)?,
+        last_used: r.get(5)?,
+    })
 }
