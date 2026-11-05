@@ -92,6 +92,10 @@ export function ContainersPage({ id, page }: { id: string; page: string }) {
 
 // ---- the list ----
 
+// The containers as last listed, so one opens at once with what the list knew
+// while its full details load.
+const listed = new Map<string, Container>();
+
 type Show = "all" | "running";
 
 // ContainerList is a row per container: its state, name and image, published
@@ -107,7 +111,10 @@ function ContainerList() {
 
   const load = useCallback(async () => {
     try {
-      setList(await api.containers());
+      const next = await api.containers();
+      listed.clear();
+      for (const c of next) listed.set(c.id, c);
+      setList(next);
       setProblem("");
     } catch (e) {
       setProblem(message(e));
@@ -324,10 +331,19 @@ function ContainerPage({ id, tab }: { id: string; tab: string }) {
   }, [load]);
   const { busy, run } = useActions(load);
 
-  if (!c) return problem ? <Callout tone="bad" icon="error">{problem}</Callout> : null;
-  const on = live(c);
+  // What the list knew draws the page at once; the full details fill it in.
+  const head = c ?? listed.get(id);
+  if (!head) {
+    return problem ? <Callout tone="bad" icon="error">{problem}</Callout> : (
+      <>
+        <div className="page-head"><div className="page-head-main"><h1 className="d-crumbs"><span className="ex-crumb-wrap"><a className="d-crumb" href="#/containers">Containers</a></span></h1></div></div>
+        <div className="repo-loading"><span className="spinner" /></div>
+      </>
+    );
+  }
+  const on = live(head);
   const working = busy.size > 0;
-  const act = (action: Act) => run([c], action).then(() => {
+  const act = (action: Act) => run([head], action).then(() => {
     if (action === "remove") location.hash = "#/containers";
   });
 
@@ -337,37 +353,37 @@ function ContainerPage({ id, tab }: { id: string; tab: string }) {
         <div className="page-head-main">
           <h1 className="d-crumbs">
             <span className="ex-crumb-wrap"><a className="d-crumb" href="#/containers">Containers</a></span>
-            <span className="ex-crumb-wrap"><Icon name="chevron_right" size={24} className="ex-crumb-sep" /><span className="d-crumb on">{c.name}</span></span>
+            <span className="ex-crumb-wrap"><Icon name="chevron_right" size={24} className="ex-crumb-sep" /><span className="d-crumb on">{head.name}</span></span>
           </h1>
           <div className="page-sub">
-            <span className={"chip " + tone(c.state)}>{c.state}</span>
-            {c.health && <span className={"chip " + (c.health === "healthy" ? "ok" : c.health === "unhealthy" ? "bad" : "warn")}>{c.health}</span>}
-            <span className="mono">{c.image}</span>
-            <span className="ct-id"><span className="mono">{shortId(c.id)}</span><Copy text="" copyText={c.id} plain /></span>
-            <PortLinks ports={c.ports} max={6} />
+            <span className={"chip " + tone(head.state)}>{head.state}</span>
+            {c?.health && <span className={"chip " + (c.health === "healthy" ? "ok" : c.health === "unhealthy" ? "bad" : "warn")}>{c.health}</span>}
+            <span className="mono">{head.image}</span>
+            <span className="ct-id"><span className="mono">{shortId(head.id)}</span><Copy text="" copyText={head.id} plain /></span>
+            <PortLinks ports={head.ports} max={6} />
           </div>
         </div>
         <div className="page-actions">
           {working && <span className="spinner small" />}
-          {can("containers.manage") && (c.own ? (
+          {can("containers.manage") && (head.own ? (
             <ArmedButton icon="restart_alt" label="Restart" armedLabel="Restart myTunnels" onConfirm={() => act("restart")} />
           ) : (
             <>
               {on ? <button type="button" className="btn" disabled={working} onClick={() => act("stop")}><Icon name="stop" size={18} />Stop</button>
-                : c.state === "paused" ? <button type="button" className="btn primary" disabled={working} onClick={() => act("unpause")}><Icon name="play_arrow" size={18} />Resume</button>
+                : head.state === "paused" ? <button type="button" className="btn primary" disabled={working} onClick={() => act("unpause")}><Icon name="play_arrow" size={18} />Resume</button>
                 : <button type="button" className="btn primary" disabled={working} onClick={() => act("start")}><Icon name="play_arrow" size={18} />Start</button>}
               {on && <button type="button" className="btn" disabled={working} onClick={() => act("restart")}><Icon name="restart_alt" size={18} />Restart</button>}
               {on && <button type="button" className="btn" disabled={working} onClick={() => act("pause")}><Icon name="pause" size={18} />Pause</button>}
             </>
           ))}
-          {can("containers.remove") && !c.own && !on && c.state !== "paused" && (
+          {can("containers.remove") && !head.own && !on && head.state !== "paused" && (
             <ArmedButton icon="delete" label="Delete" armedLabel="Delete for good" onConfirm={() => act("remove")} />
           )}
         </div>
       </div>
       <nav className="sub-nav" aria-label="Container">
         {TABS.map(([key, label, icon]) => (
-          <a key={key} className={"sub-nav-item" + (current === key ? " on" : "")} href={`#/containers/${c.id}/${key}`} aria-current={current === key ? "page" : undefined}>
+          <a key={key} className={"sub-nav-item" + (current === key ? " on" : "")} href={`#/containers/${head.id}/${key}`} aria-current={current === key ? "page" : undefined}>
             <Icon name={icon} size={18} />
             <span>{label}</span>
           </a>
@@ -375,10 +391,10 @@ function ContainerPage({ id, tab }: { id: string; tab: string }) {
       </nav>
       <div className="page-body stack" key={current}>
         {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
-        {current === "logs" && <Logs id={c.id} />}
-        {current === "inspect" && <Inspect c={c} />}
-        {current === "mounts" && <Mounts c={c} />}
-        {current === "stats" && <Stats id={c.id} running={on} />}
+        {current === "logs" && <Logs id={head.id} />}
+        {current === "inspect" && (c ? <Inspect c={c} /> : <div className="repo-loading"><span className="spinner" /></div>)}
+        {current === "mounts" && (c ? <Mounts c={c} /> : <div className="repo-loading"><span className="spinner" /></div>)}
+        {current === "stats" && <Stats id={head.id} running={on} />}
       </div>
     </>
   );
