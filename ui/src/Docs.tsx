@@ -174,7 +174,7 @@ const CONTENT: Record<string, ReactNode> = {
   oauth: (
     <>
       <Doc title="Other ways to sign in">
-        <p>Tunnels with Sign-in on can also offer <b>Continue with</b> GitHub, Google, GitLab, Discord, Slack or Codeberg; a self-hosted Authentik, Authelia, Keycloak, Pocket ID, Zitadel, Kanidm, Gitea or Forgejo; Auth0 or Okta; or any other OpenID Connect provider. Self-hosted and tenant providers also take their issuer URL. Each is set up once on the <b>Third-Party OAuth</b> page: register an app with the provider and paste its client ID and secret back. Then each tunnel switches on the ones it offers, under Access Control.</p>
+        <p>Tunnels with Sign-in on can also offer <b>Continue with</b> GitHub, Google, GitLab, Discord, Slack or Codeberg; a self-hosted Authentik, Authelia, Keycloak, Pocket ID, Zitadel, Kanidm, Gitea or Forgejo; Auth0 or Okta; or any other OpenID Connect provider. Self-hosted and tenant providers also take their issuer URL. Each is set up once under <b>Advanced Security, Third-Party OAuth</b>: register an app with the provider and paste its client ID and secret back. Then each tunnel switches on the ones it offers, under Access Control.</p>
       </Doc>
       <Doc title="Who it lets in">
         <p>The provider vouches for an email. The account in Users with that email signs in, held to the same rules as signing in with its password: it must be on, may open the tunnel, and be on a device linked to it.</p>
@@ -190,10 +190,10 @@ const CONTENT: Record<string, ReactNode> = {
         <p>With Two-Factor Auth, signing in takes a code sent by email as well as the password. The code is six digits, works once, and lasts ten minutes; five wrong tries and it is gone, and signing in starts again.</p>
       </Doc>
       <Doc title="SMTP">
-        <p>Codes are sent with SMTP credentials you enter on the <b>Two-Factor Auth</b> page: host, port, security, username, password and from address, from Gmail (with an app password), Outlook or any other provider. Saving signs in with them to check them, and <b>Send a test</b> emails the admin.</p>
+        <p>Codes are sent with SMTP credentials you enter under <b>Advanced Security, Two-Factor Auth</b>: host, port, security, username, password and from address, from Gmail (with an app password), Outlook or any other provider. Saving signs in with them to check them, and <b>Send a test</b> emails the admin.</p>
       </Doc>
       <Doc title="Where codes are asked">
-        <p><b>Dashboard sign-in</b> sends every sign-in to this dashboard a code at the admin email. Turning it on sends a test email first, so credentials that do not deliver cannot lock you out. Each tunnel with Sign-in on can ask for a code too, sent to the account's email, from <b>Email code</b> in its own Access Control, which stays greyed out until SMTP is set up. This covers sign-ins through a third-party provider as well.</p>
+        <p><b>Email codes</b> is one switch for every sign-in: the dashboard's and every tunnel with Sign-in on, each code sent to the account's email (the admin's for the admin). Turning it on sends a test email first, so credentials that do not deliver cannot lock you out, and codes stop on their own if SMTP is removed. This covers sign-ins through a third-party provider as well.</p>
       </Doc>
     </>
   ),

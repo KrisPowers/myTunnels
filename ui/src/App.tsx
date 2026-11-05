@@ -14,8 +14,7 @@ import { Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
 import { NewTunnel, target, TunnelPage, Tunnels } from "./Tunnels";
 import { NewUser, UserPage, Users } from "./Users";
-import { OAuth } from "./OAuth";
-import { TwoFactorPage } from "./TwoFactor";
+import { AdvancedSecurity } from "./Security";
 import { Callout, Notices, Tooltips } from "./ui";
 
 export function App() {
@@ -182,8 +181,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const admin: [string, string, IconName, string, boolean][] = [
     ["users", "Users", "group", "#/users", can("users.view")],
     ["devices", "Devices", "devices", "#/devices", can("devices.view")],
-    ["oauth", "Third-Party OAuth", "key", "#/oauth", can("oauth.manage")],
-    ["twofactor", "Two-Factor Auth", "lock", "#/twofactor", can("twofactor.manage")],
+    ["security", "Advanced Security", "shield", "#/security", can("oauth.manage") || can("twofactor.manage")],
   ];
   const home = [...pages, ...storage, ...admin].find((p) => p[4])?.[3] ?? "#/settings/appearance";
   useEffect(() => {
@@ -242,15 +240,14 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "media" && <MediaPage />}
           {view === "drive" && <DrivePage />}
           {view === "containers" && <ContainersPage id={id} page={page} />}
-          {view === "new" && <NewTunnel users={users ?? []} providers={providers} codes={!!status?.email_codes} onPublished={load} />}
-          {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} codes={!!status?.email_codes} onChanged={load} />}
+          {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} />}
+          {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
           {view === "devices" && !id && <Devices devices={devices} routes={apps ?? []} onChanged={load} />}
           {device && <DevicePage device={device} routes={apps ?? []} users={users ?? []} onChanged={load} />}
           {view === "users" && !id && <Users users={users} routes={apps ?? []} />}
           {view === "users" && id === "new" && <NewUser devices={devices ?? []} onAdded={load} />}
           {user && <UserPage user={user} page={page} routes={apps ?? []} devices={devices ?? []} catalog={catalog} me={me} onChanged={load} />}
-          {view === "oauth" && <OAuth />}
-          {view === "twofactor" && <TwoFactorPage onChanged={load} />}
+          {view === "security" && <AdvancedSecurity tab={id} />}
           {view === "settings" && <Settings sections={settings} section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
           {view === "docs" && <Docs section={id} />}
         </main>
