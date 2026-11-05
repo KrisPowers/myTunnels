@@ -11,10 +11,10 @@ const SECURITY: Option<Smtp["security"]>[] = [
 ];
 const PORTS: Record<Smtp["security"], number> = { starttls: 587, tls: 465, none: 25 };
 
-// TwoFactorPage sets up emailed sign-in codes: the SMTP credentials they are
-// sent with (Gmail, Outlook, any provider), and whether the dashboard asks for
-// one. Each tunnel switches its own on, on its page, once SMTP is set up.
-export function TwoFactorPage({ onChanged }: { onChanged: () => Promise<void> }) {
+// TwoFactor sets up emailed sign-in codes: the SMTP credentials they are sent
+// with (Gmail, Outlook, any provider), then one switch that turns them on for
+// the dashboard and every tunnel with sign-in together.
+export function TwoFactorSetup() {
   const [tf, setTf] = useState<TwoFactor | null>(null);
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
@@ -22,11 +22,11 @@ export function TwoFactorPage({ onChanged }: { onChanged: () => Promise<void> })
     api.twoFactor().then(setTf).catch((e) => notify(message(e), "bad"));
   }, [notify]);
 
-  const dashboard = async (on: boolean) => {
+  const turn = async (on: boolean) => {
     setBusy(true);
     try {
       setTf(await api.saveTwoFactor(on));
-      notify(on ? "Codes are on for the dashboard" : "Codes are off for the dashboard");
+      notify(on ? "Codes are on for every sign-in" : "Codes are off");
     } catch (e) {
       notify(message(e), "bad");
     } finally {
@@ -34,30 +34,19 @@ export function TwoFactorPage({ onChanged }: { onChanged: () => Promise<void> })
     }
   };
 
+  if (!tf) return null;
   return (
     <>
-      <div className="page-head">
-        <div className="page-head-main">
-          <h1>Two-Factor Auth</h1>
-        </div>
-      </div>
-      {tf && (
-        <div className="page-body stack">
-          <MailCard tf={tf} onSaved={(next) => {
-            setTf(next);
-            onChanged();
-          }} />
-          <Card title="Dashboard" sub="After the password, a code is emailed and must be entered to finish signing in. Tunnels with sign-in switch it on under their own Access Control.">
-            <Row title="Dashboard sign-in" sub={
-              !tf.smtp ? "Enter your SMTP credentials first."
-                : !tf.admin_email ? <>Set the admin email under <a href="#/settings/account">Settings, Account</a> first.</>
-                : <>Every sign-in to this dashboard, with a code sent to <b>{tf.admin_email}</b>. Turning it on sends a test email first.</>
-            }>
-              <Switch label="Codes for the dashboard" on={tf.dashboard} disabled={busy || (!tf.dashboard && (!tf.smtp || !tf.admin_email))} onChange={dashboard} />
-            </Row>
-          </Card>
-        </div>
-      )}
+      <MailCard tf={tf} onSaved={setTf} />
+      <Card title="Email codes" sub="After the password, a code is emailed and must be entered to finish signing in.">
+        <Row title="Ask for a code at every sign-in" sub={
+          !tf.smtp ? "Enter your SMTP credentials first."
+            : !tf.admin_email ? <>Set the admin email under <a href="#/settings/account">Settings, Account</a> first.</>
+            : <>The dashboard and every tunnel with sign-in, sent to the account's email ({tf.admin_email} for the admin). Turning it on sends a test email first.</>
+        }>
+          <Switch label="Email codes" on={tf.enabled} disabled={busy || (!tf.enabled && (!tf.smtp || !tf.admin_email))} onChange={turn} />
+        </Row>
+      </Card>
     </>
   );
 }

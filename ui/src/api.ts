@@ -138,8 +138,6 @@ export interface Status {
   last_error: string | null;
   logs: string[];
   public_ips: string[];
-  // SMTP is set up, so tunnels can ask for an emailed code.
-  email_codes: boolean;
 }
 
 // What the Dashboard shows, sampled on the server every `every` seconds, the
@@ -338,7 +336,8 @@ export interface Smtp {
   from: string;
 }
 
-export interface TwoFactor { smtp: Smtp | null; dashboard: boolean; admin_email: string | null }
+// `enabled`: every sign-in, the dashboard's and each tunnel's, asks for an emailed code.
+export interface TwoFactor { smtp: Smtp | null; enabled: boolean; admin_email: string | null }
 
 // A sign-in that went through, or one waiting on an emailed code.
 export interface SignedIn { ok?: boolean; code_required?: boolean; ticket?: string; sent_to?: string }
@@ -390,7 +389,7 @@ export const api = {
   twoFactor: () => call<TwoFactor>("/twofactor"),
   saveSmtp: (body: Omit<Smtp, "password_set"> & { password?: string }) => call<TwoFactor>("/twofactor/smtp", "PUT", body),
   testMail: () => call<{ ok: boolean; to: string }>("/twofactor/test", "POST"),
-  saveTwoFactor: (dashboard: boolean) => call<TwoFactor>("/twofactor", "PUT", { dashboard }),
+  saveTwoFactor: (enabled: boolean) => call<TwoFactor>("/twofactor", "PUT", { enabled }),
 
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),

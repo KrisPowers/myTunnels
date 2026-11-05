@@ -65,13 +65,7 @@ export function OAuth() {
 
   return (
     <>
-      <div className="page-head">
-        <div className="page-head-main">
-          <h1>Third-Party OAuth</h1>
-        </div>
-      </div>
-      <div className="page-body stack">
-        <div className="provider-grid">
+      <div className="provider-grid">
           {providers?.map((p) => (
             <button key={p.id} type="button" className={"provider-tile" + (open === p.id ? " on" : "")} aria-expanded={open === p.id}
               onClick={() => setOpen((o) => (o === p.id ? "" : p.id))}>
@@ -89,7 +83,6 @@ export function OAuth() {
             }}
             onCancel={() => setOpen("")} />
         )}
-      </div>
     </>
   );
 }
