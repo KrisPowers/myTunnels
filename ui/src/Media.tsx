@@ -5,6 +5,7 @@ import { MultiDropdown, type Option } from "./Dropdown";
 import { ContextMenu, dropped, extOf, freeName, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Files";
 import { Icon } from "./Icon";
 import { useCan } from "./me";
+import { go } from "./route";
 import { Callout, Dialog, useNotify } from "./ui";
 
 const media = filesIn("media");
@@ -189,6 +190,7 @@ export function MediaPage() {
       { label: "Open", icon: "open_in_new", hidden: targets.length > 1, run: () => setViewing(items.findIndex((e) => e.name === name)) },
       { label: selected.has(name) ? "Unselect" : "Select", icon: "check_circle", run: () => toggle(name) },
       { label: "Download" + many, icon: "download", run: () => download(targets) },
+      { label: "Convert", icon: "swap_horiz", hidden: targets.length > 1 || !can("media.upload"), run: () => go(`#/convert/media/${encodeURIComponent(name)}`) },
       { label: "Delete" + many, icon: "delete", danger: true, hidden: !can("media.delete"), run: () => setRemoving(targets) },
     ];
   };
@@ -302,7 +304,7 @@ export function MediaPage() {
 
 // Thumb is a tile's picture: its preview, else the photo itself where the
 // browser can show it, else a plain mark.
-function Thumb({ name }: { name: string }) {
+export function Thumb({ name }: { name: string }) {
   const [stage, setStage] = useState(0);
   if (stage === 2) return <span className="m-none"><Icon name={isVideo(name) ? "movie" : "image"} size={36} /></span>;
   return (

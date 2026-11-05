@@ -105,6 +105,9 @@ const CONTENT: Record<string, ReactNode> = {
       <Doc title="Drive">
         <p><b>Drive</b> keeps documents, spreadsheets, presentations and PDFs, in folders of your own. A chip for each kind shows only that kind. PDFs and text files open in a new tab; the rest download, to open in the app that made them.</p>
       </Doc>
+      <Doc title="Convert">
+        <p><b>Convert</b> makes a copy of a photo, video or PDF from Media or Drive: photos as JPEG or WebP, videos as MP4 that every browser plays, PDFs compressed, each smaller if you like. The copy is saved beside the original with its date, and the original is never changed. Jobs run one at a time, in the order they were added. <b>Convert</b> in a file's menu in Media or Drive opens it with that file picked.</p>
+      </Doc>
       <Doc title="From anywhere">
         <p>Both are part of this dashboard. Publish the dashboard through a tunnel, under <b>Runs on</b>, to reach them away from home.</p>
       </Doc>

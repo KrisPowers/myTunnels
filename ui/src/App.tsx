@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEven
 import { api, deviceInfo, message, shortId, type Auth, type Device, type Group, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { GitPage } from "./Git";
 import { ContainersPage } from "./Containers";
+import { ConvertPage } from "./Convert";
 import { DashboardPage } from "./Dashboard";
 import { DevicePage, Devices } from "./Devices";
 import { DrivePage } from "./Drive";
@@ -176,6 +177,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const storage: [string, string, IconName, string, boolean][] = [
     ["media", "Media", "photo_library", "#/media", can("media.view")],
     ["drive", "Drive", "cloud", "#/drive", can("drive.view")],
+    ["convert", "Convert", "swap_horiz", "#/convert", (can("media.view") && can("media.upload")) || (can("drive.view") && can("drive.edit"))],
     ["git", "Git", "code", "#/git", can("code.view")],
   ];
   const admin: [string, string, IconName, string, boolean][] = [
@@ -239,6 +241,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "dashboard" && <DashboardPage />}
           {view === "media" && <MediaPage />}
           {view === "drive" && <DrivePage />}
+          {view === "convert" && <ConvertPage space={id} path={page} />}
           {view === "containers" && <ContainersPage id={id} page={page} />}
           {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} />}
           {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}

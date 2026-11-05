@@ -141,6 +141,29 @@ and text files open in a new tab, the rest download. **New** makes a folder or u
 which can also be dragged onto the page; right-click an item to open, download, rename or
 delete it.
 
+### Convert
+
+**Convert** makes a copy of a photo, video or PDF kept in Media or Drive, in another format or
+smaller. **Convert** opens a picker over Media (photos or videos) and Drive (its folders and
+PDFs), with the choices for what is picked:
+
+- **Photos** become JPEG or WebP, at their own size or with the longest side 3840, 2560, 1920
+  or 1280 pixels. HEIC and AVIF photos from phones are read with libheif, the rest with
+  ImageMagick.
+- **Videos** become MP4 (H.264 with AAC sound), which every browser plays, at their own size or
+  4K, 1080p, 720p or 480p. They are made with ffmpeg.
+- **PDFs** are compressed with Ghostscript.
+
+Each has **Best quality**, **Balanced** or **Smallest file**. The copy is saved beside the
+original, named after it (`clip.mov` becomes `clip.mp4`, or `clip (2).mp4` when that is taken),
+keeping its date and, in Media, its preview; the original is never changed. Jobs wait in a queue
+and run one at a time at low priority, so a long video does not slow the gateway; the page lists
+them with their progress, and each one's menu opens, downloads, cancels or clears it. **Convert**
+in a file's menu in Media or Drive opens the picker with that file picked.
+
+Convert needs, for a collection, the permissions to view it and to add to it (**Upload photos and
+videos** for Media, **Upload and change documents** for Drive).
+
 Media and Drive take only their own kinds of file, and both are in the dashboard alone, so
 publish the dashboard through a tunnel to reach them from anywhere.
 

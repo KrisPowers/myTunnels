@@ -4,6 +4,7 @@ import { Dropdown, type Option } from "./Dropdown";
 import { ContextMenu, dropped, extOf, NameDialog, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Files";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
+import { go } from "./route";
 import { Callout, Dialog, useNotify } from "./ui";
 
 const drive = filesIn("drive");
@@ -118,6 +119,7 @@ export function DrivePage() {
   const items = (entry: FileEntry | null): MenuItem[] => entry ? [
     { label: "Open", icon: entry.dir ? "folder" : opens(entry.name) ? "open_in_new" : "download", run: () => open(entry) },
     { label: "Download", icon: "download", hidden: entry.dir, run: () => download(entry) },
+    { label: "Convert", icon: "swap_horiz", hidden: extOf(entry.name) !== "pdf" || !can("drive.edit"), run: () => go(`#/convert/drive/${encodeURIComponent(join(path, entry.name))}`) },
     { label: "Rename", icon: "edit", hidden: !can("drive.edit"), run: () => setAsking({ rename: entry }) },
     { label: "Delete", icon: "delete", danger: true, hidden: !can("drive.delete"), run: () => setAsking({ remove: entry }) },
   ] : [

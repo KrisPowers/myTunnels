@@ -4,6 +4,7 @@ mod code;
 mod codes;
 mod config;
 mod containers;
+mod convert;
 mod db;
 mod docker;
 mod gate;
@@ -58,6 +59,7 @@ async fn main() -> Result<()> {
     tokio::spawn(admin::rename_code_address(state.clone()));
     netinfo::spawn(state.clone());
     metrics::spawn();
+    convert::spawn(state.clone());
 
     let admin = axum::serve(
         admin_listener,

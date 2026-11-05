@@ -21,7 +21,7 @@ use crate::oauth::{self, Provider};
 use crate::permissions::{self, Caller};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
-use crate::{code, codes, containers, gate, metrics, secret, storage, threads, tunnel};
+use crate::{code, codes, containers, convert, gate, metrics, secret, storage, threads, tunnel};
 
 const ADMIN_COOKIE: &str = "admin_session";
 const ADMIN_TTL: i64 = 7 * 86_400;
@@ -85,6 +85,8 @@ pub fn router(state: AppState) -> Router {
         .route("/code/tokens/{id}", delete(remove_token))
         .route("/media/fs/{op}", any(media_fs))
         .route("/drive/fs/{op}", any(drive_fs))
+        .route("/convert", get(convert::list).post(convert::start))
+        .route("/convert/{id}", delete(convert::remove))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             require_session,
