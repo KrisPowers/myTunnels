@@ -178,7 +178,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
     ["media", "Media", "photo_library", "#/media", can("media.view")],
     ["drive", "Drive", "cloud", "#/drive", can("drive.view")],
     ["convert", "Convert", "autorenew", "#/convert", (can("media.view") && can("media.upload")) || (can("drive.view") && can("drive.edit"))],
-    ["git", "Git", "account_tree", "#/git", can("code.view")],
+    ["git", "Git", "git", "#/git", can("code.view")],
   ];
   const admin: [string, string, IconName, string, boolean][] = [
     ["users", "Users", "group", "#/users", can("users.view")],
