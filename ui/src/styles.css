@@ -1232,14 +1232,15 @@ a.result:hover { background: var(--hover); }
 .d-file.slides, .d-row-name.slides, .d-chip.slides { --k: var(--s2); }
 .d-file.pdf, .d-row-name.pdf, .d-chip.pdf { --k: var(--bad); }
 .d-file.text, .d-row-name.text, .d-chip.text { --k: var(--text-2); }
-.d-bar { display: flex; align-items: center; gap: 8px; margin: -8px 0 12px; }
-.d-crumbs { display: flex; align-items: center; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+/* The title is the folder's path, each folder on the way a step back. */
+.page-head h1.d-crumbs { display: flex; align-items: center; overflow-x: auto; scrollbar-width: none; }
+.d-crumbs > .ex-crumb-wrap:first-child > .d-crumb { margin-left: -8px; }
 .d-crumb {
-  height: 36px; padding: 0 12px; border: 0; border-radius: 18px; background: transparent;
-  color: var(--text-2); font: 400 18px var(--font); white-space: nowrap; cursor: pointer;
+  display: inline-flex; align-items: center; height: 36px; padding: 0 8px; border: 0; border-radius: 18px;
+  background: transparent; color: var(--text-2); font: inherit; white-space: nowrap; cursor: pointer;
 }
-.d-crumb:hover { background: var(--hover); color: var(--text); }
-.d-crumb.on { color: var(--text); }
+button.d-crumb:hover { background: var(--hover); color: var(--text); }
+.d-crumb.on { color: var(--text); cursor: default; }
 .d-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
 .d-chip {
   display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px 0 10px; border: 1px solid var(--line-strong);
@@ -1287,5 +1288,5 @@ a.result:hover { background: var(--hover); }
   .m-step { width: 44px; height: 44px; }
   .d-folders, .d-files { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   .d-cover { height: 100px; }
-  .d-bar .ex-pick { display: none; }
+  .drive .page-actions .ex-pick { display: none; }
 }

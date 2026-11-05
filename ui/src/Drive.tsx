@@ -139,7 +139,16 @@ export function DrivePage() {
       }}>
       <div className="page-head">
         <div className="page-head-main">
-          <h1>Drive</h1>
+          <h1 className="d-crumbs">
+            {["Drive", ...crumbs].map((name, i) => (
+              <span key={i} className="ex-crumb-wrap">
+                {i > 0 && <Icon name="chevron_right" size={24} className="ex-crumb-sep" />}
+                {i === crumbs.length ? <span className="d-crumb on">{name}</span> : (
+                  <button type="button" className="d-crumb" onClick={() => setPath(crumbs.slice(0, i).join("/"))}>{name}</button>
+                )}
+              </span>
+            ))}
+          </h1>
           {listing && (
             <div className="page-sub">
               <span><b>{docs.length}</b> file{docs.length === 1 ? "" : "s"} here</span>
@@ -148,33 +157,21 @@ export function DrivePage() {
           )}
         </div>
         <div className="page-actions">
+          <div className="ex-pick"><Dropdown label="Sort by" value={sort} options={SORTS} onChange={setSort} /></div>
+          <button type="button" className="icon-btn" aria-label={view === "grid" ? "List" : "Grid"} title={view === "grid" ? "List" : "Grid"} onClick={() => {
+            const next = view === "grid" ? "list" : "grid";
+            setView(next);
+            try {
+              localStorage.setItem("drive.view", next);
+            } catch {
+              // Kept until the page closes.
+            }
+          }}><Icon name={view === "grid" ? "view_list" : "grid_view"} /></button>
           <button type="button" className="btn primary" onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             setMenu({ x: r.left, y: r.bottom + 4, on: false, entry: null });
           }}><Icon name="add" size={18} />New</button>
         </div>
-      </div>
-
-      <div className="d-bar">
-        <nav className="d-crumbs" aria-label="Folder">
-          {["My Drive", ...crumbs].map((name, i) => (
-            <span key={i} className="ex-crumb-wrap">
-              {i > 0 && <Icon name="chevron_right" size={18} className="ex-crumb-sep" />}
-              <button type="button" className={"d-crumb" + (i === crumbs.length ? " on" : "")} onClick={() => setPath(crumbs.slice(0, i).join("/"))}>{name}</button>
-            </span>
-          ))}
-        </nav>
-        <span className="ex-grow" />
-        <div className="ex-pick"><Dropdown label="Sort by" value={sort} options={SORTS} onChange={setSort} /></div>
-        <button type="button" className="icon-btn" aria-label={view === "grid" ? "List" : "Grid"} title={view === "grid" ? "List" : "Grid"} onClick={() => {
-          const next = view === "grid" ? "list" : "grid";
-          setView(next);
-          try {
-            localStorage.setItem("drive.view", next);
-          } catch {
-            // Kept until the page closes.
-          }
-        }}><Icon name={view === "grid" ? "view_list" : "grid_view"} /></button>
       </div>
       <div className="d-chips" role="group" aria-label="Type">
         {ORDER.map((k) => (
