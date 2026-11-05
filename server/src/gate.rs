@@ -280,7 +280,7 @@ fn user_session(
     if !s.device.is_empty() && s.device != here {
         return None;
     }
-    if route.require_code && !s.mfa {
+    if codes::on(state) && !s.mfa {
         return None;
     }
     let now = now();
@@ -1239,7 +1239,7 @@ async fn admit(
 ) -> Result<Outcome, ApiError> {
     let account =
         vet(state, route, account, v).map_err(|(status, why)| ApiError(status, why.into()))?;
-    if !route.require_code {
+    if !codes::on(state) {
         return Ok(Outcome::Session(open(state, route, account, v, false)));
     }
     let (ticket, sent_to) = codes::send(

@@ -1,6 +1,6 @@
 //! Sign-in codes sent by email: six digits, good once, for ten minutes and five
-//! tries. The dashboard asks for one after the admin password when that is on, and
-//! so does each tunnel that wants one after an account signs in.
+//! tries. Once switched on, the dashboard and every tunnel with sign-in ask for
+//! one after the password.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -75,6 +75,20 @@ impl Codes {
         }
         Err("That code is not right.")
     }
+}
+
+/// Whether sign-ins ask for an emailed code after the password: switched on
+/// once, for the dashboard and every tunnel with sign-in together, and only
+/// while SMTP is set up to send them.
+pub fn on(state: &AppState) -> bool {
+    state
+        .db
+        .setting("twofactor_dashboard")
+        .ok()
+        .flatten()
+        .as_deref()
+        == Some("1")
+        && mail::load(&state.db).ok().flatten().is_some()
 }
 
 /// `k***@example.com`, to say where a code went without showing the address.

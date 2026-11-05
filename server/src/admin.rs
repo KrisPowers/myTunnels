@@ -385,9 +385,9 @@ fn dashboard_account(state: &AppState, login: &str, password: &str) -> ApiResult
     }))
 }
 
-/// Whether every sign-in to the dashboard also asks for an emailed code.
+/// Whether every sign-in also asks for an emailed code.
 fn dashboard_codes(state: &AppState) -> ApiResult<bool> {
-    Ok(state.db.setting("twofactor_dashboard")?.as_deref() == Some("1"))
+    Ok(codes::on(state))
 }
 
 #[derive(Deserialize)]
@@ -599,7 +599,7 @@ async fn two_factor(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     });
     Ok(Json(json!({
         "smtp": smtp,
-        "dashboard": dashboard_codes(&state)?,
+        "enabled": dashboard_codes(&state)?,
         "admin_email": state.db.setting("admin_email")?,
     })))
 }
@@ -677,16 +677,17 @@ async fn test_mail(State(state): State<AppState>) -> ApiResult<Json<Value>> {
 
 #[derive(Deserialize)]
 struct TwoFactorBody {
-    dashboard: bool,
+    enabled: bool,
 }
 
-/// Turns codes for the dashboard on or off. Turning them on sends a test email
-/// first, so credentials that do not deliver cannot lock the admin out.
+/// Turns emailed codes on or off for every sign-in, the dashboard and each
+/// tunnel with sign-in alike. Turning them on sends a test email first, so
+/// credentials that do not deliver cannot lock the admin out.
 async fn save_two_factor(
     State(state): State<AppState>,
     Json(body): Json<TwoFactorBody>,
 ) -> ApiResult<Json<Value>> {
-    if body.dashboard {
+    if body.enabled {
         let _sent = test_mail(State(state.clone())).await?;
         state.db.set_setting("twofactor_dashboard", "1")?;
     } else {
@@ -848,8 +849,6 @@ async fn status(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         "last_error": view.last_error,
         "logs": view.logs,
         "public_ips": public_ips,
-        // Whether codes can be emailed, so tunnels can offer them.
-        "email_codes": mail::load(&state.db)?.is_some(),
     })))
 }
 
