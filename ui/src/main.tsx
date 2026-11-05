@@ -1,9 +1,9 @@
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { StorageApp } from "./Explorer";
+import { CodeApp } from "./Repo";
 import "./styles.css";
 
-// The storage address serves this page marked as storage: the explorer alone.
-const storage = document.querySelector('meta[name="storage"]') !== null;
+// Code's address serves this page marked as code: the repositories alone.
+const code = document.querySelector('meta[name="code"]') !== null;
 
-createRoot(document.getElementById("root")!).render(storage ? <StorageApp /> : <App />);
+createRoot(document.getElementById("root")!).render(code ? <CodeApp /> : <App />);

@@ -20,7 +20,7 @@ use tower::ServiceExt;
 use crate::db::{Device, Event, Route, SignIn, User};
 use crate::state::{AppState, Hop, Outcome, Snapshot};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
-use crate::{codes, guard, secret, storage};
+use crate::{code, codes, guard, secret};
 use crate::{oauth, proxy};
 
 pub const DEVICE_COOKIE: &str = "__gate_device";
@@ -116,6 +116,15 @@ async fn handle(
         // A tunnel switched off answers as if it did not exist.
         return StatusCode::NOT_FOUND.into_response();
     }
+    // Git at the Code address signs in with a token, which takes the place of
+    // the layers a browser passes; only the home network still applies.
+    if route.target_scheme == "code" && code::is_git(&req) {
+        if route.require_lan && !ip.is_some_and(|ip| state.is_local(&snap, ip)) {
+            return (StatusCode::FORBIDDEN, "Only from the home network\n").into_response();
+        }
+        let path = req.uri().path().to_owned();
+        return code::serve(&state, Some(&route), ip, &path, req).await;
+    }
 
     let mut new_cookie = None;
     let known = |token: &str| {
@@ -135,14 +144,14 @@ async fn handle(
     }
 
     let verdict = check(&state, &snap, &route, ip, req.headers());
-    let mut response = if verdict.allowed() && route.target_scheme == "storage" {
-        // Who is signed in decides which folders they see.
+    let mut response = if verdict.allowed() && route.target_scheme == "code" {
+        // Who is signed in decides which repositories they see.
         let user = if route.require_login {
             user_session(&state, &snap, req.headers(), &route)
         } else {
             None
         };
-        storage::visit(&state, user, &state.config.ui_dir, req).await
+        code::visit(&state, user, &state.config.ui_dir, req).await
     } else if verdict.allowed() && route.target_scheme == "dashboard" {
         dashboard(panel, ip, req).await
     } else if verdict.allowed() {

@@ -23,7 +23,7 @@ FROM ${CLOUDFLARED_IMAGE} AS cloudflared
 
 FROM debian:bookworm-slim
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates git \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home /data app \
     && mkdir -p /data \

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent as PointerEvent } from "react";
 import { bytes, fileUrl, filesIn, message, type FileEntry, type Listing } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
-import { ContextMenu, dropped, extOf, NameDialog, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Explorer";
+import { ContextMenu, dropped, extOf, NameDialog, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Files";
 import { Icon, type IconName } from "./Icon";
 import { Callout, Dialog, useNotify } from "./ui";
 

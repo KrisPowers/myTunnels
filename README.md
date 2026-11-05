@@ -79,32 +79,33 @@ so images, volumes and networks cannot be changed from the panel.
 
 The sidebar keeps these pages together under **Storage & Media**; the heading folds them away.
 
-### File System
+### Code
 
-**File System** turns a folder of this host into a drive in the browser. It starts off. Press
-**Enable File System**, then:
+**Code** keeps git repositories on this host, in `/data/repos`, for your codebases.
+**New repository** makes an empty one, its first branch `main`. Open a repository to browse
+its files on any branch or tag, with its README under them, read a file, or step through its
+commits and the changes in each. **Clone** gives its addresses.
 
-1. **Folder.** Pick the folder File System shows: any folder, a whole drive such as `C:`, or the
-   top of the host (every drive, or everything from `/`), which is not recommended.
-2. **Address.** A subdomain on one of your domains, `storage` to start with.
+Git signs in with a token. Under **Tokens**, make one for the admin (every repository) or for
+an account from **Users**; it is shown once, and only its hash is kept. When git asks, give
+any username and the token as the password:
 
-After that, **Files** is a file explorer laid out like Windows': back, forward and up, the
-address bar, search, folders down the left, details or large icons, sorting and a filter by
-kind, a status bar with the free space. New folder, upload files or whole folders (also by
-dragging them in), download, rename, cut, copy, paste, delete and dragging items onto a
-folder all work, with the usual keys (Ctrl+A, Ctrl+X/C/V, Del, F2, Enter, Backspace).
-Uploads go in pieces of 48 MB, under Cloudflare's 100 MB limit on a request, so files of any
-size go up from anywhere.
+```sh
+git clone https://code.example.com/myapp.git      # through the tunnel
+git clone http://<host>:7070/git/myapp.git        # on the LAN
+```
 
-**Access Control** has the same layers as any tunnel, then **People with access**: each
-person, or **Everyone** who gets through, with the folders they may open, each **Read only**
-or **Read and write**. A folder given covers everything in it; the folders on the way to it
-show only the way there. At the storage address people see the same explorer, limited to
-their folders. **Activity** is the address's log, as for a tunnel.
+On the LAN, the panel takes git at `/git/` straight away. For anywhere else, **Publish an
+address** gives Code a subdomain, `code` to start with. There, **Access Control** has the same
+layers as any tunnel for browsers, then **People with access**: each person, or **Everyone**
+who gets through, with the repositories they may open (or every repository), each **Read
+only** or **Read and write**. People see those repositories in the browser at the address,
+read only. Git skips the browser layers and signs in with its token, held to the same
+repositories and to being among the address's people; only **Same network** still applies to
+it. **Activity** is the address's log, as for a tunnel.
 
-In the container, `compose.yaml` mounts the host's filesystem at `/host/root` and Docker
-Desktop's drives at `/host/drives`. On Docker Desktop the drives are what File System lists; on
-Linux it is the filesystem from `/`, writable where user 10001 may write.
+Cloudflare refuses a single request over 100 MB, so the first push of a very large repository
+goes over the LAN, or in parts. Code needs `git`, which the image includes.
 
 ### Media
 
@@ -200,7 +201,6 @@ environment variables:
 | `UPSTREAM_HOST` | `host.docker.internal` | Default host for tunnel ports, changeable in Settings |
 | `DATA_DIR` | `/data` | Database location |
 | `DOCKER_HOST` | `tcp://docker:2375` in `compose.yaml` | Docker API the Dashboard reads containers from (`unix://`, `npipe://` or `tcp://`) |
-| `HOST_ROOT` | `/host` in `compose.yaml` | Where the host's files are mounted for File System; unset, it uses the files this process sees |
 | `RUST_LOG` | `info` | Log level |
 
 `compose.yaml` maps `host.docker.internal` to the Docker host, so a port published by any
@@ -246,7 +246,7 @@ The whole app on `http://localhost:7070`, live as you save, with no image build:
 
 - A change under `server/` is rebuilt incrementally and swapped in while the old build keeps
   serving, then every open page reloads. Only the first run compiles the dependencies.
-- A change under `ui/` shows straight away through hot reload. The File System address serves a
+- A change under `ui/` shows straight away through hot reload. The Code address serves a
   built copy that is rebuilt as you save, so there a change shows on the next reload.
 - cloudflared runs under the server as it does in the container, so tunnels work too. It is
   used from `PATH`, or fetched once.

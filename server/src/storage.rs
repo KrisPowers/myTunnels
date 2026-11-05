@@ -1,12 +1,8 @@
-//! File System: one folder of this host, browsed and changed from the dashboard,
-//! and from its own address by the people given folders in it. Media and Drive
-//! are the same files API over collections myTunnels keeps in its data folder,
-//! for photos and videos, and for documents.
+//! Media and Drive: collections myTunnels keeps in its data folder, for photos
+//! and videos, and for documents, browsed and changed from the dashboard.
 //!
-//! Paths in the API are under the storage folder, `/`-separated, `""` for the
-//! folder itself. Host paths are the same kind of list from the top of the host:
-//! a drive letter first (`C:/Users`) where the host has drives, `""` for every
-//! drive (or `/`) at once.
+//! Paths in the API are under the collection's folder, `/`-separated, `""` for
+//! the folder itself.
 
 use std::path::{Path, PathBuf};
 
@@ -22,10 +18,8 @@ use serde_json::{json, Value};
 use tokio::io::AsyncWriteExt;
 use tower_http::services::ServeFile;
 
-use crate::config::Config;
-use crate::db::{Route, Rule};
 use crate::state::AppState;
-use crate::util::{now, random_hex, ApiError, ApiResult};
+use crate::util::{now, ApiError, ApiResult};
 
 /// The most one upload request may carry, under Cloudflare's 100 MB limit; the
 /// page sends bigger files in pieces of this size or less.
@@ -35,146 +29,8 @@ const MAX_CHUNK: u64 = 64 * 1024 * 1024;
 const PART: &str = ".mtpart";
 const PART_TTL: i64 = 86_400;
 
-// ---- the host's files ----
-
-#[derive(Clone, Copy, PartialEq)]
-enum Layout {
-    /// Drive letters at the top, as on Windows.
-    Drives,
-    /// One tree from `/`.
-    Unix,
-}
-
-/// Where host paths are found from this process.
-struct Host {
-    layout: Layout,
-    base: Option<PathBuf>,
-}
-
-impl Host {
-    fn of(config: &Config) -> Self {
-        let base = config.host_root.clone();
-        let layout = match &base {
-            Some(b) if !letters(&b.join("drives")).is_empty() => Layout::Drives,
-            Some(_) => Layout::Unix,
-            None if cfg!(windows) => Layout::Drives,
-            None => Layout::Unix,
-        };
-        Self { layout, base }
-    }
-
-    /// The drives at the top, as `C:`.
-    fn drives(&self) -> Vec<String> {
-        match &self.base {
-            Some(b) => letters(&b.join("drives"))
-                .into_iter()
-                .map(|c| format!("{}:", c.to_ascii_uppercase()))
-                .collect(),
-            None => ('A'..='Z')
-                .filter(|c| Path::new(&format!("{c}:\\")).is_dir())
-                .map(|c| format!("{c}:"))
-                .collect(),
-        }
-    }
-
-    /// The real path of a host path; `None` for the top of a host with drives,
-    /// which is a list of drives rather than a folder.
-    fn real(&self, segs: &[String]) -> Option<PathBuf> {
-        let mut path = match self.layout {
-            Layout::Drives => {
-                let letter = drive(segs.first()?)?;
-                match &self.base {
-                    Some(b) => b
-                        .join("drives")
-                        .join(letter.to_ascii_lowercase().to_string()),
-                    None => PathBuf::from(format!("{letter}:\\")),
-                }
-            }
-            Layout::Unix => match &self.base {
-                Some(b) => b.join("root"),
-                None => PathBuf::from("/"),
-            },
-        };
-        let skip = usize::from(self.layout == Layout::Drives);
-        for seg in &segs[skip..] {
-            path.push(seg);
-        }
-        Some(path)
-    }
-
-    /// A host path as people write it: `C:\Users\Kris`, `/home/kris`.
-    fn display(&self, segs: &[String]) -> String {
-        match self.layout {
-            Layout::Drives if segs.is_empty() => "All drives".into(),
-            Layout::Drives if segs.len() == 1 => format!("{}\\", segs[0]),
-            Layout::Drives => segs.join("\\"),
-            Layout::Unix => format!("/{}", segs.join("/")),
-        }
-    }
-
-    /// Refuses a host path this host cannot have: a drive letter first, where it
-    /// has drives, and no characters Windows keeps for itself in a name.
-    fn check(&self, segs: &[String]) -> ApiResult<()> {
-        if self.layout == Layout::Unix {
-            return Ok(());
-        }
-        for (i, seg) in segs.iter().enumerate() {
-            let ok = if i == 0 {
-                drive(seg).is_some()
-            } else {
-                !seg.contains([':', '<', '>', '"', '|', '?', '*']) && !seg.ends_with(['.', ' '])
-            };
-            if !ok {
-                return Err(ApiError::bad(format!("\"{seg}\" is not a usable name")));
-            }
-        }
-        Ok(())
-    }
-
-    /// What a path may not leave, symbolic links included: the drives' mount in a
-    /// container, nothing natively.
-    fn bound(&self) -> Option<PathBuf> {
-        match (self.layout, &self.base) {
-            (Layout::Drives, Some(b)) => Some(b.join("drives")),
-            (Layout::Unix, Some(b)) => Some(b.join("root")),
-            _ => None,
-        }
-    }
-}
-
-/// The one-letter folders in a directory, which Docker Desktop makes per drive.
-fn letters(dir: &Path) -> Vec<char> {
-    let mut found: Vec<char> = std::fs::read_dir(dir)
-        .map(|entries| {
-            entries
-                .filter_map(Result::ok)
-                .filter(|e| e.path().is_dir())
-                .filter_map(|e| {
-                    let name = e.file_name().to_string_lossy().into_owned();
-                    let mut chars = name.chars();
-                    match (chars.next(), chars.next()) {
-                        (Some(c), None) if c.is_ascii_alphabetic() => Some(c),
-                        _ => None,
-                    }
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    found.sort_unstable();
-    found
-}
-
-/// The letter of a drive segment such as `C:`.
-fn drive(seg: &str) -> Option<char> {
-    let mut chars = seg.chars();
-    match (chars.next(), chars.next(), chars.next()) {
-        (Some(c), Some(':'), None) if c.is_ascii_alphabetic() => Some(c.to_ascii_uppercase()),
-        _ => None,
-    }
-}
-
 /// Splits a path into its names, refusing any that could reach outside it.
-fn segments(path: &str) -> ApiResult<Vec<String>> {
+pub fn segments(path: &str) -> ApiResult<Vec<String>> {
     path.split('/')
         .filter(|s| !s.is_empty())
         .map(|s| {
@@ -196,13 +52,15 @@ fn joined(segs: &[String]) -> String {
     segs.join("/")
 }
 
+fn parent(path: &[String]) -> &[String] {
+    &path[..path.len().saturating_sub(1)]
+}
+
 // ---- the collections ----
 
-/// Which files a request is about: the host folder File System opens, or one of
-/// the collections kept in the data folder.
+/// Which collection a request is about.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Space {
-    Files,
     Media,
     Drive,
 }
@@ -219,11 +77,10 @@ const DRIVE_KINDS: &[&str] = &[
 
 impl Space {
     /// Where a collection is kept, under the data folder.
-    fn folder(self) -> Option<&'static str> {
+    fn folder(self) -> &'static str {
         match self {
-            Space::Files => None,
-            Space::Media => Some("media"),
-            Space::Drive => Some("drive"),
+            Space::Media => "media",
+            Space::Drive => "drive",
         }
     }
 
@@ -234,7 +91,6 @@ impl Space {
             .map(|(_, e)| e.to_ascii_lowercase())
             .unwrap_or_default();
         let (kinds, what) = match self {
-            Space::Files => return Ok(()),
             Space::Media => (MEDIA_KINDS, "Media keeps photos and videos"),
             Space::Drive => (
                 DRIVE_KINDS,
@@ -249,46 +105,25 @@ impl Space {
     }
 }
 
-/// The folder a request works in, with the host it is on: the File System
-/// folder, or a collection's own folder.
+/// A collection's folder.
 struct Store {
-    host: Host,
-    root: Vec<String>,
     space: Space,
-    /// A collection's folder; `None` for File System, which is found on the host.
-    fixed: Option<PathBuf>,
+    base: PathBuf,
 }
 
 impl Store {
     fn open(state: &AppState, space: Space) -> ApiResult<Self> {
-        if let Some(folder) = space.folder() {
-            let dir = state.config.data_dir.join(folder);
-            std::fs::create_dir_all(&dir).map_err(io_error)?;
-            return Ok(Self {
-                host: Host::of(&state.config),
-                root: Vec::new(),
-                space,
-                fixed: Some(dir),
-            });
-        }
-        let path = state.db.setting("storage_path")?.ok_or_else(|| {
-            ApiError(
-                StatusCode::PRECONDITION_FAILED,
-                "Choose the File System folder first".into(),
-            )
-        })?;
-        Ok(Self {
-            host: Host::of(&state.config),
-            root: segments(&path)?,
-            space,
-            fixed: None,
-        })
+        let base = state.config.data_dir.join(space.folder());
+        std::fs::create_dir_all(&base).map_err(io_error)?;
+        Ok(Self { space, base })
     }
 
     /// Where a photo's or video's preview is kept, beside the collection.
     fn thumb(&self, rel: &[String]) -> Option<PathBuf> {
-        let base = self.fixed.as_ref().filter(|_| self.space == Space::Media)?;
-        let mut path = base.join(".thumbs");
+        if self.space != Space::Media {
+            return None;
+        }
+        let mut path = self.base.join(".thumbs");
         for seg in rel {
             path.push(seg);
         }
@@ -296,207 +131,58 @@ impl Store {
         Some(path)
     }
 
-    fn full(&self, rel: &[String]) -> ApiResult<Vec<String>> {
-        let full: Vec<String> = self.root.iter().chain(rel).cloned().collect();
-        self.host.check(&full)?;
-        Ok(full)
-    }
-
-    /// The real path of a path in storage, refused if it leads outside the storage
-    /// folder; `None` for a list of drives.
-    fn real(&self, rel: &[String]) -> ApiResult<Option<PathBuf>> {
-        let (path, limit) = match &self.fixed {
-            Some(base) => (
-                rel.iter().fold(base.clone(), |path, seg| path.join(seg)),
-                Some(base.clone()),
-            ),
-            None => {
-                let Some(path) = self.host.real(&self.full(rel)?) else {
-                    return Ok(None);
-                };
-                (
-                    path,
-                    self.host.real(&self.root).or_else(|| self.host.bound()),
-                )
+    /// The real path of a path in the collection, refused if it leads outside it,
+    /// symbolic links included.
+    fn real(&self, rel: &[String]) -> ApiResult<PathBuf> {
+        let path = rel
+            .iter()
+            .fold(self.base.clone(), |path, seg| path.join(seg));
+        let limit = std::fs::canonicalize(&self.base).unwrap_or_else(|_| self.base.clone());
+        // A path that is not there yet is judged by the folder it would go in.
+        let mut probe = path.as_path();
+        let found = loop {
+            match std::fs::canonicalize(probe) {
+                Ok(found) => break Some(found),
+                Err(_) => match probe.parent() {
+                    Some(parent) => probe = parent,
+                    None => break None,
+                },
             }
         };
-        if let Some(limit) = limit {
-            let limit = std::fs::canonicalize(&limit).unwrap_or(limit);
-            // A path that is not there yet is judged by the folder it would go in.
-            let mut probe = path.as_path();
-            let found = loop {
-                match std::fs::canonicalize(probe) {
-                    Ok(found) => break Some(found),
-                    Err(_) => match probe.parent() {
-                        Some(parent) => probe = parent,
-                        None => break None,
-                    },
-                }
-            };
-            if !found.is_some_and(|f| f.starts_with(&limit)) {
-                return Err(ApiError(
-                    StatusCode::FORBIDDEN,
-                    "That leads outside this folder".into(),
-                ));
-            }
+        if !found.is_some_and(|f| f.starts_with(&limit)) {
+            return Err(ApiError(
+                StatusCode::FORBIDDEN,
+                "That leads outside this folder".into(),
+            ));
         }
-        Ok(Some(path))
+        Ok(path)
     }
 
     /// The real path of something that can be moved, renamed or removed: not the
-    /// storage folder itself, nor a drive.
+    /// collection's folder itself.
     fn item(&self, rel: &[String]) -> ApiResult<PathBuf> {
         if rel.is_empty() {
             return Err(ApiError::bad("That is the folder itself"));
         }
-        if self.real(&rel[..rel.len() - 1])?.is_none() {
-            return Err(ApiError::bad("A drive cannot be changed here"));
-        }
-        self.real(rel)?.ok_or_else(ApiError::not_found)
+        self.real(rel)
     }
 }
 
-// ---- who may do what ----
+// ---- the files API ----
 
-/// Who is asking: the admin on the dashboard, or a visitor at the storage
-/// address, signed in or not.
-pub enum Who {
-    Admin,
-    Visitor(Option<String>),
-}
-
-#[derive(Clone, Copy, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "lowercase")]
-enum Level {
-    None,
-    /// Only on the way to a folder given further in.
-    Browse,
-    Read,
-    Write,
-}
-
-struct Grants {
-    full: bool,
-    rules: Vec<(Vec<String>, Level)>,
-}
-
-impl Grants {
-    fn of(state: &AppState, who: &Who) -> ApiResult<Self> {
-        let user = match who {
-            Who::Admin => {
-                return Ok(Self {
-                    full: true,
-                    rules: Vec::new(),
-                })
-            }
-            Who::Visitor(user) => user.as_deref(),
-        };
-        let rules = state
-            .db
-            .rules()?
-            .into_iter()
-            .filter(|r| r.user_id == "*" || Some(r.user_id.as_str()) == user)
-            .filter_map(|r| {
-                let level = if r.mode == "write" {
-                    Level::Write
-                } else {
-                    Level::Read
-                };
-                Some((segments(&r.path).ok()?, level))
-            })
-            .collect();
-        Ok(Self { full: false, rules })
-    }
-
-    fn level(&self, path: &[String]) -> Level {
-        if self.full {
-            return Level::Write;
-        }
-        let mut best = Level::None;
-        for (rule, level) in &self.rules {
-            let here = if path.starts_with(rule) {
-                *level
-            } else if rule.starts_with(path) {
-                Level::Browse
-            } else {
-                Level::None
-            };
-            if here > best {
-                best = here;
-            }
-        }
-        best
-    }
-
-    /// In a folder only browsed through, the names that lead to a folder given.
-    fn ways(&self, path: &[String]) -> Vec<String> {
-        self.rules
-            .iter()
-            .filter(|(rule, _)| rule.len() > path.len() && rule.starts_with(path))
-            .map(|(rule, _)| rule[path.len()].clone())
-            .collect()
-    }
-
-    fn need(&self, path: &[String], level: Level) -> ApiResult<()> {
-        if self.level(path) >= level {
-            Ok(())
-        } else {
-            Err(ApiError(
-                StatusCode::FORBIDDEN,
-                match level {
-                    Level::Write => "You can't change things here",
-                    _ => "You don't have access to this folder",
-                }
-                .into(),
-            ))
-        }
-    }
-}
-
-fn parent(path: &[String]) -> &[String] {
-    &path[..path.len().saturating_sub(1)]
-}
-
-// ---- the files API, the same on the dashboard and at the storage address ----
-
-pub fn enabled(state: &AppState) -> bool {
-    state
-        .db
-        .setting("storage_enabled")
-        .ok()
-        .flatten()
-        .as_deref()
-        == Some("1")
-}
-
-/// One file operation, `op`, in `space`, for `who`.
-pub async fn fs(state: &AppState, who: Who, space: Space, op: &str, req: Request) -> Response {
-    if space == Space::Files && !enabled(state) {
-        return ApiError(StatusCode::NOT_FOUND, "File System is off".into()).into_response();
-    }
+/// One file operation, `op`, in `space`.
+pub async fn fs(state: &AppState, space: Space, op: &str, req: Request) -> Response {
     let result = async {
         let store = Store::open(state, space)?;
-        let grants = Grants::of(state, &who)?;
-        // The account signed in at the storage address, by the name it shows.
-        let user = match &who {
-            Who::Visitor(Some(id)) => state.snapshot().users.get(id).map(|u| {
-                if u.name.is_empty() {
-                    u.username.clone()
-                } else {
-                    u.name.clone()
-                }
-            }),
-            _ => None,
-        };
         let method = req.method().clone();
         match (method, op) {
-            (Method::GET, "list") => list(&store, &grants, user, query(&req)?).await,
-            (Method::GET | Method::HEAD, "file") => download(&store, &grants, req).await,
-            (Method::POST, "folder") => folder(&store, &grants, body(req).await?).await,
-            (Method::POST, "rename") => rename(&store, &grants, body(req).await?).await,
-            (Method::POST, "move") => relocate(&store, &grants, body(req).await?).await,
-            (Method::POST, "delete") => delete(&store, &grants, body(req).await?).await,
-            (Method::PUT, "upload") => upload(&store, &grants, req).await,
+            (Method::GET, "list") => list(&store, query(&req)?).await,
+            (Method::GET | Method::HEAD, "file") => download(&store, req).await,
+            (Method::POST, "folder") => folder(&store, body(req).await?).await,
+            (Method::POST, "rename") => rename(&store, body(req).await?).await,
+            (Method::POST, "move") => relocate(&store, body(req).await?).await,
+            (Method::POST, "delete") => delete(&store, body(req).await?).await,
+            (Method::PUT, "upload") => upload(&store, req).await,
             (Method::GET | Method::HEAD, "thumb") => thumb(&store, req).await,
             (Method::PUT, "thumb") => save_thumb(&store, req).await,
             _ => Err(ApiError::not_found()),
@@ -530,80 +216,54 @@ struct Entry {
     name: String,
     dir: bool,
     size: u64,
-    /// Unix seconds; 0 when unknown, as for a drive.
+    /// Unix seconds; 0 when unknown.
     modified: i64,
 }
 
-async fn list(store: &Store, grants: &Grants, user: Option<String>, at: At) -> ApiResult<Response> {
+async fn list(store: &Store, at: At) -> ApiResult<Response> {
     let rel = segments(&at.path)?;
-    let level = grants.level(&rel);
-    if level == Level::None {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "You don't have access to this folder".into(),
-        ));
-    }
-    let ways = grants.ways(&rel);
-    let shown = |name: &str| level != Level::Browse || ways.iter().any(|w| w == name);
-    let real = store.real(&rel)?;
+    let dir = store.real(&rel)?;
     let mut entries = Vec::new();
-    match &real {
-        None => {
-            for name in store.host.drives() {
-                if shown(&name) {
-                    entries.push(Entry {
-                        name,
-                        dir: true,
-                        size: 0,
-                        modified: 0,
-                    });
-                }
+    let mut read = tokio::fs::read_dir(&dir).await.map_err(io_error)?;
+    let now = now();
+    while let Some(entry) = read.next_entry().await.map_err(io_error)? {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // Symbolic links are shown as what they point at.
+        let meta = match tokio::fs::metadata(entry.path()).await {
+            Ok(meta) => meta,
+            Err(_) => match entry.metadata().await {
+                Ok(meta) => meta,
+                Err(_) => continue,
+            },
+        };
+        let modified = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_secs() as i64);
+        if name.ends_with(PART) {
+            if now - modified > PART_TTL {
+                let _ = tokio::fs::remove_file(entry.path()).await;
             }
+            continue;
         }
-        Some(dir) => {
-            let mut read = tokio::fs::read_dir(dir).await.map_err(io_error)?;
-            let now = now();
-            while let Some(entry) = read.next_entry().await.map_err(io_error)? {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                // Symbolic links are shown as what they point at.
-                let meta = match tokio::fs::metadata(entry.path()).await {
-                    Ok(meta) => meta,
-                    Err(_) => match entry.metadata().await {
-                        Ok(meta) => meta,
-                        Err(_) => continue,
-                    },
-                };
-                let modified = meta
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map_or(0, |d| d.as_secs() as i64);
-                if name.ends_with(PART) {
-                    if now - modified > PART_TTL {
-                        let _ = tokio::fs::remove_file(entry.path()).await;
-                    }
-                    continue;
-                }
-                // A collection's own workings, such as its previews, stay out of sight.
-                if !shown(&name) || (store.fixed.is_some() && name.starts_with('.')) {
-                    continue;
-                }
-                entries.push(Entry {
-                    dir: meta.is_dir(),
-                    size: if meta.is_dir() { 0 } else { meta.len() },
-                    modified,
-                    name,
-                });
-            }
+        // The collection's own workings, such as its previews, stay out of sight.
+        if name.starts_with('.') {
+            continue;
         }
+        entries.push(Entry {
+            dir: meta.is_dir(),
+            size: if meta.is_dir() { 0 } else { meta.len() },
+            modified,
+            name,
+        });
     }
-    let space = real.as_deref().and_then(space);
     Ok(Json(json!({
         "path": joined(&rel),
-        "access": level,
+        "access": "write",
         "entries": entries,
-        "space": space,
-        "user": user,
+        "space": space(&dir),
+        "user": null,
     }))
     .into_response())
 }
@@ -631,11 +291,10 @@ struct FileAt {
     inline: bool,
 }
 
-async fn download(store: &Store, grants: &Grants, req: Request) -> ApiResult<Response> {
+async fn download(store: &Store, req: Request) -> ApiResult<Response> {
     let at: FileAt = query(&req)?;
     let rel = segments(&at.path)?;
-    grants.need(&rel, Level::Read)?;
-    let real = store.real(&rel)?.ok_or_else(ApiError::not_found)?;
+    let real = store.real(&rel)?;
     if !real.is_file() {
         return Err(ApiError::bad("Only files can be downloaded"));
     }
@@ -694,7 +353,7 @@ async fn download(store: &Store, grants: &Grants, req: Request) -> ApiResult<Res
 }
 
 /// Percent-encodes a file name for `filename*`.
-fn encode(name: &str) -> String {
+pub fn encode(name: &str) -> String {
     name.bytes()
         .map(|b| {
             if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
@@ -711,12 +370,11 @@ struct Paths {
     paths: Vec<String>,
 }
 
-async fn folder(store: &Store, grants: &Grants, at: At) -> ApiResult<Response> {
+async fn folder(store: &Store, at: At) -> ApiResult<Response> {
     let rel = segments(&at.path)?;
     if rel.is_empty() {
         return Err(ApiError::bad("Name the new folder"));
     }
-    grants.need(parent(&rel), Level::Write)?;
     let real = store.item(&rel)?;
     if tokio::fs::symlink_metadata(&real).await.is_ok() {
         return Err(ApiError::conflict(format!(
@@ -734,14 +392,13 @@ struct Rename {
     name: String,
 }
 
-async fn rename(store: &Store, grants: &Grants, body: Rename) -> ApiResult<Response> {
+async fn rename(store: &Store, body: Rename) -> ApiResult<Response> {
     let rel = segments(&body.path)?;
     let name = body.name.trim();
     let new = segments(name)?;
     if new.len() != 1 {
         return Err(ApiError::bad("A name cannot hold a slash"));
     }
-    grants.need(parent(&rel), Level::Write)?;
     let from = store.item(&rel)?;
     let mut target = parent(&rel).to_vec();
     target.push(new[0].clone());
@@ -773,22 +430,15 @@ struct Relocate {
 }
 
 /// Moves or copies items into a folder. Nothing already there is replaced.
-async fn relocate(store: &Store, grants: &Grants, body: Relocate) -> ApiResult<Response> {
+async fn relocate(store: &Store, body: Relocate) -> ApiResult<Response> {
     let to = segments(&body.to)?;
-    grants.need(&to, Level::Write)?;
-    let dest = store
-        .real(&to)?
-        .ok_or_else(|| ApiError::bad("Pick a folder on a drive"))?;
+    let dest = store.real(&to)?;
     if !dest.is_dir() {
         return Err(ApiError::bad("Pick a folder to put them in"));
     }
     let mut done = 0;
     for path in &body.paths {
         let rel = segments(path)?;
-        grants.need(
-            if body.copy { &rel[..] } else { parent(&rel) },
-            if body.copy { Level::Read } else { Level::Write },
-        )?;
         let from = store.item(&rel)?;
         let name = rel[rel.len() - 1].clone();
         if to.starts_with(&rel) {
@@ -853,12 +503,11 @@ fn remove(path: &Path) -> std::io::Result<()> {
     }
 }
 
-async fn delete(store: &Store, grants: &Grants, body: Paths) -> ApiResult<Response> {
+async fn delete(store: &Store, body: Paths) -> ApiResult<Response> {
     let mut targets = Vec::new();
     let mut thumbs = Vec::new();
     for path in &body.paths {
         let rel = segments(path)?;
-        grants.need(parent(&rel), Level::Write)?;
         targets.push(store.item(&rel)?);
         thumbs.extend(store.thumb(&rel));
     }
@@ -875,7 +524,7 @@ async fn delete(store: &Store, grants: &Grants, body: Paths) -> ApiResult<Respon
 
 #[derive(Deserialize)]
 struct Piece {
-    /// The file to make, under the storage folder; folders on the way are made.
+    /// The file to make, under the collection's folder; folders on the way are made.
     path: String,
     /// The page's name for this upload, the same for each of its pieces.
     id: String,
@@ -891,7 +540,7 @@ struct Piece {
 
 /// One piece of a file being uploaded, at `offset`. The file appears, under its
 /// name, once the last piece is in.
-async fn upload(store: &Store, grants: &Grants, req: Request) -> ApiResult<Response> {
+async fn upload(store: &Store, req: Request) -> ApiResult<Response> {
     let piece: Piece = query(&req)?;
     if piece.id.is_empty()
         || piece.id.len() > 64
@@ -904,7 +553,6 @@ async fn upload(store: &Store, grants: &Grants, req: Request) -> ApiResult<Respo
         return Err(ApiError::bad("Name the file"));
     }
     store.space.takes(&rel[rel.len() - 1])?;
-    grants.need(parent(&rel), Level::Write)?;
     let target = store.item(&rel)?;
     let dir = target.parent().ok_or_else(ApiError::not_found)?.to_owned();
     let temp = dir.join(format!(".{}{PART}", piece.id));
@@ -1004,8 +652,7 @@ async fn thumb(store: &Store, req: Request) -> ApiResult<Response> {
 async fn save_thumb(store: &Store, req: Request) -> ApiResult<Response> {
     let at: At = query(&req)?;
     let rel = segments(&at.path)?;
-    let real = store.real(&rel)?.ok_or_else(ApiError::not_found)?;
-    if !real.is_file() {
+    if !store.real(&rel)?.is_file() {
         return Err(ApiError::not_found());
     }
     let path = store.thumb(&rel).ok_or_else(ApiError::not_found)?;
@@ -1038,227 +685,6 @@ fn io_error(err: std::io::Error) -> ApiError {
     ApiError(status, text)
 }
 
-// ---- the Storage page ----
-
-/// The storage tunnel: the one route whose target is Storage.
-pub fn route(state: &AppState) -> Option<Route> {
-    state
-        .snapshot()
-        .routes
-        .values()
-        .find(|r| r.target_scheme == "storage")
-        .cloned()
-}
-
-/// Everything the Storage page shows: on or off, the folder, the address and the
-/// folders each person may open.
-pub async fn overview(state: &AppState) -> ApiResult<Json<Value>> {
-    let host = Host::of(&state.config);
-    let path = state.db.setting("storage_path")?;
-    let display = match &path {
-        Some(p) => Some(host.display(&segments(p)?)),
-        None => None,
-    };
-    Ok(Json(json!({
-        "enabled": enabled(state),
-        "path": path,
-        "display": display,
-        "drives": host.layout == Layout::Drives,
-        "route": route(state),
-        "rules": state.db.rules()?,
-    })))
-}
-
-#[derive(Deserialize)]
-pub struct Settings {
-    enabled: Option<bool>,
-    path: Option<String>,
-}
-
-pub async fn save(state: &AppState, body: Settings) -> ApiResult<Json<Value>> {
-    if let Some(path) = body.path {
-        let host = Host::of(&state.config);
-        let segs = segments(&path)?;
-        host.check(&segs)?;
-        if let Some(real) = host.real(&segs) {
-            if !real.is_dir() {
-                return Err(ApiError::bad(format!(
-                    "{} is not a folder on this host",
-                    host.display(&segs)
-                )));
-            }
-        }
-        state.db.set_setting("storage_path", &joined(&segs))?;
-    }
-    match body.enabled {
-        Some(true) => state.db.set_setting("storage_enabled", "1")?,
-        Some(false) => state.db.delete_setting("storage_enabled")?,
-        None => {}
-    }
-    overview(state).await
-}
-
-/// The folders in a host folder, for choosing the storage folder.
-pub async fn browse(state: &AppState, path: &str) -> ApiResult<Json<Value>> {
-    let host = Host::of(&state.config);
-    let segs = segments(path)?;
-    host.check(&segs)?;
-    let mut folders: Vec<String> = match host.real(&segs) {
-        None => host.drives(),
-        Some(dir) => {
-            let mut read = tokio::fs::read_dir(&dir).await.map_err(io_error)?;
-            let mut names = Vec::new();
-            while let Some(entry) = read.next_entry().await.map_err(io_error)? {
-                if tokio::fs::metadata(entry.path())
-                    .await
-                    .is_ok_and(|m| m.is_dir())
-                {
-                    names.push(entry.file_name().to_string_lossy().into_owned());
-                }
-            }
-            names.sort_by_key(|n| n.to_lowercase());
-            names
-        }
-    };
-    folders.retain(|n| segments(n).is_ok_and(|s| s.len() == 1));
-    Ok(Json(json!({
-        "path": joined(&segs),
-        "display": host.display(&segs),
-        "parent": (!segs.is_empty()).then(|| joined(parent(&segs))),
-        "folders": folders,
-    })))
-}
-
-#[derive(Deserialize)]
-pub struct RuleBody {
-    user_id: Option<String>,
-    path: Option<String>,
-    mode: Option<String>,
-}
-
-/// Gives someone a folder, or changes one given.
-pub async fn save_rule(
-    state: &AppState,
-    id: Option<String>,
-    body: RuleBody,
-) -> ApiResult<Json<Value>> {
-    let mut rule = match &id {
-        Some(id) => state
-            .db
-            .rules()?
-            .into_iter()
-            .find(|r| &r.id == id)
-            .ok_or_else(ApiError::not_found)?,
-        None => {
-            let user_id = body.user_id.clone().unwrap_or_default();
-            if user_id != "*" && state.db.user(&user_id)?.is_none() {
-                return Err(ApiError::bad("No such user"));
-            }
-            Rule {
-                id: random_hex(8),
-                user_id,
-                path: String::new(),
-                mode: "read".into(),
-                created_at: now(),
-            }
-        }
-    };
-    if let Some(path) = body.path {
-        rule.path = joined(&segments(&path)?);
-    }
-    if let Some(mode) = body.mode {
-        if mode != "read" && mode != "write" {
-            return Err(ApiError::bad("Access is read or write"));
-        }
-        rule.mode = mode;
-    }
-    state.db.save_rule(&rule)?;
-    overview(state).await
-}
-
-pub async fn delete_rule(state: &AppState, id: &str) -> ApiResult<Json<Value>> {
-    state.db.delete_rule(id)?;
-    overview(state).await
-}
-
-// ---- the storage address ----
-
-/// A request at the storage address that passed its access checks: the files API,
-/// or the explorer page.
-pub async fn visit(
-    state: &AppState,
-    user: Option<String>,
-    ui_dir: &Path,
-    req: Request,
-) -> Response {
-    if !enabled(state) {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    let path = req.uri().path().to_owned();
-    let mut response = if let Some(op) = path.strip_prefix("/api/storage/fs/") {
-        let op = op.to_owned();
-        let changes = !matches!(*req.method(), Method::GET | Method::HEAD);
-        if changes && !req.headers().contains_key("x-requested-with") {
-            ApiError(
-                StatusCode::FORBIDDEN,
-                "Refused: not sent by the page".into(),
-            )
-            .into_response()
-        } else {
-            let mut response = fs(state, Who::Visitor(user), Space::Files, &op, req).await;
-            response
-                .headers_mut()
-                .entry(header::CACHE_CONTROL)
-                .or_insert(HeaderValue::from_static("no-store"));
-            response
-        }
-    } else if !matches!(*req.method(), Method::GET | Method::HEAD) {
-        StatusCode::METHOD_NOT_ALLOWED.into_response()
-    } else if path.starts_with("/assets/")
-        || path.starts_with("/fonts/")
-        || path.ends_with(".js")
-        || path.ends_with(".ico")
-    {
-        match tower_http::services::ServeDir::new(ui_dir)
-            .try_call(req)
-            .await
-        {
-            Ok(response) => response.map(Body::new),
-            Err(_) => StatusCode::NOT_FOUND.into_response(),
-        }
-    } else {
-        explorer_page(ui_dir).await
-    };
-    let headers = response.headers_mut();
-    for (name, value) in [
-        (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
-        (header::X_FRAME_OPTIONS, "DENY"),
-        (header::REFERRER_POLICY, "no-referrer"),
-        (header::STRICT_TRANSPORT_SECURITY, "max-age=31536000"),
-    ] {
-        headers.insert(name, HeaderValue::from_static(value));
-    }
-    headers.entry(header::CONTENT_SECURITY_POLICY).or_insert(HeaderValue::from_static(
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
-    ));
-    response
-}
-
-/// The dashboard's page, marked so it opens as the explorer alone.
-async fn explorer_page(ui_dir: &Path) -> Response {
-    match tokio::fs::read_to_string(ui_dir.join("index.html")).await {
-        Ok(html) => (
-            [
-                (header::CONTENT_TYPE, "text/html; charset=utf-8"),
-                (header::CACHE_CONTROL, "no-store"),
-            ],
-            html.replacen("<head>", "<head><meta name=\"storage\" content=\"1\">", 1),
-        )
-            .into_response(),
-        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "The page is not built").into_response(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1277,20 +703,6 @@ mod tests {
     }
 
     #[test]
-    fn drives_take_a_letter_first() {
-        let host = Host {
-            layout: Layout::Drives,
-            base: None,
-        };
-        assert!(host.check(&segs("C:/Users")).is_ok());
-        assert!(host.check(&segs("Users")).is_err());
-        assert!(host.check(&segs("C:/a:b")).is_err());
-        assert_eq!(host.display(&segs("C:/Users/Kris")), "C:\\Users\\Kris");
-        assert_eq!(host.display(&segs("D:")), "D:\\");
-        assert!(host.real(&[]).is_none());
-    }
-
-    #[test]
     fn collections_keep_their_own_kinds() {
         assert!(Space::Media.takes("IMG_0001.HEIC").is_ok());
         assert!(Space::Media.takes("clip.mp4").is_ok());
@@ -1299,25 +711,5 @@ mod tests {
         assert!(Space::Drive.takes("deck.pptx").is_ok());
         assert!(Space::Drive.takes("setup.exe").is_err());
         assert!(Space::Drive.takes("README").is_err());
-        assert!(Space::Files.takes("anything.bin").is_ok());
-    }
-
-    #[test]
-    fn rules_give_folders_and_the_way_to_them() {
-        let grants = Grants {
-            full: false,
-            rules: vec![
-                (segs("Photos/2024"), Level::Write),
-                (segs("Docs"), Level::Read),
-            ],
-        };
-        assert!(grants.level(&[]) == Level::Browse);
-        assert!(grants.level(&segs("Photos")) == Level::Browse);
-        assert!(grants.level(&segs("Photos/2024/June")) == Level::Write);
-        assert!(grants.level(&segs("Docs/a.txt")) == Level::Read);
-        assert!(grants.level(&segs("Music")) == Level::None);
-        let mut ways = grants.ways(&[]);
-        ways.sort();
-        assert_eq!(ways, vec!["Docs", "Photos"]);
     }
 }

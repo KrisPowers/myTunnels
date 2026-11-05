@@ -1,5 +1,6 @@
 mod admin;
 mod cloudflare;
+mod code;
 mod codes;
 mod config;
 mod containers;

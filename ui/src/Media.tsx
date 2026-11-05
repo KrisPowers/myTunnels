@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEve
 import { createPortal } from "react-dom";
 import { bytes, fileUrl, filesIn, message, saveThumb, thumbUrl, type FileEntry, type Listing } from "./api";
 import { MultiDropdown, type Option } from "./Dropdown";
-import { ContextMenu, dropped, extOf, freeName, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Explorer";
+import { ContextMenu, dropped, extOf, freeName, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Files";
 import { Icon } from "./Icon";
 import { Callout, Dialog, useNotify } from "./ui";
 
