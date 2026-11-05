@@ -15,8 +15,8 @@ export const SETTINGS: [string, string, IconName][] = [
   ["about", "About", "info"],
 ];
 
-export function Settings({ section, status, routes, onChanged, onSignOut }: { section: string; status: Status | null; routes: Route[]; onChanged: () => Promise<void>; onSignOut: () => void }) {
-  const [key, title] = SETTINGS.find(([k]) => k === section) ?? SETTINGS[0];
+export function Settings({ sections, section, status, routes, onChanged, onSignOut }: { sections: [string, string, IconName][]; section: string; status: Status | null; routes: Route[]; onChanged: () => Promise<void>; onSignOut: () => void }) {
+  const [key, title] = sections.find(([k]) => k === section) ?? sections[0];
   const [saved, setSaved] = useState<Saved | null>(null);
   const reload = () => api.settings().then(setSaved).catch(() => {});
   useEffect(() => {
@@ -43,7 +43,7 @@ export function Settings({ section, status, routes, onChanged, onSignOut }: { se
         {key === "account" && <AdminAccountCard />}
         {key === "account" && (
           <Card title="Session">
-            <Row title="Sign out" sub="Ends this browser's admin session. Tunnels keep running.">
+            <Row title="Sign out" sub="Ends this browser's session on the dashboard. Tunnels keep running.">
               <button type="button" className="btn" onClick={onSignOut}><Icon name="logout" size={18} />Sign out</button>
             </Row>
           </Card>
@@ -62,6 +62,14 @@ function AdminAccountCard() {
     api.account().then(setAccount).catch(() => {});
   }, []);
   if (!account) return null;
+  if (!account.admin) {
+    return (
+      <Card title="Your account" sub="Sign in with either the email or the username. Your details are changed under Admin, Users.">
+        <Row title="Email" sub={account.email || "None"} />
+        <Row title="Username" sub={account.username || "None"} />
+      </Card>
+    );
+  }
   return (
     <Card title="Admin account" sub="Sign in with either the email or the username.">
       <ValueRow title="Email" type="email" value={account.email ?? ""} onSave={(email) => api.editAccount({ email }).then(setAccount)} />

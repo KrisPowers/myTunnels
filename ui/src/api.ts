@@ -57,6 +57,8 @@ export interface User {
   last_login: number | null;
   // Why the account is held, while it is.
   note: string | null;
+  // What it may do on the dashboard; "dashboard" lets it sign in there.
+  permissions: string[];
 }
 
 export interface TunnelEvent {
@@ -226,19 +228,9 @@ export type ContainerAction = "start" | "stop" | "restart" | "pause" | "unpause"
 // with git over HTTPS signing in with a token.
 export interface Repo { name: string; branch: string; updated: number | null; empty: boolean; write: boolean }
 
-export interface RepoRule {
-  id: string;
-  // An account, or "*" for everyone who gets through.
-  user_id: string;
-  // A repository's name, or "" for every one.
-  repo: string;
-  mode: "read" | "write";
-  created_at: number;
-}
-
 export interface GitToken { id: string; name: string; owner: string; created_at: number; last_used: number | null }
 
-export interface CodeState { route: Route | null; rules: RepoRule[]; tokens: GitToken[] }
+export interface CodeState { route: Route | null; tokens: GitToken[] }
 
 export interface Refs { default: string; branches: { name: string; updated: number }[]; tags: { name: string; updated: number }[] }
 
@@ -305,10 +297,18 @@ export interface TwoFactor { smtp: Smtp | null; dashboard: boolean; admin_email:
 // A sign-in that went through, or one waiting on an emailed code.
 export interface SignedIn { ok?: boolean; code_required?: boolean; ticket?: string; sent_to?: string }
 
-export interface AdminAccount { username: string | null; email: string | null }
+// The account signed in: the admin's, or another account's own.
+export interface AdminAccount { username: string | null; email: string | null; admin: boolean }
+
+// What an account may do on the dashboard, by feature. The admin may do all.
+export interface Permission { key: string; label: string; hint: string }
+export interface Group { label: string; permissions: Permission[] }
+export interface Me { id: string; admin: boolean; name: string; permissions: string[] }
 
 export interface Auth {
   authenticated: boolean;
+  me: Me | null;
+  catalog: Group[];
   setup: { password: boolean; account: boolean; token: boolean; cloudflare: boolean; done: boolean };
 }
 
@@ -380,7 +380,7 @@ export const api = {
   users: () => call<User[]>("/users"),
   addUser: (body: { username: string; email: string; password: string; device_id: string }) =>
     call<User>("/users", "POST", body),
-  editUser: (id: string, patch: Partial<Pick<User, "username" | "email" | "name" | "enabled" | "route_ids" | "device_ids">> & { password?: string }) =>
+  editUser: (id: string, patch: Partial<Pick<User, "username" | "email" | "name" | "enabled" | "route_ids" | "device_ids" | "permissions">> & { password?: string }) =>
     call<User>(`/users/${id}`, "PATCH", patch),
   removeUser: (id: string) => call(`/users/${id}`, "DELETE"),
   signOutUser: (id: string) => call(`/users/${id}/signout`, "POST"),
@@ -390,9 +390,6 @@ export const api = {
   code: () => call<CodeState>("/code"),
   createRepo: (name: string) => call<{ repos: Repo[] }>("/code/repos", "POST", { name }),
   removeRepo: (name: string) => call<{ repos: Repo[] }>(`/code/repos/${encodeURIComponent(name)}`, "DELETE"),
-  addRule: (body: { user_id: string; repo: string; mode: RepoRule["mode"] }) => call<CodeState>("/code/rules", "POST", body),
-  editRule: (id: string, patch: Partial<Pick<RepoRule, "repo" | "mode">>) => call<CodeState>(`/code/rules/${id}`, "PATCH", patch),
-  removeRule: (id: string) => call<CodeState>(`/code/rules/${id}`, "DELETE"),
   addToken: (name: string, owner: string) => call<CodeState & { secret: string }>("/code/tokens", "POST", { name, owner }),
   removeToken: (id: string) => call<CodeState>(`/code/tokens/${id}`, "DELETE"),
 };

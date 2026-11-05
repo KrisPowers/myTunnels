@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
-import { ago, api, editOf, LEVELS, list, message, redirectUrl, shortId, strength, type Access, type Device, type OAuthProvider, type PolicyMode, type Route, type RouteEdit, type Status, type TunnelEvent, type User, type Zone } from "./api";
+import { api, editOf, LEVELS, list, message, redirectUrl, shortId, strength, type Access, type Device, type OAuthProvider, type PolicyMode, type Route, type RouteEdit, type Status, type TunnelEvent, type User, type Zone } from "./api";
 import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
+import { useCan } from "./me";
 import { go } from "./route";
 import { ProviderLogo } from "./ProviderLogo";
-import { AddMenu, ArmedButton, Avatar, Card, Copy, Dialog, LogTable, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
+import { ArmedButton, Card, Copy, Dialog, LogTable, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
 
 // Chips saying who may open a tunnel.
 export function AccessChips({ route }: { route: Route }) {
@@ -35,6 +36,7 @@ export function target(route: Route) {
 
 // Tunnels is the home page: every tunnel published.
 export function Tunnels({ routes, status }: { routes: Route[] | null; status: Status | null }) {
+  const can = useCan();
   const live = routes?.filter((r) => r.enabled).length ?? 0;
   const links = status?.connections ?? 0;
   return (
@@ -48,7 +50,7 @@ export function Tunnels({ routes, status }: { routes: Route[] | null; status: St
           </div>
         </div>
         <div className="page-actions">
-          <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>
+          {can("tunnels.create") && <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>}
         </div>
       </div>
       <div className="page-body stack">
@@ -57,7 +59,7 @@ export function Tunnels({ routes, status }: { routes: Route[] | null; status: St
             <Icon name="public" size={40} />
             <h2>Nothing published yet</h2>
             <p className="muted">Publish a port on one of your domains, and choose who can open it.</p>
-            <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>
+            {can("tunnels.create") && <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>}
           </div>
         )}
         {routes && routes.length > 0 && (
@@ -175,7 +177,7 @@ type AccessValue = Access & { password_set?: boolean };
 // AccessCard holds a tunnel's access layers. A tunnel password is asked for when
 // that layer is turned on with none set; `onPassword` stores one on its own, from
 // a dialog, and `onPasswordCancel` drops a password layer that never got one.
-export function AccessCard({ value, users, providers, hostname, onChange, onPassword, onPasswordCancel, signInElsewhere }: {
+export function AccessCard({ value, users, providers, hostname, onChange, onPassword, onPasswordCancel }: {
   value: AccessValue;
   users: User[];
   // Third-party providers that are set up, to offer here.
@@ -185,8 +187,6 @@ export function AccessCard({ value, users, providers, hostname, onChange, onPass
   onChange: (patch: Partial<Access>) => void;
   onPassword?: (password: string) => Promise<unknown>;
   onPasswordCancel?: () => void;
-  // On a tunnel's page the sign-in switch sits beside People with access instead.
-  signInElsewhere?: boolean;
 }) {
   const layers = [value.require_lan, value.require_device, value.require_password, value.require_login].filter(Boolean).length;
   const accounts = users.filter((u) => u.enabled).length;
@@ -206,9 +206,9 @@ export function AccessCard({ value, users, providers, hostname, onChange, onPass
       ) : (
         <PasswordRow value={value.password ?? ""} onChange={(password) => onChange({ password })} />
       ))}
-      {!signInElsewhere && <Row title="Sign-in" sub={<>People sign in with their email and an account from <a href="#/users">Users</a>. {accounts ? `${accounts} account${accounts === 1 ? "" : "s"} so far.` : "There are none yet."}</>}>
+      <Row title="Sign-in" sub={<>People sign in with an account from <a href="#/users">Users</a>; each account's tunnels are picked on its page there. {accounts ? `${accounts} account${accounts === 1 ? "" : "s"} so far.` : "There are none yet."}</>}>
         <Switch label="Sign-in" on={value.require_login} onChange={(v) => onChange({ require_login: v })} />
-      </Row>}
+      </Row>
       {value.require_login && (
         <>
           {providers.map((p) => {
@@ -421,6 +421,7 @@ const TUNNEL_PAGES: [string, string, IconName][] = [
 // TunnelPage is one tunnel: its address and target in the heading, each with an
 // edit button, then its sub-pages under a bar.
 export function TunnelPage({ route, page, devices, users, providers, onChanged }: { route: Route; page: string; devices: Device[]; users: User[]; providers: OAuthProvider[]; onChanged: () => Promise<void> }) {
+  const can = useCan();
   const [edit, setEdit] = useState<RouteEdit>(() => editOf(route));
   const [editing, setEditing] = useState<"" | "address" | "target">("");
   const notify = useNotify();
@@ -473,16 +474,6 @@ export function TunnelPage({ route, page, devices, users, providers, onChanged }
       notify(message(e), "bad");
     }
   };
-  const grantUser = async (user: User, on: boolean) => {
-    const ids = on ? [...user.route_ids, route.id] : user.route_ids.filter((r) => r !== route.id);
-    try {
-      await api.editUser(user.id, { route_ids: ids });
-      await onChanged();
-    } catch (e) {
-      notify(message(e), "bad");
-    }
-  };
-
   return (
     <>
       <div className="page-head">
@@ -501,14 +492,14 @@ export function TunnelPage({ route, page, devices, users, providers, onChanged }
         <div className="page-actions">
           <Switch label={edit.enabled ? "Live, switch off" : "Off, switch live"} on={edit.enabled} onChange={(v) => quietly({ enabled: v })} />
           <a className="btn" href={`https://${route.hostname}`} target="_blank" rel="noreferrer"><Icon name="open_in_new" size={18} />Open</a>
-          <ArmedButton icon="delete" label="Remove" armedLabel="Remove for good" onConfirm={remove} />
+          {can("tunnels.delete") && <ArmedButton icon="delete" label="Remove" armedLabel="Remove for good" onConfirm={remove} />}
         </div>
       </div>
       <SubNav back="#/" backLabel="Tunnels" base={`#/tunnels/${route.id}`} items={TUNNEL_PAGES} current={current} />
 
       <div className="page-body stack plain" key={current}>
         {current === "access" && (
-          <AccessCard signInElsewhere value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} providers={providers} hostname={route.hostname} onChange={access}
+          <AccessCard value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} providers={providers} hostname={route.hostname} onChange={access}
             onPassword={async (password) => {
               await save({ require_password: true, password });
               setAsking(false);
@@ -516,9 +507,6 @@ export function TunnelPage({ route, page, devices, users, providers, onChanged }
             onPasswordCancel={() => setAsking(false)} />
         )}
 
-        {current === "access" && (
-          <People route={route} users={users} onGrant={grantUser} signIn={edit.require_login} onSignIn={(v) => access({ require_login: v })} />
-        )}
 
         {current === "activity" && <TunnelLogs route={route} users={users} />}
 
@@ -632,58 +620,6 @@ function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () =>
         </div>
       </form>
     </Dialog>
-  );
-}
-
-// People are the accounts that may sign in at this tunnel, added one by one: a
-// plus beside the heading opens a menu to find someone, then a row per person.
-function People({ route, users, onGrant, signIn, onSignIn }: {
-  route: Route;
-  users: User[];
-  onGrant: (user: User, on: boolean) => Promise<void>;
-  signIn: boolean;
-  onSignIn: (on: boolean) => void;
-}) {
-  const members = users.filter((u) => u.route_ids.includes(route.id));
-  // Most active first: latest sign-in, then never signed in.
-  const ranked = [...users].sort((a, b) => (b.last_login ?? 0) - (a.last_login ?? 0));
-  return (
-    <Card title={<>People with access<span className="title-toggle">Require sign-in<Switch label="Require sign-in" on={signIn} onChange={onSignIn} /></span></>}
-      sub={!route.require_login ? "Sign-in is off, so no one is asked for an account yet." : members.length ? undefined : "No one yet."}
-      action={
-        <AddMenu label="Add people" placeholder="Name or email"
-          empty={<a className="menu-item" href="#/users/new"><Icon name="add" size={18} />New user</a>}
-          onPick={(id) => {
-            const u = users.find((x) => x.id === id);
-            if (u) onGrant(u, true);
-          }}
-          items={ranked.map((u) => ({
-            id: u.id,
-            label: u.name || u.username,
-            sub: u.email,
-            avatar: u.name || u.username,
-            disabled: u.route_ids.includes(route.id),
-            note: "Has access",
-          }))} />
-      }>
-      {members.length > 0 && (
-        <ul className="people">
-          {members.map((u) => (
-            <li key={u.id} className="person-row">
-              <Avatar name={u.name || u.username} />
-              <a className="person" href={`#/users/${u.id}`}>
-                <span className="scan-target">{u.name || u.username}</span>
-                <small>{u.email}</small>
-              </a>
-              <span className="result-meta">{u.last_login ? `Signed in ${ago(u.last_login)}` : "Never signed in"}</span>
-              <button type="button" className="icon-btn danger" aria-label={`Remove ${u.username}`} title="Remove" onClick={() => onGrant(u, false)}>
-                <Icon name="close" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
   );
 }
 

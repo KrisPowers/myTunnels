@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode } from "react";
-import { api, deviceInfo, message, shortId, type Auth, type Device, type OAuthProvider, type Route, type Status, type User } from "./api";
+import { api, deviceInfo, message, shortId, type Auth, type Device, type Group, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { CodePage } from "./Code";
 import { ContainersPage } from "./Containers";
 import { DashboardPage } from "./Dashboard";
@@ -7,6 +7,7 @@ import { DevicePage, Devices } from "./Devices";
 import { DrivePage } from "./Drive";
 import { Icon, type IconName } from "./Icon";
 import { MediaPage } from "./Media";
+import { MeContext, useCan } from "./me";
 import { go, readHash } from "./route";
 import { SETTINGS, Settings } from "./Settings";
 import { Setup } from "./Setup";
@@ -47,18 +48,23 @@ function Root() {
   }, [load]);
 
   if (!auth) return problem ? <div className="page"><Callout tone="bad" icon="error">Can't reach myTunnels: {problem}</Callout></div> : null;
-  if (!auth.authenticated || !auth.setup.done) return <Setup auth={auth} onChange={load} />;
-  return <Dashboard onSignOut={async () => {
-    await api.logout().catch(() => {});
-    await load();
-  }} />;
+  if (!auth.authenticated || !auth.setup.done || !auth.me) return <Setup auth={auth} onChange={load} />;
+  return (
+    <MeContext.Provider value={auth.me}>
+      <Dashboard me={auth.me} catalog={auth.catalog} onSignOut={async () => {
+        await api.logout().catch(() => {});
+        await load();
+      }} />
+    </MeContext.Provider>
+  );
 }
 
 // Dashboard is the frame every page sits in, after Google's apps: a header with
 // the name, the search bar, help and settings; a sidebar with New on top and the
 // pages under it; and the page.
-function Dashboard({ onSignOut }: { onSignOut: () => void }) {
+function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSignOut: () => void }) {
   const [place, setPlace] = useState(readHash);
+  const can = useCan();
   const [routes, setRoutes] = useState<Route[] | null>(null);
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [users, setUsers] = useState<User[] | null>(null);
@@ -144,7 +150,33 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
     if (view === "users" && id && id !== "new" && users && !user) go("#/users");
   }, [view, id, routes, devices, users, route, device, user]);
 
-  const sections = view === "settings" ? SETTINGS : view === "docs" ? DOCS : null;
+  // Each page shows for those who may use it; the first of them is home.
+  const pages: [string, string, IconName, string, boolean][] = [
+    ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
+    ["containers", "Containers", "deployed_code", "#/containers", can("containers.view")],
+    ["tunnels", "Tunnels", "public", "#/", can("tunnels.view")],
+    ["devices", "Devices", "devices", "#/devices", can("devices.view")],
+    ["oauth", "Third-Party OAuth", "key", "#/oauth", can("oauth.manage")],
+    ["twofactor", "Two-Factor Auth", "lock", "#/twofactor", can("twofactor.manage")],
+  ];
+  const storage: [string, string, IconName, string, boolean][] = [
+    ["code", "Code", "code", "#/code", can("code.view")],
+    ["media", "Media", "photo_library", "#/media", can("media.view")],
+    ["drive", "Drive", "cloud", "#/drive", can("drive.view")],
+  ];
+  const admin: [string, string, IconName, string, boolean][] = [
+    ["users", "Users", "group", "#/users", can("users.view")],
+  ];
+  const home = [...pages, ...storage, ...admin].find((p) => p[4])?.[3] ?? "#/settings/appearance";
+  useEffect(() => {
+    if (view === "tunnels" && !id && !can("tunnels.view") && home !== "#/") go(home);
+  });
+  const settings = SETTINGS.filter(([k]) => can("settings.manage") || !["cloudflare", "network", "connector"].includes(k));
+  const sections = view === "settings" ? settings : view === "docs" ? DOCS : null;
+  const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
+    <NavItem key={key} to={to} icon={icon} label={label} on={view === key || (key === "tunnels" && view === "new")}
+      count={key === "devices" ? pending || undefined : undefined} />
+  );
 
   return (
     <div className="app">
@@ -157,7 +189,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
         </div>
         <Search routes={apps} devices={devices} />
         <div className="header-actions">
-          <a className={"icon-btn" + (view === "new" ? " on" : "")} href="#/new" aria-label="New tunnel" title="New tunnel"><Icon name="add" /></a>
+          {can("tunnels.create") && <a className={"icon-btn" + (view === "new" ? " on" : "")} href="#/new" aria-label="New tunnel" title="New tunnel"><Icon name="add" /></a>}
           <a className={"icon-btn" + (view === "docs" ? " on" : "")} href="#/docs" aria-label="Help" title="Help"><Icon name="help" /></a>
           <a className={"icon-btn" + (view === "settings" ? " on" : "")} href="#/settings" aria-label="Settings" title="Settings"><Icon name="settings" /></a>
         </div>
@@ -175,18 +207,9 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
             </>
           ) : (
             <>
-              <NavItem to="#/dashboard" icon="dashboard" label="Dashboard" on={view === "dashboard"} />
-              <NavItem to="#/containers" icon="deployed_code" label="Containers" on={view === "containers"} />
-              <NavItem to="#/" icon="public" label="Tunnels" on={view === "tunnels" || view === "new"} />
-              <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={pending || undefined} />
-              <NavItem to="#/users" icon="group" label="Users" on={view === "users"} />
-              <NavItem to="#/oauth" icon="key" label="Third-Party OAuth" on={view === "oauth"} />
-              <NavItem to="#/twofactor" icon="lock" label="Two-Factor Auth" on={view === "twofactor"} />
-              <NavGroup id="storage" label="Storage & Media">
-                <NavItem to="#/code" icon="code" label="Code" on={view === "code"} />
-                <NavItem to="#/media" icon="photo_library" label="Media" on={view === "media"} />
-                <NavItem to="#/drive" icon="cloud" label="Drive" on={view === "drive"} />
-              </NavGroup>
+              {pages.map(item)}
+              {storage.some((p) => p[4]) && <NavGroup id="storage" label="Storage & Media">{storage.map(item)}</NavGroup>}
+              {admin.some((p) => p[4]) && <NavGroup id="admin" label="Admin">{admin.map(item)}</NavGroup>}
             </>
           )}
         </nav>
@@ -205,10 +228,10 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           {device && <DevicePage device={device} routes={routes ?? []} users={users ?? []} onChanged={load} />}
           {view === "users" && !id && <Users users={users} routes={routes ?? []} />}
           {view === "users" && id === "new" && <NewUser devices={devices ?? []} onAdded={load} />}
-          {user && <UserPage user={user} page={page} routes={routes ?? []} devices={devices ?? []} onChanged={load} />}
+          {user && <UserPage user={user} page={page} routes={routes ?? []} devices={devices ?? []} catalog={catalog} me={me} onChanged={load} />}
           {view === "oauth" && <OAuth />}
           {view === "twofactor" && <TwoFactorPage routes={routes ?? []} onChanged={load} />}
-          {view === "settings" && <Settings section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
+          {view === "settings" && <Settings sections={settings} section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
           {view === "docs" && <Docs section={id} />}
         </main>
       </div>
