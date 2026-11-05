@@ -18,6 +18,7 @@ use crate::db::{Device, Event, Route, SignIn, User};
 use crate::mail::{self, Smtp};
 use crate::netinfo;
 use crate::oauth::{self, Provider};
+use crate::permissions::{self, Caller};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
 use crate::{code, codes, containers, gate, metrics, secret, storage, tunnel};
@@ -64,13 +65,14 @@ pub fn router(state: AppState) -> Router {
         .route("/code/repos", get(list_repos).post(create_repo))
         .route("/code/repos/{name}", delete(remove_repo))
         .route("/code/repos/{name}/{op}", get(read_repo))
-        .route("/code/rules", post(add_rule))
-        .route("/code/rules/{id}", patch(edit_rule).delete(delete_rule))
         .route("/code/tokens", post(add_token))
         .route("/code/tokens/{id}", delete(remove_token))
         .route("/media/fs/{op}", any(media_fs))
         .route("/drive/fs/{op}", any(drive_fs))
-        .route_layer(middleware::from_fn_with_state(state.clone(), require_admin));
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_session,
+        ));
     let api = Router::new()
         .route("/auth", get(auth_state))
         .route("/auth/setup", post(setup))
@@ -156,27 +158,37 @@ async fn harden(req: Request, next: Next) -> Response {
 
 // Auth
 
-/// A session opened with the admin password as it is now.
-fn is_admin(state: &AppState, headers: &HeaderMap) -> bool {
-    let Some(session) =
-        cookie(headers, ADMIN_COOKIE).and_then(|v| state.session(&state.admin_sessions, v))
-    else {
-        return false;
-    };
-    state
-        .db
-        .setting("admin_password")
-        .ok()
-        .flatten()
-        .is_some_and(|hash| secret::tag(&hash) == session.tag)
+/// Who a panel session belongs to: the admin, with the admin password as it is
+/// now, or an account that is on, may sign in to the dashboard, and has the
+/// password it signed in with.
+fn caller(state: &AppState, headers: &HeaderMap) -> Option<Caller> {
+    let session =
+        cookie(headers, ADMIN_COOKIE).and_then(|v| state.session(&state.admin_sessions, v))?;
+    if session.subject == "admin" {
+        let hash = state.db.setting("admin_password").ok().flatten()?;
+        return (secret::tag(&hash) == session.tag).then_some(Caller::Admin);
+    }
+    let user = state.snapshot().users.get(&session.subject).cloned()?;
+    let may = user.enabled
+        && user.permissions.iter().any(|p| p == "dashboard")
+        && secret::tag(&user.password_hash) == session.tag;
+    may.then_some(Caller::Account(Box::new(user)))
 }
 
-async fn require_admin(State(state): State<AppState>, req: Request, next: Next) -> Response {
-    if is_admin(&state, req.headers()) {
-        next.run(req).await
-    } else {
-        ApiError(StatusCode::UNAUTHORIZED, "Sign in required".into()).into_response()
+/// Lets a call through for someone signed in whose permissions allow it.
+async fn require_session(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
+    let Some(caller) = caller(&state, req.headers()) else {
+        return ApiError(StatusCode::UNAUTHORIZED, "Sign in required".into()).into_response();
+    };
+    if !permissions::needed(req.method(), req.uri().path()).met(&caller) {
+        return ApiError(
+            StatusCode::FORBIDDEN,
+            "You don't have permission for this".into(),
+        )
+        .into_response();
     }
+    req.extensions_mut().insert(caller);
+    next.run(req).await
 }
 
 /// What first-run setup has saved so far, so the panel can resume where it was left.
@@ -184,9 +196,28 @@ async fn require_admin(State(state): State<AppState>, req: Request, next: Next) 
 async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let db = &state.db;
     let password = db.setting("admin_password")?.is_some();
+    let me = caller(&state, &headers).map(|c| {
+        let name = match &c {
+            Caller::Admin => db
+                .setting("admin_username")
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
+            Caller::Account(u) if u.name.is_empty() => u.username.clone(),
+            Caller::Account(u) => u.name.clone(),
+        };
+        json!({
+            "id": c.id(),
+            "admin": matches!(c, Caller::Admin),
+            "name": name,
+            "permissions": c.permissions(),
+        })
+    });
     Ok(Json(json!({
         "setup_required": !password,
-        "authenticated": is_admin(&state, &headers),
+        "authenticated": me.is_some(),
+        "me": me,
+        "catalog": permissions::GROUPS,
         "setup": {
             "password": password,
             "account": db.setting("admin_username")?.is_some(),
@@ -222,7 +253,7 @@ async fn setup(
     state
         .db
         .set_setting("admin_password", &secret::hash(&body.password)?)?;
-    start_session(&state)
+    start_admin_session(&state)
 }
 
 fn admin_username(name: &str) -> ApiResult<String> {
@@ -276,6 +307,27 @@ async fn login(
     // The password is checked either way, so a wrong name takes as long to refuse.
     let password_ok = secret::verify(&body.password, &hash);
     if !(password_ok && names_admin(&state, &body.login)?) {
+        // Any other account that may sign in to the dashboard, by its email or
+        // username.
+        if let Some(user) = dashboard_account(&state, &body.login, &body.password)? {
+            state.clear_failures(&key);
+            if !dashboard_codes(&state)? {
+                return start_session(&state, &user.id, &secret::tag(&user.password_hash));
+            }
+            let (ticket, sent_to) = codes::send(
+                &state,
+                &user.id,
+                &user.email,
+                DASHBOARD,
+                "",
+                "the myTunnels dashboard",
+            )
+            .await?;
+            return Ok(Json(
+                json!({ "code_required": true, "ticket": ticket, "sent_to": sent_to }),
+            )
+            .into_response());
+        }
         state.record_failure(&key);
         tokio::time::sleep(Duration::from_millis(800)).await;
         return Err(ApiError(
@@ -285,7 +337,7 @@ async fn login(
     }
     state.clear_failures(&key);
     if !dashboard_codes(&state)? {
-        return start_session(&state);
+        return start_admin_session(&state);
     }
     let email = state.db.setting("admin_email")?.unwrap_or_default();
     let (ticket, sent_to) =
@@ -294,6 +346,27 @@ async fn login(
         Json(json!({ "code_required": true, "ticket": ticket, "sent_to": sent_to }))
             .into_response(),
     )
+}
+
+/// Marks an emailed code as one for an account signing in to the dashboard.
+const DASHBOARD: &str = "dashboard";
+
+/// The account `login` names, if it is on, may sign in to the dashboard and
+/// `password` is its own.
+fn dashboard_account(state: &AppState, login: &str, password: &str) -> ApiResult<Option<User>> {
+    let login = login.trim();
+    if login.is_empty() {
+        return Ok(None);
+    }
+    let found = state.db.users()?.into_iter().find(|u| {
+        u.username.eq_ignore_ascii_case(login)
+            || (!u.email.is_empty() && u.email.eq_ignore_ascii_case(login))
+    });
+    Ok(found.filter(|u| {
+        u.enabled
+            && u.permissions.iter().any(|p| p == "dashboard")
+            && secret::verify(password, &u.password_hash)
+    }))
 }
 
 /// Whether every sign-in to the dashboard also asks for an emailed code.
@@ -313,22 +386,27 @@ async fn login_code(
     Json(body): Json<CodeBody>,
 ) -> ApiResult<Response> {
     match state.codes.redeem(&body.ticket, &body.code) {
-        Ok(p) if p.subject == "admin" && p.route_id.is_empty() => start_session(&state),
+        Ok(p) if p.subject == "admin" && p.route_id.is_empty() => start_admin_session(&state),
+        Ok(p) if p.route_id == DASHBOARD => match state.db.user(&p.subject)? {
+            Some(u) if u.enabled && u.permissions.iter().any(|x| x == "dashboard") => {
+                start_session(&state, &u.id, &secret::tag(&u.password_hash))
+            }
+            _ => Err(ApiError(StatusCode::UNAUTHORIZED, "Sign in again".into())),
+        },
         Ok(_) => Err(ApiError(StatusCode::UNAUTHORIZED, "Sign in again".into())),
         Err(why) => Err(ApiError(StatusCode::UNAUTHORIZED, why.into())),
     }
 }
 
-fn start_session(state: &AppState) -> ApiResult<Response> {
+fn start_admin_session(state: &AppState) -> ApiResult<Response> {
     let hash = state.db.setting("admin_password")?.unwrap_or_default();
-    let sid = state.open_session(
-        &state.admin_sessions,
-        "admin",
-        &secret::tag(&hash),
-        "",
-        ADMIN_TTL,
-        false,
-    );
+    start_session(state, "admin", &secret::tag(&hash))
+}
+
+/// Opens a panel session for `subject`, the admin or an account, tied to the
+/// password it signed in with.
+fn start_session(state: &AppState, subject: &str, tag: &str) -> ApiResult<Response> {
+    let sid = state.open_session(&state.admin_sessions, subject, tag, "", ADMIN_TTL, false);
     Ok((
         [(
             header::SET_COOKIE,
@@ -357,11 +435,19 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
 
 // The admin account
 
-async fn account(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    Ok(Json(json!({
-        "username": state.db.setting("admin_username")?,
-        "email": state.db.setting("admin_email")?,
-    })))
+/// The account signed in: the admin's, or another account's own details.
+async fn account(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(match caller {
+        Caller::Admin => json!({
+            "username": state.db.setting("admin_username")?,
+            "email": state.db.setting("admin_email")?,
+            "admin": true,
+        }),
+        Caller::Account(u) => json!({ "username": u.username, "email": u.email, "admin": false }),
+    }))
 }
 
 #[derive(Deserialize)]
@@ -372,8 +458,15 @@ struct AccountEdit {
 
 async fn edit_account(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Json(body): Json<AccountEdit>,
 ) -> ApiResult<Json<Value>> {
+    if !matches!(caller, Caller::Admin) {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "Only the admin changes this account".into(),
+        ));
+    }
     if let Some(username) = body.username {
         state
             .db
@@ -382,7 +475,7 @@ async fn edit_account(
     if let Some(email) = body.email {
         state.db.set_setting("admin_email", &clean_email(&email)?)?;
     }
-    account(State(state)).await
+    account(State(state), Extension(caller)).await
 }
 
 // Third-party sign-in
@@ -1229,12 +1322,18 @@ async fn delete_route(
 
 // Code
 
-async fn code_overview(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    code::overview(&state).await
+async fn code_overview(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+) -> ApiResult<Json<Value>> {
+    code::overview(&state, &caller).await
 }
 
-async fn list_repos(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    code::list(&state, &code::Viewer::Admin).await
+async fn list_repos(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+) -> ApiResult<Json<Value>> {
+    code::list(&state, &code::Viewer::of(&caller)).await
 }
 
 async fn create_repo(
@@ -1253,46 +1352,27 @@ async fn remove_repo(
 
 async fn read_repo(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Path((name, op)): Path<(String, String)>,
     req: Request,
 ) -> Response {
-    code::read(&state, &code::Viewer::Admin, &name, &op, req).await
-}
-
-async fn add_rule(
-    State(state): State<AppState>,
-    Json(body): Json<code::RuleBody>,
-) -> ApiResult<Json<Value>> {
-    code::save_rule(&state, None, body).await
-}
-
-async fn edit_rule(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(body): Json<code::RuleBody>,
-) -> ApiResult<Json<Value>> {
-    code::save_rule(&state, Some(id), body).await
-}
-
-async fn delete_rule(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> ApiResult<Json<Value>> {
-    code::delete_rule(&state, &id).await
+    code::read(&state, &code::Viewer::of(&caller), &name, &op, req).await
 }
 
 async fn add_token(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Json(body): Json<code::NewToken>,
 ) -> ApiResult<Json<Value>> {
-    code::add_token(&state, body).await
+    code::add_token(&state, &caller, body).await
 }
 
 async fn remove_token(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    code::delete_token(&state, &id).await
+    code::delete_token(&state, &caller, &id).await
 }
 
 async fn lan_git(
@@ -1530,6 +1610,7 @@ async fn create_user(
         created_at: now(),
         last_login: None,
         note: None,
+        permissions: Vec::new(),
     };
     state.db.save_user(&user)?;
     state.reload()?;
@@ -1545,6 +1626,53 @@ struct UserEdit {
     enabled: Option<bool>,
     route_ids: Option<Vec<String>>,
     device_ids: Option<Vec<String>>,
+    permissions: Option<Vec<String>>,
+}
+
+/// Whether `caller` may change `target`: the admin always; anyone else only an
+/// account that can do no more than they can, and never their own powers.
+fn may_manage(caller: &Caller, target: &User) -> ApiResult<()> {
+    if target.permissions.iter().all(|p| caller.can(p)) {
+        Ok(())
+    } else {
+        Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "That account can do things you cannot, so only someone who can may change it".into(),
+        ))
+    }
+}
+
+/// The permissions to give `user`, checked: known ones, once each, and none
+/// that `caller` does not hold itself.
+fn new_permissions(caller: &Caller, user: &User, given: Vec<String>) -> ApiResult<Vec<String>> {
+    if caller.id() == user.id {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "You cannot change your own permissions".into(),
+        ));
+    }
+    let mut kept: Vec<String> = Vec::new();
+    for key in given {
+        if !permissions::known(&key) {
+            return Err(ApiError::bad(format!("No such permission: {key}")));
+        }
+        if !kept.contains(&key) {
+            kept.push(key);
+        }
+    }
+    let changed = kept
+        .iter()
+        .filter(|k| !user.permissions.contains(k))
+        .chain(user.permissions.iter().filter(|k| !kept.contains(k)));
+    for key in changed {
+        if !caller.can(key) {
+            return Err(ApiError(
+                StatusCode::FORBIDDEN,
+                format!("You can give and take only permissions you hold yourself, not {key}"),
+            ));
+        }
+    }
+    Ok(kept)
 }
 
 /// Device IDs that exist, in the order given.
@@ -1557,10 +1685,15 @@ fn known_devices(state: &AppState, ids: Vec<String>) -> Vec<String> {
 
 async fn update_user(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Path(id): Path<String>,
     Json(body): Json<UserEdit>,
 ) -> ApiResult<Json<User>> {
     let mut user = state.db.user(&id)?.ok_or_else(ApiError::not_found)?;
+    may_manage(&caller, &user)?;
+    if let Some(given) = body.permissions {
+        user.permissions = new_permissions(&caller, &user, given)?;
+    }
     if let Some(username) = body.username.map(|u| u.trim().to_owned()) {
         if !valid_username(&username) {
             return Err(ApiError::bad(
@@ -1624,18 +1757,32 @@ async fn device_activity(
     Ok(Json(state.db.sign_ins("device_id", &id, 100)?))
 }
 
-/// Ends every sign-in of this account.
-async fn sign_out_user(State(state): State<AppState>, Path(id): Path<String>) -> Json<Value> {
+/// Ends every sign-in of this account, at tunnels and on the dashboard.
+async fn sign_out_user(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    let user = state.db.user(&id)?.ok_or_else(ApiError::not_found)?;
+    may_manage(&caller, &user)?;
     state.end_sessions_of(&state.user_sessions, &id);
-    Json(json!({ "ok": true }))
+    state.end_sessions_of(&state.admin_sessions, &id);
+    Ok(Json(json!({ "ok": true })))
 }
 
 async fn delete_user(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
+    let user = state.db.user(&id)?.ok_or_else(ApiError::not_found)?;
+    may_manage(&caller, &user)?;
+    if caller.id() == id {
+        return Err(ApiError::bad("You cannot remove your own account"));
+    }
     state.db.delete_user(&id)?;
     state.end_sessions_of(&state.user_sessions, &id);
+    state.end_sessions_of(&state.admin_sessions, &id);
     state.reload()?;
     Ok(Json(json!({ "ok": true })))
 }

@@ -12,6 +12,7 @@ mod mail;
 mod metrics;
 mod netinfo;
 mod oauth;
+mod permissions;
 mod proxy;
 mod secret;
 mod state;
