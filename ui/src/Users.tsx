@@ -292,9 +292,9 @@ function Permissions({ user, catalog, me, onSet }: { user: User; catalog: Group[
 
 type Patch = Parameters<typeof api.editUser>[1];
 
-// Profile is an account at a glance: four figures, its details and its
-// security (with the devices it signs in from) side by side, then the tunnels
-// it may open, across both.
+// Profile is an account at a glance: four figures, then its details and the
+// tunnels it may open on the left, its security and the devices it signs in
+// from on the right.
 function Profile({ user, routes, devices, edit, onChange }: {
   user: User;
   routes: Route[];
@@ -323,12 +323,40 @@ function Profile({ user, routes, devices, edit, onChange }: {
         <div className={"tally-item " + (wrong ? "bad" : "ok")}><b>{list ? wrong : "..."}</b><span>Refused, 30 days</span></div>
       </div>
       <div className="profile-grid">
-        <section>
-          <h3 className="section-title">Details</h3>
-          <KeyValue label="Username" value={user.username} onSave={(v) => edit({ username: v })} />
-          <KeyValue label="Email" value={user.email} type="email" onSave={(v) => edit({ email: v })} />
-          <KeyValue label="Name" value={user.name} onSave={(v) => edit({ name: v })} />
-        </section>
+        <div className="profile-col">
+          <section>
+            <h3 className="section-title">Details</h3>
+            <KeyValue label="Username" value={user.username} onSave={(v) => edit({ username: v })} />
+            <KeyValue label="Email" value={user.email} type="email" onSave={(v) => edit({ email: v })} />
+            <KeyValue label="Name" value={user.name} onSave={(v) => edit({ name: v })} />
+          </section>
+          <section>
+            <div className="section-head">
+              <h3 className="section-title">Tunnels</h3>
+              {manage && (
+                <AddMenu label="Add a tunnel" placeholder="Find a tunnel" onPick={(id) => onChange({ route_ids: [...user.route_ids, id] })}
+                  empty={<div className="menu-note">There are no tunnels yet</div>}
+                  items={routes.map((r) => ({ id: r.id, label: r.hostname, sub: r.require_login ? undefined : "Sign-in is off here", disabled: user.route_ids.includes(r.id), note: "Already added" }))} />
+              )}
+            </div>
+            {theirs.length ? (
+              <ul className="tunnel-pills">
+                {theirs.map((r) => (
+                  <li key={r.id} className="tunnel-pill">
+                    <span className={"dot " + (r.enabled ? "ok" : "")} />
+                    <a href={r.target_scheme === "code" ? "#/code/access" : `#/tunnels/${r.id}`} title={r.require_login ? "Asks for sign-in" : "Sign-in is off here"}>{r.hostname}</a>
+                    {manage && (
+                      <button type="button" className="tunnel-pill-x" aria-label={`Remove ${r.hostname}`} title="Remove access"
+                        onClick={() => onChange({ route_ids: user.route_ids.filter((x) => x !== r.id) })}>
+                        <Icon name="close" size={16} />
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="empty-note">No tunnels yet</p>}
+          </section>
+        </div>
         <section>
           <h3 className="section-title">Security</h3>
           <PasswordValue onSave={(password) => edit({ password })} />
@@ -361,32 +389,6 @@ function Profile({ user, routes, devices, edit, onChange }: {
               ))}
             </ul>
           ) : <p className="empty-note">None linked, so they cannot sign in yet</p>}
-        </section>
-        <section className="profile-wide">
-          <div className="section-head">
-            <h3 className="section-title">Tunnels</h3>
-            {manage && (
-              <AddMenu label="Add a tunnel" placeholder="Find a tunnel" onPick={(id) => onChange({ route_ids: [...user.route_ids, id] })}
-                empty={<div className="menu-note">There are no tunnels yet</div>}
-                items={routes.map((r) => ({ id: r.id, label: r.hostname, sub: r.require_login ? undefined : "Sign-in is off here", disabled: user.route_ids.includes(r.id), note: "Already added" }))} />
-            )}
-          </div>
-          {theirs.length ? (
-            <ul className="tunnel-pills">
-              {theirs.map((r) => (
-                <li key={r.id} className="tunnel-pill">
-                  <span className={"dot " + (r.enabled ? "ok" : "")} />
-                  <a href={r.target_scheme === "code" ? "#/code/access" : `#/tunnels/${r.id}`} title={r.require_login ? "Asks for sign-in" : "Sign-in is off here"}>{r.hostname}</a>
-                  {manage && (
-                    <button type="button" className="tunnel-pill-x" aria-label={`Remove ${r.hostname}`} title="Remove access"
-                      onClick={() => onChange({ route_ids: user.route_ids.filter((x) => x !== r.id) })}>
-                      <Icon name="close" size={16} />
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : <p className="empty-note">No tunnels yet</p>}
         </section>
       </div>
     </>
