@@ -181,7 +181,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const admin: [string, string, IconName, string, boolean][] = [
     ["users", "Users", "group", "#/users", can("users.view")],
     ["devices", "Devices", "devices", "#/devices", can("devices.view")],
-    ["security", "Advanced Security", "shield", "#/security", can("oauth.manage") || can("twofactor.manage")],
+    ["security", "Advanced", "shield", "#/security", can("oauth.manage") || can("twofactor.manage")],
   ];
   const home = [...pages, ...storage, ...admin].find((p) => p[4])?.[3] ?? "#/settings/appearance";
   useEffect(() => {

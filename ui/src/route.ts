@@ -21,7 +21,7 @@ export interface Place {
 export function readHash(): Place {
   const [found = "", second = "", third = "", ...more] = location.hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
   // Git was called Code; Two-Factor Auth and Third-Party OAuth are tabs of
-  // Advanced Security.
+  // Advanced.
   if (found === "twofactor" || found === "oauth") return { view: "security", id: found, page: "", more: [] };
   const first = found === "code" ? "git" : found;
   if (first === "new" || first === "dashboard" || first === "media" || first === "drive") return { view: first, id: "", page: "", more: [] };

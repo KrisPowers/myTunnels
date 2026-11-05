@@ -16,10 +16,10 @@ export function AdvancedSecurity({ tab }: { tab: string }) {
     <>
       <div className="page-head">
         <div className="page-head-main">
-          <h1>Advanced Security</h1>
+          <h1>Advanced</h1>
         </div>
       </div>
-      <nav className="sub-nav" aria-label="Advanced Security">
+      <nav className="sub-nav" aria-label="Advanced">
         {tabs.map(([key, label, icon]) => (
           <a key={key} className={"sub-nav-item" + (current === key ? " on" : "")} href={`#/security/${key}`} aria-current={current === key ? "page" : undefined}>
             <Icon name={icon} size={18} />
