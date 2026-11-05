@@ -91,17 +91,16 @@ account allowed to manage everyone's tokens) makes them for others; a token is s
 only its hash is kept. When git asks, give any username and the token as the password:
 
 ```sh
-git clone https://code.example.com/myapp.git      # through the tunnel
+git clone https://git.example.com/myapp.git       # through the tunnel
 git clone http://<host>:7070/git/myapp.git        # on the LAN
 ```
 
 On the LAN, the panel takes git at `/git/` straight away. For anywhere else, **Publish an
-address** gives Code a subdomain, `code` to start with. There, **Access Control** has the same
-layers as any tunnel for browsers, and people with **View repositories** see them, read only.
-Git skips the browser layers and signs in with its token, held to the account's Code
-permissions (**View repositories** to clone, **Push** to push) and to the account having Code's
-address among its tunnels; only **Same network** still applies to it. **Activity** is the
-address's log, as for a tunnel.
+address** gives Code a subdomain, `git` to start with. That address is for git alone: a browser
+opening it finds nothing, and repositories are browsed here on the dashboard. Git signs in with
+its token, held to the account's Code permissions (**View repositories** to clone, **Push** to
+push). A repository's **Home network only** switch, on its page, lets git reach it only from
+this host's network or a trusted one.
 
 Cloudflare refuses a single request over 100 MB, so the first push of a very large repository
 goes over the LAN, or in parts. Code needs `git`, which the image includes.

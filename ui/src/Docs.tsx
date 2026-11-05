@@ -90,10 +90,10 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Code</b> keeps git repositories on this host for your codebases. Make one with <b>New repository</b>, then browse its files on any branch or tag, read a file, or step through its commits and the changes in each.</p>
       </Doc>
       <Doc title="Signing git in">
-        <p>Git signs in with a token from <b>Tokens</b>, each person's own, shown once. When git asks, give any username and the token as the password. On this network git reaches Code at <code>/git/</code> on this dashboard's address; <b>Publish an address</b> to reach it from anywhere.</p>
+        <p>Git signs in with a token from <b>Tokens</b>, each person's own, shown once. When git asks, give any username and the token as the password. On this network git reaches Code at <code>/git/</code> on this dashboard's address; <b>Publish an address</b> to reach it from anywhere. That address is for git alone; a browser opening it finds nothing.</p>
       </Doc>
       <Doc title="Who may open what">
-        <p>Who may view, push to, create or delete repositories is each account's Code permissions, under Security &amp; Roles, Users. At Code's address, Access Control has the same layers as any tunnel for browsers. Git skips them and signs in with its token, held to the account's permissions and to the account having Code's address among its tunnels; only Same network still applies to it. A single push over 100 MB is refused by Cloudflare, so push a very large repository over this network the first time.</p>
+        <p>Who may view, push to, create or delete repositories is each account's Code permissions, under Security &amp; Roles, Users; git's token is held to them. A repository's <b>Home network only</b> switch, on its page, lets git reach it only from this host's network or a trusted one. A single push over 100 MB is refused by Cloudflare, so push a very large repository over this network the first time.</p>
       </Doc>
     </>
   ),
