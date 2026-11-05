@@ -90,10 +90,10 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Code</b> keeps git repositories on this host for your codebases. Make one with <b>New repository</b>, then browse its files on any branch or tag, read a file, or step through its commits and the changes in each.</p>
       </Doc>
       <Doc title="Signing git in">
-        <p>Git signs in with a token from <b>Tokens</b>, made for the admin or for an account from Users and shown once. When git asks, give any username and the token as the password. On this network git reaches Code at <code>/git/</code> on this dashboard's address; <b>Publish an address</b> to reach it from anywhere.</p>
+        <p>Git signs in with a token from <b>Tokens</b>, each person's own, shown once. When git asks, give any username and the token as the password. On this network git reaches Code at <code>/git/</code> on this dashboard's address; <b>Publish an address</b> to reach it from anywhere.</p>
       </Doc>
       <Doc title="Who may open what">
-        <p>At Code's address, Access Control has the same layers as any tunnel for browsers, then the repositories each person may open, read only or read and write. Git skips the browser layers, signs in with its token and is held to the same repositories; only Same network still applies to it. A single push over 100 MB is refused by Cloudflare, so push a very large repository over this network the first time.</p>
+        <p>Who may view, push to, create or delete repositories is each account's Code permissions, under Admin, Users. At Code's address, Access Control has the same layers as any tunnel for browsers. Git skips them and signs in with its token, held to the account's permissions and to the account having Code's address among its tunnels; only Same network still applies to it. A single push over 100 MB is refused by Cloudflare, so push a very large repository over this network the first time.</p>
       </Doc>
     </>
   ),
@@ -161,10 +161,13 @@ const CONTENT: Record<string, ReactNode> = {
   users: (
     <>
       <Doc title="Accounts">
-        <p>Users holds the accounts people sign in with at tunnels that have Sign-in on. Each has a username, an optional email (either signs in), and a password held to the same rule as every password here.</p>
+        <p>Users, under Admin, holds the accounts people sign in with. Each has a username, an optional email (either signs in), and a password held to the same rule as every password here.</p>
       </Doc>
       <Doc title="What an account opens">
-        <p>An account opens every tunnel, or only those picked. One sign-in covers every tunnel on the same domain that the account may open. Turning an account off, or removing it, ends its sessions at once.</p>
+        <p>On an account's <b>Tunnels and devices</b>, pick the tunnels it may open and the devices it signs in from. One sign-in covers every tunnel on the same domain that the account may open. Turning an account off, or removing it, ends its sessions at once.</p>
+      </Doc>
+      <Doc title="Permissions">
+        <p>On an account's <b>Permissions</b>, a card per feature says what it may do. <b>Sign in to the dashboard</b> lets it in here with its own password; then it sees only the pages and actions the rest allow, such as viewing containers, approving devices, or creating repositories. The admin holds them all. Anyone who manages accounts can give only permissions they hold, and cannot change their own.</p>
       </Doc>
     </>
   ),
