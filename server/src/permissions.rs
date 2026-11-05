@@ -283,6 +283,9 @@ pub fn needed(method: &Method, path: &str) -> Need {
         "code" => any(&["code.create"]),
         "media" => files("media", read, at(2)),
         "drive" => files("drive", read, at(2)),
+        // Each job is held to the collection it reads and writes, in `convert`.
+        "convert" if read => any(&["media.view", "drive.view"]),
+        "convert" => any(&["media.upload", "drive.edit"]),
         _ => any(&[]),
     }
 }
@@ -338,6 +341,8 @@ mod tests {
         assert!(!needed(&Method::POST, "/code/repos/app/threads").met(&viewer));
         assert!(!needed(&Method::POST, "/code/repos/app/thread/3/merge").met(&viewer));
         assert!(needed(&Method::GET, "/code/repos/app/threads/issues").met(&viewer));
+        assert!(needed(&Method::GET, "/convert").met(&viewer));
+        assert!(!needed(&Method::POST, "/convert").met(&viewer));
     }
 
     #[test]

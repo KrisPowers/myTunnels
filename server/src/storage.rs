@@ -85,7 +85,7 @@ impl Space {
     }
 
     /// Refuses a file a collection does not keep, by its ending.
-    fn takes(self, name: &str) -> ApiResult<()> {
+    pub fn takes(self, name: &str) -> ApiResult<()> {
         let ext = name
             .rsplit_once('.')
             .map(|(_, e)| e.to_ascii_lowercase())
@@ -106,20 +106,20 @@ impl Space {
 }
 
 /// A collection's folder.
-struct Store {
-    space: Space,
+pub struct Store {
+    pub space: Space,
     base: PathBuf,
 }
 
 impl Store {
-    fn open(state: &AppState, space: Space) -> ApiResult<Self> {
+    pub fn open(state: &AppState, space: Space) -> ApiResult<Self> {
         let base = state.config.data_dir.join(space.folder());
         std::fs::create_dir_all(&base).map_err(io_error)?;
         Ok(Self { space, base })
     }
 
     /// Where a photo's or video's preview is kept, beside the collection.
-    fn thumb(&self, rel: &[String]) -> Option<PathBuf> {
+    pub fn thumb(&self, rel: &[String]) -> Option<PathBuf> {
         if self.space != Space::Media {
             return None;
         }
@@ -133,7 +133,7 @@ impl Store {
 
     /// The real path of a path in the collection, refused if it leads outside it,
     /// symbolic links included.
-    fn real(&self, rel: &[String]) -> ApiResult<PathBuf> {
+    pub fn real(&self, rel: &[String]) -> ApiResult<PathBuf> {
         let path = rel
             .iter()
             .fold(self.base.clone(), |path, seg| path.join(seg));
@@ -669,7 +669,7 @@ async fn save_thumb(store: &Store, req: Request) -> ApiResult<Response> {
     Ok(Json(json!({ "ok": true })).into_response())
 }
 
-fn io_error(err: std::io::Error) -> ApiError {
+pub fn io_error(err: std::io::Error) -> ApiError {
     use std::io::ErrorKind;
     let status = match err.kind() {
         ErrorKind::NotFound => StatusCode::NOT_FOUND,
