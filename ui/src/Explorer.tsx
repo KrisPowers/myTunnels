@@ -856,6 +856,12 @@ export function MenuButton({ icon, label, disabled, items }: { icon: IconName; l
 
 export interface MenuItem { label: string; icon: IconName; run: () => void; hidden?: boolean; danger?: boolean }
 
+// ownMenu is false for a right-click that keeps the browser's menu: in a field,
+// or in a dialog, viewer or menu drawn over the page.
+export function ownMenu(e: PointerEvent) {
+  return !(e.target as HTMLElement).closest("input, textarea, .dialog-scrim, .m-viewer, .pop-menu");
+}
+
 // ContextMenu is the right-click menu, at the pointer, kept inside the window.
 export function ContextMenu({ at, items, onClose }: { at: Menu; items: MenuItem[]; onClose: () => void }) {
   const panel = useRef<HTMLDivElement>(null);

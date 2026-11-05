@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent as PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { bytes, fileUrl, filesIn, message, saveThumb, thumbUrl, type FileEntry, type Listing } from "./api";
 import { MultiDropdown, type Option } from "./Dropdown";
-import { dropped, extOf, freeName, useUploads, type Picked } from "./Explorer";
+import { ContextMenu, dropped, extOf, freeName, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Explorer";
 import { Icon } from "./Icon";
 import { Callout, Dialog, useNotify } from "./ui";
 
@@ -87,6 +87,7 @@ export function MediaPage() {
   const [viewing, setViewing] = useState<number | null>(null);
   const [removing, setRemoving] = useState<string[] | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [menu, setMenu] = useState<(Menu & { name: string | null }) | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const notify = useNotify();
 
@@ -164,6 +165,32 @@ export function MediaPage() {
     await load();
   };
 
+  // A right-click on a photo or video acts on the selection it is in, or on it
+  // alone; on the page, it offers uploading and selecting.
+  const contextMenu = (e: PointerEvent, name: string | null) => {
+    if (!ownMenu(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY, on: !!name, name });
+  };
+  const menuItems = (name: string | null): MenuItem[] => {
+    if (!name) {
+      return [
+        { label: "Upload", icon: "cloud_upload", run: () => input.current?.click() },
+        { label: "Select all", icon: "select_all", hidden: !items.length, run: () => setSelected(new Set(items.map((e) => e.name))) },
+        { label: "Clear selection", icon: "close", hidden: !selected.size, run: () => setSelected(new Set()) },
+      ];
+    }
+    const targets = selected.has(name) ? [...selected] : [name];
+    const many = targets.length > 1 ? ` ${targets.length} items` : "";
+    return [
+      { label: "Open", icon: "open_in_new", hidden: targets.length > 1, run: () => setViewing(items.findIndex((e) => e.name === name)) },
+      { label: selected.has(name) ? "Unselect" : "Select", icon: "check_circle", run: () => toggle(name) },
+      { label: "Download" + many, icon: "download", run: () => download(targets) },
+      { label: "Delete" + many, icon: "delete", danger: true, run: () => setRemoving(targets) },
+    ];
+  };
+
   const onDragOver = (e: DragEvent) => {
     if (!Array.from(e.dataTransfer.types).includes("Files")) return;
     e.preventDefault();
@@ -176,7 +203,7 @@ export function MediaPage() {
   };
 
   return (
-    <div className="media" onDragOver={onDragOver} onDrop={onDrop}
+    <div className="media" onDragOver={onDragOver} onDrop={onDrop} onContextMenu={(e) => contextMenu(e, null)}
       onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setDragging(false)}>
       <div className="page-head">
         <div className="page-head-main">
@@ -228,7 +255,7 @@ export function MediaPage() {
                   {list.map((e) => {
                     const on = selected.has(e.name);
                     return (
-                      <li key={e.name} className={"m-tile" + (on ? " on" : "") + (selected.size ? " picking" : "")}>
+                      <li key={e.name} className={"m-tile" + (on ? " on" : "") + (selected.size ? " picking" : "")} onContextMenu={(ev) => contextMenu(ev, e.name)}>
                         <button type="button" className="m-open" title={`${e.name}\n${dayOf(e.modified)}`}
                           onClick={() => (selected.size ? toggle(e.name) : setViewing(items.indexOf(e)))}>
                           <Thumb name={e.name} />
@@ -265,6 +292,7 @@ export function MediaPage() {
           </div>
         </Dialog>
       )}
+      {menu && <ContextMenu at={menu} items={menuItems(menu.name)} onClose={() => setMenu(null)} />}
       {panel}
     </div>
   );
