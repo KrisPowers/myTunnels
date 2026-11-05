@@ -1173,39 +1173,26 @@ a.result.thread-row:hover .scan-target { color: var(--accent); }
 .row-actions .spinner { margin: 0 14px; }
 .log-time { margin-right: 12px; color: var(--text-3); user-select: none; }
 
-.ct-usage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
-.ct-stat { display: grid; gap: 4px; padding: 14px 18px 12px; border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); }
-.ct-stat > span { color: var(--text-2); font-size: 12px; font-weight: 600; }
-.ct-stat > b { font-size: 24px; font-weight: 300; font-variant-numeric: tabular-nums; }
-.ct-stat > b small { color: var(--text-3); font-size: 13px; font-weight: 400; }
-.ct-stat .spark { height: 36px; margin-top: 2px; }
-.ct-stat .meter-cell { margin-top: 10px; }
-.ct-stat .meter { width: 100%; max-width: 360px; }
-
-.ct-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-bottom: 12px; }
 .ct-search {
-  display: flex; align-items: center; gap: 8px; width: min(340px, 100%); height: 34px; padding: 0 10px;
+  display: flex; align-items: center; gap: 8px; width: 220px; height: 34px; padding: 0 10px;
   border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--field); color: var(--text-3);
 }
 .ct-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .ct-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); font: inherit; }
 .ct-search input:focus { outline: none; }
-.ct-bulk {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 4px 4px 12px;
-  border: 1px solid var(--accent); border-radius: var(--radius); background: var(--accent-bg);
-}
-.ct-bulk > span { margin-right: 6px; color: var(--on-accent-bg); font-size: 12.5px; }
 
-.ct-card { overflow: visible; }
-.ct-table td { height: 46px; }
-.ct-table .ct-check { width: 1%; padding-right: 0; }
-.ct-actions-head { text-align: right !important; }
+/* A row per container: state, name over image, then figures, its menu last. */
+.ct-table td { height: 58px; }
 .ct-table tr.stopped td { color: var(--text-3); }
-.ct-table tr.stopped .name-line { color: var(--text-2); }
-.ct-table tr.picked td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.ct-table tr.in-group td:nth-child(2) { padding-left: 46px; }
-.ct-table .name-line { color: var(--text); }
-.ct-table .name-line:hover { color: var(--accent); }
+.ct-table tr.in-group td:first-child { padding-left: 46px; }
+.ct-name { display: flex; align-items: center; gap: 12px; min-width: 0; color: var(--text); }
+.ct-name:hover b { color: var(--accent); }
+.ct-name-text { display: grid; min-width: 0; }
+.ct-name-text b { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.ct-name-text small { overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.ct-table tr.stopped .ct-name-text b { color: var(--text-2); }
+.ct-status { font-size: 12.5px; }
+.ct-menu { width: 1%; text-align: right; }
 .ct-table .chip { text-transform: none; }
 .ct-group td { height: 44px; background: var(--card-2); }
 .ct-table tbody tr.ct-group:hover td { background: var(--card-2); }
@@ -1213,13 +1200,13 @@ a.result.thread-row:hover .scan-target { color: var(--accent); }
   display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent;
   color: var(--text); font: inherit; cursor: pointer;
 }
+.ct-fold small { margin-left: 4px; color: var(--text-3); font-size: 12px; }
 .ct-fold > .icon:first-child { color: var(--text-3); transition: transform .15s var(--ease); }
 .ct-fold > .icon.open { transform: rotate(90deg); }
 .ct-stack-icon { color: var(--accent); }
 .ct-id { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
 .ct-image { max-width: 260px; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
 .ct-none { text-align: center; }
-.check { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .port-links { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .port-links a { display: inline-flex; align-items: center; gap: 3px; font: 12.5px var(--mono); }
 .port-links a:hover { text-decoration: underline; }
@@ -1238,9 +1225,10 @@ a.result.thread-row:hover .scan-target { color: var(--accent); }
 .ct-panel .table th:first-child, .ct-panel .table td:first-child { padding-left: 12px; }
 
 @media (max-width: 900px) {
-  .ct-usage, .ct-inspect { grid-template-columns: minmax(0, 1fr); }
-  .ct-table th:nth-child(3), .ct-table td:nth-child(3), .ct-table th:nth-child(4), .ct-table td:nth-child(4),
-  .ct-table th:nth-child(7), .ct-table td:nth-child(7) { display: none; }
+  .ct-inspect { grid-template-columns: minmax(0, 1fr); }
+  .ct-search { width: 140px; }
+  .ct-table th:nth-child(2), .ct-table td:nth-child(2), .ct-table th:nth-child(4), .ct-table td:nth-child(4),
+  .ct-table th:nth-child(5), .ct-table td:nth-child(5) { display: none; }
 }
 
 .nav-group { display: block; }
