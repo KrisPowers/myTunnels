@@ -201,7 +201,7 @@ review, which stops a copied key from working on another machine.
 Tunnels with sign-in on can also offer **Continue with** GitHub, Google, GitLab, Discord,
 Slack or Codeberg; a self-hosted Authentik, Authelia, Keycloak, Pocket ID, Zitadel, Kanidm,
 Gitea or Forgejo; Auth0 or Okta; or any other OpenID Connect provider. Set each up
-once on the **Third-Party OAuth** page the way Cloudflare was set up: **Open GitHub** (or
+once under **Advanced Security, Third-Party OAuth** the way Cloudflare was set up: **Open GitHub** (or
 the provider's console), register an app, then paste its client ID and secret back. Each
 tunnel then switches on the providers it offers, under **Access Control**.
 
@@ -214,16 +214,13 @@ every tunnel on it.
 
 ## Two-factor sign-in
 
-On **Two-Factor Auth**, enter SMTP credentials from any provider, Gmail (with an app
+Under **Advanced Security, Two-Factor Auth**, enter SMTP credentials from any provider, Gmail (with an app
 password), Outlook or your own: host, port, STARTTLS or TLS, username, password and from
 address. Saving checks them, and **Send a test** emails the admin. Then a six digit code,
-good once for ten minutes, can be asked for after the password:
-
-- **Dashboard sign-in.** Every sign-in to the panel, sent to the admin email. Turning it on
-  sends a test email first.
-- **Tunnels.** Each tunnel turns on **Email code** under its own **Access Control**, sent to
-  the account's email; it also applies to sign-ins through a third-party provider. The switch
-  stays greyed out until SMTP is set up and the tunnel asks for sign-in.
+good once for ten minutes, is asked for after the password once **Email codes** is on. One
+switch covers every sign-in: the dashboard's (sent to the admin email, or the account's own)
+and every tunnel with sign-in, including sign-ins through a third-party provider. Turning it on
+sends a test email first, and codes stop on their own if SMTP is removed.
 
 ## Configuration
 
