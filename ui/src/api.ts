@@ -303,6 +303,32 @@ export type Space = "media" | "drive";
 export const fileUrl = (path: string, inline: boolean, space: Space) =>
   `/api/${space}/fs/file?path=${encodeURIComponent(path)}${inline ? "&inline=true" : ""}`;
 
+// A copy of a file in Media or Drive being made in another format or smaller,
+// saved beside the original. `size` is a photo's longest side or a video's
+// shortest, in pixels, 0 for as it is.
+export type ConvertKind = "photo" | "video" | "pdf";
+export type Quality = "high" | "medium" | "small";
+export interface ConvertJob {
+  id: string;
+  space: Space;
+  source: string;
+  kind: ConvertKind;
+  to: string;
+  size: number;
+  quality: Quality;
+  state: "waiting" | "running" | "done" | "failed";
+  progress: number;
+  created: number;
+  source_size: number;
+  output: string | null;
+  output_size: number;
+  error: string | null;
+}
+export interface ConvertState {
+  jobs: ConvertJob[];
+  kinds: { kind: ConvertKind; formats: string[]; sizes: number[] }[];
+}
+
 // A photo's or video's preview in Media.
 export const thumbUrl = (path: string) => `/api/media/fs/thumb?path=${encodeURIComponent(path)}`;
 
@@ -447,6 +473,10 @@ export const api = {
   merge: (name: string, number: number) => call<ThreadView>(`/code/repos/${encodeURIComponent(name)}/thread/${number}/merge`, "POST"),
   addToken: (name: string, owner: string) => call<CodeState & { secret: string }>("/code/tokens", "POST", { name, owner }),
   removeToken: (id: string) => call<CodeState>(`/code/tokens/${id}`, "DELETE"),
+
+  convert: () => call<ConvertState>("/convert"),
+  startConvert: (body: { space: Space; paths: string[]; to: string; size: number; quality: Quality }) => call<{ queued: number }>("/convert", "POST", body),
+  removeConvert: (id: string) => call(`/convert/${id}`, "DELETE"),
 };
 
 // Reading repositories.
