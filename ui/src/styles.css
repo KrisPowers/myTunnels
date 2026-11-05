@@ -809,6 +809,23 @@ a.result:hover { background: var(--hover); }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; margin-bottom: 4px; }
 .section-head .section-title { margin: 0; }
 .item-list { list-style: none; margin: 0; padding: 0; }
+.section-head.sub { margin-top: 16px; }
+.section-head.sub .section-title { font-size: 14px; }
+/* A section across both columns of a profile, such as an account's tunnels. */
+.profile-wide { grid-column: 1 / -1; }
+.tunnel-pills { list-style: none; margin: 0; padding: 4px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.tunnel-pill {
+  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 4px 0 12px; border-radius: 999px;
+  background: var(--card); color: var(--text); font-size: 13px;
+}
+.tunnel-pill .dot { width: 8px; height: 8px; }
+.tunnel-pill a { color: inherit; white-space: nowrap; }
+.tunnel-pill a:hover { text-decoration: underline; }
+.tunnel-pill-x {
+  display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: var(--text-2); cursor: pointer;
+}
+.tunnel-pill-x:hover { background: var(--bad-bg); color: var(--bad); }
 .item-row { display: flex; align-items: center; gap: 12px; min-height: 52px; }
 .item-row + .item-row { border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
 .item-row .person { flex: 1; color: var(--text); }

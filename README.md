@@ -137,7 +137,9 @@ set it up:
   such as viewing containers or starting and stopping them, publishing, changing or removing
   tunnels, approving devices, managing accounts, viewing, pushing to, creating and deleting
   repositories in Code, uploading and deleting in Media and Drive, and the settings pages.
-- **Tunnels and devices**: the tunnels it may open, and the devices it signs in from.
+- **Profile**: its details; **Security**, with its password, status and the devices it signs in
+  from; and **Tunnels**, the tunnels it may open, added with **+** and removed with each one's
+  **x**. **Suspend** in the menu stops it signing in anywhere until reinstated.
 
 An account with **Sign in to the dashboard** signs in there with its email or username and its
 own password (and an emailed code, when the dashboard asks for one), and sees only the pages
