@@ -130,7 +130,7 @@ publish the dashboard through a tunnel to reach them from anywhere.
 
 ## Accounts and permissions
 
-**Users**, under **Admin** in the sidebar, holds the accounts people sign in with. Open one to
+**Users**, under **Security & Roles** in the sidebar, holds the accounts people sign in with. Open one to
 set it up:
 
 - **Permissions**, a card per feature: **Sign in to the dashboard**, then what it may do there,
