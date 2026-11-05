@@ -2,7 +2,6 @@
 // Filled shapes inside the 960-unit box, so nothing is clipped at the edge.
 // Apache License 2.0, from github.com/google/material-design-icons.
 const paths = {
-  account_tree: "M600-120v-120H440v-400h-80v120H80v-320h280v120h240v-120h280v320H600v-120h-80v320h80v-120h280v320H600ZM160-760v160-160Zm520 400v160-160Zm0-400v160-160Zm0 160h120v-160H680v160Zm0 400h120v-160H680v160ZM160-600h120v-160H160v160Z",
   add: "M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z",
   adjust: "M480-280q83 0 141.5-58.5T680-480q0-83-58.5-141.5T480-680q-83 0-141.5 58.5T280-480q0 83 58.5 141.5T480-280Zm0 200q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z",
   arrow_back: "m313-440 224 224-57 56-320-320 320-320 57 56-224 224h487v80H313Z",
@@ -89,12 +88,19 @@ const paths = {
   warning: "m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm302-40q17 0 28.5-11.5T520-280q0-17-11.5-28.5T480-320q-17 0-28.5 11.5T440-280q0 17 11.5 28.5T480-240Zm-40-120h80v-200h-80v200Zm40-100Z",
 } as const;
 
-export type IconName = keyof typeof paths;
+// Brand marks, each on its own box. Git's is the logo by Jason Long
+// (git-scm.com, CC BY 3.0), as Simple Icons draws it.
+const marks = {
+  git: ["0 0 24 24", "M13.09 23.549a1.54 1.54 0 0 1-2.18 0L.451 13.089a1.54 1.54 0 0 1 0-2.179l7.191-7.19 2.733 2.733a1.85 1.85 0 0 0 .964 2.326v6.66a1.849 1.849 0 1 0 1.54 0V8.957l2.508 2.508a1.85 1.85 0 1 0 1.09-1.09l-2.634-2.634a1.85 1.85 0 0 0-2.378-2.377L8.73 2.63 10.91.451a1.54 1.54 0 0 1 2.179 0l10.459 10.46a1.54 1.54 0 0 1 0 2.179z"],
+} as const;
+
+export type IconName = keyof typeof paths | keyof typeof marks;
 
 export function Icon({ name, size = 20, className }: { name: IconName; size?: number; className?: string }) {
+  const [box, d] = name in marks ? marks[name as keyof typeof marks] : ["0 -960 960 960", paths[name as keyof typeof paths]];
   return (
-    <svg className={"icon" + (className ? " " + className : "")} width={size} height={size} viewBox="0 -960 960 960" aria-hidden="true" focusable="false">
-      <path d={paths[name]} />
+    <svg className={"icon" + (className ? " " + className : "")} width={size} height={size} viewBox={box} aria-hidden="true" focusable="false">
+      <path d={d} />
     </svg>
   );
 }
