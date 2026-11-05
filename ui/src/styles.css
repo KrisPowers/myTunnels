@@ -811,8 +811,8 @@ a.result:hover { background: var(--hover); }
 .item-list { list-style: none; margin: 0; padding: 0; }
 .section-head.sub { margin-top: 16px; }
 .section-head.sub .section-title { font-size: 14px; }
-/* A section across both columns of a profile, such as an account's tunnels. */
-.profile-wide { grid-column: 1 / -1; }
+/* Sections stacked in one column of a profile. */
+.profile-col { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
 .tunnel-pills { list-style: none; margin: 0; padding: 4px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .tunnel-pill {
   display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 4px 0 12px; border-radius: 999px;
