@@ -66,11 +66,16 @@ does and Docker Desktop does not.
 
 ## Containers
 
-**Containers** lists every container on the host, grouped by Compose project, with its
-published ports, CPU, memory and status. Start and stop are on each row; restart, pause, kill
-and remove are under the three dots. Open a container for its image, command, ports, volumes,
-networks and logs. The container myTunnels runs in is marked, and anything that would stop it
-asks once more.
+**Containers** shows the containers' CPU and memory together, then a table of every
+container on the host with its ID, image, published ports (each a link to open), CPU, memory
+and status. Compose projects fold under their name, with start and stop for the whole project.
+Search by name, image or ID, show only running ones, or tick several and start, stop, restart
+or delete them together; each row has start or stop, restart, logs and delete.
+
+Open a container for its **Logs** (followed as it runs, searchable, with or without times),
+**Inspect** (what it runs, its state, ports and networks), **Mounts** and **Stats** (CPU over
+time, memory, network and disk). The container myTunnels runs in is marked, cannot be stopped
+or deleted from here, and asks once more before a restart.
 
 The `docker` service in `compose.yaml` allows containers and the engine's info, nothing else,
 so images, volumes and networks cannot be changed from the panel.
