@@ -1177,13 +1177,6 @@ a.result:hover { background: var(--hover); }
 .nav-group-head + .nav-item { margin-top: 4px; }
 
 /* ---- Media: photos and videos, a grid by month and a viewer ---- */
-.seg { display: inline-flex; padding: 2px; border-radius: 999px; background: var(--card); }
-.seg button {
-  height: 36px; padding: 0 16px; border: 0; border-radius: 999px; background: transparent;
-  color: var(--text-2); font: 500 14px var(--font); cursor: pointer;
-}
-.seg button:hover { color: var(--text); }
-.seg button.on { background: var(--nav-on); color: var(--on-nav-on); }
 .m-picked { margin-right: 4px; color: var(--text-2); font-weight: 500; }
 .m-month + .m-month { margin-top: 28px; }
 .m-month h2 { margin-bottom: 12px; font-size: 16px; font-weight: 500; }
