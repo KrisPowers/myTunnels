@@ -8,7 +8,7 @@ import { AddMenu, Avatar, Callout, Card, Dialog, LogTable, MoreMenu, Row, SubNav
 
 function state(u: User): [string, string] {
   if (u.note) return ["bad", "Held for review"];
-  return u.enabled ? ["ok", "Active"] : ["", "Turned off"];
+  return u.enabled ? ["ok", "Active"] : ["", "Suspended"];
 }
 
 // Users are the accounts people sign in with, by email, at tunnels that ask for one.
@@ -192,7 +192,6 @@ export function NewUser({ devices, onAdded }: { devices: Device[]; onAdded: () =
 const USER_PAGES: [string, string, IconName][] = [
   ["profile", "Profile", "person"],
   ["permissions", "Permissions", "key"],
-  ["access", "Tunnels and devices", "shield"],
   ["activity", "Activity", "history"],
 ];
 
@@ -201,8 +200,6 @@ export function UserPage({ user, page, routes, devices, catalog, me, onChanged }
   const can = useCan();
   const current = USER_PAGES.some(([k]) => k === page) ? page : "profile";
   const [tone, label] = state(user);
-  const theirs = routes.filter((r) => user.route_ids.includes(r.id));
-  const linked = devices.filter((d) => user.device_ids.includes(d.id));
 
   const edit = async (patch: Parameters<typeof api.editUser>[1]) => {
     await api.editUser(user.id, patch);
@@ -238,8 +235,8 @@ export function UserPage({ user, page, routes, devices, catalog, me, onChanged }
         <div className="page-actions">
           {can("users.manage") && <MoreMenu label="Account actions" actions={[
             user.enabled
-              ? { label: "Turn off", icon: "block", onClick: () => quietly({ enabled: false }, "Turned off") }
-              : { label: user.note ? "Unlock" : "Turn on", icon: "check_circle", onClick: () => quietly({ enabled: true }, user.note ? "Unlocked" : "Turned on") },
+              ? { label: "Suspend", icon: "block", onClick: () => quietly({ enabled: false }, "Suspended") }
+              : { label: user.note ? "Unlock" : "Reinstate", icon: "check_circle", onClick: () => quietly({ enabled: true }, user.note ? "Unlocked" : "Reinstated") },
             { label: "Sign out everywhere", icon: "logout", onClick: () => api.signOutUser(user.id).then(() => notify("Signed out everywhere")).catch((e) => notify(message(e), "bad")) },
             ...(can("users.delete") ? [{ label: "Remove", icon: "delete" as IconName, danger: true, confirm: "Remove for good", onClick: remove }] : []),
           ]} />}
@@ -255,64 +252,9 @@ export function UserPage({ user, page, routes, devices, catalog, me, onChanged }
           </div>
         )}
 
-        {current === "profile" && <Profile user={user} edit={edit} />}
+        {current === "profile" && <Profile user={user} routes={routes} devices={devices} edit={edit} onChange={quietly} />}
 
         {current === "permissions" && <Permissions user={user} catalog={catalog} me={me} onSet={(permissions) => quietly({ permissions })} />}
-
-        {current === "access" && (
-          <div className="profile-grid">
-            <section>
-              <div className="section-head">
-                <h3 className="section-title">Tunnels</h3>
-                <AddMenu label="Add a tunnel" placeholder="Find a tunnel" onPick={(id) => quietly({ route_ids: [...user.route_ids, id] })}
-                  empty={<div className="menu-note">There are no tunnels yet</div>}
-                  items={routes.map((r) => ({ id: r.id, label: r.hostname, sub: r.require_login ? undefined : "Sign-in is off here", disabled: user.route_ids.includes(r.id), note: "Already added" }))} />
-              </div>
-              {theirs.length ? (
-                <ul className="item-list">
-                  {theirs.map((r) => (
-                    <li key={r.id} className="item-row">
-                      <span className={"dot " + (r.enabled ? "ok" : "")} />
-                      <a className="person" href={`#/tunnels/${r.id}`}>
-                        <span className="scan-target">{r.hostname}</span>
-                        <small>{r.require_login ? "Asks for sign-in" : "Sign-in is off"}</small>
-                      </a>
-                      <button type="button" className="icon-btn small danger" aria-label={`Remove ${r.hostname}`} title="Remove"
-                        onClick={() => quietly({ route_ids: user.route_ids.filter((x) => x !== r.id) })}>
-                        <Icon name="close" size={18} />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : <p className="empty-note">No tunnels yet</p>}
-            </section>
-            <section>
-              <div className="section-head">
-                <h3 className="section-title">Devices</h3>
-                <AddMenu label="Link a device" placeholder="Find a device" onPick={(id) => quietly({ device_ids: [...user.device_ids, id] })}
-                  empty={<div className="menu-note">There are no devices yet</div>}
-                  items={[...devices].sort((a, b) => b.last_seen - a.last_seen).map((d) => ({ id: d.id, label: d.name || shortId(d.id), sub: [d.info?.platform, d.country, `seen ${ago(d.last_seen)}`].filter(Boolean).join(", "), disabled: user.device_ids.includes(d.id), note: "Already linked" }))} />
-              </div>
-              {linked.length ? (
-                <ul className="item-list">
-                  {linked.map((d) => (
-                    <li key={d.id} className="item-row">
-                      <Icon name="devices" size={18} className="item-icon" />
-                      <a className="person" href={`#/devices/${d.id}`}>
-                        <span className="scan-target">{d.name || shortId(d.id)}</span>
-                        <small>{[d.info?.platform, d.country, `seen ${ago(d.last_seen)}`].filter(Boolean).join(", ")}</small>
-                      </a>
-                      <button type="button" className="icon-btn small danger" aria-label={`Unlink ${d.name || shortId(d.id)}`} title="Unlink"
-                        onClick={() => quietly({ device_ids: user.device_ids.filter((x) => x !== d.id) })}>
-                        <Icon name="close" size={18} />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : <p className="empty-note">None linked, so they cannot sign in yet</p>}
-            </section>
-          </div>
-        )}
 
         {current === "activity" && <Activity user={user} />}
       </div>
@@ -348,9 +290,22 @@ function Permissions({ user, catalog, me, onSet }: { user: User; catalog: Group[
   );
 }
 
-// Profile is an account at a glance: four figures, then its details and its
-// security side by side, each value beside its label with an edit button.
-function Profile({ user, edit }: { user: User; edit: (patch: Parameters<typeof api.editUser>[1]) => Promise<void> }) {
+type Patch = Parameters<typeof api.editUser>[1];
+
+// Profile is an account at a glance: four figures, its details and its
+// security (with the devices it signs in from) side by side, then the tunnels
+// it may open, across both.
+function Profile({ user, routes, devices, edit, onChange }: {
+  user: User;
+  routes: Route[];
+  devices: Device[];
+  edit: (patch: Patch) => Promise<void>;
+  onChange: (patch: Patch) => unknown;
+}) {
+  const can = useCan();
+  const manage = can("users.manage");
+  const theirs = routes.filter((r) => user.route_ids.includes(r.id));
+  const linked = devices.filter((d) => user.device_ids.includes(d.id));
   const [list, setList] = useState<SignIn[] | null>(null);
   useEffect(() => {
     api.userActivity(user.id).then(setList).catch(() => setList([]));
@@ -379,6 +334,59 @@ function Profile({ user, edit }: { user: User; edit: (patch: Parameters<typeof a
           <PasswordValue onSave={(password) => edit({ password })} />
           <div className="kv"><span className="kv-label">Status</span><span className="kv-value"><span className={"chip " + tone}>{label}</span></span></div>
           <div className="kv"><span className="kv-label">Added</span><span className="kv-value">{new Date(user.created_at * 1000).toLocaleDateString()}</span></div>
+          <div className="section-head sub">
+            <h4 className="section-title">Devices</h4>
+            {manage && (
+              <AddMenu label="Link a device" placeholder="Find a device" onPick={(id) => onChange({ device_ids: [...user.device_ids, id] })}
+                empty={<div className="menu-note">There are no devices yet</div>}
+                items={[...devices].sort((a, b) => b.last_seen - a.last_seen).map((d) => ({ id: d.id, label: d.name || shortId(d.id), sub: [d.info?.platform, d.country, `seen ${ago(d.last_seen)}`].filter(Boolean).join(", "), disabled: user.device_ids.includes(d.id), note: "Already linked" }))} />
+            )}
+          </div>
+          {linked.length ? (
+            <ul className="item-list">
+              {linked.map((d) => (
+                <li key={d.id} className="item-row">
+                  <Icon name="devices" size={18} className="item-icon" />
+                  <a className="person" href={`#/devices/${d.id}`}>
+                    <span className="scan-target">{d.name || shortId(d.id)}</span>
+                    <small>{[d.info?.platform, d.country, `seen ${ago(d.last_seen)}`].filter(Boolean).join(", ")}</small>
+                  </a>
+                  {manage && (
+                    <button type="button" className="icon-btn small danger" aria-label={`Unlink ${d.name || shortId(d.id)}`} title="Unlink"
+                      onClick={() => onChange({ device_ids: user.device_ids.filter((x) => x !== d.id) })}>
+                      <Icon name="close" size={18} />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="empty-note">None linked, so they cannot sign in yet</p>}
+        </section>
+        <section className="profile-wide">
+          <div className="section-head">
+            <h3 className="section-title">Tunnels</h3>
+            {manage && (
+              <AddMenu label="Add a tunnel" placeholder="Find a tunnel" onPick={(id) => onChange({ route_ids: [...user.route_ids, id] })}
+                empty={<div className="menu-note">There are no tunnels yet</div>}
+                items={routes.map((r) => ({ id: r.id, label: r.hostname, sub: r.require_login ? undefined : "Sign-in is off here", disabled: user.route_ids.includes(r.id), note: "Already added" }))} />
+            )}
+          </div>
+          {theirs.length ? (
+            <ul className="tunnel-pills">
+              {theirs.map((r) => (
+                <li key={r.id} className="tunnel-pill">
+                  <span className={"dot " + (r.enabled ? "ok" : "")} />
+                  <a href={r.target_scheme === "code" ? "#/code/access" : `#/tunnels/${r.id}`} title={r.require_login ? "Asks for sign-in" : "Sign-in is off here"}>{r.hostname}</a>
+                  {manage && (
+                    <button type="button" className="tunnel-pill-x" aria-label={`Remove ${r.hostname}`} title="Remove access"
+                      onClick={() => onChange({ route_ids: user.route_ids.filter((x) => x !== r.id) })}>
+                      <Icon name="close" size={16} />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="empty-note">No tunnels yet</p>}
         </section>
       </div>
     </>

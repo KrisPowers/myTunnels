@@ -164,7 +164,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>Users, under Admin, holds the accounts people sign in with. Each has a username, an optional email (either signs in), and a password held to the same rule as every password here.</p>
       </Doc>
       <Doc title="What an account opens">
-        <p>On an account's <b>Tunnels and devices</b>, pick the tunnels it may open and the devices it signs in from. One sign-in covers every tunnel on the same domain that the account may open. Turning an account off, or removing it, ends its sessions at once.</p>
+        <p>On an account's <b>Profile</b>, <b>Tunnels</b> holds the tunnels it may open, and <b>Security</b> the devices it signs in from. One sign-in covers every tunnel on the same domain that the account may open. Suspending an account, or removing it, ends its sessions at once.</p>
       </Doc>
       <Doc title="Permissions">
         <p>On an account's <b>Permissions</b>, a card per feature says what it may do. <b>Sign in to the dashboard</b> lets it in here with its own password; then it sees only the pages and actions the rest allow, such as viewing containers, approving devices, or creating repositories. The admin holds them all. Anyone who manages accounts can give only permissions they hold, and cannot change their own.</p>
