@@ -335,7 +335,7 @@ function Profile({ user, routes, devices, edit, onChange }: {
                 {theirs.map((r) => (
                   <li key={r.id} className="tunnel-pill">
                     <span className={"dot " + (r.enabled ? "ok" : "")} />
-                    <a href={r.target_scheme === "code" ? "#/code/access" : `#/tunnels/${r.id}`} title={r.require_login ? "Asks for sign-in" : "Sign-in is off here"}>{r.hostname}</a>
+                    <a href={`#/tunnels/${r.id}`} title={r.require_login ? "Asks for sign-in" : "Sign-in is off here"}>{r.hostname}</a>
                     {manage && (
                       <button type="button" className="tunnel-pill-x" aria-label={`Remove ${r.hostname}`} title="Remove access"
                         onClick={() => onChange({ route_ids: user.route_ids.filter((x) => x !== r.id) })}>
