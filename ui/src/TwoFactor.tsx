@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, message, type Smtp, type TwoFactor } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon } from "./Icon";
-import { Card, Dialog, Row, Switch, TextField, useNotify } from "./ui";
+import { Dialog, Switch, TextField, useNotify } from "./ui";
 
 const SECURITY: Option<Smtp["security"]>[] = [
   { value: "starttls", label: "STARTTLS", hint: "Usually port 587" },
@@ -11,12 +11,14 @@ const SECURITY: Option<Smtp["security"]>[] = [
 ];
 const PORTS: Record<Smtp["security"], number> = { starttls: 587, tls: 465, none: 25 };
 
-// TwoFactor sets up emailed sign-in codes: the SMTP credentials they are sent
-// with (Gmail, Outlook, any provider), then one switch that turns them on for
-// the dashboard and every tunnel with sign-in together.
+// TwoFactorSetup is emailed sign-in codes in one panel: until SMTP is set up,
+// the button to set it up; then the switch that asks for a code at every
+// sign-in, the dashboard's and every tunnel's, with where codes come from.
 export function TwoFactorSetup() {
   const [tf, setTf] = useState<TwoFactor | null>(null);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [testing, setTesting] = useState(false);
   const notify = useNotify();
   useEffect(() => {
     api.twoFactor().then(setTf).catch((e) => notify(message(e), "bad"));
@@ -33,32 +35,6 @@ export function TwoFactorSetup() {
       setBusy(false);
     }
   };
-
-  if (!tf) return null;
-  return (
-    <>
-      <MailCard tf={tf} onSaved={setTf} />
-      <Card title="Email codes" sub="After the password, a code is emailed and must be entered to finish signing in.">
-        <Row title="Ask for a code at every sign-in" sub={
-          !tf.smtp ? "Enter your SMTP credentials first."
-            : !tf.admin_email ? <>Set the admin email under <a href="#/settings/account">Settings, Account</a> first.</>
-            : <>The dashboard and every tunnel with sign-in, sent to the account's email ({tf.admin_email} for the admin). Turning it on sends a test email first.</>
-        }>
-          <Switch label="Email codes" on={tf.enabled} disabled={busy || (!tf.enabled && (!tf.smtp || !tf.admin_email))} onChange={turn} />
-        </Row>
-      </Card>
-    </>
-  );
-}
-
-// MailCard is the SMTP credentials codes are sent with: shown once saved,
-// with an edit button and a test, or a Set up button. Either opens a dialog.
-function MailCard({ tf, onSaved }: { tf: TwoFactor; onSaved: (tf: TwoFactor) => void }) {
-  const [open, setOpen] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const notify = useNotify();
-  const smtp = tf.smtp;
-
   const test = async () => {
     setTesting(true);
     try {
@@ -71,35 +47,38 @@ function MailCard({ tf, onSaved }: { tf: TwoFactor; onSaved: (tf: TwoFactor) => 
     }
   };
 
+  if (!tf) return null;
+  const smtp = tf.smtp;
   return (
-    <Card title="SMTP" sub={smtp ? "Codes are sent with these credentials." : "Not set up."}
-      action={smtp ? (
-        <button type="button" className="icon-btn" aria-label="Change SMTP credentials" title="Change" onClick={() => setOpen(true)}>
-          <Icon name="edit" size={20} />
-        </button>
-      ) : <button type="button" className="btn" onClick={() => setOpen(true)}>Set up</button>}>
-      {open && (
-        <Dialog title="SMTP" onClose={() => setOpen(false)}>
-          <MailForm smtp={smtp} onSaved={(next) => {
-            onSaved(next);
-            setOpen(false);
-          }} onCancel={() => setOpen(false)} />
-        </Dialog>
-      )}
-      {smtp && (
+    <div className="card welcome">
+      <Icon name="lock" size={40} />
+      <h2>Two-factor sign-in</h2>
+      <p className="muted">After the password, a code is emailed and must be entered to finish signing in, on the dashboard and every tunnel with sign-in.</p>
+      {!smtp ? (
+        <button type="button" className="btn primary" onClick={() => setEditing(true)}><Icon name="settings" size={18} />Set up SMTP</button>
+      ) : (
         <>
-          <Row title="Host"><span className="mono">{smtp.host}:{smtp.port}</span></Row>
-          <Row title="Security"><span>{SECURITY.find((s) => s.value === smtp.security)?.label}</span></Row>
-          <Row title="Username"><span>{smtp.username || "None"}</span></Row>
-          <Row title="From"><span>{smtp.from}</span></Row>
-          <div className="card-foot">
-            <button type="button" className="btn" disabled={testing || !tf.admin_email} onClick={test}>
-              {testing && <span className="spinner small" />}Send a test
-            </button>
+          <label className="mfa-toggle">
+            <Switch label="Email codes" on={tf.enabled} disabled={busy || (!tf.enabled && !tf.admin_email)} onChange={turn} />
+            <span>{tf.enabled ? "Email codes are on" : "Email codes are off"}</span>
+          </label>
+          {!tf.admin_email && <p className="muted">Set the admin email under <a href="#/settings/account">Settings, Account</a> to turn them on.</p>}
+          <p className="mfa-from">Sent from <b>{smtp.from}</b> through <span className="mono">{smtp.host}:{smtp.port}</span>, {SECURITY.find((x) => x.value === smtp.security)?.label}</p>
+          <div className="mfa-actions">
+            <button type="button" className="btn small" onClick={() => setEditing(true)}><Icon name="edit" size={16} />Change SMTP</button>
+            <button type="button" className="btn small" disabled={testing || !tf.admin_email} onClick={test}>{testing && <span className="spinner small" />}Send a test</button>
           </div>
         </>
       )}
-    </Card>
+      {editing && (
+        <Dialog title="SMTP" onClose={() => setEditing(false)}>
+          <MailForm smtp={smtp} onSaved={(next) => {
+            setTf(next);
+            setEditing(false);
+          }} onCancel={() => setEditing(false)} />
+        </Dialog>
+      )}
+    </div>
   );
 }
 
