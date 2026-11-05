@@ -201,7 +201,7 @@ review, which stops a copied key from working on another machine.
 Tunnels with sign-in on can also offer **Continue with** GitHub, Google, GitLab, Discord,
 Slack or Codeberg; a self-hosted Authentik, Authelia, Keycloak, Pocket ID, Zitadel, Kanidm,
 Gitea or Forgejo; Auth0 or Okta; or any other OpenID Connect provider. Set each up
-once under **Advanced Security, Third-Party OAuth** the way Cloudflare was set up: **Open GitHub** (or
+once under **Advanced, Third-Party OAuth** the way Cloudflare was set up: **Open GitHub** (or
 the provider's console), register an app, then paste its client ID and secret back. Each
 tunnel then switches on the providers it offers, under **Access Control**.
 
@@ -214,7 +214,7 @@ every tunnel on it.
 
 ## Two-factor sign-in
 
-Under **Advanced Security, Two-Factor Auth**, enter SMTP credentials from any provider, Gmail (with an app
+Under **Advanced, Two-Factor Auth**, enter SMTP credentials from any provider, Gmail (with an app
 password), Outlook or your own: host, port, STARTTLS or TLS, username, password and from
 address. Saving checks them, and **Send a test** emails the admin. Then a six digit code,
 good once for ten minutes, is asked for after the password once **Email codes** is on. One
