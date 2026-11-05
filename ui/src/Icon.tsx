@@ -40,6 +40,8 @@ const paths = {
   expand_more: "M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z",
   filter_list: "M400-240v-80h160v80H400ZM240-440v-80h480v80H240ZM120-640v-80h720v80H120Z",
   folder: "M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z",
+  // The Git logo (Jason Long, CC BY 3.0) placed on this grid.
+  git: "M520 -56.5a56.5 56.5 0 0 1 -79.9 0L56.5 -440.1a56.5 56.5 0 0 1 0 -79.9l263.7 -263.6l100.2 100.2a67.8 67.8 0 0 0 35.3 85.3v244.2a67.8 67.8 0 1 0 56.5 0V-591.6l92 92a67.8 67.8 0 1 0 40 -40l-96.6 -96.6a67.8 67.8 0 0 0 -87.2 -87.2L360.1 -823.6L440 -903.5a56.5 56.5 0 0 1 79.9 0l383.5 383.5a56.5 56.5 0 0 1 0 79.9Z",
   grid_view: "M120-520v-320h320v320H120Zm0 400v-320h320v320H120Zm400-400v-320h320v320H520Zm0 400v-320h320v320H520ZM200-600h160v-160H200v160Zm400 0h160v-160H600v160Zm0 400h160v-160H600v160Zm-400 0h160v-160H200v160Zm400-400Zm0 240Zm-240 0Zm0-240Z",
   group: "M40-160v-112q0-34 17.5-62.5T104-378q62-31 126-46.5T360-440q66 0 130 15.5T616-378q29 15 46.5 43.5T680-272v112H40Zm720 0v-120q0-44-24.5-84.5T666-434q51 6 96 20.5t84 35.5q36 20 55 44.5t19 53.5v120H760ZM360-480q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47Zm400-160q0 66-47 113t-113 47q-11 0-28-2.5t-28-5.5q27-32 41.5-71t14.5-81q0-42-14.5-81T544-792q14-5 28-6.5t28-1.5q66 0 113 47t47 113ZM120-240h480v-32q0-11-5.5-20T580-306q-54-27-109-40.5T360-360q-56 0-111 13.5T140-306q-9 5-14.5 14t-5.5 20v32Zm240-320q33 0 56.5-23.5T440-640q0-33-23.5-56.5T360-720q-33 0-56.5 23.5T280-640q0 33 23.5 56.5T360-560Zm0 320Zm0-400Z",
   hard_drive: "M160-280h640v-240H160v240Zm520-60q25 0 42.5-17.5T740-400q0-25-17.5-42.5T680-460q-25 0-42.5 17.5T620-400q0 25 17.5 42.5T680-340Zm200-260H767l-80-80H273l-80 80H80l137-137q11-11 25.5-17t30.5-6h414q16 0 30.5 6t25.5 17l137 137ZM160-200q-33 0-56.5-23.5T80-280v-320h800v320q0 33-23.5 56.5T800-200H160Z",
@@ -88,19 +90,12 @@ const paths = {
   warning: "m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm302-40q17 0 28.5-11.5T520-280q0-17-11.5-28.5T480-320q-17 0-28.5 11.5T440-280q0 17 11.5 28.5T480-240Zm-40-120h80v-200h-80v200Zm40-100Z",
 } as const;
 
-// Brand marks, each on its own box. Git's is the logo by Jason Long
-// (git-scm.com, CC BY 3.0), as Simple Icons draws it.
-const marks = {
-  git: ["0 0 24 24", "M13.09 23.549a1.54 1.54 0 0 1-2.18 0L.451 13.089a1.54 1.54 0 0 1 0-2.179l7.191-7.19 2.733 2.733a1.85 1.85 0 0 0 .964 2.326v6.66a1.849 1.849 0 1 0 1.54 0V8.957l2.508 2.508a1.85 1.85 0 1 0 1.09-1.09l-2.634-2.634a1.85 1.85 0 0 0-2.378-2.377L8.73 2.63 10.91.451a1.54 1.54 0 0 1 2.179 0l10.459 10.46a1.54 1.54 0 0 1 0 2.179z"],
-} as const;
-
-export type IconName = keyof typeof paths | keyof typeof marks;
+export type IconName = keyof typeof paths;
 
 export function Icon({ name, size = 20, className }: { name: IconName; size?: number; className?: string }) {
-  const [box, d] = name in marks ? marks[name as keyof typeof marks] : ["0 -960 960 960", paths[name as keyof typeof paths]];
   return (
-    <svg className={"icon" + (className ? " " + className : "")} width={size} height={size} viewBox={box} aria-hidden="true" focusable="false">
-      <path d={d} />
+    <svg className={"icon" + (className ? " " + className : "")} width={size} height={size} viewBox="0 -960 960 960" aria-hidden="true" focusable="false">
+      <path d={paths[name]} />
     </svg>
   );
 }
