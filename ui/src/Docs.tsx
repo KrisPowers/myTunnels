@@ -6,7 +6,7 @@ export const DOCS: [string, string, IconName][] = [
   ["start", "Getting started", "info"],
   ["dashboard", "Dashboard", "dashboard"],
   ["containers", "Containers", "deployed_code"],
-  ["code", "Code", "code"],
+  ["git", "Git", "code"],
   ["media", "Media and Drive", "photo_library"],
   ["publish", "Publishing", "public"],
   ["access", "Access Control", "shield"],
@@ -84,16 +84,16 @@ const CONTENT: Record<string, ReactNode> = {
       </Doc>
     </>
   ),
-  code: (
+  git: (
     <>
       <Doc title="Repositories">
-        <p><b>Code</b> keeps git repositories on this host for your codebases. Make one with <b>New repository</b>, then browse its files on any branch or tag, read a file, or step through its commits and the changes in each.</p>
+        <p><b>Git</b> keeps git repositories on this host for your codebases. The catalog shows each one's top language, its commits over the last six months and when it last changed; <b>Pin</b> keeps one at the top for you. A repository has <b>Code</b> (files on any branch, history, branches), <b>Pull Requests</b> (ask to merge one branch into another, talk it over, merge), <b>Issues</b> and <b>Settings</b>.</p>
       </Doc>
       <Doc title="Signing git in">
-        <p>Git signs in with a token from <b>Tokens</b>, each person's own, shown once. When git asks, give any username and the token as the password. On this network git reaches Code at <code>/git/</code> on this dashboard's address; <b>Publish an address</b> to reach it from anywhere. That address is for git alone; a browser opening it finds nothing.</p>
+        <p>Git signs in with a token from <b>Tokens</b>, each person's own, shown once. When git asks, give any username and the token as the password. On this network git reaches Git at <code>/git/</code> on this dashboard's address; <b>Publish an address</b> to reach it from anywhere. That address is for git alone; a browser opening it finds nothing.</p>
       </Doc>
       <Doc title="Who may open what">
-        <p>Who may view, push to, create or delete repositories is each account's Code permissions, under Security &amp; Roles, Users; git's token is held to them. A repository's <b>Home network only</b> switch, on its page, lets git reach it only from this host's network or a trusted one. A single push over 100 MB is refused by Cloudflare, so push a very large repository over this network the first time.</p>
+        <p>Who may view, push to, create or delete repositories is each account's Git permissions, under Security &amp; Roles, Users; git's token is held to them. A repository's <b>Home network only</b> switch, on its page, lets git reach it only from this host's network or a trusted one. A single push over 100 MB is refused by Cloudflare, so push a very large repository over this network the first time.</p>
       </Doc>
     </>
   ),
