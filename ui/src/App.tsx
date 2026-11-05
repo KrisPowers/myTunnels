@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode } from "react";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type Group, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
-import { CodePage } from "./Code";
+import { GitPage } from "./Git";
 import { ContainersPage } from "./Containers";
 import { DashboardPage } from "./Dashboard";
 import { DevicePage, Devices } from "./Devices";
@@ -137,7 +137,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
   const { view, id, page } = place;
   const pending = devices?.filter((d) => d.status === "pending").length ?? 0;
-  // Code's address is a tunnel kept on its own page.
+  // Git's address is a tunnel kept on its own page.
   const apps = routes?.filter((r) => r.target_scheme !== "code") ?? null;
   const route = view === "tunnels" && id ? apps?.find((r) => r.id === id) : undefined;
   const device = view === "devices" && id ? devices?.find((d) => d.id === id) : undefined;
@@ -145,7 +145,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
   // A tunnel, device or account that is gone goes back to its list.
   useEffect(() => {
-    if (view === "tunnels" && id && routes && !route) go(routes.some((r) => r.id === id) ? "#/code" : "#/");
+    if (view === "tunnels" && id && routes && !route) go(routes.some((r) => r.id === id) ? "#/git" : "#/");
     if (view === "devices" && id && devices && !device) go("#/devices");
     if (view === "users" && id && id !== "new" && users && !user) go("#/users");
   }, [view, id, routes, devices, users, route, device, user]);
@@ -159,7 +159,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const storage: [string, string, IconName, string, boolean][] = [
     ["media", "Media", "photo_library", "#/media", can("media.view")],
     ["drive", "Drive", "cloud", "#/drive", can("drive.view")],
-    ["code", "Code", "code", "#/code", can("code.view")],
+    ["git", "Git", "code", "#/git", can("code.view")],
   ];
   const admin: [string, string, IconName, string, boolean][] = [
     ["users", "Users", "group", "#/users", can("users.view")],
@@ -217,7 +217,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
         <main className="page" key={view + id}>
           {view === "tunnels" && !id && <Tunnels routes={apps} status={status} />}
-          {view === "code" && <CodePage id={id} page={page} users={users ?? []} onChanged={load} />}
+          {view === "git" && <GitPage id={id} page={page} more={place.more} users={users ?? []} onChanged={load} />}
           {view === "dashboard" && <DashboardPage />}
           {view === "media" && <MediaPage />}
           {view === "drive" && <DrivePage />}

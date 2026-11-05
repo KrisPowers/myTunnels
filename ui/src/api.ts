@@ -224,10 +224,23 @@ export interface ContainerDetail {
 
 export type ContainerAction = "start" | "stop" | "restart" | "pause" | "unpause" | "kill";
 
-// Code: git repositories, browsed here and at Code's own address, and used
-// with git over HTTPS signing in with a token.
-// `home_only`: git reaches it only from the home network.
-export interface Repo { name: string; branch: string; updated: number | null; empty: boolean; write: boolean; home_only: boolean }
+// Git: repositories kept on this host, browsed here and used with git over
+// HTTPS signing in with a token.
+export interface Repo {
+  name: string;
+  branch: string;
+  updated: number | null;
+  empty: boolean;
+  write: boolean;
+  // Git reaches it only from the home network.
+  home_only: boolean;
+  // Pinned to the top of the catalog, for the person signed in.
+  pinned: boolean;
+  // The language most of its code is in.
+  language: string | null;
+  // Commits in each of the last weeks, the oldest first.
+  activity: number[];
+}
 
 export interface GitToken { id: string; name: string; owner: string; created_at: number; last_used: number | null }
 
@@ -237,11 +250,41 @@ export interface Refs { default: string; branches: { name: string; updated: numb
 
 export interface TreeEntry { name: string; kind: "dir" | "file" | "module"; size: number | null }
 
+export interface LastCommit { id: string; author: string; at: number; subject: string }
+
+export interface TreeView { path: string; entries: TreeEntry[]; last: LastCommit | null; count: number }
+
 export interface BlobView { size: number; binary: boolean; too_big: boolean; text: string | null }
 
 export interface CommitLine { id: string; author: string; email: string; at: number; subject: string }
 
 export interface CommitView { id: string; parents: string[]; author: string; email: string; at: number; message: string; patch: string; truncated: boolean }
+
+export interface Branch { name: string; id: string; updated: number; author: string; subject: string; default: boolean; ahead: number; behind: number }
+
+// What one branch would bring into another.
+export interface Compare { commits: CommitLine[]; patch: string; truncated: boolean; mergeable: boolean; error?: string }
+
+// An issue or a pull request, numbered together per repository.
+export interface Thread {
+  number: number;
+  kind: "issue" | "pull";
+  title: string;
+  body: string;
+  state: "open" | "closed" | "merged";
+  author: string;
+  base: string | null;
+  head: string | null;
+  merged_commit: string | null;
+  created_at: number;
+  updated_at: number;
+  comments: number;
+}
+
+export interface ThreadView extends Thread {
+  thread: { id: string; author: string; body: string; created_at: number }[];
+  changes?: Compare;
+}
 
 export interface FileEntry { name: string; dir: boolean; size: number; modified: number }
 
@@ -391,7 +434,16 @@ export const api = {
   code: () => call<CodeState>("/code"),
   createRepo: (name: string) => call<{ repos: Repo[] }>("/code/repos", "POST", { name }),
   removeRepo: (name: string) => call<{ repos: Repo[] }>(`/code/repos/${encodeURIComponent(name)}`, "DELETE"),
-  editRepo: (name: string, patch: { home_only: boolean }) => call<{ repos: Repo[] }>(`/code/repos/${encodeURIComponent(name)}`, "PATCH", patch),
+  editRepo: (name: string, patch: { home_only?: boolean; default_branch?: string }) => call<{ repos: Repo[] }>(`/code/repos/${encodeURIComponent(name)}`, "PATCH", patch),
+  pinRepo: (name: string, pinned: boolean) => call<{ pinned: boolean }>(`/code/repos/${encodeURIComponent(name)}/pin`, "PUT", { pinned }),
+  branch: (name: string, body: { action: "create" | "delete"; name: string; from?: string }) =>
+    call<{ default: string; branches: Branch[] }>(`/code/repos/${encodeURIComponent(name)}/branch`, "POST", body),
+  openThread: (name: string, body: { kind: "issue" | "pull"; title: string; body: string; base?: string; head?: string }) =>
+    call<Thread>(`/code/repos/${encodeURIComponent(name)}/threads`, "POST", body),
+  editThread: (name: string, number: number, patch: { title?: string; body?: string; state?: "open" | "closed" }) =>
+    call<ThreadView>(`/code/repos/${encodeURIComponent(name)}/thread/${number}`, "PATCH", patch),
+  comment: (name: string, number: number, body: string) => call<ThreadView>(`/code/repos/${encodeURIComponent(name)}/thread/${number}/comments`, "POST", { body }),
+  merge: (name: string, number: number) => call<ThreadView>(`/code/repos/${encodeURIComponent(name)}/thread/${number}/merge`, "POST"),
   addToken: (name: string, owner: string) => call<CodeState & { secret: string }>("/code/tokens", "POST", { name, owner }),
   removeToken: (id: string) => call<CodeState>(`/code/tokens/${id}`, "DELETE"),
 };
@@ -405,10 +457,14 @@ const repoPath = (name: string, op: string, q: Record<string, string | number | 
 export const repos = {
   list: () => call<{ repos: Repo[]; user: string | null }>("/code/repos"),
   refs: (name: string) => call<Refs>(repoPath(name, "refs", {})),
-  tree: (name: string, ref: string, path: string) => call<{ path: string; entries: TreeEntry[] }>(repoPath(name, "tree", { ref, path })),
+  tree: (name: string, ref: string, path: string) => call<TreeView>(repoPath(name, "tree", { ref, path })),
   blob: (name: string, ref: string, path: string) => call<BlobView>(repoPath(name, "blob", { ref, path })),
   log: (name: string, ref: string, skip: number) => call<{ commits: CommitLine[]; more: boolean }>(repoPath(name, "log", { ref, skip })),
   commit: (name: string, id: string) => call<CommitView>(repoPath(name, "commit", { ref: id })),
+  branches: (name: string) => call<{ default: string; branches: Branch[] }>(repoPath(name, "branches", {})),
+  compare: (name: string, base: string, head: string) => call<Compare>(repoPath(name, "compare", { base, ref: head })),
+  threads: (name: string, kind: "issues" | "pulls") => call<{ threads: Thread[] }>(repoPath(name, `threads/${kind}`, {})),
+  thread: (name: string, number: number) => call<ThreadView>(repoPath(name, `thread/${number}`, {})),
 };
 
 export const rawUrl = (name: string, ref: string, path: string) => "/api" + repoPath(name, "blob", { ref, path, raw: "true" });

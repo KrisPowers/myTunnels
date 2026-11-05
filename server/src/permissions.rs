@@ -112,15 +112,28 @@ pub const GROUPS: &[Group] = &[
         ],
     },
     Group {
-        label: "Code",
+        label: "Git",
         permissions: &[
             p(
                 "code.view",
                 "View repositories",
-                "Browse them, and clone with a token of their own",
+                "Browse them, their issues and pull requests, and clone with a token of their own",
             ),
-            p("code.push", "Push", "Change repositories with git"),
-            p("code.create", "Create repositories", ""),
+            p(
+                "code.discuss",
+                "Open issues and pull requests",
+                "Comment on them, close and reopen them",
+            ),
+            p(
+                "code.push",
+                "Push and merge",
+                "Push with git, merge pull requests, make and delete branches",
+            ),
+            p(
+                "code.create",
+                "Create repositories",
+                "And change their settings",
+            ),
             p("code.delete", "Delete repositories", ""),
             p(
                 "code.tokens",
@@ -262,7 +275,10 @@ pub fn needed(method: &Method, path: &str) -> Need {
         "users" if *method == Method::DELETE => any(&["users.delete"]),
         "users" => any(&["users.manage"]),
         "code" if at(1) == "tokens" => any(&["code.view", "code.tokens"]),
+        "code" if at(3) == "pin" => any(&["code.view"]),
+        "code" if at(3) == "branch" || at(5) == "merge" => any(&["code.push"]),
         "code" if read => any(&["code.view"]),
+        "code" if at(3) == "threads" || at(3) == "thread" => any(&["code.discuss"]),
         "code" if *method == Method::DELETE => any(&["code.delete"]),
         "code" => any(&["code.create"]),
         "media" => files("media", read, at(2)),
@@ -318,6 +334,10 @@ mod tests {
         assert!(!needed(&Method::GET, "/settings").met(&viewer));
         assert!(needed(&Method::GET, "/status").met(&viewer));
         assert!(needed(&Method::DELETE, "/routes/r1").met(&Caller::Admin));
+        assert!(needed(&Method::PUT, "/code/repos/app/pin").met(&viewer));
+        assert!(!needed(&Method::POST, "/code/repos/app/threads").met(&viewer));
+        assert!(!needed(&Method::POST, "/code/repos/app/thread/3/merge").met(&viewer));
+        assert!(needed(&Method::GET, "/code/repos/app/threads/issues").met(&viewer));
     }
 
     #[test]

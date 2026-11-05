@@ -21,7 +21,7 @@ use crate::oauth::{self, Provider};
 use crate::permissions::{self, Caller};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
-use crate::{code, codes, containers, gate, metrics, secret, storage, tunnel};
+use crate::{code, codes, containers, gate, metrics, secret, storage, threads, tunnel};
 
 const ADMIN_COOKIE: &str = "admin_session";
 const ADMIN_TTL: i64 = 7 * 86_400;
@@ -65,6 +65,22 @@ pub fn router(state: AppState) -> Router {
         .route("/code/repos", get(list_repos).post(create_repo))
         .route("/code/repos/{name}", delete(remove_repo).patch(edit_repo))
         .route("/code/repos/{name}/{op}", get(read_repo))
+        .route("/code/repos/{name}/pin", put(pin_repo))
+        .route("/code/repos/{name}/branch", post(branch_repo))
+        .route("/code/repos/{name}/threads", post(open_thread))
+        .route("/code/repos/{name}/threads/{kind}", get(list_threads))
+        .route(
+            "/code/repos/{name}/thread/{number}",
+            get(get_thread).patch(edit_thread),
+        )
+        .route(
+            "/code/repos/{name}/thread/{number}/comments",
+            post(comment_thread),
+        )
+        .route(
+            "/code/repos/{name}/thread/{number}/merge",
+            post(merge_thread),
+        )
         .route("/code/tokens", post(add_token))
         .route("/code/tokens/{id}", delete(remove_token))
         .route("/media/fs/{op}", any(media_fs))
@@ -1028,7 +1044,7 @@ async fn create_route(
         return Err(ApiError::bad("Port must be between 1 and 65535"));
     }
     if body.target_scheme == "code" && code::route(&state).is_some() {
-        return Err(ApiError::conflict("Code already has an address"));
+        return Err(ApiError::conflict("Git already has an address"));
     }
     let target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
     check_not_self(&state, target_host.as_deref(), body.port)?;
@@ -1138,7 +1154,7 @@ async fn update_route(
     let mut route = state.db.route(&id)?.ok_or_else(ApiError::not_found)?;
     // A tunnel stays an app or Code; only where an app runs can change.
     if (route.target_scheme == "code") != (body.target_scheme == "code") {
-        return Err(ApiError::bad("Code and apps are published separately"));
+        return Err(ApiError::bad("Git and apps are published separately"));
     }
     if body.port == 0 && !served_here(&body.target_scheme) {
         return Err(ApiError::bad("Port must be between 1 and 65535"));
@@ -1213,7 +1229,7 @@ pub async fn rename_code_address(state: AppState) {
                 return;
             }
             Err(ApiError(StatusCode::CONFLICT, why)) => {
-                tracing::info!("Code keeps {}: {why}", route.hostname);
+                tracing::info!("Git keeps {}: {why}", route.hostname);
                 let _ = state.db.set_setting(DONE, "1");
                 return;
             }
@@ -1340,24 +1356,101 @@ async fn list_repos(
 
 async fn create_repo(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Json(body): Json<code::NewRepo>,
 ) -> ApiResult<Json<Value>> {
-    code::create(&state, body).await
+    code::create(&state, &code::Viewer::of(&caller), body).await
 }
 
 async fn remove_repo(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Path(name): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    code::remove(&state, &name).await
+    code::remove(&state, &code::Viewer::of(&caller), &name).await
 }
 
 async fn edit_repo(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Path(name): Path<String>,
     Json(body): Json<code::RepoEdit>,
 ) -> ApiResult<Json<Value>> {
-    code::edit(&state, &name, body).await
+    code::edit(&state, &code::Viewer::of(&caller), &name, body).await
+}
+
+#[derive(Deserialize)]
+struct PinBody {
+    pinned: bool,
+}
+
+async fn pin_repo(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(name): Path<String>,
+    Json(body): Json<PinBody>,
+) -> ApiResult<Json<Value>> {
+    code::pin(&state, &code::Viewer::of(&caller), &name, body.pinned).await
+}
+
+async fn branch_repo(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(name): Path<String>,
+    Json(body): Json<code::BranchAction>,
+) -> ApiResult<Response> {
+    code::branch(&state, &code::Viewer::of(&caller), &name, body).await
+}
+
+async fn list_threads(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path((name, kind)): Path<(String, String)>,
+) -> ApiResult<Json<Value>> {
+    threads::list(&state, &code::Viewer::of(&caller), &name, &kind).await
+}
+
+async fn open_thread(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(name): Path<String>,
+    Json(body): Json<threads::NewThread>,
+) -> ApiResult<Json<Value>> {
+    threads::open(&state, &caller, &name, body).await
+}
+
+async fn get_thread(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path((name, number)): Path<(String, i64)>,
+) -> ApiResult<Json<Value>> {
+    threads::get(&state, &code::Viewer::of(&caller), &name, number).await
+}
+
+async fn edit_thread(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path((name, number)): Path<(String, i64)>,
+    Json(body): Json<threads::ThreadEdit>,
+) -> ApiResult<Json<Value>> {
+    threads::edit(&state, &caller, &name, number, body).await
+}
+
+async fn comment_thread(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path((name, number)): Path<(String, i64)>,
+    Json(body): Json<threads::NewComment>,
+) -> ApiResult<Json<Value>> {
+    threads::comment(&state, &caller, &name, number, body).await
+}
+
+async fn merge_thread(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path((name, number)): Path<(String, i64)>,
+) -> ApiResult<Json<Value>> {
+    threads::merge(&state, &caller, &name, number).await
 }
 
 async fn read_repo(

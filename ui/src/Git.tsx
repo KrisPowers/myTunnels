@@ -2,17 +2,51 @@ import { useCallback, useContext, useEffect, useState, type FormEvent } from "re
 import { ago, api, message, repos, type CodeState, type Repo, type User, type Zone } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { NameDialog } from "./Files";
+import { RepoPage } from "./GitRepo";
 import { Icon, type IconName } from "./Icon";
-import { RepoList, RepoView } from "./Repo";
-import { AddressEditor } from "./Tunnels";
 import { MeContext, useCan } from "./me";
+import { AddressEditor } from "./Tunnels";
 import { Callout, Card, Copy, Dialog, Row, TextField, useNotify } from "./ui";
 
-// CodePage is Code: git repositories kept on this host, and the tokens git
-// signs in with. Code's address, once published, is for git alone. Who may
-// view, push, create or delete is each account's Code permissions.
-// `#/code/repos/<name>` is one repository.
-export function CodePage({ id, page, users, onChanged }: { id: string; page: string; users: User[]; onChanged: () => Promise<void> }) {
+// The colours languages are known by, as code hosts show them.
+const LANGUAGE_COLORS: Record<string, string> = {
+  Rust: "#dea584", TypeScript: "#3178c6", JavaScript: "#f1e05a", Python: "#3572a5", Go: "#00add8",
+  Java: "#b07219", Kotlin: "#a97bff", Swift: "#f05138", C: "#555555", "C++": "#f34b7d", "C#": "#178600",
+  Ruby: "#701516", PHP: "#4f5d95", HTML: "#e34c26", CSS: "#563d7c", SCSS: "#c6538c", Vue: "#41b883",
+  Svelte: "#ff3e00", Shell: "#89e051", PowerShell: "#012456", Lua: "#000080", Dart: "#00b4ab",
+  SQL: "#e38c00", Zig: "#ec915c", Elixir: "#6e4a7e", Haskell: "#5e5086", Scala: "#c22d40", R: "#198ce7", Nix: "#7e7eff",
+};
+
+export function Language({ name }: { name: string }) {
+  return (
+    <span className="lang-pill">
+      <i style={{ background: LANGUAGE_COLORS[name] ?? "var(--text-3)" }} />
+      {name}
+    </span>
+  );
+}
+
+// Activity is a repository's commits over the last weeks, a bar a week.
+function Activity({ weeks }: { weeks: number[] }) {
+  const top = Math.max(1, ...weeks);
+  const total = weeks.reduce((n, w) => n + w, 0);
+  return (
+    <svg className="activity" viewBox={`0 0 ${weeks.length * 4} 24`} preserveAspectRatio="none" role="img"
+      aria-label={`${total} commit${total === 1 ? "" : "s"} in the last ${weeks.length} weeks`}>
+      <title>{`${total} commit${total === 1 ? "" : "s"} in the last ${weeks.length} weeks`}</title>
+      {weeks.map((w, i) => {
+        const h = w ? Math.max(2, (w / top) * 24) : 1;
+        return <rect key={i} x={i * 4} y={24 - h} width={3} height={h} rx={0.8} className={w ? "on" : ""} />;
+      })}
+    </svg>
+  );
+}
+
+// GitPage is Git: the repositories on this host and the tokens git signs in
+// with; `#/git/r/<name>/...` is one repository. Git's address, once
+// published, is for git alone. What each person may do is their Git
+// permissions.
+export function GitPage({ id, page, more, users, onChanged }: { id: string; page: string; more: string[]; users: User[]; onChanged: () => Promise<void> }) {
   const [state, setState] = useState<CodeState | null>(null);
   const [list, setList] = useState<Repo[] | null>(null);
   const [problem, setProblem] = useState("");
@@ -35,31 +69,36 @@ export function CodePage({ id, page, users, onChanged }: { id: string; page: str
   }, [load]);
 
   const route = state?.route ?? null;
-  const cloneUrls = (name: string) => [
-    ...(route ? [{ label: "From anywhere", url: `https://${route.hostname}/${name}.git` }] : []),
-    { label: "On this network", url: `${location.origin}/git/${name}.git` },
-  ];
-
-  if (id === "repos" && page) {
-    return <RepoView name={page} back="#/code" cloneUrls={cloneUrls(page)} admin={can("code.delete")} onRemoved={() => (location.hash = "#/code")} />;
+  if (id === "r" && page) {
+    const urls = [
+      ...(route ? [{ label: "From anywhere", url: `https://${route.hostname}/${page}.git` }] : []),
+      { label: "On this network", url: `${location.origin}/git/${page}.git` },
+    ];
+    return <RepoPage name={page} tab={more[0] ?? "code"} sub={more.slice(1)} cloneUrls={urls} />;
   }
   if (!state) return problem ? <Callout tone="bad" icon="error">{problem}</Callout> : null;
 
-  const pages: [string, string, IconName][] = [
-    ["repos", "Repositories", "code"],
-    ["tokens", "Tokens", "key"],
-  ];
-  const current = pages.some(([k]) => k === id) ? id : "repos";
+  const pages: [string, string, IconName][] = [["", "Repositories", "code"], ["tokens", "Tokens", "key"]];
+  const current = id === "tokens" ? "tokens" : "";
+
+  const pin = async (r: Repo) => {
+    try {
+      await api.pinRepo(r.name, !r.pinned);
+      await load();
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+  };
 
   return (
     <>
       <div className="page-head">
         <div className="page-head-main">
-          <h1>Code</h1>
+          <h1>Git</h1>
           <div className="page-sub">
             {route ? (
               <span className="inline-edit">
-                <span>{route.hostname}</span>
+                <span className="mono">{route.hostname}</span>
                 {can("tunnels.edit") && <button type="button" className="icon-btn small" aria-label="Change address" title="Change address" onClick={() => setAsking("move")}><Icon name="edit" size={18} /></button>}
               </span>
             ) : <span>On this network only</span>}
@@ -67,15 +106,13 @@ export function CodePage({ id, page, users, onChanged }: { id: string; page: str
           </div>
         </div>
         <div className="page-actions">
-          {!route && can("tunnels.create") && (
-            <button type="button" className="btn" onClick={() => setAsking("address")}><Icon name="public" size={18} />Publish an address</button>
-          )}
+          {!route && can("tunnels.create") && <button type="button" className="btn" onClick={() => setAsking("address")}><Icon name="public" size={18} />Publish an address</button>}
           {can("code.create") && <button type="button" className="btn primary" onClick={() => setAsking("repo")}><Icon name="add" size={18} />New repository</button>}
         </div>
       </div>
       <nav className="sub-nav" aria-label="Sub-pages">
         {pages.map(([key, label, icon]) => (
-          <a key={key} className={"sub-nav-item" + (current === key ? " on" : "")} href={`#/code/${key}`} aria-current={current === key ? "page" : undefined}>
+          <a key={key} className={"sub-nav-item" + (current === key ? " on" : "")} href={key ? `#/git/${key}` : "#/git"} aria-current={current === key ? "page" : undefined}>
             <Icon name={icon} size={18} />
             <span>{label}</span>
           </a>
@@ -83,18 +120,44 @@ export function CodePage({ id, page, users, onChanged }: { id: string; page: str
       </nav>
       <div className="page-body stack plain" key={current}>
         {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
-        {current === "repos" && list && <RepoList list={list} href={(name) => `#/code/repos/${name}`} onNew={can("code.create") ? () => setAsking("repo") : undefined} />}
+        {current === "" && list && (list.length === 0 ? (
+          <div className="card welcome">
+            <Icon name="code" size={40} />
+            <h2>No repositories yet</h2>
+            <p className="muted">Make one, then push to it with git from anywhere you work.</p>
+            {can("code.create") && <button type="button" className="btn primary" onClick={() => setAsking("repo")}><Icon name="add" size={18} />New repository</button>}
+          </div>
+        ) : (
+          <ul className="catalog">
+            {list.map((r) => (
+              <li key={r.name} className="catalog-row">
+                <div className="catalog-main">
+                  <a className="catalog-name" href={`#/git/r/${encodeURIComponent(r.name)}`}>{r.name}</a>
+                  <div className="catalog-meta">
+                    {r.language && <Language name={r.language} />}
+                    <span>{r.updated ? `Updated ${ago(r.updated)}` : "Nothing pushed yet"}</span>
+                  </div>
+                </div>
+                <Activity weeks={r.activity} />
+                <button type="button" className={"pin-btn" + (r.pinned ? " on" : "")} aria-pressed={r.pinned}
+                  aria-label={r.pinned ? `Unpin ${r.name}` : `Pin ${r.name}`} title={r.pinned ? "Unpin" : "Pin"} onClick={() => pin(r)}>
+                  <Icon name="push_pin" size={18} />
+                  <span>{r.pinned ? "Pinned" : "Pin"}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ))}
         {current === "tokens" && <Tokens state={state} users={users} onState={setState} />}
       </div>
 
       {asking === "repo" && (
         <NameDialog title="New repository" label="Name" initial="" action="Create" onClose={() => setAsking("")}
           onSave={async (name) => {
-            const made = await api.createRepo(name);
-            setList(made.repos);
+            await api.createRepo(name);
             setAsking("");
             notify(`Created ${name}`);
-            location.hash = `#/code/repos/${encodeURIComponent(name)}`;
+            location.hash = `#/git/r/${encodeURIComponent(name)}`;
           }} />
       )}
       {asking === "address" && (
@@ -114,8 +177,7 @@ export function CodePage({ id, page, users, onChanged }: { id: string; page: str
   );
 }
 
-// Publish gives Code an address on one of the domains, for git and browsers
-// away from home.
+// Publish gives Git an address on one of the domains, for git away from home.
 function Publish({ onClose, onDone }: { onClose: () => void; onDone: () => Promise<void> }) {
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [zone, setZone] = useState("");
@@ -150,7 +212,7 @@ function Publish({ onClose, onDone }: { onClose: () => void; onDone: () => Promi
   return (
     <Dialog title="Publish an address" onClose={onClose}>
       <form onSubmit={submit}>
-        <p className="muted">Where git reaches Code from anywhere.</p>
+        <p className="muted">Where git reaches these repositories from anywhere.</p>
         <div className="edit-row">
           <TextField className="grow" label="Subdomain" autoFocus autoComplete="off" value={sub}
             onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
@@ -175,8 +237,8 @@ function Publish({ onClose, onDone }: { onClose: () => void; onDone: () => Promi
   );
 }
 
-// Tokens are what git signs in with, as the password: each for the admin or
-// for one account, shown once when made.
+// Tokens are what git signs in with, as the password: each person's own, or
+// anyone's for those who manage them, shown once when made.
 function Tokens({ state, users, onState }: { state: CodeState; users: User[]; onState: (s: CodeState) => void }) {
   const can = useCan();
   const me = useContext(MeContext);

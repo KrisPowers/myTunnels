@@ -79,12 +79,24 @@ so images, volumes and networks cannot be changed from the panel.
 
 The sidebar keeps these pages together under **Storage & Media**; the heading folds them away.
 
-### Code
+### Git
 
-**Code** keeps git repositories on this host, in `/data/repos`, for your codebases.
-**New repository** makes an empty one, its first branch `main`. Open a repository to browse
-its files on any branch or tag, with its README under them, read a file, or step through its
-commits and the changes in each. **Clone** gives its addresses.
+**Git** keeps git repositories on this host, in `/data/repos`, for your codebases. The catalog
+lists them pinned first, then by their latest change, each with its top language, a chart of
+its commits over the last six months, when it last changed, and **Pin** to keep it at the top
+for you. **New repository** makes an empty one, its first branch `main`.
+
+A repository has four tabs:
+
+- **Code**: its files on any branch or tag, picked from the branch menu, with the commit that
+  last changed the folder, how many commits there are, and its README. **History** lists the
+  commits by day with their IDs; open one for its changes. **Branches** shows how far each is
+  ahead of and behind the default branch, and makes, deletes and opens pull requests for them.
+- **Pull Requests**: ask to merge one branch into another, with its commits and changes shown
+  first, then talk it over and **Merge**, which makes a merge commit when the branches do not
+  conflict.
+- **Issues**: bugs and work to do, with comments, closed and reopened as they go.
+- **Settings**: the default branch, **Home network only**, and deleting the repository.
 
 Git signs in with a token. Under **Tokens**, each person makes their own, and the admin (or an
 account allowed to manage everyone's tokens) makes them for others; a token is shown once, and
@@ -96,14 +108,14 @@ git clone http://<host>:7070/git/myapp.git        # on the LAN
 ```
 
 On the LAN, the panel takes git at `/git/` straight away. For anywhere else, **Publish an
-address** gives Code a subdomain, `git` to start with. That address is for git alone: a browser
+address** gives Git a subdomain, `git` to start with. That address is for git alone: a browser
 opening it finds nothing, and repositories are browsed here on the dashboard. Git signs in with
-its token, held to the account's Code permissions (**View repositories** to clone, **Push** to
+its token, held to the account's Git permissions (**View repositories** to clone, **Push and merge** to
 push). A repository's **Home network only** switch, on its page, lets git reach it only from
 this host's network or a trusted one.
 
 Cloudflare refuses a single request over 100 MB, so the first push of a very large repository
-goes over the LAN, or in parts. Code needs `git`, which the image includes.
+goes over the LAN, or in parts. Git needs `git`, which the image includes.
 
 ### Media
 
@@ -135,7 +147,7 @@ set it up:
 - **Permissions**, a card per feature: **Sign in to the dashboard**, then what it may do there,
   such as viewing containers or starting and stopping them, publishing, changing or removing
   tunnels, approving devices, managing accounts, viewing, pushing to, creating and deleting
-  repositories in Code, uploading and deleting in Media and Drive, and the settings pages.
+  repositories in Git, opening issues and pull requests, uploading and deleting in Media and Drive, and the settings pages.
 - **Profile**: its details; **Security**, with its password, status and the devices it signs in
   from; and **Tunnels**, the tunnels it may open, added with **+** and removed with each one's
   **x**. **Suspend** in the menu stops it signing in anywhere until reinstated.
@@ -264,7 +276,7 @@ The whole app on `http://localhost:7070`, live as you save, with no image build:
 
 - A change under `server/` is rebuilt incrementally and swapped in while the old build keeps
   serving, then every open page reloads. Only the first run compiles the dependencies.
-- A change under `ui/` shows straight away through hot reload. The Code address serves a
+- A change under `ui/` shows straight away through hot reload. The dashboard through a tunnel serves a
   built copy that is rebuilt as you save, so there a change shows on the next reload.
 - cloudflared runs under the server as it does in the container, so tunnels work too. It is
   used from `PATH`, or fetched once.
