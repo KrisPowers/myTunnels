@@ -1387,7 +1387,7 @@ async fn code(
         .flatten()
         .filter(|u| u.enabled)
     else {
-        return json_error(StatusCode::FORBIDDEN, "This account is turned off.");
+        return json_error(StatusCode::FORBIDDEN, "This account is suspended.");
     };
     let outcome = vet(state, route, account, &visitor)
         .map(|account| Outcome::Session(open(state, route, account, &visitor, true)))
@@ -1564,7 +1564,7 @@ async fn provider_sign_in(
     };
     if !account.enabled {
         record(state, route, visitor, &account.id, "blocked");
-        return Err("This account is turned off. Ask the administrator.".into());
+        return Err("This account is suspended. Ask the administrator.".into());
     }
     admit(state, route, account, visitor).await.map_err(|e| e.1)
 }
