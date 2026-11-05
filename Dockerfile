@@ -1,4 +1,7 @@
 ARG CLOUDFLARED_IMAGE=cloudflare/cloudflared:latest
+# Convert's video work: one static ffmpeg and ffprobe, far smaller than
+# Debian's package and everything it pulls in.
+ARG FFMPEG_IMAGE=mwader/static-ffmpeg:9.0.2-1
 
 # The UI and the server build side by side. Downloads and compiled
 # dependencies live in BuildKit caches that outlast each build, so a change
@@ -21,14 +24,18 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 FROM ${CLOUDFLARED_IMAGE} AS cloudflared
 
+FROM ${FFMPEG_IMAGE} AS ffmpeg
+
 FROM debian:bookworm-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git \
+        ghostscript imagemagick libheif-examples \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home /data app \
     && mkdir -p /data \
     && chown app /data
 COPY --from=cloudflared /usr/local/bin/cloudflared /usr/local/bin/cloudflared
+COPY --from=ffmpeg /ffmpeg /ffprobe /usr/local/bin/
 COPY --from=server /usr/local/bin/server /usr/local/bin/server
 COPY --from=ui /ui/dist /app/ui
 ENV DATA_DIR=/data \
