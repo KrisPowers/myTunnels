@@ -70,7 +70,7 @@ fn dir_of(state: &AppState, name: &str) -> ApiResult<PathBuf> {
 
 /// A branch, tag or commit named in a request, nothing git could take for an
 /// option or a range.
-fn checked_ref(r: &str) -> ApiResult<&str> {
+pub(crate) fn checked_ref(r: &str) -> ApiResult<&str> {
     let ok = (1..=200).contains(&r.len())
         && !r.starts_with(['-', '/', '.'])
         && !r.contains("..")
@@ -86,21 +86,13 @@ fn checked_ref(r: &str) -> ApiResult<&str> {
 
 /// Runs git on a repository and gives back what it printed; a failure comes
 /// back with git's reason.
-async fn git(dir: &Path, args: &[&str]) -> ApiResult<Vec<u8>> {
-    let out = tokio::process::Command::new("git")
-        .arg("--git-dir")
-        .arg(dir)
-        .args(args)
-        .envs(safe_env())
-        .stdin(Stdio::null())
-        .output()
-        .await
-        .map_err(|e| {
-            ApiError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("git is not installed: {e}"),
-            )
-        })?;
+pub(crate) async fn git(dir: &Path, args: &[&str]) -> ApiResult<Vec<u8>> {
+    git_with(dir, args, &[]).await
+}
+
+/// Runs git with more of the environment set, such as who a commit is by.
+async fn git_with(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> ApiResult<Vec<u8>> {
+    let out = run(dir, args, env).await?;
     if out.status.success() {
         Ok(out.stdout)
     } else {
@@ -113,6 +105,26 @@ async fn git(dir: &Path, args: &[&str]) -> ApiResult<Vec<u8>> {
     }
 }
 
+/// Runs git and hands back how it ended, for commands whose failure says
+/// something, such as a merge with conflicts.
+async fn run(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> ApiResult<std::process::Output> {
+    tokio::process::Command::new("git")
+        .arg("--git-dir")
+        .arg(dir)
+        .args(args)
+        .envs(safe_env())
+        .envs(env.iter().copied())
+        .stdin(Stdio::null())
+        .output()
+        .await
+        .map_err(|e| {
+            ApiError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("git is not installed: {e}"),
+            )
+        })
+}
+
 /// Repositories belong to this process whoever made the folders, so git's
 /// check on who owns them is waived.
 fn safe_env() -> [(&'static str, &'static str); 3] {
@@ -123,7 +135,7 @@ fn safe_env() -> [(&'static str, &'static str); 3] {
     ]
 }
 
-fn text(bytes: Vec<u8>) -> String {
+pub(crate) fn text(bytes: Vec<u8>) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
@@ -198,7 +210,12 @@ fn at_home(state: &AppState, ip: Option<IpAddr>) -> bool {
     })
 }
 
-fn need(state: &AppState, viewer: &Viewer, repo: &str, want: Level) -> ApiResult<PathBuf> {
+pub(crate) fn need(
+    state: &AppState,
+    viewer: &Viewer,
+    repo: &str,
+    want: Level,
+) -> ApiResult<PathBuf> {
     if level(state, viewer) < want {
         // A repository someone may not open is one they cannot see.
         return Err(ApiError::not_found());
@@ -206,11 +223,159 @@ fn need(state: &AppState, viewer: &Viewer, repo: &str, want: Level) -> ApiResult
     dir_of(state, repo)
 }
 
-// ---- reading, for the pages ----
+// ---- the catalog ----
 
-/// The repositories `viewer` may open, the newest change first.
+impl Viewer {
+    /// Whose pins and settings these are: "admin" or an account.
+    fn key(&self) -> &str {
+        match self {
+            Viewer::Admin => "admin",
+            Viewer::Person(Some(id)) => id,
+            Viewer::Person(None) => "",
+        }
+    }
+}
+
+fn pins(state: &AppState, viewer: &Viewer) -> Vec<String> {
+    state
+        .db
+        .setting(&format!("git_pins:{}", viewer.key()))
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+        .split(',')
+        .filter(|p| !p.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Pins a repository to the top of `viewer`'s catalog, or unpins it.
+pub async fn pin(
+    state: &AppState,
+    viewer: &Viewer,
+    name: &str,
+    pinned: bool,
+) -> ApiResult<Json<Value>> {
+    need(state, viewer, name, Level::Read)?;
+    let mut list = pins(state, viewer);
+    list.retain(|p| p != name);
+    if pinned {
+        list.push(name.to_owned());
+    }
+    state
+        .db
+        .set_setting(&format!("git_pins:{}", viewer.key()), &list.join(","))?;
+    Ok(Json(json!({ "pinned": pinned })))
+}
+
+/// Weeks of commit history the catalog draws.
+const WEEKS: usize = 26;
+
+/// What the catalog shows of a repository besides its name, worked out once
+/// per commit at its tip: the language most of its code is in, and how many
+/// commits each of the last weeks had.
+static STATS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, (String, Value)>>,
+> = std::sync::LazyLock::new(Default::default);
+
+async fn stats(dir: &Path, name: &str) -> Value {
+    let Ok(tip) = git(dir, &["rev-parse", "--verify", "--quiet", "HEAD"]).await else {
+        return json!({ "language": null, "activity": vec![0; WEEKS] });
+    };
+    let tip = text(tip).trim().to_owned();
+    if let Some((seen, value)) = STATS.lock().unwrap_or_else(|e| e.into_inner()).get(name) {
+        if *seen == tip {
+            return value.clone();
+        }
+    }
+    let mut bytes: std::collections::HashMap<&'static str, u64> = Default::default();
+    if let Ok(listed) = git(dir, &["ls-tree", "-r", "-l", "-z", "HEAD"]).await {
+        for entry in listed.split(|b| *b == 0) {
+            let entry = String::from_utf8_lossy(entry);
+            let Some((meta, path)) = entry.split_once('\t') else {
+                continue;
+            };
+            let size = meta
+                .split_whitespace()
+                .nth(3)
+                .and_then(|s| s.parse::<u64>().ok());
+            if let (Some(size), Some(language)) = (size, language_of(path)) {
+                *bytes.entry(language).or_default() += size;
+            }
+        }
+    }
+    let language = bytes.into_iter().max_by_key(|(_, n)| *n).map(|(l, _)| l);
+    let mut activity = vec![0u32; WEEKS];
+    let now = now();
+    let since = format!("--since={}", now - (WEEKS as i64) * 7 * 86_400);
+    if let Ok(times) = git(dir, &["log", "--format=%ct", &since, "HEAD"]).await {
+        for at in text(times)
+            .lines()
+            .filter_map(|l| l.trim().parse::<i64>().ok())
+        {
+            let ago = ((now - at).max(0) / (7 * 86_400)) as usize;
+            if ago < WEEKS {
+                activity[WEEKS - 1 - ago] += 1;
+            }
+        }
+    }
+    let value = json!({ "language": language, "activity": activity });
+    STATS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(name.to_owned(), (tip, value.clone()));
+    value
+}
+
+/// The language a file is written in, by its ending; `None` for data, prose
+/// and anything not code.
+fn language_of(path: &str) -> Option<&'static str> {
+    if path
+        .split('/')
+        .any(|p| matches!(p, "node_modules" | "vendor" | "dist" | "target"))
+    {
+        return None;
+    }
+    let ext = path.rsplit_once('.')?.1.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "rs" => "Rust",
+        "ts" | "tsx" | "mts" | "cts" => "TypeScript",
+        "js" | "jsx" | "mjs" | "cjs" => "JavaScript",
+        "py" => "Python",
+        "go" => "Go",
+        "java" => "Java",
+        "kt" | "kts" => "Kotlin",
+        "swift" => "Swift",
+        "c" | "h" => "C",
+        "cpp" | "cc" | "cxx" | "hpp" | "hh" => "C++",
+        "cs" => "C#",
+        "rb" => "Ruby",
+        "php" => "PHP",
+        "html" | "htm" => "HTML",
+        "css" => "CSS",
+        "scss" | "sass" => "SCSS",
+        "vue" => "Vue",
+        "svelte" => "Svelte",
+        "sh" | "bash" | "zsh" => "Shell",
+        "ps1" | "psm1" => "PowerShell",
+        "lua" => "Lua",
+        "dart" => "Dart",
+        "sql" => "SQL",
+        "zig" => "Zig",
+        "ex" | "exs" => "Elixir",
+        "hs" => "Haskell",
+        "scala" => "Scala",
+        "r" => "R",
+        "nix" => "Nix",
+        _ => return None,
+    })
+}
+
+/// The repositories `viewer` may open: pinned ones first, then the newest
+/// change first.
 pub async fn list(state: &AppState, viewer: &Viewer) -> ApiResult<Json<Value>> {
     let root = root(state);
+    let pinned = pins(state, viewer);
     let mut repos = Vec::new();
     if let Ok(mut read) = tokio::fs::read_dir(&root).await {
         while let Ok(Some(entry)) = read.next_entry().await {
@@ -243,6 +408,7 @@ pub async fn list(state: &AppState, viewer: &Viewer) -> ApiResult<Json<Value>> {
             .await
             .ok()
             .and_then(|b| text(b).trim().parse::<i64>().ok());
+            let stats = stats(&dir, name).await;
             repos.push(json!({
                 "name": name,
                 "branch": branch,
@@ -250,10 +416,18 @@ pub async fn list(state: &AppState, viewer: &Viewer) -> ApiResult<Json<Value>> {
                 "empty": updated.is_none(),
                 "write": level == Level::Write,
                 "home_only": home_only(state, name),
+                "pinned": pinned.iter().any(|p| p == name),
+                "language": stats["language"],
+                "activity": stats["activity"],
             }));
         }
     }
-    repos.sort_by_key(|r| std::cmp::Reverse(r["updated"].as_i64().unwrap_or(0)));
+    repos.sort_by_key(|r| {
+        (
+            !r["pinned"].as_bool().unwrap_or(false),
+            std::cmp::Reverse(r["updated"].as_i64().unwrap_or(0)),
+        )
+    });
     let user = match viewer {
         Viewer::Person(Some(id)) => state.snapshot().users.get(id).map(|u| {
             if u.name.is_empty() {
@@ -267,10 +441,14 @@ pub async fn list(state: &AppState, viewer: &Viewer) -> ApiResult<Json<Value>> {
     Ok(Json(json!({ "repos": repos, "user": user })))
 }
 
+// ---- reading, for the pages ----
+
 #[derive(Deserialize)]
 struct At {
     #[serde(rename = "ref")]
     reference: Option<String>,
+    /// For comparing: the branch changes would go into.
+    base: Option<String>,
     #[serde(default)]
     path: String,
     #[serde(default)]
@@ -310,6 +488,13 @@ pub async fn read(
             "blob" => blob(&dir, &reference, &path, at.raw).await,
             "log" => log(&dir, &reference, &path, at.skip).await,
             "commit" => commit(&dir, &reference).await,
+            "branches" => branches(&dir).await,
+            "compare" => {
+                let base = checked_ref(at.base.as_deref().unwrap_or("HEAD"))?;
+                compare(&dir, base, &reference)
+                    .await
+                    .map(|v| Json(v).into_response())
+            }
             _ => Err(ApiError::not_found()),
         }
     }
@@ -387,7 +572,219 @@ async fn tree(dir: &Path, reference: &str, path: &str) -> ApiResult<Response> {
                 a.to_lowercase().cmp(&b.to_lowercase())
             })
     });
-    Ok(Json(json!({ "path": path, "entries": entries })).into_response())
+    // The commit that last changed this folder, and how many there are.
+    let mut args = vec![
+        "log",
+        "-1",
+        "--format=%H%x1f%an%x1f%at%x1f%s",
+        reference,
+        "--",
+    ];
+    if !path.is_empty() {
+        args.push(path);
+    }
+    let last = text(git(dir, &args).await.unwrap_or_default());
+    let f: Vec<&str> = last.trim().splitn(4, '\x1f').collect();
+    let last = (f.len() == 4).then(|| {
+        json!({ "id": f[0], "author": f[1], "at": f[2].parse::<i64>().unwrap_or(0), "subject": f[3] })
+    });
+    let count = text(
+        git(dir, &["rev-list", "--count", reference])
+            .await
+            .unwrap_or_default(),
+    )
+    .trim()
+    .parse::<u64>()
+    .unwrap_or(0);
+    Ok(
+        Json(json!({ "path": path, "entries": entries, "last": last, "count": count }))
+            .into_response(),
+    )
+}
+
+/// Every branch, the latest change first, with its last commit and how far it
+/// is ahead of and behind the default branch.
+async fn branches(dir: &Path) -> ApiResult<Response> {
+    let head = git(dir, &["symbolic-ref", "--short", "HEAD"])
+        .await
+        .map(|b| text(b).trim().to_owned())
+        .unwrap_or_default();
+    let listed = text(
+        git(
+            dir,
+            &[
+                "for-each-ref",
+                "--sort=-committerdate",
+                "--format=%(refname:short)%1f%(objectname)%1f%(committerdate:unix)%1f%(authorname)%1f%(contents:subject)",
+                "refs/heads",
+            ],
+        )
+        .await?,
+    );
+    let mut out = Vec::new();
+    for line in listed.lines() {
+        let f: Vec<&str> = line.splitn(5, '\x1f').collect();
+        if f.len() < 5 {
+            continue;
+        }
+        let (ahead, behind) = if f[0] == head || head.is_empty() {
+            (0, 0)
+        } else {
+            let range = format!("{head}...{}", f[0]);
+            let counts = text(
+                git(dir, &["rev-list", "--left-right", "--count", &range])
+                    .await
+                    .unwrap_or_default(),
+            );
+            let mut n = counts
+                .split_whitespace()
+                .map(|n| n.parse::<u64>().unwrap_or(0));
+            let behind = n.next().unwrap_or(0);
+            (n.next().unwrap_or(0), behind)
+        };
+        out.push(json!({
+            "name": f[0],
+            "id": f[1],
+            "updated": f[2].parse::<i64>().unwrap_or(0),
+            "author": f[3],
+            "subject": f[4],
+            "default": f[0] == head,
+            "ahead": ahead,
+            "behind": behind,
+        }));
+    }
+    Ok(Json(json!({ "default": head, "branches": out })).into_response())
+}
+
+fn commit_lines(out: &str) -> Vec<Value> {
+    out.split('\x1e')
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .filter_map(|c| {
+            let f: Vec<&str> = c.split('\x1f').collect();
+            Some(json!({
+                "id": f.first()?,
+                "author": f.get(1)?,
+                "email": f.get(2)?,
+                "at": f.get(3)?.parse::<i64>().unwrap_or(0),
+                "subject": f.get(4)?,
+            }))
+        })
+        .collect()
+}
+
+/// What `head` would bring into `base`: its commits, the changes since they
+/// parted, and whether git can merge them without conflicts.
+pub(crate) async fn compare(dir: &Path, base: &str, head: &str) -> ApiResult<Value> {
+    let range = format!("{base}..{head}");
+    let out = text(
+        git(
+            dir,
+            &["log", "--format=%H%x1f%an%x1f%ae%x1f%at%x1f%s%x1e", &range],
+        )
+        .await?,
+    );
+    let commits = commit_lines(&out);
+    let parted = format!("{base}...{head}");
+    let patch = git(dir, &["diff", "--no-color", "-M", &parted]).await?;
+    let truncated = patch.len() > MAX_SHOWN;
+    let patch = text(patch[..patch.len().min(MAX_SHOWN)].to_vec());
+    let mergeable = run(dir, &["merge-tree", "--write-tree", base, head], &[])
+        .await
+        .is_ok_and(|o| o.status.success());
+    Ok(
+        json!({ "commits": commits, "patch": patch, "truncated": truncated, "mergeable": mergeable }),
+    )
+}
+
+/// Merges branch `head` into branch `base` with a merge commit by `who`, as git
+/// would; refused when they conflict or there is nothing to merge. Returns the
+/// new commit.
+pub(crate) async fn merge(
+    dir: &Path,
+    base: &str,
+    head: &str,
+    message: &str,
+    who: (&str, &str),
+) -> ApiResult<String> {
+    let id = |r: String| async move {
+        git(dir, &["rev-parse", "--verify", &r])
+            .await
+            .map(|b| text(b).trim().to_owned())
+    };
+    let base_id = id(format!("refs/heads/{base}"))
+        .await
+        .map_err(|_| ApiError::bad(format!("There is no branch {base}")))?;
+    let head_id = id(format!("refs/heads/{head}"))
+        .await
+        .map_err(|_| ApiError::bad(format!("There is no branch {head}")))?;
+    if run(
+        dir,
+        &["merge-base", "--is-ancestor", &head_id, &base_id],
+        &[],
+    )
+    .await?
+    .status
+    .success()
+    {
+        return Err(ApiError::bad(format!(
+            "{base} already has everything in {head}"
+        )));
+    }
+    let tree = run(
+        dir,
+        &["merge-tree", "--write-tree", &base_id, &head_id],
+        &[],
+    )
+    .await?;
+    if !tree.status.success() {
+        return Err(ApiError::conflict(format!(
+            "{head} and {base} have conflicts; resolve them in {head} and push again"
+        )));
+    }
+    let tree = text(tree.stdout)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    let (name, email) = who;
+    let env = [
+        ("GIT_AUTHOR_NAME", name),
+        ("GIT_AUTHOR_EMAIL", email),
+        ("GIT_COMMITTER_NAME", name),
+        ("GIT_COMMITTER_EMAIL", email),
+    ];
+    let commit = text(
+        git_with(
+            dir,
+            &[
+                "commit-tree",
+                &tree,
+                "-p",
+                &base_id,
+                "-p",
+                &head_id,
+                "-m",
+                message,
+            ],
+            &env,
+        )
+        .await?,
+    )
+    .trim()
+    .to_owned();
+    git(
+        dir,
+        &[
+            "update-ref",
+            &format!("refs/heads/{base}"),
+            &commit,
+            &base_id,
+        ],
+    )
+    .await?;
+    Ok(commit)
 }
 
 async fn blob(dir: &Path, reference: &str, path: &str, raw: bool) -> ApiResult<Response> {
@@ -536,7 +933,7 @@ pub struct NewRepo {
 }
 
 /// A new, empty repository, its first branch `main`.
-pub async fn create(state: &AppState, body: NewRepo) -> ApiResult<Json<Value>> {
+pub async fn create(state: &AppState, viewer: &Viewer, body: NewRepo) -> ApiResult<Json<Value>> {
     let name = body.name.trim();
     if !valid_name(name) {
         return Err(ApiError::bad(
@@ -566,34 +963,87 @@ pub async fn create(state: &AppState, body: NewRepo) -> ApiResult<Json<Value>> {
     if !out.status.success() {
         return Err(ApiError::bad(text(out.stderr).trim().to_owned()));
     }
-    list(state, &Viewer::Admin).await
+    list(state, viewer).await
 }
 
-pub async fn remove(state: &AppState, name: &str) -> ApiResult<Json<Value>> {
+pub async fn remove(state: &AppState, viewer: &Viewer, name: &str) -> ApiResult<Json<Value>> {
     let dir = dir_of(state, name)?;
     tokio::fs::remove_dir_all(&dir)
         .await
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     state.db.delete_setting(&format!("code_home_only:{name}"))?;
-    list(state, &Viewer::Admin).await
+    state.db.delete_repo_threads(name)?;
+    list(state, viewer).await
 }
 
 #[derive(Deserialize)]
 pub struct RepoEdit {
     home_only: Option<bool>,
+    default_branch: Option<String>,
 }
 
 /// Changes a repository's settings: whether git reaches it only from the home
-/// network.
-pub async fn edit(state: &AppState, name: &str, body: RepoEdit) -> ApiResult<Json<Value>> {
-    dir_of(state, name)?;
+/// network, and its default branch.
+pub async fn edit(
+    state: &AppState,
+    viewer: &Viewer,
+    name: &str,
+    body: RepoEdit,
+) -> ApiResult<Json<Value>> {
+    let dir = dir_of(state, name)?;
     let key = format!("code_home_only:{name}");
     match body.home_only {
         Some(true) => state.db.set_setting(&key, "1")?,
         Some(false) => state.db.delete_setting(&key)?,
         None => {}
     }
-    list(state, &Viewer::Admin).await
+    if let Some(branch) = body.default_branch {
+        let branch = checked_ref(&branch)?;
+        let full = format!("refs/heads/{branch}");
+        git(&dir, &["rev-parse", "--verify", &full])
+            .await
+            .map_err(|_| ApiError::bad(format!("There is no branch {branch}")))?;
+        git(&dir, &["symbolic-ref", "HEAD", &full]).await?;
+    }
+    list(state, viewer).await
+}
+
+#[derive(Deserialize)]
+pub struct BranchAction {
+    /// "create" or "delete".
+    action: String,
+    name: String,
+    /// Where a new branch starts: a branch, tag or commit.
+    from: Option<String>,
+}
+
+/// Makes a branch from another, or deletes one that is not the default.
+pub async fn branch(
+    state: &AppState,
+    viewer: &Viewer,
+    repo: &str,
+    body: BranchAction,
+) -> ApiResult<Response> {
+    let dir = need(state, viewer, repo, Level::Write)?;
+    let name = checked_ref(body.name.trim())?;
+    match body.action.as_str() {
+        "create" => {
+            git(&dir, &["check-ref-format", "--branch", name])
+                .await
+                .map_err(|_| ApiError::bad(format!("{name} is not a usable branch name")))?;
+            let from = checked_ref(body.from.as_deref().unwrap_or("HEAD"))?;
+            git(&dir, &["branch", name, from]).await?;
+        }
+        "delete" => {
+            let head = text(git(&dir, &["symbolic-ref", "--short", "HEAD"]).await?);
+            if head.trim() == name {
+                return Err(ApiError::bad("The default branch cannot be deleted"));
+            }
+            git(&dir, &["branch", "-D", name]).await?;
+        }
+        _ => return Err(ApiError::bad("Create or delete a branch")),
+    }
+    branches(&dir).await
 }
 
 #[derive(Deserialize)]
@@ -713,7 +1163,7 @@ pub async fn serve(state: &AppState, ip: Option<IpAddr>, path: &str, req: Reques
         return refuse(StatusCode::NOT_FOUND, "No such repository");
     };
     let Some(secret) = token_of(req.headers()) else {
-        return ask_to_sign_in("Sign in with a token from Code, Tokens, as the password");
+        return ask_to_sign_in("Sign in with a token from Git, Tokens, as the password");
     };
     let token = match state.db.token_by_hash(&sha256_hex(&secret)) {
         Ok(Some(token)) => token,
@@ -870,6 +1320,15 @@ async fn backend(state: &AppState, path: &str, user: &str, from: &str, req: Requ
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn languages_come_from_endings() {
+        assert_eq!(language_of("src/main.rs"), Some("Rust"));
+        assert_eq!(language_of("ui/src/App.tsx"), Some("TypeScript"));
+        assert_eq!(language_of("README.md"), None);
+        assert_eq!(language_of("ui/node_modules/react/index.js"), None);
+        assert_eq!(language_of("Makefile"), None);
+    }
 
     #[test]
     fn names_are_plain() {
