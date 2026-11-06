@@ -915,13 +915,15 @@ pub fn planting_hosts(snap: &Snapshot) -> Vec<String> {
 
 #[derive(Deserialize)]
 struct EnrollRequest {
-    token: Option<String>,
     #[serde(default)]
     info: Value,
 }
 
 /// Identifies the calling browser by its device key, asking for approval when it has not
 /// yet, and opens a session when the device is approved for this tunnel.
+///
+/// The key lives only in an HttpOnly cookie. It is never handed to the page, since
+/// the app behind this tunnel shares the page's origin and could read it there.
 fn register(
     state: &AppState,
     route: &Route,
@@ -929,39 +931,16 @@ fn register(
     headers: &HeaderMap,
     body: EnrollRequest,
 ) -> ApiResult<Response> {
-    // The cookie, shared by every tunnel on the domain, says which device this is.
-    // The copy the page keeps only stands in when the cookie is gone.
-    let lookup = |token: String| {
-        state
-            .db
-            .device_by_token(&sha256_hex(&token))
-            .ok()
-            .flatten()
-            .map(|d| (d, token))
-    };
-    let shared = cookie(headers, DEVICE_COOKIE)
+    let known = cookie(headers, DEVICE_COOKIE)
         .filter(|t| valid_token(t))
-        .map(str::to_owned)
-        .and_then(lookup);
-    let own = body.token.filter(|t| valid_token(t)).and_then(lookup);
-    // A page that kept a key of its own made this browser a second device; the
-    // two become the one the cookie names.
-    if let (Some((kept, _)), Some((extra, _))) = (&shared, &own) {
-        if kept.id != extra.id {
-            match state.db.merge_device(&extra.id, &kept.id) {
-                Ok(()) => {
-                    state.end_sessions_of(&state.device_sessions, &extra.id);
-                    state.reload()?;
-                    tracing::info!("device {} is now {}", extra.id, kept.id);
-                }
-                Err(err) => tracing::warn!("could not merge device {}: {err:#}", extra.id),
-            }
-        }
-    }
-    let known = match shared {
-        Some((device, token)) => state.db.device(&device.id)?.map(|d| (d, token)),
-        None => own,
-    };
+        .and_then(|token| {
+            state
+                .db
+                .device_by_token(&sha256_hex(token))
+                .ok()
+                .flatten()
+                .map(|d| (d, token.to_owned()))
+        });
     let (device, token) = match known {
         Some((mut device, token)) => {
             let was = device.status.clone();
@@ -1007,7 +986,6 @@ fn register(
         "status": device.status,
         "note": device.note,
         "allowed": allowed,
-        "token": token,
     }))
     .into_response();
     let out = response.headers_mut();

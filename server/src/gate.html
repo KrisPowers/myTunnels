@@ -110,7 +110,6 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
   var body = document.body, mode = body.dataset.mode, data = {};
   try { data = JSON.parse(body.dataset.data || '{}'); } catch (e) {}
   var $ = function (id) { return document.getElementById(id); };
-  var KEY = 'gate.device';
   var LABELS = { login: 'sign in with an account', password: 'use the tunnel password', device: 'use an approved device' };
 
   // Where to land once through: this page without the choice of method.
@@ -194,8 +193,6 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
 
   $('device').hidden = false;
   var fullId = '';
-  function load() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
-  function save(token) { try { localStorage.setItem(KEY, token); } catch (e) {} }
   function gpu() {
     try {
       var gl = document.createElement('canvas').getContext('webgl');
@@ -235,8 +232,7 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
     $('state').dataset.tone = tone;
   }
   function check() {
-    post('/__gate/enroll', { token: load(), info: info() }).then(function (s) {
-      if (s.token) save(s.token);
+    post('/__gate/enroll', { info: info() }).then(function (s) {
       if (!s.id) throw new Error(s.error || 'unavailable');
       show(s);
       if (s.allowed) return back();
