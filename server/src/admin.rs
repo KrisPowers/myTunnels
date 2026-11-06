@@ -241,11 +241,7 @@ async fn require_session(State(state): State<AppState>, mut req: Request, next: 
 
 /// What first-run setup has saved so far, so the panel can resume where it was left.
 /// Setup is done once there is an admin account and Cloudflare is connected.
-async fn auth_state(
-    State(state): State<AppState>,
-    Extension(Peer(ip)): Extension<Peer>,
-    headers: HeaderMap,
-) -> ApiResult<Json<Value>> {
+async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let db = &state.db;
     let password = db.setting("admin_password")?.is_some();
     let me = caller(&state, &headers).map(|c| {
@@ -274,7 +270,6 @@ async fn auth_state(
             "password": password,
             "account": db.setting("admin_username")?.is_some(),
             "token": db.setting("cf_token")?.is_some(),
-            "code": !password && !ip.is_loopback(),
             "cloudflare": state.cloudflare().is_ok(),
             "done": password && state.cloudflare().is_ok(),
         },
@@ -286,77 +281,15 @@ struct AccountBody {
     email: String,
     username: String,
     password: String,
-    /// The setup code from the log, asked of every browser not on this machine.
-    #[serde(default)]
-    code: String,
-}
-
-/// Where the setup code is written, beside the database.
-fn setup_code_file(state: &AppState) -> std::path::PathBuf {
-    state.config.data_dir.join("setup-code")
-}
-
-/// Until the admin account exists, setup takes a code shown only to whoever
-/// runs the server, so another device on the network cannot claim it first.
-/// Writes the code to the log and to `setup-code`; once set up, removes both.
-pub fn prepare_setup_code(state: &AppState) -> anyhow::Result<()> {
-    let file = setup_code_file(state);
-    if state.db.setting("admin_password")?.is_some() {
-        state.db.delete_setting("setup_code")?;
-        let _ = std::fs::remove_file(file);
-        return Ok(());
-    }
-    let code = match state.db.setting("setup_code")? {
-        Some(code) => code,
-        None => {
-            let raw = random_hex(6).to_ascii_uppercase();
-            let code = format!("{}-{}-{}", &raw[..4], &raw[4..8], &raw[8..]);
-            state.db.set_setting("setup_code", &code)?;
-            code
-        }
-    };
-    if let Err(err) = std::fs::write(
-        &file,
-        format!(
-            "{code}
-"
-        ),
-    ) {
-        tracing::warn!("cannot write {}: {err}", file.display());
-    }
-    tracing::warn!(
-        "first-run setup code: {code} (also in {}). Enter it to create the admin account.",
-        file.display()
-    );
-    Ok(())
-}
-
-/// The code without spaces, dashes or case.
-fn plain_code(code: &str) -> String {
-    code.chars()
-        .filter(char::is_ascii_alphanumeric)
-        .map(|c| c.to_ascii_uppercase())
-        .collect()
 }
 
 /// Creates the admin account: an email, a username and a password.
 async fn setup(
     State(state): State<AppState>,
-    Extension(Peer(ip)): Extension<Peer>,
     Json(body): Json<AccountBody>,
 ) -> ApiResult<Response> {
     if state.db.setting("admin_password")?.is_some() {
         return Err(ApiError::conflict("The admin account already exists"));
-    }
-    let expected = state.db.setting("setup_code")?.unwrap_or_default();
-    let matches = !expected.is_empty()
-        && crate::util::sha256_hex(&plain_code(&body.code))
-            == crate::util::sha256_hex(&plain_code(&expected));
-    if !ip.is_loopback() && !matches {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "That setup code is not right. It is in the server's log and in its data folder, in setup-code.".into(),
-        ));
     }
     let username = admin_username(&body.username)?;
     let email = clean_email(&body.email)?;
@@ -368,9 +301,6 @@ async fn setup(
     state
         .db
         .set_setting("admin_password", &secret::hash(&body.password)?)?;
-    if let Err(err) = prepare_setup_code(&state) {
-        tracing::warn!("could not clear the setup code: {err:#}");
-    }
     start_admin_session(&state)
 }
 
@@ -2218,12 +2148,7 @@ async fn delete_user(
 
 #[cfg(test)]
 mod tests {
-    use super::{plain_code, valid_label, valid_username};
-
-    #[test]
-    fn setup_codes_ignore_dashes_and_case() {
-        assert_eq!(plain_code(" ab12-CD34-ef56 "), "AB12CD34EF56");
-    }
+    use super::{valid_label, valid_username};
 
     #[test]
     fn usernames() {

@@ -72,7 +72,7 @@ export function GitPage({ id, page, more, users, onChanged }: { id: string; page
   if (id === "r" && page) {
     const urls = [
       ...(route ? [{ label: "From anywhere", url: `https://${route.hostname}/${page}.git` }] : []),
-      { label: "On this network", url: `${location.origin}/git/${page}.git` },
+      ...(["localhost", "127.0.0.1"].includes(location.hostname) ? [{ label: "On this computer", url: `${location.origin}/git/${page}.git` }] : []),
     ];
     return <RepoPage name={page} tab={more[0] ?? "code"} sub={more.slice(1)} cloneUrls={urls} />;
   }

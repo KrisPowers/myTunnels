@@ -70,7 +70,6 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
   const create = !auth.setup.password;
   // Installs from before the admin account sign in with the password alone.
   const named = create || auth.setup.account;
-  const [setupCode, setSetupCode] = useState("");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [login, setLogin] = useState("");
@@ -82,7 +81,6 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
   const rating = strength(password);
   const ready = create
     ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && username.trim().length >= 2 && rating.ok
-      && (!auth.setup.code || setupCode.trim() !== "")
     : password !== "" && (!named || login.trim() !== "");
 
   const passkey = async () => {
@@ -104,7 +102,7 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
     setProblem("");
     try {
       if (create) {
-        await api.createAccount(email.trim(), username.trim(), password, setupCode.trim());
+        await api.createAccount(email.trim(), username.trim(), password);
       } else {
         const r = await api.login(login.trim(), password);
         if (r.code_required && r.ticket) {
@@ -128,11 +126,7 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
         sub={create ? "The account that runs this dashboard." : auth.setup.cloudflare ? "Sign in with the admin account, or an account allowed on the dashboard." : "Sign in with the admin account to carry on with setup."} />
       {create && (
         <>
-          {auth.setup.code && (
-            <TextField label="Setup code" mono autoFocus autoComplete="off" value={setupCode} onChange={setSetupCode}
-              hint="In the server's log, and in setup-code in its data folder" />
-          )}
-          <TextField label="Email" type="email" autoFocus={!auth.setup.code} autoComplete="email" value={email} onChange={setEmail} />
+          <TextField label="Email" type="email" autoFocus autoComplete="email" value={email} onChange={setEmail} />
           <TextField label="Username" autoComplete="username" value={username}
             onChange={(v) => setUsername(v.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 40))}
             hint="Letters, digits, dots, dashes and underscores" />
