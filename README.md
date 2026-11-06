@@ -203,7 +203,8 @@ own login still applies; the gateway is an extra layer in front of it.
 
 1. A browser opens a tunnel that requires approved devices.
 2. The gateway shows a page with a short device ID. The browser is assigned a 256 character
-   letter and number key, kept in its local storage and in a cookie for the domain.
+   letter and number key, kept only in a cookie that page scripts cannot read, so the app
+   behind the tunnel never sees it.
 3. The device appears under **Devices** with what the browser reported (platform, GPU, CPU
    threads, memory, screen, time zone, languages, user agent) and where it connected from
    (IP address and country).
@@ -213,8 +214,8 @@ own login still applies; the gateway is an extra layer in front of it.
 The key is never stored on the server, only its SHA-256 hash. A browser is one device
 everywhere: the cookie for the domain decides which device it is on every tunnel there,
 tunnels on other domains fetch the same key from the oldest tunnel, and the dashboard's
-own browser carries its key to one tunnel on each domain once. A key a page kept of its
-own, or one no device has any more, is folded into or replaced by that one device. One
+own browser carries its key to one tunnel on each domain once. A key no device has any
+more is replaced by that one device. One
 approval covers every tunnel on the same domain. If an approved key later shows up with different hardware
 (platform, touch support, or GPU), the device goes back to waiting and is flagged for
 review, which stops a copied key from working on another machine.
