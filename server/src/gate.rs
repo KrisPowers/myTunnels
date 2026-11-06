@@ -1270,13 +1270,8 @@ fn vet(
         return Err((StatusCode::FORBIDDEN, "This account cannot open this app."));
     }
 
-    // An account signs in only from the devices linked to it. One with none yet
-    // takes the device of its first sign-in.
-    if account.device_ids.is_empty() {
-        if let Some(first) = &v.device_id {
-            account.device_ids.push(first.clone());
-        }
-    }
+    // An account signs in only from the devices an administrator linked to it.
+    // One with none cannot sign in, so a leaked password never brings its own device.
     if !v
         .device_id
         .as_ref()
@@ -1490,6 +1485,15 @@ async fn oauth_callback(
             "This sign-in link has expired or was used already. Go back to the app and try again.",
         );
     };
+    // The browser finishing the sign-in must be the one that started it, so a
+    // sign-in link sent to someone else cannot sign them in on the sender's device.
+    if device_key(headers).as_deref() != Some(device_hash.as_str()) {
+        return notice(
+            &route.hostname,
+            "Sign in on this device",
+            "This sign-in was started on another device. Go back to the app and sign in here.",
+        );
+    }
     let visitor = Visitor {
         device_id,
         device_hash,
