@@ -92,7 +92,7 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
   </form>
 
   <form id="code" hidden>
-    <div class="tf"><input id="otp" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder=" " autocomplete="one-time-code" required><label for="otp">6-digit code</label></div>
+    <div class="tf"><input id="otp" type="text" inputmode="numeric" maxlength="11" placeholder=" " autocomplete="one-time-code" required><label for="otp">Code</label></div>
     <div class="error" id="code-error" role="alert"></div>
     <div class="row"><button type="submit">Verify</button></div>
   </form>
@@ -143,7 +143,7 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
       button.disabled = true;
       error.textContent = '';
       post('/__gate/' + id, build()).then(function (r) {
-        if (r.code_required) return askCode(r.ticket, r.sent_to);
+        if (r.code_required) return askCode(r.ticket, r.sent_to, r.app);
         if (r.ok) return data.path ? location.replace(data.path) : back();
         error.textContent = r.error || 'That did not work. Try again.';
         button.disabled = false;
@@ -154,12 +154,16 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
     });
   }
 
-  // After the password, a code sent to the account's email.
-  function askCode(ticket, sentTo) {
+  // After the password, a code sent to the account's email, or one from its
+  // authenticator app (or a recovery code).
+  function askCode(ticket, sentTo, app) {
     ['login', 'providers', 'or', 'others'].forEach(function (id) { $(id).hidden = true; });
-    document.title = 'Check your email';
-    document.querySelector('h1').textContent = 'Check your email';
-    document.querySelector('main > p').textContent = 'Enter the code sent to ' + sentTo + '.';
+    var title = app ? 'Authenticator code' : 'Check your email';
+    document.title = title;
+    document.querySelector('h1').textContent = title;
+    document.querySelector('main > p').textContent = app
+      ? 'Enter the code from your authenticator app, or a recovery code.'
+      : 'Enter the code sent to ' + sentTo + '.';
     form('code', function () { return { ticket: ticket, code: $('otp').value.trim() }; });
   }
 

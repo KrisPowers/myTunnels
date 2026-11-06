@@ -18,6 +18,8 @@ const PREFIX: &str = "enc1:";
 pub fn is_secret(key: &str) -> bool {
     matches!(key, "cf_token" | "cf_tunnel_token" | "smtp" | "token_key")
         || key.starts_with("oauth_")
+        || key.starts_with("totp:")
+        || key.starts_with("totp_pending:")
 }
 
 pub fn is_sealed(value: &str) -> bool {

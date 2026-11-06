@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
-import { api, message, TOKEN_URL, type Account, type AdminAccount, type Route, type Settings as Saved, type Status } from "./api";
+import { useEffect, useState, type FormEvent } from "react";
+import { api, message, TOKEN_URL, type Account, type AdminAccount, type Route, type Settings as Saved, type Status, type TotpSetup } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { loadLook, saveLook, type Look } from "./prefs";
-import { Card, Row, SaveField, useNotify, ValueRow } from "./ui";
+import { Callout, Card, Dialog, Row, SaveField, TextField, useNotify, ValueRow } from "./ui";
 
 // The sections, in the order the sidebar lists them.
 export const SETTINGS: [string, string, IconName][] = [
@@ -67,6 +67,7 @@ function AdminAccountCard() {
       <Card title="Your account" sub="Sign in with either the email or the username. Your details are changed under Security & Roles, Users.">
         <Row title="Email" sub={account.email || "None"} />
         <Row title="Username" sub={account.username || "None"} />
+        <Authenticator on={account.totp} onChange={(totp) => setAccount({ ...account, totp })} />
       </Card>
     );
   }
@@ -74,7 +75,95 @@ function AdminAccountCard() {
     <Card title="Admin account" sub="Sign in with either the email or the username.">
       <ValueRow title="Email" type="email" value={account.email ?? ""} onSave={(email) => api.editAccount({ email }).then(setAccount)} />
       <ValueRow title="Username" value={account.username ?? ""} onSave={(username) => api.editAccount({ username }).then(setAccount)} />
+      <Authenticator on={account.totp} onChange={(totp) => setAccount({ ...account, totp })} />
     </Card>
+  );
+}
+
+// Authenticator is the account's authenticator app: set up with a QR code and a
+// first code, which shows the recovery codes once; turned off with a code.
+function Authenticator({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  const [open, setOpen] = useState(false);
+  const [setup, setSetup] = useState<TotpSetup | null>(null);
+  const [recovery, setRecovery] = useState<string[] | null>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const notify = useNotify();
+
+  const begin = async () => {
+    setProblem("");
+    setCode("");
+    setRecovery(null);
+    setSetup(null);
+    setOpen(true);
+    if (on) return;
+    try {
+      setSetup(await api.startTotp());
+    } catch (err) {
+      setProblem(message(err));
+    }
+  };
+  const close = () => {
+    setOpen(false);
+    if (recovery) onChange(true);
+  };
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setProblem("");
+    try {
+      if (on) {
+        await api.removeTotp(code);
+        onChange(false);
+        setOpen(false);
+        notify("Authenticator app turned off");
+      } else {
+        setRecovery((await api.confirmTotp(code)).recovery);
+      }
+    } catch (err) {
+      setProblem(message(err));
+    }
+    setBusy(false);
+  };
+
+  return (
+    <>
+      <Row title="Authenticator app" sub={on ? "On. Every sign-in asks for a code from the app." : "Off. Ask for a code from an app such as Aegis, 2FAS or Google Authenticator at every sign-in."}>
+        <button type="button" className="btn text" onClick={begin}>{on ? "Turn off" : "Set up"}</button>
+      </Row>
+      {open && (
+        <Dialog title={on ? "Turn off the authenticator app" : recovery ? "Recovery codes" : "Set up an authenticator app"} onClose={close}>
+          {recovery ? (
+            <div className="edit-block">
+              <p className="empty-note">Each works once, in place of a code from the app. Keep them somewhere safe; they are not shown again.</p>
+              <ul className="recovery-codes mono">{recovery.map((c) => <li key={c}>{c}</li>)}</ul>
+              <div className="edit-actions">
+                <button type="button" className="btn primary" onClick={close}>Done</button>
+              </div>
+            </div>
+          ) : (
+            <form className="edit-block" onSubmit={submit}>
+              {!on && setup && (
+                <>
+                  <img className="totp-qr" src={`data:image/svg+xml;utf8,${encodeURIComponent(setup.qr)}`} alt="QR code for the authenticator app" width={200} height={200} />
+                  <p className="empty-note">Scan it with the app, or enter this key: <span className="mono">{setup.secret}</span></p>
+                </>
+              )}
+              <TextField label={on ? "Code from the app, or a recovery code" : "Code from the app"} mono autoFocus inputMode="numeric" autoComplete="one-time-code"
+                value={code} onChange={(v) => setCode(v.replace(/\D/g, "").slice(0, on ? 10 : 6))} />
+              {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
+              <div className="edit-actions">
+                <button type="button" className="btn text" onClick={close}>Cancel</button>
+                <button className="btn primary" disabled={busy || (!on && !setup) || !(code.length === 6 || (on && code.length === 10))}>
+                  {busy && <span className="spinner small on-accent" />}{on ? "Turn off" : "Turn on"}
+                </button>
+              </div>
+            </form>
+          )}
+        </Dialog>
+      )}
+    </>
   );
 }
 

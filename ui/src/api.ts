@@ -370,10 +370,14 @@ export interface Smtp {
 export interface TwoFactor { smtp: Smtp | null; enabled: boolean; admin_email: string | null }
 
 // A sign-in that went through, or one waiting on an emailed code.
-export interface SignedIn { ok?: boolean; code_required?: boolean; ticket?: string; sent_to?: string }
+// `app`: the code comes from the account's authenticator app, not an email.
+export interface SignedIn { ok?: boolean; code_required?: boolean; ticket?: string; sent_to?: string; app?: boolean }
 
 // The account signed in: the admin's, or another account's own.
-export interface AdminAccount { username: string | null; email: string | null; admin: boolean }
+export interface AdminAccount { username: string | null; email: string | null; admin: boolean; totp: boolean }
+
+// An authenticator app being set up: its secret, the link, and the link as a QR code (SVG).
+export interface TotpSetup { secret: string; uri: string; qr: string }
 
 // What an account may do on the dashboard, by feature. The admin may do all.
 export interface Permission { key: string; label: string; hint: string }
@@ -410,6 +414,9 @@ export const api = {
 
   account: () => call<AdminAccount>("/account"),
   editAccount: (patch: Partial<{ username: string; email: string }>) => call<AdminAccount>("/account", "PATCH", patch),
+  startTotp: () => call<TotpSetup>("/account/totp", "POST"),
+  confirmTotp: (code: string) => call<{ recovery: string[] }>("/account/totp", "PUT", { code }),
+  removeTotp: (code: string) => call("/account/totp", "DELETE", { code }),
 
   oauth: () => call<OAuthState>("/oauth"),
   saveOAuth: (id: string, body: Partial<{ client_id: string; client_secret: string; name: string; issuer: string }>) =>

@@ -83,7 +83,12 @@ pub enum Outcome {
     /// Signed in: the session token.
     Session(String),
     /// A code was emailed: its ticket, and where it went.
-    Code { ticket: String, sent_to: String },
+    Code {
+        ticket: String,
+        sent_to: String,
+        /// The code comes from the account's authenticator app, not an email.
+        app: bool,
+    },
     /// Refused, and why.
     Refused(String),
 }
