@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api, LEVELS, list, message, strength, TOKEN_URL, type Account, type Auth } from "./api";
 import { Dropdown } from "./Dropdown";
 import { Icon } from "./Icon";
 import { dismissed, passkeysWork, signWithPasskey } from "./passkey";
+import { solve, type Proof } from "./pow";
 import { Callout, TextField } from "./ui";
 
 const STEPS = ["Admin account", "Cloudflare"];
@@ -78,6 +79,16 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   const [waiting, setWaiting] = useState<{ ticket: string; sentTo: string; app: boolean } | null>(null);
+  // The puzzle a sign-in carries, solved in the background while the password is
+  // typed, and again after each try.
+  const proof = useRef<Promise<Proof> | null>(null);
+  const puzzle = () => {
+    proof.current = api.challenge().then(solve);
+    proof.current.catch(() => {});
+  };
+  useEffect(() => {
+    if (!create) puzzle();
+  }, [create]);
   const rating = strength(password);
   const ready = create
     ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && username.trim().length >= 2 && rating.ok
@@ -104,7 +115,9 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
       if (create) {
         await api.createAccount(email.trim(), username.trim(), password);
       } else {
-        const r = await api.login(login.trim(), password);
+        const pow = await proof.current?.catch(() => undefined);
+        puzzle();
+        const r = await api.login(login.trim(), password, pow);
         if (r.code_required && r.ticket) {
           setWaiting({ ticket: r.ticket, sentTo: r.sent_to || "your email", app: !!r.app });
           setBusy(false);

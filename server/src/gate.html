@@ -141,6 +141,41 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
     });
   }
 
+  // Before a password is checked, this browser solves a small puzzle: a number that,
+  // hashed with the page's one-time challenge, starts with enough zero bits. It
+  // starts as the page opens, so a person never waits; a bot pays it every try.
+  var proof = null;
+  function zeroBits(b) {
+    var n = 0;
+    for (var i = 0; i < b.length; i++) {
+      if (b[i] === 0) { n += 8; continue; }
+      return n + Math.clz32(b[i]) - 24;
+    }
+    return n;
+  }
+  function solve(p) {
+    var text = new TextEncoder();
+    function from(start) {
+      var jobs = [];
+      for (var i = 0; i < 1024; i++) jobs.push(crypto.subtle.digest('SHA-256', text.encode(p.seed + ':' + (start + i))));
+      return Promise.all(jobs).then(function (hashes) {
+        for (var j = 0; j < hashes.length; j++) {
+          if (zeroBits(new Uint8Array(hashes[j])) >= p.bits) return { seed: p.seed, nonce: String(start + j) };
+        }
+        return from(start + 1024);
+      });
+    }
+    return from(0);
+  }
+  function puzzle(p) {
+    proof = p && p.seed && window.crypto && crypto.subtle ? solve(p) : null;
+    if (proof) proof.catch(function () {});
+  }
+  function freshPuzzle() {
+    post('/__gate/pow', {}).then(puzzle).catch(function () {});
+  }
+  puzzle(data.pow);
+
   function form(id, build) {
     var el = $(id), error = $(id + '-error'), button = el.querySelector('button');
     el.hidden = false;
@@ -149,7 +184,14 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
       e.preventDefault();
       button.disabled = true;
       error.textContent = '';
-      post('/__gate/' + id, build()).then(function (r) {
+      var guarded = id === 'login' || id === 'password';
+      var solved = guarded && proof ? proof.catch(function () { return null; }) : Promise.resolve(null);
+      solved.then(function (pow) {
+        var body = build();
+        if (pow) body.pow = pow;
+        if (guarded) freshPuzzle();
+        return post('/__gate/' + id, body);
+      }).then(function (r) {
         if (r.code_required) return askCode(r.ticket, r.sent_to, r.app);
         if (r.ok && r.offer_passkey && passkeys) return offerPasskey();
         if (r.ok) return data.path ? location.replace(data.path) : back();

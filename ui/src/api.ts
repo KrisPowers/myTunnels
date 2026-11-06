@@ -1,4 +1,5 @@
 import type { CreateOptions, GetOptions } from "./passkey";
+import type { Challenge, Proof } from "./pow";
 export type PolicyMode = "all" | "any";
 
 export interface Route {
@@ -412,7 +413,8 @@ async function call<T>(path: string, method = "GET", body?: unknown): Promise<T>
 export const api = {
   auth: () => call<Auth>("/auth"),
   createAccount: (email: string, username: string, password: string) => call("/auth/setup", "POST", { email, username, password }),
-  login: (login: string, password: string) => call<SignedIn>("/auth/login", "POST", { login, password }),
+  challenge: () => call<Challenge>("/auth/challenge", "POST"),
+  login: (login: string, password: string, pow?: Proof) => call<SignedIn>("/auth/login", "POST", { login, password, pow }),
   loginCode: (ticket: string, code: string) => call("/auth/code", "POST", { ticket, code }),
   logout: () => call("/auth/logout", "POST"),
 

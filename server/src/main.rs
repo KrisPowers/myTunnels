@@ -15,6 +15,7 @@ mod netinfo;
 mod oauth;
 mod passkey;
 mod permissions;
+mod pow;
 mod proxy;
 mod secret;
 mod state;
