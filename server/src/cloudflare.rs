@@ -185,17 +185,24 @@ impl<'a> Cloudflare<'a> {
         Ok(token)
     }
 
-    pub async fn put_ingress(
-        &self,
-        account_id: &str,
-        tunnel_id: &str,
-        ingress: Vec<Value>,
-    ) -> Result<()> {
+    /// The tunnel's remote configuration, `null` when it has none yet.
+    pub async fn tunnel_config(&self, account_id: &str, tunnel_id: &str) -> Result<Value> {
+        let (result, _): (Value, _) = self
+            .call(
+                Method::GET,
+                &format!("/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations"),
+                None,
+            )
+            .await?;
+        Ok(result.get("config").cloned().unwrap_or(Value::Null))
+    }
+
+    pub async fn put_config(&self, account_id: &str, tunnel_id: &str, config: Value) -> Result<()> {
         let _: (Value, _) = self
             .call(
                 Method::PUT,
                 &format!("/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations"),
-                Some(json!({ "config": { "ingress": ingress } })),
+                Some(json!({ "config": config })),
             )
             .await?;
         Ok(())
