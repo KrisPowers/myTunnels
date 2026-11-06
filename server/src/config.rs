@@ -3,6 +3,8 @@ use std::path::PathBuf;
 pub struct Config {
     /// Where the admin panel and its API listen.
     pub admin_addr: String,
+    /// Where the panel listens over HTTPS, unless set to `off`.
+    pub admin_tls_addr: Option<String>,
     /// Where the access gateway listens. cloudflared is its only client.
     pub gate_addr: String,
     /// The gateway address as cloudflared should reach it.
@@ -27,6 +29,8 @@ impl Config {
         let gate_addr = var("GATE_ADDR", "127.0.0.1:7080");
         Self {
             admin_addr: var("ADMIN_ADDR", "0.0.0.0:7070"),
+            admin_tls_addr: Some(var("ADMIN_TLS_ADDR", "0.0.0.0:7443"))
+                .filter(|a| !a.eq_ignore_ascii_case("off")),
             gate_service: format!("http://{}", gate_addr.replace("0.0.0.0", "127.0.0.1")),
             gate_addr,
             data_dir: var("DATA_DIR", "data").into(),

@@ -14,10 +14,11 @@ chacha20poly1305 = "0.10"
 hex = "0.4"
 hmac = "0.12"
 hyper = { version = "1", features = ["client", "http1", "server"] }
-hyper-util = { version = "0.1", features = ["tokio"] }
+hyper-util = { version = "0.1", features = ["service", "tokio"] }
 http-body-util = "0.1"
 lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "smtp-transport", "tokio1-rustls-tls"] }
 rand = "0.8"
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem", "ring"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
@@ -25,6 +26,7 @@ serde_json = "1"
 sha2 = "0.10"
 sysinfo = { version = "0.37", default-features = false, features = ["component", "disk", "network", "system"] }
 tokio = { version = "1", features = ["full"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "ring", "tls12"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs"] }

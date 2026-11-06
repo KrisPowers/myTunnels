@@ -301,6 +301,8 @@ fn approved_here<'a>(
 async fn dashboard(panel: Router, ip: Option<IpAddr>, mut req: Request) -> Response {
     let peer = SocketAddr::new(ip.unwrap_or(IpAddr::from([0, 0, 0, 0])), 0);
     req.extensions_mut().insert(ConnectInfo(peer));
+    // Tunnels are only ever reached over HTTPS.
+    req.extensions_mut().insert(crate::tls::Https);
     let mut response = match panel.oneshot(req).await {
         Ok(response) => response,
         Err(never) => match never {},
