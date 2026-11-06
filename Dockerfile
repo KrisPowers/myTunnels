@@ -30,10 +30,18 @@ FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git \
         ghostscript imagemagick libheif-examples unar \
+        python3 python3-venv \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home /data app \
     && mkdir -p /data /keys \
     && chown app /data /keys
+# Remove background: rembg on ONNX Runtime, its model fetched once here so
+# nothing is downloaded while the app runs.
+ENV REMBG_HOME=/opt/rembg/models
+RUN python3 -m venv /opt/rembg \
+    && /opt/rembg/bin/pip install --no-cache-dir "rembg[cpu]==2.0.87" \
+    && /opt/rembg/bin/python -c "from rembg import new_session; new_session('isnet-general-use')"
+COPY --chmod=755 server/cutout /usr/local/bin/cutout
 # ImageMagick reads and writes only the photo formats Convert uses.
 COPY server/imagemagick-policy.xml /etc/ImageMagick-6/policy.xml
 COPY --from=cloudflared /usr/local/bin/cloudflared /usr/local/bin/cloudflared

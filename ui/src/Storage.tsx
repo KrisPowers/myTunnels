@@ -267,7 +267,7 @@ function SharesDialog({ onClose }: { onClose: () => void }) {
 
 // ---- converting ----
 
-const FORMATS: Record<string, string> = { jpg: "JPEG", webp: "WebP", mp4: "MP4 (H.264)", pdf: "PDF" };
+const FORMATS: Record<string, string> = { jpg: "JPEG", webp: "WebP", mp4: "MP4 (H.264)", pdf: "PDF", cutout: "No background", "cutout-white": "White background" };
 const QUALITIES: Option<Quality>[] = [
   { value: "high", label: "Best quality" },
   { value: "medium", label: "Balanced" },
@@ -281,6 +281,8 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 export interface Converter {
   // Asks how to convert these files, all of one kind, from one space.
   open: (space: Space, paths: string[]) => void;
+  // Asks what to put behind photos once their background is removed.
+  cutout: (space: Space, paths: string[]) => void;
   // The conversions under way and done, at the bottom right.
   panel: ReactNode;
 }
@@ -290,6 +292,7 @@ export interface Converter {
 function useConvert(onFinished: () => void): Converter {
   const [state, setState] = useState<ConvertState | null>(null);
   const [asking, setAsking] = useState<{ space: Space; paths: string[]; kind: ConvertKind } | null>(null);
+  const [cutting, setCutting] = useState<{ space: Space; paths: string[] } | null>(null);
   const [hidden, setHidden] = useState(false);
   const [small, setSmall] = useState(false);
   const notify = useNotify();
@@ -353,16 +356,24 @@ function useConvert(onFinished: () => void): Converter {
     </section>
   );
 
-  const dialog = asking && state && (
-    <ConvertDialog {...asking} kinds={state.kinds} onClose={() => setAsking(null)}
-      onStarted={async (n) => {
-        setAsking(null);
-        setHidden(false);
-        notify(`Converting ${plural(n, "file")}`);
-        await load();
-      }} />
+  const started = async (n: number) => {
+    setAsking(null);
+    setCutting(null);
+    setHidden(false);
+    notify(`Converting ${plural(n, "file")}`);
+    await load();
+  };
+  const cutout = (space: Space, paths: string[]) => {
+    if (!paths.every((p) => convertKind(p) === "photo")) return notify("Pick photos to remove their background", "bad");
+    setCutting({ space, paths });
+  };
+  const dialog = (
+    <>
+      {asking && state && <ConvertDialog {...asking} kinds={state.kinds} onClose={() => setAsking(null)} onStarted={started} />}
+      {cutting && <CutoutDialog {...cutting} onClose={() => setCutting(null)} onStarted={started} />}
+    </>
   );
-  return { open, panel: <>{panel}{dialog}</> };
+  return { open, cutout, panel: <>{panel}{dialog}</> };
 }
 
 function JobRow({ job, onCancel }: { job: ConvertJob; onCancel: () => void }) {
@@ -383,6 +394,44 @@ function JobRow({ job, onCancel }: { job: ConvertJob; onCancel: () => void }) {
         <a className="icon-btn small" href={fileUrl(job.output, true, job.space)} target="_blank" rel="noopener" aria-label={`Open ${name}`}><Icon name="open_in_new" size={16} /></a>
       ) : <span />}
     </li>
+  );
+}
+
+const BACKGROUNDS: Option<string>[] = [
+  { value: "cutout", label: "Transparent (PNG)" },
+  { value: "cutout-white", label: "White (JPEG)" },
+];
+
+// CutoutDialog asks what goes behind a photo's subject once its background is
+// removed. Each result is saved beside its photo.
+function CutoutDialog({ space, paths, onClose, onStarted }: { space: Space; paths: string[]; onClose: () => void; onStarted: (n: number) => void }) {
+  const [to, setTo] = useState("cutout");
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+  const submit = async () => {
+    setBusy(true);
+    try {
+      onStarted((await api.startConvert({ space, paths, to, size: 0, quality: "high" })).queued);
+    } catch (e) {
+      notify(message(e), "bad");
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog title={paths.length === 1 ? `Remove the background of ${baseName(paths[0])}` : `Remove the background of ${plural(paths.length, "photo")}`} onClose={onClose}>
+      <div className="cv-picker">
+        <div className="cv-bar-row">
+          <div className="ex-pick"><Dropdown label="Background" value={to} options={BACKGROUNDS} onChange={setTo} /></div>
+        </div>
+        <p className="muted">The subject is cut out on this server and saved beside the original, which is never changed.</p>
+        <div className="edit-actions">
+          <button type="button" className="btn text" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn primary" autoFocus disabled={busy} onClick={submit}>
+            {busy && <span className="spinner small on-accent" />}Remove background
+          </button>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 

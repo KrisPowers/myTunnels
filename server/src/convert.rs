@@ -43,8 +43,13 @@ const VIDEOS: &[&str] = &[
 /// Read by libheif rather than ImageMagick.
 const HEIF: &[&str] = &["heic", "heif", "avif"];
 
+/// Removing a photo's background: its subject on a transparent PNG, or on
+/// white as a JPEG. Offered beside a photo's formats, and made with rembg.
+const CUTOUTS: [&str; 2] = ["cutout", "cutout-white"];
+
 /// The longest each kind of job may run before it is stopped.
 const PHOTO_LIMIT: Duration = Duration::from_secs(5 * 60);
+const CUTOUT_LIMIT: Duration = Duration::from_secs(15 * 60);
 const PDF_LIMIT: Duration = Duration::from_secs(15 * 60);
 const VIDEO_LIMIT: Duration = Duration::from_secs(12 * 3600);
 
@@ -196,7 +201,10 @@ pub async fn list(Extension(caller): Extension<Caller>) -> Json<Value> {
         .collect();
     let kinds: Vec<Value> = [Kind::Photo, Kind::Video, Kind::Pdf]
         .iter()
-        .map(|k| json!({ "kind": k, "formats": k.formats(), "sizes": k.sizes() }))
+        .map(|k| {
+            let cutouts: &[&str] = if *k == Kind::Photo { &CUTOUTS } else { &[] };
+            json!({ "kind": k, "formats": k.formats(), "sizes": k.sizes(), "cutouts": cutouts })
+        })
         .collect();
     Json(json!({ "jobs": jobs, "kinds": kinds }))
 }
@@ -238,9 +246,11 @@ pub async fn start(
         let name = rel.last().ok_or_else(|| ApiError::bad("Pick a file"))?;
         let kind =
             kind_of(name).ok_or_else(|| ApiError::bad(format!("{name} cannot be converted")))?;
+        let cutouts: &[&'static str] = if kind == Kind::Photo { &CUTOUTS } else { &[] };
         let to = kind
             .formats()
             .iter()
+            .chain(cutouts)
             .copied()
             .find(|f| *f == order.to)
             .ok_or_else(|| ApiError::bad(format!("{name} cannot become {}", order.to)))?;
@@ -378,6 +388,19 @@ fn heif_temp(dir: &Path, work: &Work) -> PathBuf {
     dir.join(format!(".{}.convert.png", work.id))
 }
 
+fn cutout_temp(dir: &Path, work: &Work) -> PathBuf {
+    dir.join(format!(".{}.cutout.png", work.id))
+}
+
+/// The ending a job's copy gets, and what is added to its name.
+fn naming(to: &str) -> (&str, &str) {
+    match to {
+        "cutout" => ("png", " (no background)"),
+        "cutout-white" => ("jpg", " (white background)"),
+        other => (other, ""),
+    }
+}
+
 /// Removes what a job that did not finish left behind.
 async fn clean(state: &AppState, work: &Work) {
     let Ok(store) = Store::open(state, work.space) else {
@@ -412,13 +435,17 @@ async fn run(state: AppState, work: Work) -> ApiResult<(String, u64)> {
 
     // "clip.mov" becomes "clip.mp4", or "clip (2).mp4" when that is taken.
     let name = &rel[rel.len() - 1];
-    let stem = name.rsplit_once('.').map_or(name.as_str(), |(s, _)| s);
+    let (ext, added) = naming(work.to);
+    let stem = format!(
+        "{}{added}",
+        name.rsplit_once('.').map_or(name.as_str(), |(s, _)| s)
+    );
     let mut n = 1;
     let (target, path) = loop {
         let file = if n == 1 {
-            format!("{stem}.{}", work.to)
+            format!("{stem}.{ext}")
         } else {
-            format!("{stem} ({n}).{}", work.to)
+            format!("{stem} ({n}).{ext}")
         };
         let mut path = rel[..rel.len() - 1].to_vec();
         path.push(file.clone());
@@ -438,7 +465,13 @@ async fn run(state: AppState, work: Work) -> ApiResult<(String, u64)> {
             let _ = file.set_modified(modified);
         }
     }
-    if let (Some(from), Some(to)) = (store.thumb(&rel), store.thumb(&path)) {
+    // A cut-out shows itself; the original's preview still has its background.
+    let thumbs = if CUTOUTS.contains(&work.to) {
+        None
+    } else {
+        store.thumb(&rel).zip(store.thumb(&path))
+    };
+    if let Some((from, to)) = thumbs {
         if let Some(parent) = to.parent() {
             let _ = tokio::fs::create_dir_all(parent).await;
         }
@@ -535,6 +568,13 @@ async fn photo(source: &Path, out: &Path, dir: &Path, work: &Work) -> ApiResult<
         exec("heif-convert", cmd, PHOTO_LIMIT).await?;
         input = png;
     }
+    if CUTOUTS.contains(&work.to) {
+        let result = cutout(&input, out, dir, work, quality).await;
+        if input != source {
+            let _ = tokio::fs::remove_file(&input).await;
+        }
+        return result;
+    }
     let (Some(from), Some(to)) = (coder(&ext_of(&input.to_string_lossy())), coder(work.to)) else {
         return Err(ApiError::bad("This kind of photo cannot be converted"));
     };
@@ -555,6 +595,38 @@ async fn photo(source: &Path, out: &Path, dir: &Path, work: &Work) -> ApiResult<
     if input != source {
         let _ = tokio::fs::remove_file(&input).await;
     }
+    result
+}
+
+/// Cuts the subject out of a photo with rembg, then sizes it and puts it on a
+/// transparent PNG, or on white as a JPEG.
+async fn cutout(input: &Path, out: &Path, dir: &Path, work: &Work, quality: &str) -> ApiResult<()> {
+    let cut = cutout_temp(dir, work);
+    let mut cmd = program("cutout");
+    cmd.arg(input).arg(&cut);
+    let made = exec("Remove background", cmd, CUTOUT_LIMIT).await;
+    if made.is_err() {
+        let _ = tokio::fs::remove_file(&cut).await;
+        return made;
+    }
+    let mut source = std::ffi::OsString::from("png:");
+    source.push(&cut);
+    let mut cmd = program("convert");
+    cmd.arg(source);
+    if work.size > 0 {
+        cmd.arg("-resize").arg(format!("{0}x{0}>", work.size));
+    }
+    let mut target = if work.to == "cutout-white" {
+        cmd.args(["-background", "white", "-alpha", "remove", "-alpha", "off"]);
+        cmd.arg("-quality").arg(quality);
+        std::ffi::OsString::from("jpeg:")
+    } else {
+        std::ffi::OsString::from("png:")
+    };
+    target.push(out);
+    cmd.arg(target);
+    let result = exec("ImageMagick", cmd, PHOTO_LIMIT).await;
+    let _ = tokio::fs::remove_file(&cut).await;
     result
 }
 
@@ -684,5 +756,12 @@ mod tests {
             assert_eq!(kind.sizes()[0], 0);
             assert!(!kind.formats().is_empty());
         }
+    }
+
+    #[test]
+    fn cut_outs_are_named_for_what_they_are() {
+        assert_eq!(naming("cutout"), ("png", " (no background)"));
+        assert_eq!(naming("cutout-white"), ("jpg", " (white background)"));
+        assert_eq!(naming("webp"), ("webp", ""));
     }
 }

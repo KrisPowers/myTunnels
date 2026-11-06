@@ -156,6 +156,11 @@ format or smaller:
   4K, 1080p, 720p or 480p. They are made with ffmpeg.
 - **PDFs** are compressed with Ghostscript.
 
+**Remove background**, in a photo's menu, cuts the subject out on this server with rembg and its
+`isnet-general-use` model, which the image fetches when it is built, so nothing is sent anywhere.
+The result goes on a transparent PNG or on white as a JPEG, saved beside the photo as
+`<name> (no background).png` or `<name> (white background).jpg`, in the same queue as conversions.
+
 Each has **Best quality**, **Balanced** or **Smallest file**. The copy is saved beside the
 original, named after it (`clip.mov` becomes `clip.mp4`, or `clip (2).mp4` when that is taken),
 keeping its date and, for photos and videos, its preview; the original is never changed.
