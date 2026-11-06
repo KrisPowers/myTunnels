@@ -126,30 +126,25 @@ this host's network or a trusted one.
 Cloudflare refuses a single request over 100 MB, so the first push of a very large repository
 goes from this computer, or in parts. Git needs `git`, which the image includes.
 
-### Media
+### Storage
 
-**Media** is a home cloud for photos and videos, not tied to any folder you pick: everything
-uploaded is kept by myTunnels in `/data/media`. It is laid out like a photo library: newest
-first, grouped by month, with **All**, **Photos** and **Videos** to narrow it. Open one to see
-it full size, step through with the arrow keys, download or delete it. Tick several to
-download or delete them together. **Upload**, or drag photos and videos onto the page; each
-keeps the date it was last changed on the device it came from, and the browser makes a small
-preview of it as it goes up.
+**Storage** is a home cloud for your files, not tied to any folder you pick: everything uploaded is
+kept by myTunnels under `/data`. It has two tabs.
 
-### Drive
+- **Photos and videos** (`/data/media`) is laid out like a photo library: newest first, grouped by
+  month, narrowed to photos or videos. Open one to see it full size, step through with the arrow
+  keys, download or delete it. Tick several to download, convert or delete them together.
+  **Upload**, or drag photos and videos onto the page; each keeps the date it was last changed on
+  the device it came from, and the browser makes a small preview of it as it goes up.
+- **Files** (`/data/drive`) keeps documents: Word and other text documents, spreadsheets,
+  presentations and PDFs, in folders of your own. Each kind has its colour and a chip to show only
+  that kind; files show as cards or as a list, by name or by when they last changed. PDFs and text
+  files open in a new tab, the rest download. **New** makes a folder or uploads files, which can
+  also be dragged onto the page; right-click an item to open, download, convert, rename or delete
+  it.
 
-**Drive** keeps documents: Word and other text documents, spreadsheets, presentations and
-PDFs, in folders of your own, in `/data/drive`. Each kind has its colour and a chip to show
-only that kind; files show as cards or as a list, by name or by when they last changed. PDFs
-and text files open in a new tab, the rest download. **New** makes a folder or uploads files,
-which can also be dragged onto the page; right-click an item to open, download, rename or
-delete it.
-
-### Convert
-
-**Convert** makes a copy of a photo, video or PDF kept in Media or Drive, in another format or
-smaller. **Convert** opens a picker over Media (photos or videos) and Drive (its folders and
-PDFs), with the choices for what is picked:
+**Convert**, in an item's menu or for the photos and videos you tick, makes a copy in another
+format or smaller:
 
 - **Photos** become JPEG or WebP, at their own size or with the longest side 3840, 2560, 1920
   or 1280 pixels. HEIC and AVIF photos from phones are read with libheif, the rest with
@@ -160,16 +155,15 @@ PDFs), with the choices for what is picked:
 
 Each has **Best quality**, **Balanced** or **Smallest file**. The copy is saved beside the
 original, named after it (`clip.mov` becomes `clip.mp4`, or `clip (2).mp4` when that is taken),
-keeping its date and, in Media, its preview; the original is never changed. Jobs wait in a queue
-and run one at a time at low priority, so a long video does not slow the gateway; the page lists
-them with their progress, and each one's menu opens, downloads, cancels or clears it. **Convert**
-in a file's menu in Media or Drive opens the picker with that file picked.
+keeping its date and, for photos and videos, its preview; the original is never changed.
+Conversions wait in a queue and run one at a time at low priority, so a long video does not slow
+the gateway; a panel at the bottom right follows them, opens what is done and cancels what is not.
 
-Convert needs, for a collection, the permissions to view it and to add to it (**Upload photos and
-videos** for Media, **Upload and change documents** for Drive).
+Converting needs, for a tab, the permissions to view it and to add to it (**Upload photos and
+videos**, or **Upload and change documents**).
 
-Media and Drive take only their own kinds of file, and both are in the dashboard alone, so
-publish the dashboard through a tunnel to reach them from anywhere.
+Each tab takes only its own kinds of file. Storage is in the dashboard alone, so publish the
+dashboard through a tunnel to reach it from anywhere.
 
 ## Accounts and permissions
 
@@ -179,7 +173,7 @@ set it up:
 - **Permissions**, a card per feature: **Sign in to the dashboard**, then what it may do there,
   such as viewing containers or starting and stopping them, publishing, changing or removing
   tunnels, approving devices, managing accounts, viewing, pushing to, creating and deleting
-  repositories in Git, opening issues and pull requests, uploading and deleting in Media and Drive, and the settings pages.
+  repositories in Git, opening issues and pull requests, uploading and deleting in Storage, and the settings pages.
 - **Profile**: its details; **Security**, with its password, status and the devices it signs in
   from; and **Tunnels**, the tunnels it may open, added with **+** and removed with each one's
   **x**. **Suspend** in the menu stops it signing in anywhere until reinstated.

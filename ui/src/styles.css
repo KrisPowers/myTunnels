@@ -975,9 +975,14 @@ a.result:hover { background: var(--hover); }
 .icon.kind.audio { color: light-dark(#a142f4, #d7aefb); }
 .icon.kind.document { color: var(--s1); }
 
-/* Files going up, at the bottom right. */
+/* Files going up and conversions under way, stacked at the bottom right. */
+.ex-dock {
+  position: fixed; right: 24px; bottom: 24px; z-index: 80; width: min(380px, calc(100vw - 32px));
+  display: flex; flex-direction: column; gap: 12px; pointer-events: none;
+}
+.ex-dock > * { pointer-events: auto; }
 .ex-uploads {
-  position: fixed; right: 24px; bottom: 24px; z-index: 80; width: min(380px, calc(100vw - 32px)); max-height: 50vh;
+  width: 100%; max-height: 40vh;
   display: flex; flex-direction: column; border-radius: var(--card-round); background: var(--raised); box-shadow: var(--shadow);
   overflow: hidden; animation: rise .2s var(--ease) both;
 }
@@ -1298,8 +1303,7 @@ a.result.thread-row:hover .scan-target { color: var(--accent); }
 .d-file.pdf, .d-row-name.pdf, .d-chip.pdf { --k: var(--bad); }
 .d-file.text, .d-row-name.text, .d-chip.text { --k: var(--text-2); }
 /* The title is the folder's path, each folder on the way a step back. */
-.page-head h1.d-crumbs { display: flex; align-items: center; overflow-x: auto; scrollbar-width: none; }
-.d-crumbs > .ex-crumb-wrap:first-child > .d-crumb { margin-left: -8px; }
+.st-crumbs { display: flex; align-items: center; margin: -8px 0 16px -8px; overflow-x: auto; scrollbar-width: none; font-size: 16px; }
 .d-crumb {
   display: inline-flex; align-items: center; height: 36px; padding: 0 8px; border: 0; border-radius: var(--card-round);
   background: transparent; color: var(--text-2); font: inherit; white-space: nowrap; cursor: pointer;
@@ -1362,28 +1366,6 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .mfa-actions { display: flex; gap: 8px; }
 
 /* ---- Convert: the queue, and a picker over Media and Drive ---- */
-.cv-table td { height: 58px; }
-.cv-table td:first-child { max-width: 0; width: 100%; }
-.cv-name { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.cv-kind { flex-shrink: 0; color: var(--text-2); }
-.cv-name-text { display: grid; gap: 2px; min-width: 0; }
-.cv-name-text b { overflow: hidden; font-weight: 600; text-overflow: ellipsis; }
-.cv-name-text small { overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; }
-.cv-name-text small.bad { color: var(--bad); }
-.cv-bar { display: block; width: min(240px, 100%); height: 3px; margin-top: 2px; border-radius: 3px; background: var(--line); overflow: hidden; }
-.cv-bar span { display: block; height: 100%; background: var(--accent); transition: width .4s linear; }
-.cv-menu { width: 1%; text-align: right; }
 .cv-picker { display: grid; gap: 14px; }
 .cv-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .cv-bar-row .ex-pick .dropdown { min-width: 130px; }
-.cv-count { margin-left: auto; color: var(--text-2); font-size: 13px; }
-.cv-crumbs { display: flex; align-items: center; margin: -6px 0 -6px -8px; overflow-x: auto; scrollbar-width: none; }
-.cv-pick { display: grid; height: min(46vh, 380px); overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); }
-.cv-pick > .spinner, .cv-pick > .callout, .cv-empty { place-self: center; }
-.cv-grid { align-content: start; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 2px; padding: 2px; }
-.cv-list { list-style: none; margin: 0; padding: 4px 0; align-self: start; }
-.cv-list .d-row-name { display: flex; width: 100%; height: 40px; padding: 0 14px; }
-.cv-list .d-row-name:hover { background: var(--hover); }
-.cv-list .d-row-name.on { background: var(--accent-bg); color: var(--on-accent-bg); }
-.cv-list .d-row-name.on .icon { color: inherit; }
-.cv-list .d-row-name small { margin-left: auto; padding-left: 12px; color: var(--text-3); font-size: 12px; white-space: nowrap; }

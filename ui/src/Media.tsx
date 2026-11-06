@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEve
 import { createPortal } from "react-dom";
 import { bytes, fileUrl, filesIn, message, saveThumb, thumbUrl, type FileEntry, type Listing } from "./api";
 import { MultiDropdown, type Option } from "./Dropdown";
-import { ContextMenu, dropped, extOf, freeName, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Files";
+import { ContextMenu, convertKind, dropped, extOf, freeName, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Files";
 import { Icon } from "./Icon";
 import { useCan } from "./me";
-import { go } from "./route";
+import type { TabProps } from "./Storage";
 import { Callout, Dialog, useNotify } from "./ui";
 
 const media = filesIn("media");
@@ -79,9 +79,10 @@ async function makeThumb(file: File): Promise<Blob | null> {
 const monthOf = (at: number) => new Date(at * 1000).toLocaleDateString([], { month: "long", year: "numeric" });
 const dayOf = (at: number) => new Date(at * 1000).toLocaleDateString([], { dateStyle: "long" });
 
-// MediaPage is a home cloud for photos and videos: everything uploaded, newest
-// first and grouped by month, opened one at a time in a viewer.
-export function MediaPage() {
+// MediaPage is Storage's Photos and videos tab, a home cloud for them:
+// everything uploaded, newest first and grouped by month, opened one at a time
+// in a viewer.
+export function MediaPage({ nav, convert, onReload }: TabProps) {
   const can = useCan();
   const [listing, setListing] = useState<Listing | null>(null);
   const [problem, setProblem] = useState("");
@@ -104,7 +105,8 @@ export function MediaPage() {
   }, []);
   useEffect(() => {
     load();
-  }, [load]);
+    onReload(load);
+  }, [load, onReload]);
 
   const { send, panel } = useUploads("media", load, async (item, path) => {
     const jpeg = await makeThumb(item.file);
@@ -190,7 +192,7 @@ export function MediaPage() {
       { label: "Open", icon: "open_in_new", hidden: targets.length > 1, run: () => setViewing(items.findIndex((e) => e.name === name)) },
       { label: selected.has(name) ? "Unselect" : "Select", icon: "check_circle", run: () => toggle(name) },
       { label: "Download" + many, icon: "download", run: () => download(targets) },
-      { label: "Convert", icon: "swap_horiz", hidden: targets.length > 1 || !can("media.upload"), run: () => go(`#/convert/media/${encodeURIComponent(name)}`) },
+      { label: "Convert" + many, icon: "swap_horiz", hidden: !can("media.upload"), run: () => convert.open("media", targets) },
       { label: "Delete" + many, icon: "delete", danger: true, hidden: !can("media.delete"), run: () => setRemoving(targets) },
     ];
   };
@@ -211,7 +213,7 @@ export function MediaPage() {
       onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setDragging(false)}>
       <div className="page-head">
         <div className="page-head-main">
-          <h1>Media</h1>
+          <h1>Storage</h1>
           {listing && (
             <div className="page-sub">
               <span><b>{photos}</b> photo{photos === 1 ? "" : "s"}</span>
@@ -225,6 +227,7 @@ export function MediaPage() {
             <>
               <span className="m-picked">{selected.size} selected</span>
               <button type="button" className="icon-btn" aria-label="Download" title="Download" onClick={() => download([...selected])}><Icon name="download" /></button>
+              {can("media.upload") && [...selected].every(convertKind) && <button type="button" className="icon-btn" aria-label="Convert" title="Convert" onClick={() => convert.open("media", [...selected])}><Icon name="swap_horiz" /></button>}
               {can("media.delete") && <button type="button" className="icon-btn danger" aria-label="Delete" title="Delete" onClick={() => setRemoving([...selected])}><Icon name="delete" /></button>}
               <button type="button" className="icon-btn" aria-label="Clear selection" title="Clear selection" onClick={() => setSelected(new Set())}><Icon name="close" /></button>
             </>
@@ -238,6 +241,7 @@ export function MediaPage() {
           )}
         </div>
       </div>
+      {nav}
 
       {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
       {listing && (
@@ -297,7 +301,7 @@ export function MediaPage() {
         </Dialog>
       )}
       {menu && <ContextMenu at={menu} items={menuItems(menu.name)} onClose={() => setMenu(null)} />}
-      {panel}
+      <div className="ex-dock">{convert.panel}{panel}</div>
     </div>
   );
 }

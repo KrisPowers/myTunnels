@@ -2,17 +2,18 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEven
 import { api, deviceInfo, message, shortId, type Auth, type Device, type Group, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { GitPage } from "./Git";
 import { ContainersPage } from "./Containers";
-import { ConvertPage } from "./Convert";
+
 import { DashboardPage } from "./Dashboard";
 import { DevicePage, Devices } from "./Devices";
-import { DrivePage } from "./Drive";
+
 import { Icon, type IconName } from "./Icon";
-import { MediaPage } from "./Media";
+
 import { MeContext, useCan } from "./me";
 import { go, readHash } from "./route";
 import { SETTINGS, Settings } from "./Settings";
 import { Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
+import { StoragePage } from "./Storage";
 import { NewTunnel, target, TunnelPage, Tunnels } from "./Tunnels";
 import { NewUser, UserPage, Users } from "./Users";
 import { AdvancedSecurity } from "./Security";
@@ -175,9 +176,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
     ["tunnels", "Tunnels", "public", "#/", can("tunnels.view")],
   ];
   const storage: [string, string, IconName, string, boolean][] = [
-    ["media", "Media", "photo_library", "#/media", can("media.view")],
-    ["drive", "Drive", "cloud", "#/drive", can("drive.view")],
-    ["convert", "Convert", "autorenew", "#/convert", (can("media.view") && can("media.upload")) || (can("drive.view") && can("drive.edit"))],
+    ["storage", "Storage", "cloud", "#/storage", can("media.view") || can("drive.view")],
     ["git", "Git", "git", "#/git", can("code.view")],
   ];
   const admin: [string, string, IconName, string, boolean][] = [
@@ -239,9 +238,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "tunnels" && !id && <Tunnels routes={apps} status={status} />}
           {view === "git" && <GitPage id={id} page={page} more={place.more} users={users ?? []} onChanged={load} />}
           {view === "dashboard" && <DashboardPage />}
-          {view === "media" && <MediaPage />}
-          {view === "drive" && <DrivePage />}
-          {view === "convert" && <ConvertPage space={id} path={page} />}
+          {view === "storage" && <StoragePage tab={id} />}
           {view === "containers" && <ContainersPage id={id} page={page} />}
           {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} />}
           {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}

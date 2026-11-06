@@ -153,7 +153,7 @@ pub const GROUPS: &[Group] = &[
         ],
     },
     Group {
-        label: "Media",
+        label: "Photos and videos",
         permissions: &[
             p("media.view", "View photos and videos", "And download them"),
             p("media.upload", "Upload photos and videos", ""),
@@ -161,7 +161,7 @@ pub const GROUPS: &[Group] = &[
         ],
     },
     Group {
-        label: "Drive",
+        label: "Files",
         permissions: &[
             p("drive.view", "View documents", "And download them"),
             p(

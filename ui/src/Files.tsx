@@ -1,16 +1,25 @@
 import { useLayoutEffect, useRef, useState, type MouseEvent as PointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { bytes, message, upload, type Space } from "./api";
+import { bytes, message, upload, type ConvertKind, type Space } from "./api";
 import { useDismiss } from "./dismiss";
 import { Icon, type IconName } from "./Icon";
 import { Dialog, TextField, useNotify } from "./ui";
 
-// The pieces Media and Drive share: uploads, right-click menus and the
-// name dialog.
+// The pieces Storage's tabs share: uploads, right-click menus and the name
+// dialog.
 
 export const extOf = (name: string) => {
   const dot = name.lastIndexOf(".");
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+};
+
+const PHOTOS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "avif", "heic", "heif", "tif", "tiff"];
+const VIDEOS = ["mp4", "mov", "m4v", "webm", "mkv", "avi", "3gp", "mts", "m2ts", "wmv"];
+
+// What Convert makes of a file: a photo, a video or a PDF, or nothing.
+export const convertKind = (name: string): ConvertKind | null => {
+  const ext = extOf(name);
+  return PHOTOS.includes(ext) ? "photo" : VIDEOS.includes(ext) ? "video" : ext === "pdf" ? "pdf" : null;
 };
 
 // ---- uploads ----
