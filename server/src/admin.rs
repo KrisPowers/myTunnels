@@ -154,8 +154,26 @@ async fn guard_api(State(state): State<AppState>, mut req: Request, next: Next) 
 /// Headers that keep the panel from being framed, sniffed or loading anything but
 /// its own files.
 async fn harden(req: Request, next: Next) -> Response {
+    let https = req.extensions().get::<crate::tls::Https>().is_some();
     let mut response = next.run(req).await;
     let headers = response.headers_mut();
+    // Over HTTPS, the session cookie is never sent over plain HTTP.
+    if https {
+        let cookies: Vec<HeaderValue> = headers
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|v| match v.to_str() {
+                Ok(text) if !text.contains("; Secure") => {
+                    HeaderValue::from_str(&format!("{text}; Secure")).unwrap_or_else(|_| v.clone())
+                }
+                _ => v.clone(),
+            })
+            .collect();
+        headers.remove(header::SET_COOKIE);
+        for value in cookies {
+            headers.append(header::SET_COOKIE, value);
+        }
+    }
     for (name, value) in [
         (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
         (header::X_FRAME_OPTIONS, "DENY"),
