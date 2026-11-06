@@ -1,0 +1,14 @@
+#!/opt/rembg/bin/python
+"""Cuts the subject out of a photo: cutout <input> <output.png>.
+
+Used by Convert's Remove background, with the model fetched when the image
+was built (REMBG_HOME).
+"""
+import sys
+
+from PIL import Image, ImageOps
+from rembg import new_session, remove
+
+with Image.open(sys.argv[1]) as photo:
+    photo = ImageOps.exif_transpose(photo)
+    remove(photo, session=new_session("isnet-general-use")).save(sys.argv[2], "PNG")

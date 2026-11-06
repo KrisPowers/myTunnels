@@ -194,6 +194,7 @@ export function MediaPage({ nav, convert, shares, tools, extra, onReload }: TabP
       { label: "Download" + many, icon: "download", run: () => download(targets) },
       { label: "Share link", icon: "link", run: () => shares.open("media", targets) },
       { label: "Convert" + many, icon: "swap_horiz", hidden: !can("media.upload"), run: () => convert.open("media", targets) },
+      { label: "Remove background", icon: "content_cut", hidden: !can("media.upload") || targets.some(isVideo), run: () => convert.cutout("media", targets) },
       { label: "Delete" + many, icon: "delete", danger: true, hidden: !can("media.delete"), run: () => setRemoving(targets) },
     ];
   };
