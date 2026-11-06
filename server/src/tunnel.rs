@@ -191,19 +191,85 @@ fn free_local_addr() -> Option<String> {
     Some(listener.local_addr().ok()?.to_string())
 }
 
-/// Pushes the tunnel's ingress rules to Cloudflare: every published hostname goes to the gateway.
+/// Pushes the tunnel's ingress rules to Cloudflare: every published hostname goes to
+/// the gateway. Rules this tunnel already had that myTunnels did not make (another
+/// machine's hostnames, say) are kept, as is the rest of its configuration.
 pub async fn sync_ingress(state: &AppState) -> Result<()> {
     let cf = state.cloudflare().map_err(|e| anyhow!(e.1))?;
-    let mut ingress: Vec<Value> = state
+    let api = Cloudflare::new(&state.http, &cf.token);
+    let current = api.tunnel_config(&cf.account_id, &cf.tunnel_id).await?;
+    let ours: Vec<String> = state
         .db
         .routes()?
-        .iter()
+        .into_iter()
         // A tunnel switched off leaves the tunnel's routing, as if it did not exist.
         .filter(|r| r.enabled)
-        .map(|r| json!({ "hostname": r.hostname, "service": state.config.gate_service }))
+        .map(|r| r.hostname)
         .collect();
+    let config = merge_ingress(current, &ours, &state.config.gate_service);
+    api.put_config(&cf.account_id, &cf.tunnel_id, config).await
+}
+
+/// `current` with its ingress made of `ours` (to the gateway), then every rule for a
+/// hostname that is not the gateway's and not one of `ours`, then a 404 for the rest.
+fn merge_ingress(current: Value, ours: &[String], gate: &str) -> Value {
+    let mut config = match current {
+        Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+    let theirs: Vec<Value> = config
+        .get("ingress")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|rule| {
+            let host = rule.get("hostname").and_then(Value::as_str);
+            let service = rule.get("service").and_then(Value::as_str);
+            host.is_some_and(|h| !ours.iter().any(|o| o == h)) && service != Some(gate)
+        })
+        .cloned()
+        .collect();
+    let mut ingress: Vec<Value> = ours
+        .iter()
+        .map(|h| json!({ "hostname": h, "service": gate }))
+        .collect();
+    ingress.extend(theirs);
     ingress.push(json!({ "service": "http_status:404" }));
-    Cloudflare::new(&state.http, &cf.token)
-        .put_ingress(&cf.account_id, &cf.tunnel_id, ingress)
-        .await
+    config.insert("ingress".into(), Value::Array(ingress));
+    Value::Object(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn other_rules_and_settings_are_kept() {
+        let current = json!({
+            "ingress": [
+                { "hostname": "old.example.com", "service": "http://127.0.0.1:7080" },
+                { "hostname": "nas.example.com", "service": "http://10.0.0.5:5000" },
+                { "hostname": "app.example.com", "service": "http://10.0.0.6:80" },
+                { "service": "http_status:404" }
+            ],
+            "warp-routing": { "enabled": true }
+        });
+        let ours = ["app.example.com".to_owned()];
+        let merged = merge_ingress(current, &ours, "http://127.0.0.1:7080");
+        assert_eq!(
+            merged["ingress"],
+            json!([
+                { "hostname": "app.example.com", "service": "http://127.0.0.1:7080" },
+                { "hostname": "nas.example.com", "service": "http://10.0.0.5:5000" },
+                { "service": "http_status:404" }
+            ])
+        );
+        assert_eq!(merged["warp-routing"]["enabled"], true);
+    }
+
+    #[test]
+    fn a_new_tunnel_gets_only_ours() {
+        let merged = merge_ingress(Value::Null, &["a.example.com".to_owned()], "g");
+        assert_eq!(merged["ingress"].as_array().map(Vec::len), Some(2));
+    }
 }
