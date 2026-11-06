@@ -82,7 +82,7 @@ const dayOf = (at: number) => new Date(at * 1000).toLocaleDateString([], { dateS
 // MediaPage is Storage's Photos and videos tab, a home cloud for them:
 // everything uploaded, newest first and grouped by month, opened one at a time
 // in a viewer.
-export function MediaPage({ nav, convert, shares, onReload }: TabProps) {
+export function MediaPage({ nav, convert, shares, tools, extra, onReload }: TabProps) {
   const can = useCan();
   const [listing, setListing] = useState<Listing | null>(null);
   const [problem, setProblem] = useState("");
@@ -238,7 +238,7 @@ export function MediaPage({ nav, convert, shares, onReload }: TabProps) {
               <div className="ex-pick">
                 <MultiDropdown label="Show" values={kinds} options={KINDS} allLabel="Photos and videos" onChange={setKinds} />
               </div>
-              {shares.button}
+              {tools}
               {can("media.upload") && <button type="button" className="btn primary" onClick={() => input.current?.click()}><Icon name="cloud_upload" size={18} />Upload</button>}
             </>
           )}
@@ -305,7 +305,7 @@ export function MediaPage({ nav, convert, shares, onReload }: TabProps) {
       )}
       {menu && <ContextMenu at={menu} items={menuItems(menu.name)} onClose={() => setMenu(null)} />}
       <div className="ex-dock">{convert.panel}{panel}</div>
-      {shares.ui}
+      {extra}
     </div>
   );
 }

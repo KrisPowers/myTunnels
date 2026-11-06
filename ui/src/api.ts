@@ -390,6 +390,9 @@ export interface Share {
   opened: number;
 }
 
+// One copy of a file kept more than once, in Storage.
+export interface DuplicateCopy { space: Space; path: string; size: number; modified: number }
+
 // A passkey of the account signed in: the site it signs in to, and when it was last used.
 export interface PasskeyInfo { id: string; rp_id: string; name: string; created_at: number; last_used: number | null }
 
@@ -440,6 +443,7 @@ export const api = {
   shares: () => call<{ shares: Share[]; address: string | null }>("/shares"),
   share: (body: { space: Space; paths: string[]; password: string; days: number }) => call<{ share: Share; url: string }>("/shares", "POST", body),
   endShare: (id: string) => call(`/shares/${encodeURIComponent(id)}`, "DELETE"),
+  duplicates: () => call<{ groups: DuplicateCopy[][] }>("/duplicates"),
   beginPasskey: () => call<CreateOptions>("/account/passkeys/begin", "POST"),
   addPasskey: (credential: unknown, name: string) => call<PasskeyInfo[]>("/account/passkeys", "POST", { credential, name }),
   removePasskey: (id: string) => call<PasskeyInfo[]>(`/account/passkeys/${encodeURIComponent(id)}`, "DELETE"),

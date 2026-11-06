@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ago, api, bytes, fileUrl, message, type ConvertJob, type ConvertKind, type ConvertState, type Quality, type Share, type Space } from "./api";
+import { ago, api, bytes, fileUrl, filesIn, message, type ConvertJob, type ConvertKind, type ConvertState, type DuplicateCopy, type Quality, type Share, type Space } from "./api";
 import { DrivePage } from "./Drive";
 import { Dropdown, type Option } from "./Dropdown";
 import { convertKind } from "./Files";
@@ -21,6 +21,19 @@ export function StoragePage({ tab }: { tab: string }) {
   const reloads = useRef<() => unknown>(() => {});
   const convert = useConvert(() => reloads.current());
   const shares = useShares();
+  const [finding, setFinding] = useState(false);
+  const tools = (
+    <>
+      {shares.button}
+      <button type="button" className="icon-btn" aria-label="Find duplicates" title="Find duplicates" onClick={() => setFinding(true)}><Icon name="content_copy" /></button>
+    </>
+  );
+  const extra = (
+    <>
+      {shares.ui}
+      {finding && <DuplicatesDialog onClose={() => setFinding(false)} onChanged={() => reloads.current()} />}
+    </>
+  );
 
   const nav = tabs.length > 1 && (
     <nav className="sub-nav" aria-label="Storage">
@@ -35,7 +48,7 @@ export function StoragePage({ tab }: { tab: string }) {
   const onReload = useCallback((reload: () => unknown) => {
     reloads.current = reload;
   }, []);
-  const props = { nav, convert, shares, onReload };
+  const props = { nav, convert, shares, tools, extra, onReload };
   return current === "files" ? <DrivePage {...props} /> : <MediaPage {...props} />;
 }
 
@@ -45,7 +58,95 @@ export interface TabProps {
   nav: ReactNode;
   convert: Converter;
   shares: Sharer;
+  // The buttons for the whole of Storage, for the page's actions, and their dialogs.
+  tools: ReactNode;
+  extra: ReactNode;
   onReload: (reload: () => unknown) => void;
+}
+
+// ---- the duplicate finder ----
+
+const SPACE_NAMES: Record<Space, string> = { media: "Photos and videos", drive: "Files" };
+
+// DuplicatesDialog lists files kept more than once, across both tabs, by
+// content. One copy in each set is kept, the oldest unless another is picked.
+function DuplicatesDialog({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
+  const can = useCan();
+  const [groups, setGroups] = useState<DuplicateCopy[][] | null>(null);
+  const [keep, setKeep] = useState<Record<number, number>>({});
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+  const load = useCallback(async () => {
+    try {
+      setGroups((await api.duplicates()).groups);
+      setKeep({});
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+  }, [notify]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const mayDelete = (c: DuplicateCopy) => can(c.space === "media" ? "media.delete" : "drive.delete");
+  const extras = (i: number) => (groups?.[i] ?? []).filter((_, j) => j !== (keep[i] ?? 0));
+  const remove = async (copies: DuplicateCopy[]) => {
+    setBusy(true);
+    try {
+      for (const space of ["media", "drive"] as Space[]) {
+        const paths = copies.filter((c) => c.space === space).map((c) => c.path);
+        if (paths.length) await filesIn(space).remove(paths);
+      }
+      notify(`Deleted ${copies.length === 1 ? "1 copy" : `${copies.length} copies`}`);
+      onChanged();
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+    setBusy(false);
+    await load();
+  };
+  const all = (groups ?? []).flatMap((_, i) => extras(i));
+  const saved = (groups ?? []).reduce((n, g, i) => n + g[0].size * extras(i).length, 0);
+
+  return (
+    <Dialog title="Duplicates" onClose={onClose}>
+      {!groups ? <span className="spinner" /> : groups.length === 0 ? (
+        <p className="muted">No file is kept more than once.</p>
+      ) : (
+        <div className="cv-picker">
+          <p className="muted">{plural(groups.length, "file")} kept more than once. Deleting the other copies frees {bytes(saved)}.</p>
+          <div className="dup-list">
+            {groups.map((g, i) => (
+              <section key={i} className="dup-group">
+                <div className="dup-head">
+                  <b>{baseName(g[keep[i] ?? 0].path)}</b>
+                  <small>{bytes(g[0].size)} each</small>
+                  <button type="button" className="btn text" disabled={busy || !extras(i).every(mayDelete)} onClick={() => remove(extras(i))}>Delete other copies</button>
+                </div>
+                <ul className="item-list">
+                  {g.map((c, j) => (
+                    <li key={`${c.space}/${c.path}`} className="item-row">
+                      <input type="radio" name={`keep-${i}`} aria-label={`Keep ${c.path}`} checked={(keep[i] ?? 0) === j} onChange={() => setKeep({ ...keep, [i]: j })} />
+                      <span className="person">
+                        <span className="scan-target">{c.path}</span>
+                        <small>{SPACE_NAMES[c.space]}, {new Date(c.modified * 1000).toLocaleDateString()}{(keep[i] ?? 0) === j ? ", kept" : ""}</small>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+          <div className="edit-actions">
+            <button type="button" className="btn text" onClick={onClose}>Close</button>
+            <button type="button" className="btn primary danger-fill" disabled={busy || !all.length || !all.every(mayDelete)} onClick={() => remove(all)}>
+              {busy && <span className="spinner small on-accent" />}Delete all other copies
+            </button>
+          </div>
+        </div>
+      )}
+    </Dialog>
+  );
 }
 
 // ---- share links ----

@@ -169,6 +169,10 @@ or until ended, and can ask for a password. Links open at the dashboard's tunnel
 what it shares. The link button at the top of Storage lists your links, how often each was opened,
 and ends them. The dashboard must be published through a tunnel for links to work.
 
+**Find duplicates**, at the top of Storage, lists every file kept more than once across both tabs,
+by content, so a renamed copy counts too, with the space each copy frees. The oldest copy in each
+set is kept unless you pick another, and the others can be deleted one set at a time or all at once.
+
 Each tab takes only its own kinds of file. Storage is in the dashboard alone, so publish the
 dashboard through a tunnel to reach it from anywhere.
 

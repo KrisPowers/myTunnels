@@ -40,6 +40,7 @@ pub fn router(state: AppState) -> Router {
         .route("/account/passkeys/begin", post(begin_passkey))
         .route("/account/passkeys/{id}", delete(remove_passkey))
         .route("/shares", get(share::list).post(share::create))
+        .route("/duplicates", get(crate::dupes::find))
         .route("/shares/{id}", delete(share::remove))
         .route("/oauth", get(list_oauth))
         .route("/oauth/{id}", put(save_oauth).delete(delete_oauth))

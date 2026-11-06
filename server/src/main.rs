@@ -7,6 +7,7 @@ mod containers;
 mod convert;
 mod db;
 mod docker;
+mod dupes;
 mod gate;
 mod guard;
 mod mail;
