@@ -55,6 +55,11 @@ pub fn router(state: AppState) -> Router {
         .route("/status", get(status))
         .route("/metrics", get(metrics))
         .route("/containers", get(list_containers))
+        .route("/images", get(crate::images::list))
+        .route(
+            "/images/{id}",
+            get(crate::images::inspect).delete(crate::images::remove),
+        )
         .route(
             "/containers/{id}",
             get(inspect_container).delete(remove_container),

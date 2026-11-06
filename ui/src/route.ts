@@ -8,7 +8,7 @@
 // `#/storage`, photos and videos, and `#/storage/files`; `#/containers`,
 // with `/<id>/<page>` for one.
 
-export type View = "tunnels" | "dashboard" | "containers" | "git" | "storage" | "new" | "devices" | "users" | "security" | "settings" | "docs";
+export type View = "tunnels" | "dashboard" | "containers" | "images" | "git" | "storage" | "new" | "devices" | "users" | "security" | "settings" | "docs";
 
 export interface Place {
   view: View;
@@ -32,7 +32,7 @@ export function readHash(): Place {
   if (first === "media" || first === "convert") return { view: "storage", id: "", page: "", more: [] };
   if (first === "drive") return { view: "storage", id: "files", page: "", more: [] };
   if (first === "storage") return { view: first, id: second, page: "", more: [] };
-  if (first === "devices" || first === "users" || first === "settings" || first === "docs" || first === "git" || first === "containers" || first === "security") return { view: first, id: second, page: third, more };
+  if (first === "devices" || first === "users" || first === "settings" || first === "docs" || first === "git" || first === "containers" || first === "images" || first === "security") return { view: first, id: second, page: third, more };
   // One tunnel has a page of its own; the list of them is Containers'.
   if (first === "tunnels" && second) return { view: "tunnels", id: second, page: third, more: [] };
   return { view: "containers", id: "", page: "", more: [] };

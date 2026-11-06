@@ -89,14 +89,25 @@ or deleted from here, and asks once more before a restart.
 Podman works too, through its Docker-compatible API: mount Podman's socket in place of
 `/var/run/docker.sock` in the `docker` service.
 
+## Images
+
+**Images**, under **Developer Tools**, lists every image the engine keeps: its tags, the
+containers using it (each a link), its size and when it was built. It says how much space all
+images and the unused ones take. Search by tag, ID or container, or show only images in use or
+unused. Open one for its entrypoint, command, working folder, user, exposed ports, environment,
+labels and the layers it was built from, each with the step that made it and its size. An image
+no container uses can be deleted, one at a time or all unused at once.
+
 The `docker` service in `compose.yaml` allows only the calls the panel makes, by method and
 path: listing, inspecting, logs and stats, start, stop, restart, pause, resume and kill, and
-removing a container. Creating containers, exec, images, volumes and networks are refused, and
-only the gateway may connect to it.
+removing a container; and listing, inspecting and removing an image by its ID. Creating
+containers, exec, pulling or building images, volumes and networks are refused, and only the
+gateway may connect to it.
 
-## Storage & Media
+## Git and Storage
 
-The sidebar keeps these pages together under **Storage & Media**; the heading folds them away.
+**Storage** is a page of its own in the sidebar. **Git** sits under **Developer Tools** with
+**Images**; the heading folds them away.
 
 ### Git
 

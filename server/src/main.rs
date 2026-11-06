@@ -11,6 +11,7 @@ mod docker;
 mod dupes;
 mod gate;
 mod guard;
+mod images;
 mod mail;
 mod metrics;
 mod netinfo;

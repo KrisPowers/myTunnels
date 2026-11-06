@@ -1229,6 +1229,8 @@ a.result.thread-row:hover .scan-target { color: var(--accent); }
 .ct-inspect { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
 .ct-panel { padding: 14px 18px; }
 .ct-panel h2 { margin-bottom: 8px; font-size: 16px; font-weight: 700; }
+.img-step { white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+.ct-inspect + .ct-panel { margin-top: 14px; }
 .ct-panel .table th:first-child, .ct-panel .table td:first-child { padding-left: 12px; }
 
 @media (max-width: 900px) {

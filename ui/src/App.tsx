@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode } from "react";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type Group, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { GitPage } from "./Git";
+import { ImagesPage } from "./Images";
 import { ContainersPage } from "./Containers";
 
 import { DashboardPage } from "./Dashboard";
@@ -173,17 +174,18 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const pages: [string, string, IconName, string, boolean][] = [
     ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
     ["containers", "Containers", "deployed_code", "#/", can("containers.view") || can("tunnels.view")],
-  ];
-  const storage: [string, string, IconName, string, boolean][] = [
     ["storage", "Storage", "cloud", "#/storage", can("media.view") || can("drive.view")],
+  ];
+  const developer: [string, string, IconName, string, boolean][] = [
     ["git", "Git", "git", "#/git", can("code.view")],
+    ["images", "Images", "layers", "#/images", can("containers.view")],
   ];
   const admin: [string, string, IconName, string, boolean][] = [
     ["users", "Users", "group", "#/users", can("users.view")],
     ["devices", "Devices", "devices", "#/devices", can("devices.view")],
     ["security", "Advanced", "shield", "#/security", can("oauth.manage") || can("twofactor.manage")],
   ];
-  const home = [...pages, ...storage, ...admin].find((p) => p[4])?.[3] ?? "#/settings/appearance";
+  const home = [...pages, ...developer, ...admin].find((p) => p[4])?.[3] ?? "#/settings/appearance";
   useEffect(() => {
     if (view === "containers" && !id && !can("containers.view") && !can("tunnels.view") && home !== "#/") go(home);
   });
@@ -226,7 +228,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           ) : (
             <>
               {pages.map(item)}
-              {storage.some((p) => p[4]) && <NavGroup id="storage" label="Storage & Media">{storage.map(item)}</NavGroup>}
+              {developer.some((p) => p[4]) && <NavGroup id="developer" label="Developer Tools">{developer.map(item)}</NavGroup>}
               {admin.some((p) => p[4]) && <NavGroup id="admin" label="Security & Roles">{admin.map(item)}</NavGroup>}
             </>
           )}
@@ -238,6 +240,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "dashboard" && <DashboardPage />}
           {view === "storage" && <StoragePage tab={id} />}
           {view === "containers" && <ContainersPage id={id} page={page} routes={apps} status={status} />}
+          {view === "images" && <ImagesPage id={id} />}
           {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} port={id} />}
           {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
           {view === "devices" && !id && <Devices devices={devices} routes={apps ?? []} onChanged={load} />}
