@@ -55,6 +55,7 @@ async fn main() -> Result<()> {
     tracing::info!("admin panel on http://{}", state.config.admin_addr);
     tracing::info!("gateway on {}", state.config.gate_service);
 
+    admin::prepare_setup_code(&state)?;
     tunnel::spawn(state.clone());
     tokio::spawn(admin::rename_code_address(state.clone()));
     netinfo::spawn(state.clone());
