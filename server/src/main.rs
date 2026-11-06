@@ -60,6 +60,7 @@ async fn main() -> Result<()> {
     netinfo::spawn(state.clone());
     metrics::spawn();
     convert::spawn(state.clone());
+    tokio::spawn(prune_events(state.clone()));
 
     let admin = axum::serve(
         admin_listener,
@@ -76,6 +77,17 @@ async fn main() -> Result<()> {
         _ = shutdown_signal() => tracing::info!("shutting down"),
     }
     Ok(())
+}
+
+/// Keeps 90 days of tunnel events, pruned hourly rather than on every insert.
+async fn prune_events(state: AppState) {
+    let mut every = tokio::time::interval(std::time::Duration::from_secs(3600));
+    loop {
+        every.tick().await;
+        if let Err(err) = state.db.prune_events(util::now() - 90 * 86_400) {
+            tracing::warn!("could not prune events: {err:#}");
+        }
+    }
 }
 
 async fn shutdown_signal() {

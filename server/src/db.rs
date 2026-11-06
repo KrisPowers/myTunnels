@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS events (
     at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS events_route ON events (route_id, at);
+CREATE INDEX IF NOT EXISTS events_at ON events (at);
 CREATE TABLE IF NOT EXISTS user_devices (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
@@ -928,7 +929,7 @@ impl Db {
         Ok(list)
     }
 
-    /// Records what happened at a tunnel, keeping 90 days of it.
+    /// Records what happened at a tunnel. `prune_events` keeps it to 90 days.
     pub fn add_event(&self, e: &Event) -> Result<()> {
         let conn = self.conn();
         conn.execute(
@@ -945,7 +946,13 @@ impl Db {
                 e.at
             ],
         )?;
-        conn.execute("DELETE FROM events WHERE at < ?1", [e.at - 90 * 86_400])?;
+        Ok(())
+    }
+
+    /// Forgets tunnel events older than `before`.
+    pub fn prune_events(&self, before: i64) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM events WHERE at < ?1", [before])?;
         Ok(())
     }
 
