@@ -1,12 +1,14 @@
-//! What an account may do on the dashboard. The admin may do everything; any
-//! other account signs in to the dashboard only with `dashboard`, and then sees
-//! and changes only what its permissions, grouped by feature, allow. Every call
-//! to the panel's API is checked here against them.
+//! What an account may do on the dashboard. The host, the account made at setup,
+//! may do everything. Admin is a role any account can be given: it may do
+//! everything too, including making others admins. Any other account signs in to
+//! the dashboard only with `dashboard`, and then sees and changes only what its
+//! permissions, grouped by feature, allow. Every call to the panel's API is
+//! checked here against them.
 
 use axum::http::Method;
 use serde::Serialize;
 
-use crate::db::User;
+use crate::db::{User, ADMIN};
 
 #[derive(Serialize)]
 pub struct Permission {
@@ -27,6 +29,14 @@ const fn p(key: &'static str, label: &'static str, hint: &'static str) -> Permis
 
 /// Every permission, by feature, in the order the dashboard shows them.
 pub const GROUPS: &[Group] = &[
+    Group {
+        label: "Admin",
+        permissions: &[p(
+            ADMIN,
+            "Admin",
+            "Every permission below, including making others admins",
+        )],
+    },
     Group {
         label: "Dashboard",
         permissions: &[
@@ -197,39 +207,50 @@ pub fn known(key: &str) -> bool {
 /// Who is using the panel.
 #[derive(Clone)]
 pub enum Caller {
-    Admin,
+    /// The host account, made at setup.
+    Host,
     Account(Box<User>),
 }
 
 impl Caller {
     pub fn can(&self, key: &str) -> bool {
         match self {
-            Caller::Admin => true,
-            Caller::Account(user) => user.permissions.iter().any(|p| p == key),
+            Caller::Host => true,
+            Caller::Account(user) => user.holds(key),
         }
     }
 
     pub fn id(&self) -> &str {
         match self {
-            Caller::Admin => "admin",
+            // Stored under this name since before roles.
+            Caller::Host => "admin",
             Caller::Account(user) => &user.id,
         }
     }
 
     pub fn permissions(&self) -> Vec<&str> {
         match self {
-            Caller::Admin => GROUPS
+            caller if caller.is_admin() => GROUPS
                 .iter()
                 .flat_map(|g| g.permissions)
                 .map(|p| p.key)
                 .collect(),
+            Caller::Host => Vec::new(),
             Caller::Account(user) => user.permissions.iter().map(String::as_str).collect(),
+        }
+    }
+
+    /// The host, or an account with the Admin role.
+    pub fn is_admin(&self) -> bool {
+        match self {
+            Caller::Host => true,
+            Caller::Account(user) => user.holds(ADMIN),
         }
     }
 }
 
 /// What a call needs: being signed in, or any one of some permissions. An
-/// empty list is the admin's alone.
+/// empty list is for the host and admins alone.
 pub enum Need {
     SignedIn,
     Any(&'static [&'static str]),
@@ -239,9 +260,7 @@ impl Need {
     pub fn met(&self, caller: &Caller) -> bool {
         match self {
             Need::SignedIn => true,
-            Need::Any(keys) => {
-                matches!(caller, Caller::Admin) || keys.iter().any(|k| caller.can(k))
-            }
+            Need::Any(keys) => caller.is_admin() || keys.iter().any(|k| caller.can(k)),
         }
     }
 }
@@ -336,7 +355,7 @@ mod tests {
         assert!(!needed(&Method::PATCH, "/routes/r1").met(&viewer));
         assert!(!needed(&Method::GET, "/settings").met(&viewer));
         assert!(needed(&Method::GET, "/status").met(&viewer));
-        assert!(needed(&Method::DELETE, "/routes/r1").met(&Caller::Admin));
+        assert!(needed(&Method::DELETE, "/routes/r1").met(&Caller::Host));
         assert!(needed(&Method::PUT, "/code/repos/app/pin").met(&viewer));
         assert!(!needed(&Method::POST, "/code/repos/app/threads").met(&viewer));
         assert!(!needed(&Method::POST, "/code/repos/app/thread/3/merge").met(&viewer));
@@ -350,5 +369,17 @@ mod tests {
         assert!(known("code.push"));
         assert!(known("dashboard"));
         assert!(!known("everything"));
+    }
+
+    #[test]
+    fn the_admin_role_holds_everything_and_can_grant_it() {
+        let admin = account(&["admin"]);
+        assert!(admin.is_admin());
+        assert!(admin.can("users.manage") && admin.can("admin") && admin.can("settings.manage"));
+        assert!(needed(&Method::GET, "/unknown").met(&admin));
+        let manager = account(&["users.manage"]);
+        assert!(!manager.is_admin() && !manager.can("admin"));
+        assert!(!needed(&Method::GET, "/unknown").met(&manager));
+        assert!(Caller::Host.can("admin"));
     }
 }

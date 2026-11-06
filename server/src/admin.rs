@@ -215,12 +215,11 @@ fn caller(state: &AppState, headers: &HeaderMap) -> Option<Caller> {
         cookie(headers, ADMIN_COOKIE).and_then(|v| state.session(&state.admin_sessions, v))?;
     if session.subject == "admin" {
         let hash = state.db.setting("admin_password").ok().flatten()?;
-        return (secret::tag(&hash) == session.tag).then_some(Caller::Admin);
+        return (secret::tag(&hash) == session.tag).then_some(Caller::Host);
     }
     let user = state.snapshot().users.get(&session.subject).cloned()?;
-    let may = user.enabled
-        && user.permissions.iter().any(|p| p == "dashboard")
-        && secret::tag(&user.password_hash) == session.tag;
+    let may =
+        user.enabled && user.holds("dashboard") && secret::tag(&user.password_hash) == session.tag;
     may.then_some(Caller::Account(Box::new(user)))
 }
 
@@ -247,7 +246,7 @@ async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
     let password = db.setting("admin_password")?.is_some();
     let me = caller(&state, &headers).map(|c| {
         let name = match &c {
-            Caller::Admin => db
+            Caller::Host => db
                 .setting("admin_username")
                 .ok()
                 .flatten()
@@ -257,7 +256,8 @@ async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
         };
         json!({
             "id": c.id(),
-            "admin": matches!(c, Caller::Admin),
+            "host": matches!(c, Caller::Host),
+            "admin": c.is_admin(),
             "name": name,
             "permissions": c.permissions(),
         })
@@ -438,9 +438,7 @@ fn dashboard_account(state: &AppState, login: &str, password: &str) -> ApiResult
             || (!u.email.is_empty() && u.email.eq_ignore_ascii_case(login))
     });
     Ok(found.filter(|u| {
-        u.enabled
-            && u.permissions.iter().any(|p| p == "dashboard")
-            && secret::verify(password, &u.password_hash)
+        u.enabled && u.holds("dashboard") && secret::verify(password, &u.password_hash)
     }))
 }
 
@@ -464,7 +462,7 @@ async fn login_code(
     match state.codes.redeem(&body.ticket, &body.code, app) {
         Ok(p) if p.subject == "admin" && p.route_id.is_empty() => start_admin_session(&state),
         Ok(p) if p.route_id == DASHBOARD => match state.db.user(&p.subject)? {
-            Some(u) if u.enabled && u.permissions.iter().any(|x| x == "dashboard") => {
+            Some(u) if u.enabled && u.holds("dashboard") => {
                 start_session(&state, &u.id, &secret::tag(&u.password_hash))
             }
             _ => Err(ApiError(StatusCode::UNAUTHORIZED, "Sign in again".into())),
@@ -517,16 +515,16 @@ async fn account(
     Extension(caller): Extension<Caller>,
 ) -> ApiResult<Json<Value>> {
     Ok(Json(match caller {
-        Caller::Admin => json!({
+        Caller::Host => json!({
             "username": state.db.setting("admin_username")?,
             "email": state.db.setting("admin_email")?,
-            "admin": true,
+            "host": true,
             "totp": totp::enrolled(&state.db, "admin"),
         }),
         Caller::Account(u) => json!({
             "username": u.username,
             "email": u.email,
-            "admin": false,
+            "host": false,
             "totp": totp::enrolled(&state.db, &u.id),
         }),
     }))
@@ -565,7 +563,7 @@ fn panel_site(state: &AppState, headers: &HeaderMap, https: bool) -> ApiResult<(
 /// What a passkey is called by default: the email, or the username.
 fn caller_label(state: &AppState, caller: &Caller) -> ApiResult<String> {
     Ok(match caller {
-        Caller::Admin => state
+        Caller::Host => state
             .db
             .setting("admin_email")?
             .or(state.db.setting("admin_username")?)
@@ -656,7 +654,7 @@ async fn passkey_sign_in(
         return start_admin_session(&state);
     }
     match state.db.user(&subject)? {
-        Some(u) if u.enabled && u.permissions.iter().any(|p| p == "dashboard") => {
+        Some(u) if u.enabled && u.holds("dashboard") => {
             start_session(&state, &u.id, &secret::tag(&u.password_hash))
         }
         _ => Err(ApiError(
@@ -673,7 +671,7 @@ async fn start_totp(
     Extension(caller): Extension<Caller>,
 ) -> ApiResult<Json<Value>> {
     let label = match &caller {
-        Caller::Admin => state
+        Caller::Host => state
             .db
             .setting("admin_email")?
             .or(state.db.setting("admin_username")?)
@@ -739,10 +737,10 @@ async fn edit_account(
     Extension(caller): Extension<Caller>,
     Json(body): Json<AccountEdit>,
 ) -> ApiResult<Json<Value>> {
-    if !matches!(caller, Caller::Admin) {
+    if !matches!(caller, Caller::Host) {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
-            "Only the admin changes this account".into(),
+            "Only the host changes the host account".into(),
         ));
     }
     if let Some(username) = body.username {

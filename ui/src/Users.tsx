@@ -266,12 +266,13 @@ export function UserPage({ user, page, routes, devices, catalog, me, onChanged }
 }
 
 // Permissions are what an account may do on the dashboard, a card per
-// feature. Anyone but the admin can give only what they hold themselves, and
-// no one changes their own.
+// feature. Admin holds them all, including making others admins. Anyone can give
+// only what they hold themselves, and no one changes their own.
 function Permissions({ user, catalog, me, onSet }: { user: User; catalog: Group[]; me: Me; onSet: (permissions: string[]) => void }) {
   const can = useCan();
   const self = me.id === user.id;
-  const has = (key: string) => user.permissions.includes(key);
+  const admin = user.permissions.includes("admin");
+  const has = (key: string) => user.permissions.includes(key) || (admin && key !== "admin");
   const set = (key: string, on: boolean) => onSet(on ? [...user.permissions, key] : user.permissions.filter((k) => k !== key));
   return (
     <>
@@ -284,7 +285,7 @@ function Permissions({ user, catalog, me, onSet }: { user: User; catalog: Group[
         <Card key={g.label} title={g.label}>
           {g.permissions.map((p) => (
             <Row key={p.key} title={p.label} sub={p.hint || undefined}>
-              <Switch label={p.label} on={has(p.key)} disabled={self || !can("users.manage") || !can(p.key)} onChange={(v) => set(p.key, v)} />
+              <Switch label={p.label} on={has(p.key)} disabled={self || !can("users.manage") || !can(p.key) || (admin && p.key !== "admin")} onChange={(v) => set(p.key, v)} />
             </Row>
           ))}
         </Card>

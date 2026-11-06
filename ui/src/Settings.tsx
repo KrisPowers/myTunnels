@@ -56,14 +56,14 @@ export function Settings({ sections, section, status, routes, onChanged, onSignO
 }
 
 // AdminAccountCard is who signs in to this dashboard: either the email or the
-// username works, with the admin password.
+// username works, with the host account's password.
 function AdminAccountCard() {
   const [account, setAccount] = useState<AdminAccount | null>(null);
   useEffect(() => {
     api.account().then(setAccount).catch(() => {});
   }, []);
   if (!account) return null;
-  if (!account.admin) {
+  if (!account.host) {
     return (
       <Card title="Your account" sub="Sign in with either the email or the username. Your details are changed under Security & Roles, Users.">
         <Row title="Email" sub={account.email || "None"} />
@@ -74,7 +74,7 @@ function AdminAccountCard() {
     );
   }
   return (
-    <Card title="Admin account" sub="Sign in with either the email or the username.">
+    <Card title="Host account" sub="Sign in with either the email or the username.">
       <ValueRow title="Email" type="email" value={account.email ?? ""} onSave={(email) => api.editAccount({ email }).then(setAccount)} />
       <ValueRow title="Username" value={account.username ?? ""} onSave={(username) => api.editAccount({ username }).then(setAccount)} />
       <Authenticator on={account.totp} onChange={(totp) => setAccount({ ...account, totp })} />

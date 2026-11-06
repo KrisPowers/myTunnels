@@ -210,7 +210,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {can("tunnels.create") && <a className={"icon-btn" + (view === "new" ? " on" : "")} href="#/new" aria-label="New tunnel" title="New tunnel"><Icon name="add" /></a>}
           <a className={"icon-btn" + (view === "docs" ? " on" : "")} href="#/docs" aria-label="Help" title="Help"><Icon name="help" /></a>
           <a className={"icon-btn" + (view === "settings" ? " on" : "")} href="#/settings" aria-label="Settings" title="Settings"><Icon name="settings" /></a>
-          <span className="header-user" title={me.admin ? "Admin" : "Signed in"}><Icon name="person" size={18} />{me.name || "Admin"}</span>
+          <span className="header-user" title={me.host ? "Host" : me.admin ? "Admin" : "Signed in"}><Icon name="person" size={18} />{me.name || "Host"}</span>
           <button type="button" className="icon-btn" aria-label="Sign out" title="Sign out" onClick={onSignOut}><Icon name="logout" /></button>
         </div>
       </header>

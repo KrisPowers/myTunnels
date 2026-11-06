@@ -159,7 +159,7 @@ pub enum Level {
 impl Viewer {
     pub fn of(caller: &Caller) -> Self {
         match caller {
-            Caller::Admin => Viewer::Admin,
+            Caller::Host => Viewer::Admin,
             Caller::Account(user) => Viewer::Person(Some(user.id.clone())),
         }
     }
@@ -177,7 +177,7 @@ fn level(state: &AppState, viewer: &Viewer) -> Level {
     let Some(user) = snap.users.get(id).filter(|u| u.enabled) else {
         return Level::None;
     };
-    let has = |key: &str| user.permissions.iter().any(|p| p == key);
+    let has = |key: &str| user.holds(key);
     if has("code.push") {
         Level::Write
     } else if has("code.view") {

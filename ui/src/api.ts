@@ -375,8 +375,8 @@ export interface TwoFactor { smtp: Smtp | null; enabled: boolean; admin_email: s
 // `app`: the code comes from the account's authenticator app, not an email.
 export interface SignedIn { ok?: boolean; code_required?: boolean; ticket?: string; sent_to?: string; app?: boolean }
 
-// The account signed in: the admin's, or another account's own.
-export interface AdminAccount { username: string | null; email: string | null; admin: boolean; totp: boolean }
+// The account signed in: the host account made at setup, or another account's own.
+export interface AdminAccount { username: string | null; email: string | null; host: boolean; totp: boolean }
 
 // A passkey of the account signed in: the site it signs in to, and when it was last used.
 export interface PasskeyInfo { id: string; rp_id: string; name: string; created_at: number; last_used: number | null }
@@ -384,10 +384,11 @@ export interface PasskeyInfo { id: string; rp_id: string; name: string; created_
 // An authenticator app being set up: its secret, the link, and the link as a QR code (SVG).
 export interface TotpSetup { secret: string; uri: string; qr: string }
 
-// What an account may do on the dashboard, by feature. The admin may do all.
+// What an account may do on the dashboard, by feature. The host and admins may do all.
 export interface Permission { key: string; label: string; hint: string }
 export interface Group { label: string; permissions: Permission[] }
-export interface Me { id: string; admin: boolean; name: string; permissions: string[] }
+// `host`: the account made at setup. `admin`: the host, or an account with the Admin role.
+export interface Me { id: string; host: boolean; admin: boolean; name: string; permissions: string[] }
 
 export interface Auth {
   authenticated: boolean;

@@ -6,7 +6,7 @@ import { dismissed, passkeysWork, signWithPasskey } from "./passkey";
 import { solve, type Proof } from "./pow";
 import { Callout, TextField } from "./ui";
 
-const STEPS = ["Admin account", "Cloudflare"];
+const STEPS = ["Host account", "Cloudflare"];
 
 const TUNNEL_NAME = "homelab";
 
@@ -65,11 +65,11 @@ function StepHead({ title, sub }: { title: string; sub: ReactNode }) {
   );
 }
 
-// ---- 1. Admin account: create it, or sign in ----
+// ---- 1. Host account: create it, or sign in ----
 
 function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }) {
   const create = !auth.setup.password;
-  // Installs from before the admin account sign in with the password alone.
+  // Installs from before the host account had a name sign in with the password alone.
   const named = create || auth.setup.account;
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
@@ -135,8 +135,8 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
 
   return (
     <form onSubmit={submit}>
-      <StepHead title={create ? "Create the admin account" : "Sign in"}
-        sub={create ? "The account that runs this dashboard." : auth.setup.cloudflare ? "Sign in with the admin account, or an account allowed on the dashboard." : "Sign in with the admin account to carry on with setup."} />
+      <StepHead title={create ? "Create the host account" : "Sign in"}
+        sub={create ? "The account that owns this dashboard. Others, admins included, are added under Users." : auth.setup.cloudflare ? "Sign in with your account." : "Sign in with the host account to carry on with setup."} />
       {create && (
         <>
           <TextField label="Email" type="email" autoFocus autoComplete="email" value={email} onChange={setEmail} />

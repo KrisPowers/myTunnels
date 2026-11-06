@@ -62,7 +62,7 @@ export function TwoFactorSetup() {
             <Switch label="Email codes" on={tf.enabled} disabled={busy || (!tf.enabled && !tf.admin_email)} onChange={turn} />
             <span>{tf.enabled ? "Email codes are on" : "Email codes are off"}</span>
           </label>
-          {!tf.admin_email && <p className="muted">Set the admin email under <a href="#/settings/account">Settings, Account</a> to turn them on.</p>}
+          {!tf.admin_email && <p className="muted">Set the host account's email under <a href="#/settings/account">Settings, Account</a> to turn them on.</p>}
           <p className="mfa-from">Sent from <b>{smtp.from}</b> through <span className="mono">{smtp.host}:{smtp.port}</span>, {SECURITY.find((x) => x.value === smtp.security)?.label}</p>
           <div className="mfa-actions">
             <button type="button" className="btn small" onClick={() => setEditing(true)}><Icon name="edit" size={16} />Change SMTP</button>
