@@ -72,7 +72,7 @@ const MEDIA_KINDS: &[&str] = &[
 const DRIVE_KINDS: &[&str] = &[
     "doc", "docx", "docm", "dot", "dotx", "odt", "rtf", "txt", "md", "pdf", "xls", "xlsx", "xlsm",
     "xlt", "xltx", "ods", "csv", "tsv", "ppt", "pptx", "pptm", "pps", "ppsx", "odp", "key",
-    "pages", "numbers", "epub",
+    "pages", "numbers", "epub", "zip", "7z", "rar",
 ];
 
 impl Space {
@@ -94,7 +94,7 @@ impl Space {
             Space::Media => (MEDIA_KINDS, "Media keeps photos and videos"),
             Space::Drive => (
                 DRIVE_KINDS,
-                "Drive keeps documents, spreadsheets, presentations and PDFs",
+                "Files keeps documents, spreadsheets, presentations, PDFs and archives",
             ),
         };
         if kinds.contains(&ext.as_str()) {
@@ -182,6 +182,22 @@ pub async fn fs(state: &AppState, space: Space, op: &str, req: Request) -> Respo
             (Method::POST, "rename") => rename(&store, body(req).await?).await,
             (Method::POST, "move") => relocate(&store, body(req).await?).await,
             (Method::POST, "delete") => delete(&store, body(req).await?).await,
+            (Method::POST, "extract") => {
+                let at: At = body(req).await?;
+                Ok(
+                    Json(crate::archive::extract(&store, &segments(&at.path)?).await?)
+                        .into_response(),
+                )
+            }
+            (Method::POST, "compress") => {
+                let at: Paths = body(req).await?;
+                let rels = at
+                    .paths
+                    .iter()
+                    .map(|p| segments(p))
+                    .collect::<ApiResult<Vec<_>>>()?;
+                Ok(Json(crate::archive::compress(&store, &rels).await?).into_response())
+            }
             (Method::PUT, "upload") => upload(&store, req).await,
             (Method::GET | Method::HEAD, "thumb") => thumb(&store, req).await,
             (Method::PUT, "thumb") => save_thumb(&store, req).await,

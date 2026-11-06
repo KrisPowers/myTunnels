@@ -1302,6 +1302,7 @@ a.result.thread-row:hover .scan-target { color: var(--accent); }
 .d-file.slides, .d-row-name.slides, .d-chip.slides { --k: var(--s2); }
 .d-file.pdf, .d-row-name.pdf, .d-chip.pdf { --k: var(--bad); }
 .d-file.text, .d-row-name.text, .d-chip.text { --k: var(--text-2); }
+.d-file.archive, .d-row-name.archive, .d-chip.archive { --k: var(--warn); }
 /* The title is the folder's path, each folder on the way a step back. */
 .st-crumbs { display: flex; align-items: center; margin: -8px 0 16px -8px; overflow-x: auto; scrollbar-width: none; font-size: 16px; }
 .d-crumb {

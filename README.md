@@ -141,7 +141,10 @@ kept by myTunnels under `/data`. It has two tabs.
   that kind; files show as cards or as a list, by name or by when they last changed. PDFs and text
   files open in a new tab, the rest download. **New** makes a folder or uploads files, which can
   also be dragged onto the page; right-click an item to open, download, convert, rename or delete
-  it.
+  it. ZIP, 7z and RAR archives are kept too: **Extract here** opens one into a folder beside it
+  (leaving out links and kinds Files does not keep, and refusing one that opens to over 100 GB),
+  and **Compress to ZIP** packs a file or folder into a ZIP beside it. Archives are read with
+  `unar`, which the image includes.
 
 **Convert**, in an item's menu or for the photos and videos you tick, makes a copy in another
 format or smaller:
