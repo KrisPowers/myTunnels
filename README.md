@@ -43,8 +43,9 @@ step at a time, each saved as soon as it is done, so it can be left and resumed:
    most setups.
 4. **Ready.** A summary, the connector coming online, and the theme.
 
-Then, on **Tunnels**, type the subdomain, pick the domain, enter the port and press
-**Publish**. Open the tunnel to choose who can open it.
+Then, on **Containers**, choose **Forward to a tunnel** in a container's menu, or press **New
+tunnel** for any port: type the subdomain, pick the domain, check the port and press **Publish**.
+Open the tunnel to choose who can open it.
 
 To manage myTunnels from anywhere, publish the dashboard itself: under **Local app**, set
 **Runs on** to **This dashboard**, with no port. It takes the same access rules as any
@@ -68,16 +69,25 @@ does and Docker Desktop does not.
 
 ## Containers
 
-**Containers** says how many run and their CPU and memory together, then a row per container:
-its state, name over its image, published ports (each a link to open), CPU, memory and how
-long it has run. Its menu holds logs, start or stop, restart and delete. Compose projects with
-more than one container fold under their name, with start, stop and restart for all of them.
-Search by name, image or ID, or show only running ones.
+**Containers** is where containers and tunnels meet. It says how many containers run, their CPU
+and memory together, and how many tunnels are live, then a row per container: its state, name
+over its image, published ports (each a link to open), the tunnels that reach it, CPU, memory
+and how long it has run. Its menu holds logs, **Forward to a tunnel** (one per published port),
+start or stop, restart, kill and delete. Compose projects with more than one container fold
+under their name, with start, stop and restart for all of them. Search by name, image or ID, or
+show only running ones. Tunnels to anything else, such as another machine or the dashboard, are
+listed beneath as **Other tunnels**, and **New tunnel** publishes any port.
+
+A tunnel reaches a container when it points at a port the container publishes on the host, or at
+the container by name on a shared network.
 
 Open a container for its **Logs** (followed as it runs, searchable, with or without times),
 **Inspect** (what it runs, its state, ports and networks), **Mounts** and **Stats** (CPU over
 time, memory, network and disk). The container myTunnels runs in is marked, cannot be stopped
 or deleted from here, and asks once more before a restart.
+
+Podman works too, through its Docker-compatible API: mount Podman's socket in place of
+`/var/run/docker.sock` in the `docker` service.
 
 The `docker` service in `compose.yaml` allows only the calls the panel makes, by method and
 path: listing, inspecting, logs and stats, start, stop, restart, pause, resume and kill, and

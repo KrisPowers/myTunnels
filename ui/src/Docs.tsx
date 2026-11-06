@@ -74,10 +74,10 @@ const CONTENT: Record<string, ReactNode> = {
   containers: (
     <>
       <Doc title="What it shows">
-        <p><b>Containers</b> says how many run and their CPU and memory together, then a row per container with its name over its image, published ports (each opens in a new tab), CPU, memory and how long it has run. Compose projects with more than one container fold under their name. Open one for its Logs, Inspect, Mounts and Stats.</p>
+        <p><b>Containers</b> says how many run, their CPU and memory together and how many tunnels are live, then a row per container with its name over its image, published ports (each opens in a new tab), the tunnels that reach it, CPU, memory and how long it has run. Compose projects with more than one container fold under their name. Open one for its Logs, Inspect, Mounts and Stats. Tunnels to anything else are listed beneath, as <b>Other tunnels</b>.</p>
       </Doc>
       <Doc title="Managing them">
-        <p>Each row's menu holds logs, start or stop, restart and delete; a project's menu starts, stops or restarts all of it. Search, or show only running ones, to find them. Deleting takes a stopped container away and leaves its volumes. The container myTunnels runs in is marked and is never stopped from here.</p>
+        <p>Each row's menu holds logs, <b>Forward to a tunnel</b>, start or stop, restart, kill and delete; a project's menu starts, stops or restarts all of it. Search, or show only running ones, to find them. Deleting takes a stopped container away and leaves its volumes. The container myTunnels runs in is marked and is never stopped from here.</p>
       </Doc>
       <Doc title="What Docker allows">
         <p>myTunnels reaches Docker through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers and the engine's info and nothing else, so images, volumes and networks cannot be changed from here.</p>
