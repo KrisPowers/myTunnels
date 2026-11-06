@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
-import { api, editOf, LEVELS, list, message, redirectUrl, shortId, strength, type Access, type Device, type OAuthProvider, type PolicyMode, type Route, type RouteEdit, type Status, type TunnelEvent, type User, type Zone } from "./api";
+import { api, editOf, LEVELS, list, message, redirectUrl, shortId, strength, type Access, type Device, type OAuthProvider, type PolicyMode, type Route, type RouteEdit, type TunnelEvent, type User, type Zone } from "./api";
 import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
@@ -32,56 +32,6 @@ export function target(route: Route) {
   if (route.target_scheme === "dashboard") return "This dashboard";
   const scheme = route.target_scheme === "https" ? "https://" : "";
   return route.target_host ? `${scheme}${route.target_host}:${route.target_port}` : String(route.target_port);
-}
-
-// Tunnels is the home page: every tunnel published.
-export function Tunnels({ routes, status }: { routes: Route[] | null; status: Status | null }) {
-  const can = useCan();
-  const live = routes?.filter((r) => r.enabled).length ?? 0;
-  const links = status?.connections ?? 0;
-  return (
-    <>
-      <div className="page-head">
-        <div className="page-head-main">
-          <h1>Tunnels</h1>
-          <div className="page-sub">
-            <span><b>{live}</b> live</span>
-            <span>{links > 0 ? `Connector online, ${links} links` : status?.running ? "Connector starting" : "Connector offline"}</span>
-          </div>
-        </div>
-        <div className="page-actions">
-          {can("tunnels.create") && <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>}
-        </div>
-      </div>
-      <div className="page-body stack">
-        {routes && routes.length === 0 && (
-          <div className="card welcome">
-            <Icon name="public" size={40} />
-            <h2>Nothing published yet</h2>
-            <p className="muted">Publish a port on one of your domains, and choose who can open it.</p>
-            {can("tunnels.create") && <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>}
-          </div>
-        )}
-        {routes && routes.length > 0 && (
-          <div className="card">
-            <ul className="results">
-              {routes.map((r) => (
-                <li key={r.id}>
-                  <a className="result tunnel-row" href={`#/tunnels/${r.id}`}>
-                    <span className={"dot " + (r.enabled ? "ok" : "")} role="img" aria-label={r.enabled ? "Live" : "Off"} title={r.enabled ? "Live" : "Off"} />
-                    <span className="scan-target">{r.hostname}</span>
-                    <span className="result-service mono">{target(r)}</span>
-                    <span className="result-what"><AccessChips route={r} /></span>
-                    <Icon name="chevron_right" className="result-go" />
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-    </>
-  );
 }
 
 // ---- where requests go ----
@@ -323,11 +273,11 @@ function PasswordSetting({ set, onSave, onCancel }: { set: boolean; onSave: (pas
 
 // NewTunnel publishes a port: the address on top, then where the app runs, then
 // who can open it.
-export function NewTunnel({ users, providers, onPublished }: { users: User[]; providers: OAuthProvider[]; onPublished: () => Promise<void> }) {
+export function NewTunnel({ users, providers, onPublished, port: startPort }: { users: User[]; providers: OAuthProvider[]; onPublished: () => Promise<void>; port?: string }) {
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [zone, setZone] = useState("");
   const [sub, setSub] = useState("");
-  const [port, setPort] = useState("");
+  const [port, setPort] = useState(/^\d{1,5}$/.test(startPort ?? "") ? startPort! : "");
   const [access, setAccess] = useState<Access>({
     require_lan: false, require_device: false, require_password: false, require_login: false, require_code: false, oauth: [],
     login_max: 7 * 86_400, login_idle: 0, policy_mode: "all",
@@ -365,7 +315,7 @@ export function NewTunnel({ users, providers, onPublished }: { users: User[]; pr
   return (
     <form onSubmit={submit}>
       <div className="page-head">
-        <a className="icon-btn" href="#/" aria-label="All tunnels" title="All tunnels"><Icon name="arrow_back" /></a>
+        <a className="icon-btn" href="#/" aria-label="Containers" title="Containers"><Icon name="arrow_back" /></a>
         <div className="page-head-main">
           <h1>New tunnel</h1>
           <div className="page-sub">Publish a port on one of your domains.</div>
@@ -498,7 +448,7 @@ export function TunnelPage({ route, page, devices, users, providers, onChanged }
           {can("tunnels.delete") && <ArmedButton icon="delete" label="Remove" armedLabel="Remove for good" onConfirm={remove} />}
         </div>
       </div>
-      <SubNav back="#/" backLabel="Tunnels" base={`#/tunnels/${route.id}`} items={TUNNEL_PAGES} current={current} />
+      <SubNav back="#/" backLabel="Containers" base={`#/tunnels/${route.id}`} items={TUNNEL_PAGES} current={current} />
 
       <div className="page-body stack plain" key={current}>
         {current === "access" && (

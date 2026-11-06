@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Metrics, type Port } from "./api";
+import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Metrics, type Port, type Route, type Status } from "./api";
 import { Chart, Meter } from "./Dashboard";
 import { Dropdown } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
+import { go } from "./route";
+import { AccessChips, target } from "./Tunnels";
 import { ArmedButton, Callout, Copy, MoreMenu, Switch, useNotify, type MenuAction } from "./ui";
 
 type Act = ContainerAction | "remove";
@@ -85,9 +87,19 @@ function PortLinks({ ports, max = 3 }: { ports: Port[]; max?: number }) {
   );
 }
 
-export function ContainersPage({ id, page }: { id: string; page: string }) {
+export function ContainersPage({ id, page, routes, status }: { id: string; page: string; routes: Route[] | null; status: Status | null }) {
   if (id) return <ContainerPage id={id} tab={page} />;
-  return <ContainerList />;
+  return <ContainerList routes={routes} status={status} />;
+}
+
+// The tunnels that reach a container: aimed at one of the ports it publishes on
+// the host, or at it by name on a shared network.
+function tunnelsOf(c: Container, routes: Route[]) {
+  const published = c.ports.filter((p) => p.public !== null && p.type === "tcp");
+  return routes.filter((r) => (r.target_scheme === "http" || r.target_scheme === "https") && (
+    (!r.target_host && published.some((p) => p.public === r.target_port))
+    || (r.target_host === c.name && c.ports.some((p) => p.private === r.target_port))
+  ));
 }
 
 // ---- the list ----
@@ -99,9 +111,13 @@ const listed = new Map<string, Container>();
 type Show = "all" | "running";
 
 // ContainerList is a row per container: its state, name and image, published
-// ports, CPU, memory and how long it has run, everything else behind its
-// menu. Compose projects of two or more fold under their name.
-function ContainerList() {
+// ports, the tunnels reaching it, CPU, memory and how long it has run,
+// everything else behind its menu. Compose projects of two or more fold under
+// their name. Tunnels to anything else are listed beneath.
+function ContainerList({ routes, status }: { routes: Route[] | null; status: Status | null }) {
+  const can = useCan();
+  const seeContainers = can("containers.view");
+  const seeTunnels = can("tunnels.view");
   const [list, setList] = useState<Container[] | null>(null);
   const [problem, setProblem] = useState("");
   const [q, setQ] = useState("");
@@ -110,6 +126,7 @@ function ContainerList() {
   const m = useMetrics();
 
   const load = useCallback(async () => {
+    if (!seeContainers) return;
     try {
       const next = await api.containers();
       listed.clear();
@@ -119,13 +136,19 @@ function ContainerList() {
     } catch (e) {
       setProblem(message(e));
     }
-  }, []);
+  }, [seeContainers]);
   useEffect(() => {
     load();
     const t = setInterval(load, 3000);
     return () => clearInterval(t);
   }, [load]);
   const { busy, run } = useActions(load);
+  const allRoutes = seeTunnels ? routes ?? [] : [];
+  const reaching = (c: Container) => tunnelsOf(c, allRoutes);
+  const matched = new Set((list ?? []).flatMap((c) => reaching(c).map((r) => r.id)));
+  const others = allRoutes.filter((r) => !matched.has(r.id));
+  const liveTunnels = allRoutes.filter((r) => r.enabled).length;
+  const links = status?.connections ?? 0;
 
   // Usage is sampled under each container's short ID.
   const stats = useMemo(() => Object.fromEntries((m?.docker.containers ?? []).map((s) => [shortId(s.id), s])), [m]);
@@ -154,13 +177,12 @@ function ContainerList() {
       <div className="page-head">
         <div className="page-head-main">
           <h1>Containers</h1>
-          {list && (
-            <div className="page-sub">
-              <span><b>{running.length}</b> of {list.length} running</span>
-              {m && <span>CPU <b>{pct(cpu)}</b> of {m.host.threads * 100}%</span>}
-              {m && <span>Memory <b>{bytes(memory)}</b> of {bytes(m.memory_total)}</span>}
-            </div>
-          )}
+          <div className="page-sub">
+            {list && <span><b>{running.length}</b> of {list.length} running</span>}
+            {list && m && <span>CPU <b>{pct(cpu)}</b> of {m.host.threads * 100}%</span>}
+            {list && m && <span>Memory <b>{bytes(memory)}</b> of {bytes(m.memory_total)}</span>}
+            {seeTunnels && <span><b>{liveTunnels}</b> tunnel{liveTunnels === 1 ? "" : "s"} live, {links > 0 ? "connector online" : status?.running ? "connector starting" : "connector offline"}</span>}
+          </div>
         </div>
         <div className="page-actions">
           <label className="ct-search">
@@ -173,11 +195,13 @@ function ContainerList() {
             ))}
           </div>
           <button type="button" className="icon-btn" aria-label="Refresh" title="Refresh" onClick={load}><Icon name="refresh" /></button>
+          {can("tunnels.create") && <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>}
         </div>
       </div>
+      <div className="page-body stack">
       {problem && <Callout tone="bad" icon="error">Docker is not reachable: {problem}</Callout>}
 
-      {list && (list.length === 0 ? (
+      {seeContainers && list && (list.length === 0 ? (
         <div className="card welcome">
           <Icon name="deployed_code" size={40} />
           <h2>No containers</h2>
@@ -188,11 +212,11 @@ function ContainerList() {
           <div className="table-wrap">
             <table className="table ct-table">
               <thead>
-                <tr><th className="grow">Container</th><th>Ports</th><th>CPU</th><th>Memory</th><th>Status</th><th aria-label="Actions" /></tr>
+                <tr><th className="grow">Container</th><th>Ports</th>{seeTunnels && <th>Tunnels</th>}<th>CPU</th><th>Memory</th><th>Status</th><th aria-label="Actions" /></tr>
               </thead>
               <tbody>
                 {rows.map((r) => "group" in r ? (
-                  <Group key={"g-" + r.group} name={r.group} items={r.items} stats={stats} busy={busy} run={run}
+                  <Group key={"g-" + r.group} name={r.group} items={r.items} stats={stats} busy={busy} run={run} reaching={seeTunnels ? reaching : null}
                     open={!folded.has(r.group)}
                     onFold={() => setFolded((f) => {
                       const next = new Set(f);
@@ -201,15 +225,60 @@ function ContainerList() {
                       return next;
                     })} />
                 ) : (
-                  <Row key={r.id} c={r} s={stats[shortId(r.id)]} busy={busy.has(r.id)} run={run} />
+                  <Row key={r.id} c={r} s={stats[shortId(r.id)]} busy={busy.has(r.id)} run={run} reaching={seeTunnels ? reaching : null} />
                 ))}
-                {shown.length === 0 && <tr><td colSpan={6} className="empty-note ct-none">No containers match.</td></tr>}
+                {shown.length === 0 && <tr><td colSpan={seeTunnels ? 7 : 6} className="empty-note ct-none">No containers match.</td></tr>}
               </tbody>
             </table>
           </div>
         </div>
       ))}
+
+      {seeTunnels && routes && (others.length > 0 || allRoutes.length === 0) && (
+        <section className="stack">
+          <h2 className="section-title">{seeContainers ? "Other tunnels" : "Tunnels"}</h2>
+          {allRoutes.length === 0 ? (
+            <div className="card welcome">
+              <Icon name="public" size={40} />
+              <h2>Nothing published yet</h2>
+              <p className="muted">Forward a container from its menu, or publish any port on one of your domains, and choose who can open it.</p>
+              {can("tunnels.create") && <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>}
+            </div>
+          ) : (
+            <div className="card">
+              <ul className="results">
+                {others.map((r) => (
+                  <li key={r.id}>
+                    <a className="result tunnel-row" href={`#/tunnels/${r.id}`}>
+                      <span className={"dot " + (r.enabled ? "ok" : "")} role="img" aria-label={r.enabled ? "Live" : "Off"} title={r.enabled ? "Live" : "Off"} />
+                      <span className="scan-target">{r.hostname}</span>
+                      <span className="result-service mono">{target(r)}</span>
+                      <span className="result-what"><AccessChips route={r} /></span>
+                      <Icon name="chevron_right" className="result-go" />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
+      </div>
     </>
+  );
+}
+
+// TunnelLinks are the addresses reaching a container, each opening its tunnel.
+function TunnelLinks({ routes }: { routes: Route[] }) {
+  if (!routes.length) return <span className="muted">None</span>;
+  return (
+    <span className="port-links">
+      {routes.map((r) => (
+        <a key={r.id} href={`#/tunnels/${r.id}`} title={r.enabled ? "Live" : "Off"}>
+          <span className={"dot " + (r.enabled ? "ok" : "")} />{r.hostname}
+        </a>
+      ))}
+    </span>
   );
 }
 
@@ -217,23 +286,31 @@ function ContainerList() {
 function rowActions(c: Container | ContainerDetail, run: (targets: { id: string; name: string }[], action: Act) => void, can: (key: string) => boolean): MenuAction[] {
   const on = live(c);
   const manage = can("containers.manage");
+  const ports = "ports" in c ? c.ports.filter((p) => p.public !== null && p.type === "tcp") : [];
   return [
     { label: "Logs", icon: "terminal" as IconName, onClick: () => (location.hash = `#/containers/${c.id}/logs`) },
+    ...(can("tunnels.create") ? ports.map((p) => ({
+      label: ports.length > 1 ? `Forward port ${p.public} to a tunnel` : "Forward to a tunnel",
+      icon: "public" as IconName,
+      onClick: () => go(`#/new/${p.public}`),
+    })) : []),
     ...(manage && !c.own && on ? [{ label: "Stop", icon: "stop" as IconName, onClick: () => run([c], "stop") }] : []),
     ...(manage && !c.own && c.state === "paused" ? [{ label: "Resume", icon: "play_arrow" as IconName, onClick: () => run([c], "unpause") }] : []),
     ...(manage && !on && c.state !== "paused" ? [{ label: "Start", icon: "play_arrow" as IconName, onClick: () => run([c], "start") }] : []),
     ...(manage && on ? [{ label: "Restart", icon: "restart_alt" as IconName, onClick: () => run([c], "restart"), confirm: c.own ? "Restart myTunnels" : undefined }] : []),
+    ...(manage && !c.own && on ? [{ label: "Kill", icon: "block" as IconName, danger: true, onClick: () => run([c], "kill"), confirm: "Kill it now" }] : []),
     ...(can("containers.remove") && !c.own && !on && c.state !== "paused"
       ? [{ label: "Delete", icon: "delete" as IconName, danger: true, onClick: () => run([c], "remove"), confirm: "Delete for good" }] : []),
   ];
 }
 
-function Row({ c, s, busy, run, grouped }: {
+function Row({ c, s, busy, run, grouped, reaching }: {
   c: Container;
   s?: ContainerStats;
   busy: boolean;
   run: (targets: { id: string; name: string }[], action: Act) => void;
   grouped?: boolean;
+  reaching: ((c: Container) => Route[]) | null;
 }) {
   const can = useCan();
   const on = live(c);
@@ -249,6 +326,7 @@ function Row({ c, s, busy, run, grouped }: {
         </a>
       </td>
       <td><PortLinks ports={c.ports} max={2} /></td>
+      {reaching && <td><TunnelLinks routes={reaching(c)} /></td>}
       <td className="num">{on && s ? pct(s.cpu) : "–"}</td>
       <td className="num">{on && s ? bytes(s.memory) : "–"}</td>
       <td className="muted ct-status">{c.status}</td>
@@ -257,7 +335,7 @@ function Row({ c, s, busy, run, grouped }: {
   );
 }
 
-function Group({ name, items, stats, busy, run, open, onFold }: {
+function Group({ name, items, stats, busy, run, open, onFold, reaching }: {
   name: string;
   items: Container[];
   stats: Record<string, ContainerStats>;
@@ -265,6 +343,7 @@ function Group({ name, items, stats, busy, run, open, onFold }: {
   run: (targets: { id: string; name: string }[], action: Act) => void;
   open: boolean;
   onFold: () => void;
+  reaching: ((c: Container) => Route[]) | null;
 }) {
   const can = useCan();
   const up = items.filter(live);
@@ -283,6 +362,7 @@ function Group({ name, items, stats, busy, run, open, onFold }: {
           </button>
         </td>
         <td />
+        {reaching && <td />}
         <td className="num">{up.length ? pct(cpu) : "–"}</td>
         <td className="num">{up.length ? bytes(memory) : "–"}</td>
         <td />
@@ -296,7 +376,7 @@ function Group({ name, items, stats, busy, run, open, onFold }: {
           )}
         </td>
       </tr>
-      {open && items.map((c) => <Row key={c.id} c={c} s={stats[shortId(c.id)]} busy={busy.has(c.id)} run={run} grouped />)}
+      {open && items.map((c) => <Row key={c.id} c={c} s={stats[shortId(c.id)]} busy={busy.has(c.id)} run={run} grouped reaching={reaching} />)}
     </>
   );
 }

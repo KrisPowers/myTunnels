@@ -14,7 +14,7 @@ import { SETTINGS, Settings } from "./Settings";
 import { Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
 import { StoragePage } from "./Storage";
-import { NewTunnel, target, TunnelPage, Tunnels } from "./Tunnels";
+import { NewTunnel, target, TunnelPage } from "./Tunnels";
 import { NewUser, UserPage, Users } from "./Users";
 import { AdvancedSecurity } from "./Security";
 import { Callout, Notices, Tooltips } from "./ui";
@@ -172,8 +172,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   // Each page shows for those who may use it; the first of them is home.
   const pages: [string, string, IconName, string, boolean][] = [
     ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
-    ["containers", "Containers", "deployed_code", "#/containers", can("containers.view")],
-    ["tunnels", "Tunnels", "public", "#/", can("tunnels.view")],
+    ["containers", "Containers", "deployed_code", "#/", can("containers.view") || can("tunnels.view")],
   ];
   const storage: [string, string, IconName, string, boolean][] = [
     ["storage", "Storage", "cloud", "#/storage", can("media.view") || can("drive.view")],
@@ -186,12 +185,12 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   ];
   const home = [...pages, ...storage, ...admin].find((p) => p[4])?.[3] ?? "#/settings/appearance";
   useEffect(() => {
-    if (view === "tunnels" && !id && !can("tunnels.view") && home !== "#/") go(home);
+    if (view === "containers" && !id && !can("containers.view") && !can("tunnels.view") && home !== "#/") go(home);
   });
   const settings = SETTINGS.filter(([k]) => can("settings.manage") || !["cloudflare", "network", "connector"].includes(k));
   const sections = view === "settings" ? settings : view === "docs" ? DOCS : null;
   const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
-    <NavItem key={key} to={to} icon={icon} label={label} on={view === key || (key === "tunnels" && view === "new")}
+    <NavItem key={key} to={to} icon={icon} label={label} on={view === key || (key === "containers" && (view === "new" || view === "tunnels"))}
       count={key === "devices" ? pending || undefined : undefined} rail={rail} />
   );
 
@@ -235,12 +234,11 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
 
         <main className="page" key={view + id}>
-          {view === "tunnels" && !id && <Tunnels routes={apps} status={status} />}
           {view === "git" && <GitPage id={id} page={page} more={place.more} users={users ?? []} onChanged={load} />}
           {view === "dashboard" && <DashboardPage />}
           {view === "storage" && <StoragePage tab={id} />}
-          {view === "containers" && <ContainersPage id={id} page={page} />}
-          {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} />}
+          {view === "containers" && <ContainersPage id={id} page={page} routes={apps} status={status} />}
+          {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} port={id} />}
           {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
           {view === "devices" && !id && <Devices devices={devices} routes={apps ?? []} onChanged={load} />}
           {device && <DevicePage device={device} routes={apps ?? []} users={users ?? []} onChanged={load} />}

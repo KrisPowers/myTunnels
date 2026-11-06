@@ -1,5 +1,6 @@
-// Where the page is, kept in the URL hash: `#/` the tunnels, `#/new` publishing
-// one, `#/tunnels/<id>/<page>` one tunnel; `#/devices` and `#/users`, with
+// Where the page is, kept in the URL hash: `#/` the containers and tunnels,
+// `#/new` publishing a tunnel (`#/new/<port>` to that port),
+// `#/tunnels/<id>/<page>` one tunnel; `#/devices` and `#/users`, with
 // `/<id>/<page>` for one; `#/security/<tab>`; `#/settings/<section>` and
 // `#/docs/<section>`; `#/dashboard`, the host and its containers;
 // `#/git`, the repositories, `#/git/tokens`, and `#/git/r/<name>/<tab>/...`
@@ -24,13 +25,17 @@ export function readHash(): Place {
   // Advanced.
   if (found === "twofactor" || found === "oauth") return { view: "security", id: found, page: "", more: [] };
   const first = found === "code" ? "git" : found;
-  if (first === "new" || first === "dashboard") return { view: first, id: "", page: "", more: [] };
+  if (first === "dashboard") return { view: first, id: "", page: "", more: [] };
+  // `#/new/<port>` starts a tunnel to that port.
+  if (first === "new") return { view: first, id: second, page: "", more: [] };
   // Media, Drive and Convert became Storage's tabs and its Convert action.
   if (first === "media" || first === "convert") return { view: "storage", id: "", page: "", more: [] };
   if (first === "drive") return { view: "storage", id: "files", page: "", more: [] };
   if (first === "storage") return { view: first, id: second, page: "", more: [] };
   if (first === "devices" || first === "users" || first === "settings" || first === "docs" || first === "git" || first === "containers" || first === "security") return { view: first, id: second, page: third, more };
-  return { view: "tunnels", id: first === "tunnels" ? second : "", page: third, more: [] };
+  // One tunnel has a page of its own; the list of them is Containers'.
+  if (first === "tunnels" && second) return { view: "tunnels", id: second, page: third, more: [] };
+  return { view: "containers", id: "", page: "", more: [] };
 }
 
 export function go(hash: string) {
