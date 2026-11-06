@@ -920,6 +920,7 @@ async fn status(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         "restarts": view.restarts,
         "last_error": view.last_error,
         "logs": view.logs,
+        "version": view.version,
         "public_ips": public_ips,
     })))
 }

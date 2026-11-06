@@ -140,6 +140,8 @@ export interface Status {
   last_error: string | null;
   logs: string[];
   public_ips: string[];
+  // The running cloudflared, such as "2026.10.7".
+  version: string | null;
 }
 
 // What the Dashboard shows, sampled on the server every `every` seconds, the
