@@ -173,6 +173,14 @@ function Network({ saved, status, onSaved }: { saved: Saved; status: Status | nu
   );
 }
 
+// True when a cloudflared version, named year.month.patch, is a year old or more.
+function outdated(version: string) {
+  const [year, month] = version.split(".").map(Number);
+  if (!year || !month) return false;
+  const now = new Date();
+  return (now.getFullYear() * 12 + now.getMonth() + 1) - (year * 12 + month) >= 12;
+}
+
 function Connector({ status }: { status: Status | null }) {
   const links = status?.connections ?? 0;
   return (
@@ -182,6 +190,10 @@ function Connector({ status }: { status: Status | null }) {
         <div className={"tally-item " + (status?.running ? "ok" : "bad")}><b>{status?.running ? "Running" : "Stopped"}</b><span>cloudflared</span></div>
         <div className="tally-item plain"><b>{status?.restarts ?? 0}</b><span>Restarts</span></div>
       </div>
+      {status?.version && (
+        <Card title={`cloudflared ${status.version}`}
+          sub={outdated(status.version) ? "Over a year old. Cloudflare supports each release for about a year, so rebuild with a newer image." : "Supported"} />
+      )}
       {status?.last_error && <Card title="Last problem" sub={status.last_error} />}
       <Card title="Log" sub="The connector's most recent lines.">
         <pre className="log">{status?.logs.length ? status.logs.slice(-120).join("\n") : "Nothing yet."}</pre>

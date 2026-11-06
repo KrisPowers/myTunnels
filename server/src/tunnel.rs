@@ -25,6 +25,8 @@ struct TunnelState {
     restarts: u32,
     last_error: Option<String>,
     logs: VecDeque<String>,
+    /// What `cloudflared --version` said, such as `2026.10.7`.
+    version: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -33,6 +35,7 @@ pub struct TunnelView {
     pub restarts: u32,
     pub last_error: Option<String>,
     pub logs: Vec<String>,
+    pub version: Option<String>,
 }
 
 /// Owns the cloudflared connector: which token it runs with, and what it has said.
@@ -61,6 +64,7 @@ impl Tunnel {
             restarts: s.restarts,
             last_error: s.last_error.clone(),
             logs: s.logs.iter().cloned().collect(),
+            version: s.version.clone(),
         }
     }
 
@@ -71,7 +75,29 @@ impl Tunnel {
 
 /// Keeps cloudflared running for as long as a tunnel token is configured.
 pub fn spawn(state: AppState) {
+    tokio::spawn(read_version(state.clone()));
     tokio::spawn(supervise(state));
+}
+
+/// Notes which cloudflared this is, so the panel can say when it is getting old.
+async fn read_version(state: AppState) {
+    let out = Command::new(&state.config.cloudflared_bin)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .output()
+        .await;
+    let version = out
+        .ok()
+        .and_then(|out| version_of(&String::from_utf8_lossy(&out.stdout)));
+    state.tunnel.update(|s| s.version = version);
+}
+
+/// `2026.10.7` from `cloudflared version 2026.10.7 (built ...)`.
+fn version_of(said: &str) -> Option<String> {
+    said.split_whitespace()
+        .skip_while(|w| *w != "version")
+        .nth(1)
+        .map(str::to_owned)
 }
 
 async fn supervise(state: AppState) {
@@ -265,6 +291,19 @@ mod tests {
             ])
         );
         assert_eq!(merged["warp-routing"]["enabled"], true);
+    }
+
+    #[test]
+    fn reads_the_version() {
+        assert_eq!(
+            version_of(
+                "cloudflared version 2026.10.7 (built 2026-10-30-1200 UTC)
+"
+            )
+            .as_deref(),
+            Some("2026.10.7")
+        );
+        assert_eq!(version_of(""), None);
     }
 
     #[test]
