@@ -77,8 +77,10 @@ Open a container for its **Logs** (followed as it runs, searchable, with or with
 time, memory, network and disk). The container myTunnels runs in is marked, cannot be stopped
 or deleted from here, and asks once more before a restart.
 
-The `docker` service in `compose.yaml` allows containers and the engine's info, nothing else,
-so images, volumes and networks cannot be changed from the panel.
+The `docker` service in `compose.yaml` allows only the calls the panel makes, by method and
+path: listing, inspecting, logs and stats, start, stop, restart, pause, resume and kill, and
+removing a container. Creating containers, exec, images, volumes and networks are refused, and
+only the gateway may connect to it.
 
 ## Storage & Media
 

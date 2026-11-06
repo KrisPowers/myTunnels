@@ -14,17 +14,28 @@ services:
     depends_on:
       - docker
 
-  # The Dashboard and Containers pages' view of Docker: the API with only
-  # containers and the engine's info allowed. Containers can be started,
-  # stopped and removed; images, volumes, networks and exec stay refused, and
-  # the gateway never holds the Docker socket itself.
+  # The Dashboard and Containers pages' view of Docker. Only the calls the
+  # panel makes are allowed, by method and path: listing, inspecting, logs
+  # and stats; start, stop, restart, pause, resume and kill; and removing a
+  # container. Creating containers, exec, images, volumes and networks are
+  # refused, and only the gateway may connect. The gateway never holds the
+  # Docker socket itself.
   docker:
-    image: tecnativa/docker-socket-proxy:latest
+    image: wollomatic/socket-proxy:1.13.2@sha256:ff95d6ff6c27853005ef85eb8f4ab5923dc3d2f1e055f98fb6aeeaceec3fe848
     restart: unless-stopped
-    environment:
-      CONTAINERS: 1
-      INFO: 1
-      POST: 1
+    # Root only to open the socket; every capability is dropped.
+    user: "0:0"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges
+    command:
+      - '-listenip=0.0.0.0'
+      - '-allowfrom=gateway'
+      - '-allowGET=(/v[0-9.]+)?/(_ping|info|containers/json|containers/[a-zA-Z0-9][a-zA-Z0-9_.-]*/(json|logs|stats))'
+      - '-allowPOST=(/v[0-9.]+)?/containers/[a-zA-Z0-9][a-zA-Z0-9_.-]*/(start|stop|restart|pause|unpause|kill)'
+      - '-allowDELETE=(/v[0-9.]+)?/containers/[a-zA-Z0-9][a-zA-Z0-9_.-]*'
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
