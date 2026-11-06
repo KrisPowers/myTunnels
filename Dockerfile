@@ -34,6 +34,8 @@ RUN apt-get update \
     && useradd --system --uid 10001 --home /data app \
     && mkdir -p /data \
     && chown app /data
+# ImageMagick reads and writes only the photo formats Convert uses.
+COPY server/imagemagick-policy.xml /etc/ImageMagick-6/policy.xml
 COPY --from=cloudflared /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 COPY --from=ffmpeg /ffmpeg /ffprobe /usr/local/bin/
 COPY --from=server /usr/local/bin/server /usr/local/bin/server

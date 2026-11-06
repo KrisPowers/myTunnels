@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, LazyLock, Mutex};
+use std::time::Duration;
 
 use axum::extract::{Path as UrlPath, State};
 use axum::http::StatusCode;
@@ -41,6 +42,25 @@ const VIDEOS: &[&str] = &[
 ];
 /// Read by libheif rather than ImageMagick.
 const HEIF: &[&str] = &["heic", "heif", "avif"];
+
+/// The longest each kind of job may run before it is stopped.
+const PHOTO_LIMIT: Duration = Duration::from_secs(5 * 60);
+const PDF_LIMIT: Duration = Duration::from_secs(15 * 60);
+const VIDEO_LIMIT: Duration = Duration::from_secs(12 * 3600);
+
+/// ImageMagick's decoder for a photo's ending. Naming it stops ImageMagick
+/// guessing from the bytes, so a file named `.jpg` is only ever read as a JPEG.
+fn coder(ext: &str) -> Option<&'static str> {
+    Some(match ext {
+        "jpg" | "jpeg" => "jpeg",
+        "png" => "png",
+        "gif" => "gif",
+        "webp" => "webp",
+        "bmp" => "bmp",
+        "tif" | "tiff" => "tiff",
+        _ => return None,
+    })
+}
 
 fn ext_of(name: &str) -> String {
     name.rsplit_once('.')
@@ -442,13 +462,13 @@ fn program(name: &str) -> Command {
     cmd
 }
 
-/// Runs a program to the end, turning a failure into what it said.
-async fn exec(name: &str, mut cmd: Command) -> ApiResult<()> {
-    let out = cmd
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()
+/// Runs a program to the end, turning a failure into what it said. One that
+/// runs past `limit` is killed.
+async fn exec(name: &str, mut cmd: Command, limit: Duration) -> ApiResult<()> {
+    let run = cmd.stdout(Stdio::null()).stderr(Stdio::piped()).output();
+    let out = tokio::time::timeout(limit, run)
         .await
+        .map_err(|_| too_long(name))?
         .map_err(|e| missing(name, e))?;
     if out.status.success() {
         return Ok(());
@@ -465,6 +485,13 @@ fn missing(name: &str, err: std::io::Error) -> ApiError {
     } else {
         ApiError::from(err)
     }
+}
+
+fn too_long(name: &str) -> ApiError {
+    ApiError(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        format!("{name} took too long and was stopped"),
+    )
 }
 
 fn not_installed(name: &str) -> ApiError {
@@ -500,24 +527,31 @@ async fn photo(source: &Path, out: &Path, dir: &Path, work: &Work) -> ApiResult<
         if work.to == "jpg" && work.size == 0 {
             let mut cmd = program("heif-convert");
             cmd.arg("-q").arg(quality).arg(source).arg(out);
-            return exec("heif-convert", cmd).await;
+            return exec("heif-convert", cmd, PHOTO_LIMIT).await;
         }
         let png = heif_temp(dir, work);
         let mut cmd = program("heif-convert");
         cmd.arg(source).arg(&png);
-        exec("heif-convert", cmd).await?;
+        exec("heif-convert", cmd, PHOTO_LIMIT).await?;
         input = png;
     }
+    let (Some(from), Some(to)) = (coder(&ext_of(&input.to_string_lossy())), coder(work.to)) else {
+        return Err(ApiError::bad("This kind of photo cannot be converted"));
+    };
     let mut cmd = program("convert");
-    // Only the first frame of an animation or a multi-page TIFF.
-    let mut first = input.clone().into_os_string();
+    // Read with the decoder its ending names, and only the first frame of an
+    // animation or a multi-page TIFF.
+    let mut first = std::ffi::OsString::from(format!("{from}:"));
+    first.push(&input);
     first.push("[0]");
     cmd.arg(first).arg("-auto-orient");
     if work.size > 0 {
         cmd.arg("-resize").arg(format!("{0}x{0}>", work.size));
     }
-    cmd.arg("-quality").arg(quality).arg(out);
-    let result = exec("ImageMagick", cmd).await;
+    let mut target = std::ffi::OsString::from(format!("{to}:"));
+    target.push(out);
+    cmd.arg("-quality").arg(quality).arg(target);
+    let result = exec("ImageMagick", cmd, PHOTO_LIMIT).await;
     if input != source {
         let _ = tokio::fs::remove_file(&input).await;
     }
@@ -556,19 +590,29 @@ async fn video(source: &Path, out: &Path, work: &Work) -> ApiResult<()> {
         let _ = stderr.read_to_string(&mut text).await;
         text
     });
-    if let Some(stdout) = child.stdout.take() {
-        let mut lines = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let at = line
-                .strip_prefix("out_time_us=")
-                .and_then(|v| v.parse::<f64>().ok());
-            if let (Some(us), true) = (at, duration > 0.0) {
-                let done = (us / 1_000_000.0 / duration).clamp(0.0, 0.99) as f32;
-                set(&work.id, |j| j.progress = done);
+    let stdout = child.stdout.take();
+    let follow = async {
+        if let Some(stdout) = stdout {
+            let mut lines = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let at = line
+                    .strip_prefix("out_time_us=")
+                    .and_then(|v| v.parse::<f64>().ok());
+                if let (Some(us), true) = (at, duration > 0.0) {
+                    let done = (us / 1_000_000.0 / duration).clamp(0.0, 0.99) as f32;
+                    set(&work.id, |j| j.progress = done);
+                }
             }
         }
-    }
-    let status = child.wait().await.map_err(ApiError::from)?;
+        child.wait().await
+    };
+    let status = match tokio::time::timeout(VIDEO_LIMIT, follow).await {
+        Ok(status) => status.map_err(ApiError::from)?,
+        Err(_) => {
+            let _ = child.kill().await;
+            return Err(too_long("ffmpeg"));
+        }
+    };
     let said = said.await.unwrap_or_default();
     if status.success() {
         Ok(())
@@ -618,7 +662,7 @@ async fn pdf(source: &Path, out: &Path, work: &Work) -> ApiResult<()> {
     ])
     .arg(target)
     .arg(source);
-    exec("Ghostscript", cmd).await
+    exec("Ghostscript", cmd, PDF_LIMIT).await
 }
 
 #[cfg(test)]
