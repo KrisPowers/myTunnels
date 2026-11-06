@@ -296,6 +296,15 @@ impl AppState {
             .is_some_and(|(count, since)| *count >= MAX_FAILURES && now - since < FAILURE_WINDOW)
     }
 
+    /// Wrong tries counted under `key` in the current window.
+    pub fn failure_count(&self, key: &str) -> u32 {
+        let now = now();
+        lock(&self.failures)
+            .get(key)
+            .filter(|(_, since)| now - since < FAILURE_WINDOW)
+            .map_or(0, |(count, _)| *count)
+    }
+
     pub fn record_failure(&self, key: &str) {
         let now = now();
         let mut failures = lock(&self.failures);

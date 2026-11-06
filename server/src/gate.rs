@@ -21,7 +21,7 @@ use tower::ServiceExt;
 use crate::db::{Device, Event, Route, SignIn, User};
 use crate::state::{AppState, Hop, Outcome, Snapshot};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
-use crate::{code, codes, guard, passkey, secret, totp};
+use crate::{code, codes, guard, passkey, pow, secret, totp};
 use crate::{oauth, proxy};
 
 /// Host-only cookies: the `__Host-` prefix makes browsers refuse them with a domain.
@@ -509,10 +509,13 @@ fn refuse(
             "This app only opens on approved devices. Give the ID below to the administrator.",
         ),
     };
-    let data = if kind == "login" {
-        json!({ "providers": sign_in_buttons(state, route) })
-    } else {
-        json!({})
+    let data = match kind {
+        "login" => json!({
+            "providers": sign_in_buttons(state, route),
+            "pow": pow::issue(slow_down(state, ip)),
+        }),
+        "password" => json!({ "pow": pow::issue(slow_down(state, ip)) }),
+        _ => json!({}),
     };
     gate_page(
         StatusCode::UNAUTHORIZED,
@@ -863,6 +866,8 @@ async fn action_response(
         ),
         ("logout", true) => logout(state, req.headers()),
         ("account", false) => account_page(state, route, &req),
+        // A fresh challenge for the next password try.
+        ("pow", true) => Json(pow::issue(slow_down(state, ip))).into_response(),
         ("passkey-begin", true) if route.require_login => Json(passkey::begin_sign_in(
             &route.zone_name,
             &format!("https://{}", route.hostname),
@@ -1274,6 +1279,24 @@ fn register(
 #[derive(Deserialize)]
 struct PasswordRequest {
     password: String,
+    pow: Option<pow::Proof>,
+}
+
+/// Wrong password tries from this address lately, which make each challenge harder.
+fn slow_down(state: &AppState, ip: Option<IpAddr>) -> u32 {
+    state.failure_count(&slow_key(ip))
+}
+
+fn slow_key(ip: Option<IpAddr>) -> String {
+    format!("slow:{}", ip.map(|ip| ip.to_string()).unwrap_or_default())
+}
+
+/// A password try that came without its solved challenge.
+fn unsolved() -> Response {
+    json_error(
+        StatusCode::BAD_REQUEST,
+        "This page is out of date. Reload it and try again.",
+    )
 }
 
 /// The tunnel's own password. Its session stays on this host alone.
@@ -1294,6 +1317,9 @@ async fn password(
     let Some(device) = device_key(headers) else {
         return no_device();
     };
+    if !pow::check(body.pow.as_ref()) {
+        return unsolved();
+    }
     let key = format!(
         "password:{}:{}",
         route.id,
@@ -1307,6 +1333,7 @@ async fn password(
     if !secret::verify(&body.password, hash) {
         log(state, route, "password", "failed", None, ip, headers);
         state.record_failure(&key);
+        state.record_failure(&slow_key(ip));
         state.record_failure(&by_device);
         tokio::time::sleep(Duration::from_millis(700)).await;
         return json_error(StatusCode::UNAUTHORIZED, "That password is not right.");
@@ -1333,6 +1360,7 @@ async fn password(
 struct LoginRequest {
     email: String,
     password: String,
+    pow: Option<pow::Proof>,
 }
 
 /// Sign-in with an account. One sign-in covers every tunnel the account may open,
@@ -1350,6 +1378,9 @@ async fn login(
     let Some(device) = device_key(headers) else {
         return no_device();
     };
+    if !pow::check(body.pow.as_ref()) {
+        return unsolved();
+    }
     let email = body.email.trim().to_ascii_lowercase();
     let by_address = format!("login:{}", ip.map(|ip| ip.to_string()).unwrap_or_default());
     let by_account = format!("login-account:{email}");
@@ -1394,6 +1425,7 @@ async fn login(
         state.record_failure(&by_address);
         state.record_failure(&by_account);
         state.record_failure(&by_device);
+        state.record_failure(&slow_key(ip));
         if state.distinct(&format!("emails-device:{device}"), &email, DEVICE_BLOCK)
             >= ACCOUNTS_PER_DEVICE
         {

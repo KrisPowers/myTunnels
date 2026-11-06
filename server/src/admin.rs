@@ -22,7 +22,7 @@ use crate::permissions::{self, Caller};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
 use crate::{
-    code, codes, containers, convert, gate, metrics, passkey, secret, storage, threads, totp,
+    code, codes, containers, convert, gate, metrics, passkey, pow, secret, storage, threads, totp,
     tunnel,
 };
 
@@ -105,6 +105,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth", get(auth_state))
         .route("/auth/setup", post(setup))
         .route("/auth/login", post(login))
+        .route("/auth/challenge", post(sign_in_challenge))
         .route("/auth/code", post(login_code))
         .route("/auth/logout", post(logout))
         .route("/auth/passkey/begin", post(begin_passkey_sign_in))
@@ -321,6 +322,15 @@ struct LoginBody {
     #[serde(default)]
     login: String,
     password: String,
+    pow: Option<pow::Proof>,
+}
+
+/// The work a browser does before a sign-in, harder after wrong tries from it.
+async fn sign_in_challenge(
+    State(state): State<AppState>,
+    Extension(Peer(ip)): Extension<Peer>,
+) -> Json<Value> {
+    Json(pow::issue(state.failure_count(&format!("admin:{ip}"))))
 }
 
 /// True when `login` names the admin account, or when there is no account to name.
@@ -350,6 +360,11 @@ async fn login(
         return Err(ApiError(
             StatusCode::TOO_MANY_REQUESTS,
             "Too many wrong tries. Wait 15 minutes and try again.".into(),
+        ));
+    }
+    if !pow::check(body.pow.as_ref()) {
+        return Err(ApiError::bad(
+            "This page is out of date. Reload it and try again.",
         ));
     }
     // The password is checked either way, so a wrong name takes as long to refuse.
