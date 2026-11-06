@@ -22,8 +22,8 @@ use crate::permissions::{self, Caller};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
 use crate::{
-    code, codes, containers, convert, gate, metrics, passkey, pow, secret, storage, threads, totp,
-    tunnel,
+    code, codes, containers, convert, gate, metrics, passkey, pow, secret, share, storage, threads,
+    totp, tunnel,
 };
 
 const ADMIN_COOKIE: &str = "admin_session";
@@ -39,6 +39,8 @@ pub fn router(state: AppState) -> Router {
         .route("/account/passkeys", get(list_passkeys).post(add_passkey))
         .route("/account/passkeys/begin", post(begin_passkey))
         .route("/account/passkeys/{id}", delete(remove_passkey))
+        .route("/shares", get(share::list).post(share::create))
+        .route("/shares/{id}", delete(share::remove))
         .route("/oauth", get(list_oauth))
         .route("/oauth/{id}", put(save_oauth).delete(delete_oauth))
         .route("/twofactor", get(two_factor).put(save_two_factor))

@@ -299,10 +299,13 @@ async fn download(store: &Store, req: Request) -> ApiResult<Response> {
         return Err(ApiError::bad("Only files can be downloaded"));
     }
     let name = rel.last().cloned().unwrap_or_default();
-    let response = ServeFile::new(&real)
-        .try_call(req)
-        .await
-        .map_err(io_error)?;
+    send_file(&real, &name, at.inline, req).await
+}
+
+/// Sends the file at `real` as `name`: shown in the browser when `inline` and it
+/// is a kind that is safe to show there, saved otherwise.
+pub async fn send_file(real: &Path, name: &str, inline: bool, req: Request) -> ApiResult<Response> {
+    let response = ServeFile::new(real).try_call(req).await.map_err(io_error)?;
     let mut response = response.map(Body::new);
     let headers = response.headers_mut();
     let kind = headers
@@ -318,7 +321,7 @@ async fn download(store: &Store, req: Request) -> ApiResult<Response> {
         || kind.starts_with("audio/")
         || kind.starts_with("application/pdf")
         || textual;
-    let inline = at.inline && viewable;
+    let inline = inline && viewable;
     if inline && textual {
         headers.insert(
             header::CONTENT_TYPE,
@@ -332,7 +335,7 @@ async fn download(store: &Store, req: Request) -> ApiResult<Response> {
             |c: char| !c.is_ascii_graphic() || c == '"' || c == '\\',
             "_"
         ),
-        encode(&name)
+        encode(name)
     );
     if let Ok(value) = HeaderValue::from_str(&disposition) {
         headers.insert(header::CONTENT_DISPOSITION, value);

@@ -378,6 +378,18 @@ export interface SignedIn { ok?: boolean; code_required?: boolean; ticket?: stri
 // The account signed in: the host account made at setup, or another account's own.
 export interface AdminAccount { username: string | null; email: string | null; host: boolean; totp: boolean }
 
+// A share link: what it opens, until when, and how often it was opened.
+export interface Share {
+  id: string;
+  space: Space;
+  paths: string[];
+  protected: boolean;
+  expires: number | null;
+  created_by: string;
+  created_at: number;
+  opened: number;
+}
+
 // A passkey of the account signed in: the site it signs in to, and when it was last used.
 export interface PasskeyInfo { id: string; rp_id: string; name: string; created_at: number; last_used: number | null }
 
@@ -425,6 +437,9 @@ export const api = {
   confirmTotp: (code: string) => call<{ recovery: string[] }>("/account/totp", "PUT", { code }),
   removeTotp: (code: string) => call("/account/totp", "DELETE", { code }),
   passkeys: () => call<PasskeyInfo[]>("/account/passkeys"),
+  shares: () => call<{ shares: Share[]; address: string | null }>("/shares"),
+  share: (body: { space: Space; paths: string[]; password: string; days: number }) => call<{ share: Share; url: string }>("/shares", "POST", body),
+  endShare: (id: string) => call(`/shares/${encodeURIComponent(id)}`, "DELETE"),
   beginPasskey: () => call<CreateOptions>("/account/passkeys/begin", "POST"),
   addPasskey: (credential: unknown, name: string) => call<PasskeyInfo[]>("/account/passkeys", "POST", { credential, name }),
   removePasskey: (id: string) => call<PasskeyInfo[]>(`/account/passkeys/${encodeURIComponent(id)}`, "DELETE"),

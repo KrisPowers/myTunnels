@@ -6,6 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::share::Share;
 use crate::util::{lock, random_alnum};
 use crate::vault::{self, Vault};
 
@@ -123,6 +124,17 @@ CREATE TABLE IF NOT EXISTS git_comments (
     author TEXT NOT NULL,
     body TEXT NOT NULL,
     created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS shares (
+    id TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    space TEXT NOT NULL,
+    paths TEXT NOT NULL,
+    password_hash TEXT,
+    expires INTEGER,
+    created_by TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    opened INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS passkeys (
     id TEXT PRIMARY KEY,
@@ -349,6 +361,25 @@ pub struct Passkey {
     pub name: String,
     pub created_at: i64,
     pub last_used: Option<i64>,
+}
+
+const SHARE_COLS: &str =
+    "id, token_hash, space, paths, password_hash, expires, created_by, created_at, opened";
+
+fn share_row(r: &Row) -> rusqlite::Result<Share> {
+    let password_hash: Option<String> = r.get(4)?;
+    Ok(Share {
+        id: r.get(0)?,
+        token_hash: r.get(1)?,
+        space: r.get(2)?,
+        paths: serde_json::from_str(&r.get::<_, String>(3)?).unwrap_or_default(),
+        protected: password_hash.is_some(),
+        password_hash,
+        expires: r.get(5)?,
+        created_by: r.get(6)?,
+        created_at: r.get(7)?,
+        opened: r.get(8)?,
+    })
 }
 
 const PASSKEY_COLS: &str =
@@ -1054,6 +1085,63 @@ impl Db {
                 e.at
             ],
         )?;
+        Ok(())
+    }
+
+    pub fn add_share(&self, s: &Share) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO shares (id, token_hash, space, paths, password_hash, expires, created_by, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                s.id,
+                s.token_hash,
+                s.space,
+                serde_json::to_string(&s.paths)?,
+                s.password_hash,
+                s.expires,
+                s.created_by,
+                s.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Every share link, newest first; expired ones are forgotten.
+    pub fn shares(&self) -> Result<Vec<Share>> {
+        let conn = self.conn();
+        conn.execute(
+            "DELETE FROM shares WHERE expires IS NOT NULL AND expires < ?1",
+            [crate::util::now()],
+        )?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {SHARE_COLS} FROM shares ORDER BY created_at DESC"
+        ))?;
+        let rows = stmt
+            .query_map([], share_row)?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+
+    pub fn share_by_token(&self, token_hash: &str) -> Result<Option<Share>> {
+        Ok(self
+            .conn()
+            .query_row(
+                &format!("SELECT {SHARE_COLS} FROM shares WHERE token_hash = ?1"),
+                [token_hash],
+                share_row,
+            )
+            .optional()?)
+    }
+
+    pub fn count_share_open(&self, id: &str) -> Result<()> {
+        self.conn()
+            .execute("UPDATE shares SET opened = opened + 1 WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    pub fn delete_share(&self, id: &str) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM shares WHERE id = ?1", [id])?;
         Ok(())
     }
 
