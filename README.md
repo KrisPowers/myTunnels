@@ -215,12 +215,13 @@ own login still applies; the gateway is an extra layer in front of it.
 4. Approve it for every tunnel or for selected ones. The waiting page opens the app on its
    own within a few seconds.
 
-The key is never stored on the server, only its SHA-256 hash. A browser is one device
-everywhere: the cookie for the domain decides which device it is on every tunnel there,
-tunnels on other domains fetch the same key from the oldest tunnel, and the dashboard's
-own browser carries its key to one tunnel on each domain once. A key no device has any
-more is replaced by that one device. One
-approval covers every tunnel on the same domain. If an approved key later shows up with different hardware
+The key is never stored on the server, only its SHA-256 hash. Each tunnel keeps it in a
+cookie for its own address alone, never one for the whole domain, so other servers on the
+domain never receive it. A browser is still one device everywhere: a tunnel it has not
+opened yet fetches its key from the oldest tunnel with a one-use code, and the dashboard's
+own browser carries its key to every tunnel once. A key no device has any more is replaced
+by that one device. One approval, and one sign-in, covers every tunnel the device and the
+account may open. If an approved key later shows up with different hardware
 (platform, touch support, or GPU), the device goes back to waiting and is flagged for
 review, which stops a copied key from working on another machine.
 

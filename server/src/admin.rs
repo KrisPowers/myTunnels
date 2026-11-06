@@ -1667,7 +1667,7 @@ struct PlantBody {
     back: String,
 }
 
-/// Starts carrying this browser's dashboard key to one tunnel on each domain, so it
+/// Starts carrying this browser's dashboard key to every tunnel, so it
 /// is the same device on the dashboard and on every tunnel.
 async fn plant_device(
     State(state): State<AppState>,

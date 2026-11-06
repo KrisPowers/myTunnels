@@ -1,10 +1,11 @@
 //! The access gateway. cloudflared sends every published hostname here; each request is
 //! matched to its tunnel, checked against that tunnel's access rules, then forwarded.
 //!
-//! Every browser gets a device key the first time it opens any tunnel. The key lives
-//! in a cookie on the tunnel's domain; tunnels on other domains fetch the same key
-//! from the hub (the oldest tunnel's host) with a one-minute, one-use code, so one
-//! browser is one device everywhere.
+//! Every browser gets a device key the first time it opens any tunnel. Each tunnel
+//! keeps the key in a cookie of its own host, never one for the whole domain, so
+//! other servers on the domain never see it. Tunnels fetch the key from the hub (the
+//! oldest tunnel's host) with a one-minute, one-use code, so one browser is one
+//! device everywhere.
 
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
@@ -23,10 +24,15 @@ use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, A
 use crate::{code, codes, guard, secret};
 use crate::{oauth, proxy};
 
-pub const DEVICE_COOKIE: &str = "__gate_device";
-const SESSION_COOKIE: &str = "__gate_session";
+/// Host-only cookies: the `__Host-` prefix makes browsers refuse them with a domain.
+pub const DEVICE_COOKIE: &str = "__Host-gate_device";
+const SESSION_COOKIE: &str = "__Host-gate_session";
 const PASS_COOKIE: &str = "__gate_pass";
-const USER_COOKIE: &str = "__gate_user";
+const USER_COOKIE: &str = "__Host-gate_user";
+/// The cookies earlier versions set for the whole domain. A device key found there
+/// is kept as this host's own, and all of them are cleared.
+const LEGACY_DEVICE_COOKIE: &str = "__gate_device";
+const LEGACY_COOKIES: [&str; 3] = ["__gate_device", "__gate_session", "__gate_user"];
 /// Set while a browser is away fetching its key, so one that keeps no cookies is not
 /// sent round in circles.
 const TRIED_COOKIE: &str = "__gate_tried";
@@ -73,13 +79,110 @@ pub fn router(state: AppState, panel: Router) -> Router {
 async fn handle(
     State(state): State<AppState>,
     Extension(Panel(panel)): Extension<Panel>,
-    req: Request,
+    mut req: Request,
 ) -> Response {
     let host = request_host(&req);
     let snap = state.snapshot();
     let Some(route) = snap.routes.get(&host).cloned() else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    let cleared = match move_legacy(&state, &snap, &route, &mut req) {
+        Legacy::Moving(response) => return response,
+        Legacy::Clear(cookies) => cookies,
+    };
+    let mut response = serve(&state, panel, &snap, route, host, req).await;
+    for value in cleared {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    response
+}
+
+/// Set while a browser is carried from the domain-wide cookies to host-only ones,
+/// so it is never sent round twice.
+const MOVED_COOKIE: &str = "__gate_moved";
+
+enum Legacy {
+    /// Off to carry the old device key to every tunnel, then back here.
+    Moving(Response),
+    /// Carry on, setting these cookies.
+    Clear(Vec<HeaderValue>),
+}
+
+/// Earlier versions kept the device key in a cookie for the whole domain. On a page
+/// load, a browser holding one takes it to every tunnel as that host's own cookie
+/// (the same trip the dashboard's key makes), and the domain-wide cookies are
+/// cleared, so it stays one device with its approvals. Any other request uses the
+/// old key for this request only.
+fn move_legacy(state: &AppState, snap: &Snapshot, route: &Route, req: &mut Request) -> Legacy {
+    let headers = req.headers();
+    if !LEGACY_COOKIES.iter().any(|n| cookie(headers, n).is_some()) {
+        return Legacy::Clear(Vec::new());
+    }
+    let key = cookie(headers, LEGACY_DEVICE_COOKIE)
+        .filter(|t| valid_token(t) && cookie(headers, DEVICE_COOKIE).is_none())
+        .map(str::to_owned);
+    let page_load = req.method() == Method::GET
+        && headers
+            .get(header::ACCEPT)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.contains("text/html"))
+        && matches!(
+            headers.get("sec-fetch-mode").and_then(|v| v.to_str().ok()),
+            None | Some("navigate")
+        )
+        && !req.uri().path().starts_with("/__gate/");
+    if !page_load {
+        if let Some(key) = key {
+            if let Ok(value) = HeaderValue::from_str(&format!("{DEVICE_COOKIE}={key}")) {
+                req.headers_mut().append(header::COOKIE, value);
+            }
+        }
+        return Legacy::Clear(Vec::new());
+    }
+    let mut cookies: Vec<HeaderValue> = LEGACY_COOKIES
+        .iter()
+        .filter_map(|n| cookie_value(n, "", Some(&route.zone_name), 0))
+        .collect();
+    let known = key.filter(|k| {
+        state
+            .db
+            .device_by_token(&sha256_hex(k))
+            .ok()
+            .flatten()
+            .is_some()
+    });
+    let hosts = planting_hosts(snap);
+    match (known, hosts.first().cloned()) {
+        (Some(token), Some(first)) if cookie(headers, MOVED_COOKIE).is_none() => {
+            let path = req.uri().path_and_query().map_or("/", |p| p.as_str());
+            let code = random_hex(16);
+            state.put_hop(
+                code.clone(),
+                Hop::Plant {
+                    token,
+                    hosts,
+                    back: format!("https://{}{path}", route.hostname),
+                    expires: now() + HOP_TTL,
+                },
+            );
+            cookies.extend(cookie_value(MOVED_COOKIE, "1", None, 300));
+            Legacy::Moving(redirect(
+                &format!("https://{first}/__gate/plant?c={code}"),
+                cookies,
+            ))
+        }
+        _ => Legacy::Clear(cookies),
+    }
+}
+
+async fn serve(
+    state: &AppState,
+    panel: Router,
+    snap: &Snapshot,
+    route: Route,
+    host: String,
+    req: Request,
+) -> Response {
     // A tunnel aimed at the gateway itself would forward to itself forever.
     if req.headers().contains_key(proxy::HOP_HEADER) {
         return page(
@@ -108,7 +211,7 @@ async fn handle(
         if !within("gate-action", ACTIONS_PER_MINUTE) {
             return too_many();
         }
-        let mut response = action_response(&state, &route, ip, &action, req).await;
+        let mut response = action_response(state, &route, ip, &action, req).await;
         harden(&mut response);
         return response;
     }
@@ -123,10 +226,10 @@ async fn handle(
             return StatusCode::NOT_FOUND.into_response();
         }
         let path = req.uri().path().to_owned();
-        return code::serve(&state, ip, &path, req).await;
+        return code::serve(state, ip, &path, req).await;
     }
 
-    let mut new_cookie = None;
+    let mut new_cookies = Vec::new();
     let known = |token: &str| {
         state
             .db
@@ -136,18 +239,34 @@ async fn handle(
             .is_some()
     };
     if req.method() == Method::GET && wants_identity(req.headers(), known) {
-        match identify(&state, &snap, &route, ip, &req) {
-            Identity::Here(value) => new_cookie = Some(value),
+        match identify(state, snap, &route, ip, &req) {
+            Identity::Here(value) => new_cookies.push(value),
             Identity::Away(response) => return response,
             Identity::Keep => {}
         }
     }
 
-    let verdict = check(&state, &snap, &route, ip, req.headers());
+    let mut verdict = check(state, snap, &route, ip, req.headers());
+    // A device approved here that has no session on this host yet gets one, so
+    // one approval covers every tunnel without a cookie for the whole domain.
+    if verdict.device == Some(false) {
+        if let Some(device) = approved_here(state, snap, &route, req.headers()) {
+            verdict.device = Some(true);
+            let sid = state.open_session(
+                &state.device_sessions,
+                &device.id,
+                "",
+                "",
+                DEVICE_SESSION_TTL,
+                false,
+            );
+            new_cookies.extend(cookie_value(SESSION_COOKIE, &sid, None, DEVICE_SESSION_TTL));
+        }
+    }
     let mut response = if verdict.allowed() && route.target_scheme == "dashboard" {
         dashboard(panel, ip, req).await
     } else if verdict.allowed() {
-        let mut response = proxy::forward(&state, &snap, &route, ip, req).await;
+        let mut response = proxy::forward(state, snap, &route, ip, req).await;
         // Tunnels are only ever reached over HTTPS.
         response
             .headers_mut()
@@ -155,14 +274,26 @@ async fn handle(
             .or_insert(HeaderValue::from_static("max-age=31536000"));
         response
     } else {
-        let mut response = refuse(&state, &route, ip, &host, &verdict, &req);
+        let mut response = refuse(state, &route, ip, &host, &verdict, &req);
         harden(&mut response);
         response
     };
-    if let Some(value) = new_cookie {
+    for value in new_cookies {
         response.headers_mut().append(header::SET_COOKIE, value);
     }
     response
+}
+
+/// The device this browser's key names, if it is approved for this tunnel.
+fn approved_here<'a>(
+    state: &AppState,
+    snap: &'a Snapshot,
+    route: &Route,
+    headers: &HeaderMap,
+) -> Option<&'a Device> {
+    let hash = device_key(headers)?;
+    let id = state.db.device_by_token(&hash).ok().flatten()?.id;
+    snap.devices.get(&id).filter(|d| may_open(d, route))
 }
 
 /// The panel, as at its own address, for a visitor that passed the tunnel's
@@ -273,10 +404,16 @@ fn user_session(
     headers: &HeaderMap,
     route: &Route,
 ) -> Option<String> {
-    let s = state.session(&state.user_sessions, cookie(headers, USER_COOKIE)?)?;
     let here = cookie(headers, DEVICE_COOKIE)
         .map(sha256_hex)
         .unwrap_or_default();
+    // This host's own sign-in, or the one this device made at another tunnel.
+    let token = match cookie(headers, USER_COOKIE) {
+        Some(token) => token.to_owned(),
+        None if !here.is_empty() => state.db.device_sign_in(&here, now()).ok().flatten()?,
+        None => return None,
+    };
+    let s = state.session(&state.user_sessions, &token)?;
     if !s.device.is_empty() && s.device != here {
         return None;
     }
@@ -605,16 +742,12 @@ fn identify(
     req: &Request,
 ) -> Identity {
     let hub = snap.hub.as_deref().and_then(|h| snap.routes.get(h));
-    let same_domain = hub.is_none_or(|h| h.zone_name == route.zone_name);
-    if same_domain {
+    // Only the hub makes keys; every other tunnel fetches this browser's from it.
+    let at_hub = hub.is_none_or(|h| h.hostname == route.hostname);
+    if at_hub {
         return match new_device(state, route, ip, req.headers(), "seen", Value::Null) {
-            Ok((_, token)) => cookie_value(
-                DEVICE_COOKIE,
-                &token,
-                Some(&route.zone_name),
-                DEVICE_COOKIE_TTL,
-            )
-            .map_or(Identity::Keep, Identity::Here),
+            Ok((_, token)) => cookie_value(DEVICE_COOKIE, &token, None, DEVICE_COOKIE_TTL)
+                .map_or(Identity::Keep, Identity::Here),
             Err(err) => {
                 tracing::warn!("could not record a new device: {}", err.1);
                 Identity::Keep
@@ -726,7 +859,7 @@ async fn action_response(
             "Sign out",
             "Sign out of this app on this device.",
         ),
-        ("logout", true) => logout(state, route, req.headers()),
+        ("logout", true) => logout(state, req.headers()),
         ("enroll", true) => match body::<EnrollRequest>(req).await {
             Ok((headers, body)) => register(state, route, ip, &headers, body)
                 .unwrap_or_else(IntoResponse::into_response),
@@ -757,16 +890,22 @@ async fn action_response(
 }
 
 /// Ends this browser's sign-in for good, not only its cookie.
-fn logout(state: &AppState, route: &Route, headers: &HeaderMap) -> Response {
-    if let Some(session) =
-        cookie(headers, USER_COOKIE).and_then(|v| state.session(&state.user_sessions, v))
-    {
+fn logout(state: &AppState, headers: &HeaderMap) -> Response {
+    let here = device_key(headers);
+    let token = cookie(headers, USER_COOKIE).map(str::to_owned).or_else(|| {
+        here.as_deref()
+            .and_then(|h| state.db.device_sign_in(h, now()).ok().flatten())
+    });
+    if let Some(session) = token.and_then(|v| state.session(&state.user_sessions, &v)) {
         state.end_session(&state.user_sessions, &session);
     }
+    if let Some(here) = here {
+        let _ = state.db.forget_device_sign_in(&here);
+    }
     let mut response = Json(json!({ "ok": true })).into_response();
-    response.headers_mut().extend(
-        cookie_value(USER_COOKIE, "", Some(&route.zone_name), 0).map(|v| (header::SET_COOKIE, v)),
-    );
+    response
+        .headers_mut()
+        .extend(cookie_value(USER_COOKIE, "", None, 0).map(|v| (header::SET_COOKIE, v)));
     response
 }
 
@@ -810,12 +949,7 @@ fn hub_hand_out(state: &AppState, route: &Route, ip: Option<IpAddr>, req: &Reque
         Some(token) => token.to_owned(),
         None => match new_device(state, route, ip, req.headers(), "seen", Value::Null) {
             Ok((_, token)) => {
-                cookies.extend(cookie_value(
-                    DEVICE_COOKIE,
-                    &token,
-                    Some(&route.zone_name),
-                    DEVICE_COOKIE_TTL,
-                ));
+                cookies.extend(cookie_value(DEVICE_COOKIE, &token, None, DEVICE_COOKIE_TTL));
                 token
             }
             Err(_) => return redirect(&url, Vec::new()),
@@ -841,20 +975,15 @@ fn claim(state: &AppState, route: &Route, req: &Request) -> Response {
             host, path, token, ..
         }) if host == route.hostname => redirect(
             &path,
-            cookie_value(
-                DEVICE_COOKIE,
-                &token,
-                Some(&route.zone_name),
-                DEVICE_COOKIE_TTL,
-            )
-            .into_iter()
-            .collect(),
+            cookie_value(DEVICE_COOKIE, &token, None, DEVICE_COOKIE_TTL)
+                .into_iter()
+                .collect(),
         ),
         _ => redirect("/", Vec::new()),
     }
 }
 
-/// On one tunnel per domain, in turn: the dashboard's device key becomes this
+/// On each tunnel in turn: the dashboard's device key becomes this
 /// browser's key here. A different device this browser was known as here is folded
 /// into the dashboard's, so its accounts and approvals carry over.
 fn plant(state: &AppState, route: &Route, req: &Request) -> Response {
@@ -883,14 +1012,9 @@ fn plant(state: &AppState, route: &Route, req: &Request) -> Response {
             Err(err) => tracing::warn!("could not merge device {}: {err:#}", old.id),
         }
     }
-    let cookies = cookie_value(
-        DEVICE_COOKIE,
-        &token,
-        Some(&route.zone_name),
-        DEVICE_COOKIE_TTL,
-    )
-    .into_iter()
-    .collect();
+    let cookies = cookie_value(DEVICE_COOKIE, &token, None, DEVICE_COOKIE_TTL)
+        .into_iter()
+        .collect();
     let rest = hosts[1..].to_vec();
     let next = match rest.first().cloned() {
         Some(host) => {
@@ -911,7 +1035,8 @@ fn plant(state: &AppState, route: &Route, req: &Request) -> Response {
     redirect(&next, cookies)
 }
 
-/// One tunnel per domain, the hub's first: where the dashboard's device key goes.
+/// Every live tunnel, the hub's first: where the dashboard's device key goes, since
+/// each host keeps its own cookie.
 pub fn planting_hosts(snap: &Snapshot) -> Vec<String> {
     let mut routes: Vec<&Route> = snap.routes.values().filter(|r| r.enabled).collect();
     routes.sort_by_key(|r| {
@@ -920,15 +1045,7 @@ pub fn planting_hosts(snap: &Snapshot) -> Vec<String> {
             r.created_at,
         )
     });
-    let mut zones = Vec::new();
-    let mut hosts = Vec::new();
-    for r in routes {
-        if !zones.contains(&r.zone_name) {
-            zones.push(r.zone_name.clone());
-            hosts.push(r.hostname.clone());
-        }
-    }
-    hosts
+    routes.into_iter().map(|r| r.hostname.clone()).collect()
 }
 
 #[derive(Deserialize)]
@@ -1009,13 +1126,8 @@ fn register(
     let out = response.headers_mut();
     out.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     out.extend(
-        cookie_value(
-            DEVICE_COOKIE,
-            &token,
-            Some(&route.zone_name),
-            DEVICE_COOKIE_TTL,
-        )
-        .map(|v| (header::SET_COOKIE, v)),
+        cookie_value(DEVICE_COOKIE, &token, None, DEVICE_COOKIE_TTL)
+            .map(|v| (header::SET_COOKIE, v)),
     );
     if allowed {
         let sid = state.open_session(
@@ -1027,13 +1139,8 @@ fn register(
             false,
         );
         out.extend(
-            cookie_value(
-                SESSION_COOKIE,
-                &sid,
-                Some(&route.zone_name),
-                DEVICE_SESSION_TTL,
-            )
-            .map(|v| (header::SET_COOKIE, v)),
+            cookie_value(SESSION_COOKIE, &sid, None, DEVICE_SESSION_TTL)
+                .map(|v| (header::SET_COOKIE, v)),
         );
     }
     Ok(response)
@@ -1103,8 +1210,8 @@ struct LoginRequest {
     password: String,
 }
 
-/// Sign-in with an account. One sign-in covers every tunnel on the domain the
-/// account may open.
+/// Sign-in with an account. One sign-in covers every tunnel the account may open,
+/// on this device.
 async fn login(
     state: &AppState,
     route: &Route,
@@ -1175,7 +1282,7 @@ async fn login(
     state.clear_failures(&by_address);
     state.clear_failures(&by_account);
     state.clear_failures(&by_device);
-    signed_in(route, admit(state, route, account, &visitor).await)
+    signed_in(admit(state, route, account, &visitor).await)
 }
 
 /// Who is signing in: the device key this browser holds, and where it is.
@@ -1316,24 +1423,33 @@ fn open(state: &AppState, route: &Route, mut account: User, v: &Visitor, mfa: bo
     record(state, route, v, &account.id, "ok");
     account.last_login = Some(now());
     let _ = state.db.save_user(&account);
-    state.open_session(
+    let token = state.open_session(
         &state.user_sessions,
         &account.id,
         &secret::tag(&account.password_hash),
         &v.device_hash,
         USER_TTL,
         mfa,
-    )
+    );
+    // Other tunnels find the sign-in by this device, not by a domain-wide cookie.
+    if !v.device_hash.is_empty() {
+        if let Err(err) = state
+            .db
+            .set_device_sign_in(&v.device_hash, &token, now() + USER_TTL)
+        {
+            tracing::warn!("could not share a sign-in across tunnels: {err:#}");
+        }
+    }
+    token
 }
 
 /// The answer to a sign-in: a session cookie, or the ticket for the code it waits on.
-fn signed_in(route: &Route, outcome: Result<Outcome, ApiError>) -> Response {
+fn signed_in(outcome: Result<Outcome, ApiError>) -> Response {
     match outcome {
         Ok(Outcome::Session(sid)) => {
             let mut response = Json(json!({ "ok": true })).into_response();
             response.headers_mut().extend(
-                cookie_value(USER_COOKIE, &sid, Some(&route.zone_name), USER_TTL)
-                    .map(|v| (header::SET_COOKIE, v)),
+                cookie_value(USER_COOKIE, &sid, None, USER_TTL).map(|v| (header::SET_COOKIE, v)),
             );
             response
         }
@@ -1383,7 +1499,7 @@ async fn code(
     let outcome = vet(state, route, account, &visitor)
         .map(|account| Outcome::Session(open(state, route, account, &visitor, true)))
         .map_err(|(status, why)| ApiError(status, why.into()));
-    signed_in(route, outcome)
+    signed_in(outcome)
 }
 
 // ---- signing in through another service ----
@@ -1508,7 +1624,7 @@ async fn oauth_callback(
     match outcome {
         Outcome::Session(sid) => redirect(
             &path,
-            cookie_value(USER_COOKIE, &sid, Some(&route.zone_name), USER_TTL)
+            cookie_value(USER_COOKIE, &sid, None, USER_TTL)
                 .into_iter()
                 .collect(),
         ),

@@ -210,12 +210,13 @@ fn strip_gate_cookies(headers: &mut HeaderMap) {
         .map(str::trim)
         .filter(|c| !c.is_empty())
         .collect();
-    if !cookies.iter().any(|c| c.starts_with("__gate_")) {
+    let gate = |c: &str| c.starts_with("__gate_") || c.starts_with("__Host-gate_");
+    if !cookies.iter().any(|c| gate(c)) {
         return;
     }
     let kept = cookies
         .into_iter()
-        .filter(|c| !c.starts_with("__gate_"))
+        .filter(|c| !gate(c))
         .collect::<Vec<_>>()
         .join("; ");
     headers.remove(header::COOKIE);
@@ -269,7 +270,9 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(
             header::COOKIE,
-            HeaderValue::from_static("a=1; __gate_device=secret; b=2; __gate_session=x"),
+            HeaderValue::from_static(
+                "a=1; __gate_device=secret; b=2; __Host-gate_session=x; __Host-gate_user=y",
+            ),
         );
         strip_gate_cookies(&mut headers);
         assert_eq!(headers.get(header::COOKIE).unwrap(), "a=1; b=2");

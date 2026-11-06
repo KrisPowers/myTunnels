@@ -123,6 +123,11 @@ CREATE TABLE IF NOT EXISTS git_comments (
     body TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS device_sign_ins (
+    device_hash TEXT PRIMARY KEY,
+    token TEXT NOT NULL,
+    expires INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS git_tokens (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -951,6 +956,41 @@ impl Db {
                 e.country,
                 e.at
             ],
+        )?;
+        Ok(())
+    }
+
+    /// Remembers the sign-in a device made, so every tunnel finds it.
+    pub fn set_device_sign_in(&self, device_hash: &str, token: &str, expires: i64) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO device_sign_ins (device_hash, token, expires) VALUES (?1, ?2, ?3)
+             ON CONFLICT(device_hash) DO UPDATE SET token = ?2, expires = ?3",
+            params![device_hash, token, expires],
+        )?;
+        conn.execute(
+            "DELETE FROM device_sign_ins WHERE expires < ?1",
+            [crate::util::now()],
+        )?;
+        Ok(())
+    }
+
+    /// The sign-in a device made, if it has not expired.
+    pub fn device_sign_in(&self, device_hash: &str, now: i64) -> Result<Option<String>> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT token FROM device_sign_ins WHERE device_hash = ?1 AND expires > ?2",
+                params![device_hash, now],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    pub fn forget_device_sign_in(&self, device_hash: &str) -> Result<()> {
+        self.conn().execute(
+            "DELETE FROM device_sign_ins WHERE device_hash = ?1",
+            [device_hash],
         )?;
         Ok(())
     }
