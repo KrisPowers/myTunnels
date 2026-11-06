@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Convert's ImageMagick policy: only the photo formats Convert reads and
+     writes, no delegates or indirect file reads, and bounded resources. -->
+<policymap>
+  <policy domain="resource" name="memory" value="512MiB"/>
+  <policy domain="resource" name="map" value="1GiB"/>
+  <policy domain="resource" name="disk" value="4GiB"/>
+  <policy domain="resource" name="area" value="256MP"/>
+  <policy domain="resource" name="width" value="32KP"/>
+  <policy domain="resource" name="height" value="32KP"/>
+  <policy domain="resource" name="time" value="300"/>
+  <policy domain="delegate" rights="none" pattern="*"/>
+  <policy domain="path" rights="none" pattern="@*"/>
+  <policy domain="coder" rights="none" pattern="*"/>
+  <policy domain="coder" rights="read|write" pattern="JPEG"/>
+  <policy domain="coder" rights="read|write" pattern="JPG"/>
+  <policy domain="coder" rights="read|write" pattern="PNG"/>
+  <policy domain="coder" rights="read|write" pattern="GIF"/>
+  <policy domain="coder" rights="read|write" pattern="WEBP"/>
+  <policy domain="coder" rights="read|write" pattern="BMP"/>
+  <policy domain="coder" rights="read|write" pattern="TIFF"/>
+</policymap>
