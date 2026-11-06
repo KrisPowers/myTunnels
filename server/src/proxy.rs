@@ -85,7 +85,12 @@ pub async fn forward(
         headers.insert("x-forwarded-host", original_host);
     }
 
-    let mut outbound = state.proxy.request(parts.method, url).headers(headers);
+    let client = if route.verify_tls {
+        &state.proxy_verified
+    } else {
+        &state.proxy
+    };
+    let mut outbound = client.request(parts.method, url).headers(headers);
     if has_body {
         outbound = outbound.body(reqwest::Body::wrap_stream(body.into_data_stream()));
     }

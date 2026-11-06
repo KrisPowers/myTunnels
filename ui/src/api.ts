@@ -24,6 +24,8 @@ export interface Route {
   policy_mode: PolicyMode;
   enabled: boolean;
   preserve_host: boolean;
+  // Check an https app's certificate instead of taking any.
+  verify_tls: boolean;
   created_at: number;
 }
 
@@ -43,7 +45,7 @@ export interface Access {
   password?: string;
 }
 
-export type RouteEdit = Pick<Route, "target_host" | "target_scheme" | "enabled" | "preserve_host"> & Access & { port: number };
+export type RouteEdit = Pick<Route, "target_host" | "target_scheme" | "enabled" | "preserve_host" | "verify_tls"> & Access & { port: number };
 
 export interface User {
   id: string;
@@ -433,7 +435,7 @@ export const api = {
   zones: () => call<Zone[]>("/zones"),
 
   routes: () => call<Route[]>("/routes"),
-  publish: (body: { subdomain: string; zone_id: string; port: number; target_host: string | null; target_scheme: string; preserve_host: boolean } & Access) =>
+  publish: (body: { subdomain: string; zone_id: string; port: number; target_host: string | null; target_scheme: string; preserve_host: boolean; verify_tls?: boolean } & Access) =>
     call<Route>("/routes", "POST", body),
   editRoute: (id: string, edit: RouteEdit) => call<Route>(`/routes/${id}`, "PATCH", edit),
   removeRoute: (id: string) => call(`/routes/${id}`, "DELETE"),
@@ -590,6 +592,7 @@ export function editOf(r: Route): RouteEdit {
     policy_mode: r.policy_mode,
     enabled: r.enabled,
     preserve_host: r.preserve_host,
+    verify_tls: r.verify_tls,
   };
 }
 

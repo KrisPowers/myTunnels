@@ -95,7 +95,7 @@ const PLACES: Option<Place>[] = [
   { value: "dashboard", label: "This dashboard", hint: "myTunnels itself, to manage it from anywhere", icon: "dashboard" },
 ];
 
-type Target = Pick<RouteEdit, "target_host" | "target_scheme" | "preserve_host">;
+type Target = Pick<RouteEdit, "target_host" | "target_scheme" | "preserve_host" | "verify_tls">;
 
 const isDashboard = (t: Pick<Target, "target_scheme">) => t.target_scheme === "dashboard";
 
@@ -149,6 +149,12 @@ function LocalApp({ value, onChange }: { value: Target; onChange: (patch: Partia
         <Switch label="Pass the public address" on={value.preserve_host} onChange={(v) => onChange({ preserve_host: v })} />
         <span>Pass the public address to the app, for apps set up with it</span>
       </label>
+      {value.target_scheme === "https" && (
+        <label className="edit-switch">
+          <Switch label="Check the certificate" on={value.verify_tls} onChange={(v) => onChange({ verify_tls: v })} />
+          <span>Check the app's certificate, for apps with a real one</span>
+        </label>
+      )}
     </>
   );
 }
@@ -326,7 +332,7 @@ export function NewTunnel({ users, providers, onPublished }: { users: User[]; pr
     require_lan: false, require_device: false, require_password: false, require_login: false, require_code: false, oauth: [],
     login_max: 7 * 86_400, login_idle: 0, policy_mode: "all",
   });
-  const [where, setWhere] = useState<Target>({ target_scheme: "http", target_host: null, preserve_host: false });
+  const [where, setWhere] = useState<Target>({ target_scheme: "http", target_host: null, preserve_host: false, verify_tls: false });
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
 
@@ -585,7 +591,7 @@ export function AddressEditor({ route, onDone, onChanged }: { route: Route; onDo
 // in a dialog.
 function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () => void; onSave: (change: Partial<RouteEdit>) => Promise<void> }) {
   const [port, setPort] = useState(String(edit.port));
-  const [where, setWhere] = useState<Target>({ target_host: edit.target_host, target_scheme: edit.target_scheme, preserve_host: edit.preserve_host });
+  const [where, setWhere] = useState<Target>({ target_host: edit.target_host, target_scheme: edit.target_scheme, preserve_host: edit.preserve_host, verify_tls: edit.verify_tls });
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
 
