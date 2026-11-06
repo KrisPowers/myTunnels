@@ -717,12 +717,16 @@ async fn action_response(
         ("id", false) => hub_hand_out(state, route, ip, &req),
         ("claim", false) => claim(state, route, &req),
         ("plant", false) => plant(state, route, &req),
-        ("logout", false) => redirect(
-            "/",
-            cookie_value(USER_COOKIE, "", Some(&route.zone_name), 0)
-                .into_iter()
-                .collect(),
+        // A link only asks; signing out takes a POST from the page, so another
+        // site cannot sign a visitor out with an image tag.
+        ("logout", false) => page(
+            StatusCode::OK,
+            "logout",
+            &route.hostname,
+            "Sign out",
+            "Sign out of this app on this device.",
         ),
+        ("logout", true) => logout(state, route, req.headers()),
         ("enroll", true) => match body::<EnrollRequest>(req).await {
             Ok((headers, body)) => register(state, route, ip, &headers, body)
                 .unwrap_or_else(IntoResponse::into_response),
@@ -750,6 +754,20 @@ async fn action_response(
         }
         _ => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+/// Ends this browser's sign-in for good, not only its cookie.
+fn logout(state: &AppState, route: &Route, headers: &HeaderMap) -> Response {
+    if let Some(session) =
+        cookie(headers, USER_COOKIE).and_then(|v| state.session(&state.user_sessions, v))
+    {
+        state.end_session(&state.user_sessions, &session);
+    }
+    let mut response = Json(json!({ "ok": true })).into_response();
+    response.headers_mut().extend(
+        cookie_value(USER_COOKIE, "", Some(&route.zone_name), 0).map(|v| (header::SET_COOKIE, v)),
+    );
+    response
 }
 
 async fn body<T: serde::de::DeserializeOwned>(req: Request) -> Result<(HeaderMap, T), StatusCode> {
