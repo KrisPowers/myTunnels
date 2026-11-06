@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, message, TOKEN_URL, type Account, type AdminAccount, type Route, type Settings as Saved, type Status, type TotpSetup } from "./api";
+import { ago, api, message, TOKEN_URL, type Account, type AdminAccount, type PasskeyInfo, type Route, type Settings as Saved, type Status, type TotpSetup } from "./api";
+import { createPasskey, deviceName, dismissed, passkeysWork } from "./passkey";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { loadLook, saveLook, type Look } from "./prefs";
@@ -68,6 +69,7 @@ function AdminAccountCard() {
         <Row title="Email" sub={account.email || "None"} />
         <Row title="Username" sub={account.username || "None"} />
         <Authenticator on={account.totp} onChange={(totp) => setAccount({ ...account, totp })} />
+        <Passkeys />
       </Card>
     );
   }
@@ -76,7 +78,53 @@ function AdminAccountCard() {
       <ValueRow title="Email" type="email" value={account.email ?? ""} onSave={(email) => api.editAccount({ email }).then(setAccount)} />
       <ValueRow title="Username" value={account.username ?? ""} onSave={(username) => api.editAccount({ username }).then(setAccount)} />
       <Authenticator on={account.totp} onChange={(totp) => setAccount({ ...account, totp })} />
+      <Passkeys />
     </Card>
+  );
+}
+
+// Passkeys are the account's passkeys: added here for the address the panel is
+// open at (a tunnel's domain, or the name it has on the LAN), each removable.
+function Passkeys() {
+  const [list, setList] = useState<PasskeyInfo[]>([]);
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+  useEffect(() => {
+    api.passkeys().then(setList).catch(() => {});
+  }, []);
+
+  const add = async () => {
+    setBusy(true);
+    try {
+      setList(await api.addPasskey(await createPasskey(await api.beginPasskey()), deviceName()));
+      notify("Passkey added");
+    } catch (err) {
+      if (!dismissed(err)) notify(message(err), "bad");
+    }
+    setBusy(false);
+  };
+  const remove = async (id: string) => {
+    try {
+      setList(await api.removePasskey(id));
+      notify("Passkey removed");
+    } catch (err) {
+      notify(message(err), "bad");
+    }
+  };
+
+  return (
+    <>
+      <Row title="Passkeys" sub={list.length ? `${list.length} added. Sign in with one instead of a password and code.` : "Sign in with your fingerprint, face or a security key instead of a password and code."}>
+        {passkeysWork() && <button type="button" className="btn text" disabled={busy} onClick={add}>Add a passkey</button>}
+      </Row>
+      {list.map((p) => (
+        <Row key={p.id} title={p.name || "Passkey"} sub={`For ${p.rp_id}, ${p.last_used ? `used ${ago(p.last_used)}` : "not used yet"}`}>
+          <button type="button" className="icon-btn small danger" aria-label={`Remove ${p.name || "passkey"}`} title="Remove" onClick={() => remove(p.id)}>
+            <Icon name="close" size={18} />
+          </button>
+        </Row>
+      ))}
+    </>
   );
 }
 

@@ -1,3 +1,4 @@
+import type { CreateOptions, GetOptions } from "./passkey";
 export type PolicyMode = "all" | "any";
 
 export interface Route {
@@ -376,6 +377,9 @@ export interface SignedIn { ok?: boolean; code_required?: boolean; ticket?: stri
 // The account signed in: the admin's, or another account's own.
 export interface AdminAccount { username: string | null; email: string | null; admin: boolean; totp: boolean }
 
+// A passkey of the account signed in: the site it signs in to, and when it was last used.
+export interface PasskeyInfo { id: string; rp_id: string; name: string; created_at: number; last_used: number | null }
+
 // An authenticator app being set up: its secret, the link, and the link as a QR code (SVG).
 export interface TotpSetup { secret: string; uri: string; qr: string }
 
@@ -417,6 +421,12 @@ export const api = {
   startTotp: () => call<TotpSetup>("/account/totp", "POST"),
   confirmTotp: (code: string) => call<{ recovery: string[] }>("/account/totp", "PUT", { code }),
   removeTotp: (code: string) => call("/account/totp", "DELETE", { code }),
+  passkeys: () => call<PasskeyInfo[]>("/account/passkeys"),
+  beginPasskey: () => call<CreateOptions>("/account/passkeys/begin", "POST"),
+  addPasskey: (credential: unknown, name: string) => call<PasskeyInfo[]>("/account/passkeys", "POST", { credential, name }),
+  removePasskey: (id: string) => call<PasskeyInfo[]>(`/account/passkeys/${encodeURIComponent(id)}`, "DELETE"),
+  beginPasskeySignIn: () => call<GetOptions>("/auth/passkey/begin", "POST"),
+  passkeySignIn: (credential: unknown) => call("/auth/passkey", "POST", { credential }),
 
   oauth: () => call<OAuthState>("/oauth"),
   saveOAuth: (id: string, body: Partial<{ client_id: string; client_secret: string; name: string; issuer: string }>) =>

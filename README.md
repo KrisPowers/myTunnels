@@ -258,6 +258,12 @@ are shown once. From then on every sign-in to that account, on the dashboard and
 asks for a code from the app (each works once) or a recovery code, in place of an emailed one.
 **Turn off** takes a code too.
 
+Passkeys sign in with a fingerprint, face or security key instead of a password and code.
+Add one under **Settings, Account** for the address the panel is open at, or at an app: after a
+password sign-in the app offers to add one (any time at `https://<app>/__gate/account`). A
+passkey added at an app works on every app on the same domain. **Sign in with a passkey**
+then appears on the sign-in pages, still held to the account's apps and linked devices.
+
 ## Configuration
 
 Settings made in the panel are stored in `/data/gateway.db`. The container reads these
