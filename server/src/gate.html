@@ -83,6 +83,8 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
   </form>
 
   <div class="providers" id="providers" hidden></div>
+  <div class="providers" id="passkey-in" hidden><button class="provider" id="passkey-button" type="button">Sign in with a passkey</button></div>
+  <div class="error" id="passkey-error" role="alert"></div>
   <div class="or" id="or" hidden>or</div>
   <form id="login" hidden>
     <div class="tf"><input id="user" type="email" placeholder=" " autocomplete="email" autocapitalize="off" spellcheck="false" required><label for="user">Email</label></div>
@@ -96,6 +98,11 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
     <div class="error" id="code-error" role="alert"></div>
     <div class="row"><button type="submit">Verify</button></div>
   </form>
+
+  <div id="account" hidden>
+    <div class="error" id="account-error" role="alert"></div>
+    <div class="row"><button class="text" id="account-skip" type="button">Not now</button><button id="account-add" type="button">Add a passkey</button></div>
+  </div>
 
   <form id="logout" hidden>
     <div class="error" id="logout-error" role="alert"></div>
@@ -144,6 +151,7 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
       error.textContent = '';
       post('/__gate/' + id, build()).then(function (r) {
         if (r.code_required) return askCode(r.ticket, r.sent_to, r.app);
+        if (r.ok && r.offer_passkey && passkeys) return offerPasskey();
         if (r.ok) return data.path ? location.replace(data.path) : back();
         error.textContent = r.error || 'That did not work. Try again.';
         button.disabled = false;
@@ -166,6 +174,32 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
       : 'Enter the code sent to ' + sentTo + '.';
     form('code', function () { return { ticket: ticket, code: $('otp').value.trim() }; });
   }
+
+  // Passkeys: binary fields travel as base64url.
+  var passkeys = typeof window.PublicKeyCredential === 'function';
+  function b64(buf) {
+    var s = '', bytes = new Uint8Array(buf);
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function bytes(s) {
+    s = s.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    var raw = atob(s), out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+  function here() {
+    var params = new URLSearchParams(location.search);
+    params.delete('__gate');
+    var q = params.toString();
+    return location.pathname + (q ? '?' + q : '');
+  }
+  function offerPasskey() {
+    location.replace('/__gate/account?r=' + encodeURIComponent(data.path || here()));
+  }
+  // A cancelled or timed-out passkey prompt says nothing.
+  function quiet(e) { return e && (e.name === 'NotAllowedError' || e.name === 'AbortError'); }
 
   var others = (body.dataset.others || '').split(' ').filter(Boolean);
   if (others.length) {
@@ -196,6 +230,65 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
       $('or').hidden = false;
     }
     form('login', function () { return { email: $('user').value, password: $('secret').value }; });
+    if (passkeys) {
+      $('passkey-in').hidden = false;
+      $('or').hidden = false;
+      $('passkey-button').addEventListener('click', function () {
+        $('passkey-error').textContent = '';
+        post('/__gate/passkey-begin', {}).then(function (o) {
+          if (!o.challenge) throw new Error(o.error || 'Passkeys are not available here.');
+          return navigator.credentials.get({ publicKey: {
+            challenge: bytes(o.challenge), rpId: o.rpId, userVerification: o.userVerification, timeout: o.timeout
+          } });
+        }).then(function (c) {
+          return post('/__gate/passkey', {
+            id: b64(c.rawId),
+            clientDataJson: b64(c.response.clientDataJSON),
+            authenticatorData: b64(c.response.authenticatorData),
+            signature: b64(c.response.signature)
+          });
+        }).then(function (r) {
+          if (r.error) throw new Error(r.error);
+          back();
+        }).catch(function (e) {
+          if (!quiet(e)) $('passkey-error').textContent = e.message || 'That passkey did not work.';
+        });
+      });
+    }
+  }
+  if (mode === 'account') {
+    var done = function () { location.replace(data.path || '/'); };
+    $('account').hidden = false;
+    $('account-skip').addEventListener('click', done);
+    if (!passkeys) { $('account-add').disabled = true; $('account-error').textContent = 'This browser cannot use passkeys.'; }
+    $('account-add').addEventListener('click', function () {
+      $('account-error').textContent = '';
+      post('/__gate/passkey-add-begin', {}).then(function (o) {
+        if (!o.challenge) throw new Error(o.error || 'Sign in again first.');
+        return navigator.credentials.create({ publicKey: {
+          challenge: bytes(o.challenge), rp: o.rp,
+          user: { id: bytes(o.user.id), name: o.user.name, displayName: o.user.displayName },
+          pubKeyCredParams: o.pubKeyCredParams, authenticatorSelection: o.authenticatorSelection,
+          attestation: o.attestation, timeout: o.timeout,
+          excludeCredentials: o.excludeCredentials.map(function (c) { return { type: c.type, id: bytes(c.id) }; })
+        } });
+      }).then(function (c) {
+        var ua = navigator.userAgentData;
+        return post('/__gate/passkey-add', {
+          name: (ua && ua.platform) || navigator.platform || 'Passkey',
+          credential: {
+            id: b64(c.rawId),
+            clientDataJson: b64(c.response.clientDataJSON),
+            attestationObject: b64(c.response.attestationObject)
+          }
+        });
+      }).then(function (r) {
+        if (r.error) throw new Error(r.error);
+        done();
+      }).catch(function (e) {
+        if (!quiet(e)) $('account-error').textContent = e.message || 'The passkey was not added.';
+      });
+    });
   }
   if (mode === 'logout') {
     $('logout').hidden = false;

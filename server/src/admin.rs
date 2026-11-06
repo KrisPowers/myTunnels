@@ -22,7 +22,8 @@ use crate::permissions::{self, Caller};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
 use crate::{
-    code, codes, containers, convert, gate, metrics, secret, storage, threads, totp, tunnel,
+    code, codes, containers, convert, gate, metrics, passkey, secret, storage, threads, totp,
+    tunnel,
 };
 
 const ADMIN_COOKIE: &str = "admin_session";
@@ -35,6 +36,9 @@ pub fn router(state: AppState) -> Router {
             "/account/totp",
             post(start_totp).put(confirm_totp).delete(remove_totp),
         )
+        .route("/account/passkeys", get(list_passkeys).post(add_passkey))
+        .route("/account/passkeys/begin", post(begin_passkey))
+        .route("/account/passkeys/{id}", delete(remove_passkey))
         .route("/oauth", get(list_oauth))
         .route("/oauth/{id}", put(save_oauth).delete(delete_oauth))
         .route("/twofactor", get(two_factor).put(save_two_factor))
@@ -103,6 +107,8 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/login", post(login))
         .route("/auth/code", post(login_code))
         .route("/auth/logout", post(logout))
+        .route("/auth/passkey/begin", post(begin_passkey_sign_in))
+        .route("/auth/passkey", post(passkey_sign_in))
         .merge(protected)
         .layer(middleware::from_fn_with_state(state.clone(), guard_api));
     let ui = &state.config.ui_dir;
@@ -579,6 +585,140 @@ async fn account(
             "totp": totp::enrolled(&state.db, &u.id),
         }),
     }))
+}
+
+/// The site passkeys on this page belong to, and the page's origin: the tunnel
+/// domain the panel was opened under, or the name it was opened by on the LAN.
+fn panel_site(state: &AppState, headers: &HeaderMap, https: bool) -> ApiResult<(String, String)> {
+    let host = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let name = match host.strip_prefix('[') {
+        Some(rest) => rest.split(']').next().unwrap_or_default().to_owned(),
+        None => host.split(':').next().unwrap_or_default().to_owned(),
+    };
+    if name.is_empty() || name.parse::<IpAddr>().is_ok() {
+        return Err(ApiError::bad(
+            "Open the panel by its name, not an IP address, to use passkeys",
+        ));
+    }
+    if !https && name != "localhost" {
+        return Err(ApiError::bad("Passkeys need the panel over HTTPS"));
+    }
+    let snap = state.snapshot();
+    let zone = snap
+        .routes
+        .values()
+        .map(|r| r.zone_name.clone())
+        .find(|z| name == *z || name.ends_with(&format!(".{z}")));
+    let origin = format!("{}://{host}", if https { "https" } else { "http" });
+    Ok((zone.unwrap_or(name), origin))
+}
+
+/// What a passkey is called by default: the email, or the username.
+fn caller_label(state: &AppState, caller: &Caller) -> ApiResult<String> {
+    Ok(match caller {
+        Caller::Admin => state
+            .db
+            .setting("admin_email")?
+            .or(state.db.setting("admin_username")?)
+            .unwrap_or_else(|| "admin".into()),
+        Caller::Account(u) if !u.email.is_empty() => u.email.clone(),
+        Caller::Account(u) => u.username.clone(),
+    })
+}
+
+async fn list_passkeys(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+) -> ApiResult<Json<Vec<crate::db::Passkey>>> {
+    Ok(Json(state.db.passkeys_of(caller.id())?))
+}
+
+/// Starts adding a passkey for the account signed in.
+async fn begin_passkey(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    https: Option<Extension<crate::tls::Https>>,
+    headers: HeaderMap,
+) -> ApiResult<Json<Value>> {
+    let (rp_id, origin) = panel_site(&state, &headers, https.is_some())?;
+    let existing = state.db.passkeys_of(caller.id())?;
+    Ok(Json(passkey::begin_register(
+        caller.id(),
+        &caller_label(&state, &caller)?,
+        &rp_id,
+        &origin,
+        &existing,
+    )))
+}
+
+#[derive(Deserialize)]
+struct PasskeyBody {
+    credential: passkey::Created,
+    #[serde(default)]
+    name: String,
+}
+
+/// Keeps a passkey made for the account signed in.
+async fn add_passkey(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Json(body): Json<PasskeyBody>,
+) -> ApiResult<Json<Vec<crate::db::Passkey>>> {
+    passkey::finish_register(&state.db, &body.credential, &body.name, caller.id())
+        .map_err(ApiError::bad)?;
+    Ok(Json(state.db.passkeys_of(caller.id())?))
+}
+
+async fn remove_passkey(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Vec<crate::db::Passkey>>> {
+    if !state.db.delete_passkey(caller.id(), &id)? {
+        return Err(ApiError::not_found());
+    }
+    Ok(Json(state.db.passkeys_of(caller.id())?))
+}
+
+/// Starts a passkey sign-in to the dashboard.
+async fn begin_passkey_sign_in(
+    State(state): State<AppState>,
+    https: Option<Extension<crate::tls::Https>>,
+    headers: HeaderMap,
+) -> ApiResult<Json<Value>> {
+    let (rp_id, origin) = panel_site(&state, &headers, https.is_some())?;
+    Ok(Json(passkey::begin_sign_in(&rp_id, &origin)))
+}
+
+#[derive(Deserialize)]
+struct PasskeySignIn {
+    credential: passkey::Asserted,
+}
+
+/// Signs in to the dashboard with a passkey. The device checked who is holding
+/// it, so no emailed or app code follows.
+async fn passkey_sign_in(
+    State(state): State<AppState>,
+    Json(body): Json<PasskeySignIn>,
+) -> ApiResult<Response> {
+    let subject = passkey::finish_sign_in(&state.db, &body.credential)
+        .map_err(|why| ApiError(StatusCode::UNAUTHORIZED, why.into()))?;
+    if subject == "admin" {
+        return start_admin_session(&state);
+    }
+    match state.db.user(&subject)? {
+        Some(u) if u.enabled && u.permissions.iter().any(|p| p == "dashboard") => {
+            start_session(&state, &u.id, &secret::tag(&u.password_hash))
+        }
+        _ => Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "This passkey's account cannot sign in to the dashboard".into(),
+        )),
+    }
 }
 
 /// Starts setting up an authenticator app for the account signed in: its secret,
@@ -2069,6 +2209,7 @@ async fn delete_user(
         return Err(ApiError::bad("You cannot remove your own account"));
     }
     state.db.delete_user(&id)?;
+    state.db.delete_passkeys_of(&id)?;
     state.end_sessions_of(&state.user_sessions, &id);
     state.end_sessions_of(&state.admin_sessions, &id);
     state.reload()?;

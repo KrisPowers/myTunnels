@@ -21,7 +21,7 @@ use tower::ServiceExt;
 use crate::db::{Device, Event, Route, SignIn, User};
 use crate::state::{AppState, Hop, Outcome, Snapshot};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
-use crate::{code, codes, guard, secret, totp};
+use crate::{code, codes, guard, passkey, secret, totp};
 use crate::{oauth, proxy};
 
 /// Host-only cookies: the `__Host-` prefix makes browsers refuse them with a domain.
@@ -862,6 +862,21 @@ async fn action_response(
             "Sign out of this app on this device.",
         ),
         ("logout", true) => logout(state, req.headers()),
+        ("account", false) => account_page(state, route, &req),
+        ("passkey-begin", true) if route.require_login => Json(passkey::begin_sign_in(
+            &route.zone_name,
+            &format!("https://{}", route.hostname),
+        ))
+        .into_response(),
+        ("passkey", true) => match body::<passkey::Asserted>(req).await {
+            Ok((headers, body)) => passkey_sign_in(state, route, ip, &headers, body).await,
+            Err(status) => status.into_response(),
+        },
+        ("passkey-add-begin", true) => passkey_add_begin(state, route, req.headers()),
+        ("passkey-add", true) => match body::<PasskeyAdd>(req).await {
+            Ok((headers, body)) => passkey_add(state, route, &headers, body),
+            Err(status) => status.into_response(),
+        },
         ("enroll", true) => match body::<EnrollRequest>(req).await {
             Ok((headers, body)) => register(state, route, ip, &headers, body)
                 .unwrap_or_else(IntoResponse::into_response),
@@ -889,6 +904,114 @@ async fn action_response(
         }
         _ => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+/// The account signed in at this tunnel: add a passkey here, or sign out.
+/// `?r=` is where to go after, such as the page a sign-in came from.
+fn account_page(state: &AppState, route: &Route, req: &Request) -> Response {
+    let path = local_path(query_decoded(req.uri(), "r"));
+    if user_session(state, &state.snapshot(), req.headers(), route).is_none() {
+        return redirect(&path, Vec::new());
+    }
+    gate_page(
+        StatusCode::OK,
+        "account",
+        &route.hostname,
+        "Add a passkey",
+        "Next time, sign in here with your fingerprint, face or security key instead of a password.",
+        &[],
+        &json!({ "path": path }),
+    )
+}
+
+/// True when the account has no passkey for this tunnel's domain yet, so the page
+/// offers to add one after a password sign-in.
+fn offer_passkey(state: &AppState, route: &Route, user_id: &str) -> bool {
+    state
+        .db
+        .passkeys_of(user_id)
+        .is_ok_and(|keys| !keys.iter().any(|k| k.rp_id == route.zone_name))
+}
+
+/// Starts adding a passkey for the account signed in here, for this tunnel's domain.
+fn passkey_add_begin(state: &AppState, route: &Route, headers: &HeaderMap) -> Response {
+    let snap = state.snapshot();
+    let Some(user) =
+        user_session(state, &snap, headers, route).and_then(|id| snap.users.get(&id).cloned())
+    else {
+        return json_error(StatusCode::UNAUTHORIZED, "Sign in first.");
+    };
+    let label = if user.email.is_empty() {
+        user.username.clone()
+    } else {
+        user.email.clone()
+    };
+    let existing = state.db.passkeys_of(&user.id).unwrap_or_default();
+    Json(passkey::begin_register(
+        &user.id,
+        &label,
+        &route.zone_name,
+        &format!("https://{}", route.hostname),
+        &existing,
+    ))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct PasskeyAdd {
+    credential: passkey::Created,
+    #[serde(default)]
+    name: String,
+}
+
+/// Keeps a passkey made for the account signed in here.
+fn passkey_add(state: &AppState, route: &Route, headers: &HeaderMap, body: PasskeyAdd) -> Response {
+    let Some(user_id) = user_session(state, &state.snapshot(), headers, route) else {
+        return json_error(StatusCode::UNAUTHORIZED, "Sign in first.");
+    };
+    match passkey::finish_register(&state.db, &body.credential, &body.name, &user_id) {
+        Ok(()) => Json(json!({ "ok": true })).into_response(),
+        Err(why) => json_error(StatusCode::BAD_REQUEST, why),
+    }
+}
+
+/// Signs in with a passkey. The device checked who is holding it, so no emailed
+/// or app code follows; the account is held to every other rule of a sign-in.
+async fn passkey_sign_in(
+    state: &AppState,
+    route: &Route,
+    ip: Option<IpAddr>,
+    headers: &HeaderMap,
+    body: passkey::Asserted,
+) -> Response {
+    if !route.require_login {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if device_key(headers).is_none() {
+        return no_device();
+    }
+    let subject = match passkey::finish_sign_in(&state.db, &body) {
+        Ok(subject) => subject,
+        Err(why) => {
+            log(state, route, "sign-in", "failed", None, ip, headers);
+            return json_error(StatusCode::UNAUTHORIZED, why);
+        }
+    };
+    let visitor = Visitor::of(state, ip, headers);
+    let Some(account) = state.db.user(&subject).ok().flatten() else {
+        return json_error(StatusCode::UNAUTHORIZED, "This passkey's account is gone.");
+    };
+    if !account.enabled {
+        record(state, route, &visitor, &account.id, "blocked");
+        return json_error(
+            StatusCode::FORBIDDEN,
+            "This account is suspended. Ask the administrator.",
+        );
+    }
+    let outcome = vet(state, route, account, &visitor)
+        .map(|account| Outcome::Session(open(state, route, account, &visitor, true)))
+        .map_err(|(status, why)| ApiError(status, why.into()));
+    signed_in(outcome, false)
 }
 
 /// Ends this browser's sign-in for good, not only its cookie.
@@ -1284,7 +1407,8 @@ async fn login(
     state.clear_failures(&by_address);
     state.clear_failures(&by_account);
     state.clear_failures(&by_device);
-    signed_in(admit(state, route, account, &visitor).await)
+    let offer = offer_passkey(state, route, &account.id);
+    signed_in(admit(state, route, account, &visitor).await, offer)
 }
 
 /// Who is signing in: the device key this browser holds, and where it is.
@@ -1458,10 +1582,11 @@ fn open(state: &AppState, route: &Route, mut account: User, v: &Visitor, mfa: bo
 }
 
 /// The answer to a sign-in: a session cookie, or the ticket for the code it waits on.
-fn signed_in(outcome: Result<Outcome, ApiError>) -> Response {
+/// `offer` asks the page to offer adding a passkey once signed in.
+fn signed_in(outcome: Result<Outcome, ApiError>, offer: bool) -> Response {
     match outcome {
         Ok(Outcome::Session(sid)) => {
-            let mut response = Json(json!({ "ok": true })).into_response();
+            let mut response = Json(json!({ "ok": true, "offer_passkey": offer })).into_response();
             response.headers_mut().extend(
                 cookie_value(USER_COOKIE, &sid, None, USER_TTL).map(|v| (header::SET_COOKIE, v)),
             );
@@ -1518,10 +1643,11 @@ async fn code(
     else {
         return json_error(StatusCode::FORBIDDEN, "This account is suspended.");
     };
+    let offer = offer_passkey(state, route, &account.id);
     let outcome = vet(state, route, account, &visitor)
         .map(|account| Outcome::Session(open(state, route, account, &visitor, true)))
         .map_err(|(status, why)| ApiError(status, why.into()));
-    signed_in(outcome)
+    signed_in(outcome, offer)
 }
 
 // ---- signing in through another service ----

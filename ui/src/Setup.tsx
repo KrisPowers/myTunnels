@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, LEVELS, list, message, strength, TOKEN_URL, type Account, type Auth } from "./api";
 import { Dropdown } from "./Dropdown";
 import { Icon } from "./Icon";
+import { dismissed, passkeysWork, signWithPasskey } from "./passkey";
 import { Callout, TextField } from "./ui";
 
 const STEPS = ["Admin account", "Cloudflare"];
@@ -84,6 +85,18 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
       && (!auth.setup.code || setupCode.trim() !== "")
     : password !== "" && (!named || login.trim() !== "");
 
+  const passkey = async () => {
+    setBusy(true);
+    setProblem("");
+    try {
+      await api.passkeySignIn(await signWithPasskey(await api.beginPasskeySignIn()));
+      await onDone();
+    } catch (err) {
+      if (!dismissed(err)) setProblem(message(err));
+      setBusy(false);
+    }
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!ready) return;
@@ -139,6 +152,9 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
         ) : undefined} />
       {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
       <div className="setup-foot">
+        {!create && passkeysWork() && (
+          <button type="button" className="btn text" disabled={busy} onClick={passkey}>Use a passkey</button>
+        )}
         <button className="btn primary" disabled={busy || !ready}>
           {busy && <span className="spinner small on-accent" />}{create ? "Create account" : "Sign in"}<Icon name="arrow_forward" size={18} />
         </button>

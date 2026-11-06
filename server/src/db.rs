@@ -124,6 +124,17 @@ CREATE TABLE IF NOT EXISTS git_comments (
     body TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS passkeys (
+    id TEXT PRIMARY KEY,
+    subject TEXT NOT NULL,
+    rp_id TEXT NOT NULL,
+    public_key TEXT NOT NULL,
+    sign_count INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_used INTEGER
+);
+CREATE INDEX IF NOT EXISTS passkeys_subject ON passkeys (subject);
 CREATE TABLE IF NOT EXISTS device_sign_ins (
     device_hash TEXT PRIMARY KEY,
     token TEXT NOT NULL,
@@ -312,6 +323,39 @@ pub struct Device {
 const ROUTE_COLS: &str = "id, subdomain, zone_id, zone_name, hostname, target_host, target_port, \
      target_scheme, require_lan, require_device, policy_mode, enabled, dns_record_id, created_at, \
      preserve_host, require_password, password_hash, require_login, login_max, login_idle,      require_code, oauth, verify_tls";
+
+/// A passkey: its credential ID, whose it is, the site it signs in to, and its
+/// public key.
+#[derive(Clone, Serialize)]
+pub struct Passkey {
+    pub id: String,
+    #[serde(skip)]
+    pub subject: String,
+    pub rp_id: String,
+    #[serde(skip)]
+    pub public_key: String,
+    #[serde(skip)]
+    pub sign_count: u32,
+    pub name: String,
+    pub created_at: i64,
+    pub last_used: Option<i64>,
+}
+
+const PASSKEY_COLS: &str =
+    "id, subject, rp_id, public_key, sign_count, name, created_at, last_used";
+
+fn passkey_row(r: &Row) -> rusqlite::Result<Passkey> {
+    Ok(Passkey {
+        id: r.get(0)?,
+        subject: r.get(1)?,
+        rp_id: r.get(2)?,
+        public_key: r.get(3)?,
+        sign_count: r.get(4)?,
+        name: r.get(5)?,
+        created_at: r.get(6)?,
+        last_used: r.get(7)?,
+    })
+}
 
 const USER_COLS: &str =
     "id, username, email, name, password_hash, enabled, all_routes, created_at, last_login, note, \
@@ -1000,6 +1044,68 @@ impl Db {
                 e.at
             ],
         )?;
+        Ok(())
+    }
+
+    pub fn add_passkey(&self, p: &Passkey) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO passkeys (id, subject, rp_id, public_key, sign_count, name, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                p.id,
+                p.subject,
+                p.rp_id,
+                p.public_key,
+                p.sign_count,
+                p.name,
+                p.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn passkey(&self, id: &str) -> Result<Option<Passkey>> {
+        Ok(self
+            .conn()
+            .query_row(
+                &format!("SELECT {PASSKEY_COLS} FROM passkeys WHERE id = ?1"),
+                [id],
+                passkey_row,
+            )
+            .optional()?)
+    }
+
+    /// The passkeys of `subject`, the admin or an account, newest first.
+    pub fn passkeys_of(&self, subject: &str) -> Result<Vec<Passkey>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {PASSKEY_COLS} FROM passkeys WHERE subject = ?1 ORDER BY created_at DESC"
+        ))?;
+        let rows = stmt
+            .query_map([subject], passkey_row)?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+
+    pub fn touch_passkey(&self, id: &str, sign_count: u32, at: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE passkeys SET sign_count = ?2, last_used = ?3 WHERE id = ?1",
+            params![id, sign_count, at],
+        )?;
+        Ok(())
+    }
+
+    /// Removes one of `subject`'s passkeys; false when it has no such passkey.
+    pub fn delete_passkey(&self, subject: &str, id: &str) -> Result<bool> {
+        Ok(self.conn().execute(
+            "DELETE FROM passkeys WHERE subject = ?1 AND id = ?2",
+            [subject, id],
+        )? > 0)
+    }
+
+    pub fn delete_passkeys_of(&self, subject: &str) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM passkeys WHERE subject = ?1", [subject])?;
         Ok(())
     }
 
