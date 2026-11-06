@@ -116,6 +116,8 @@ pub struct Inner {
     pub http: reqwest::Client,
     /// For forwarding requests to local apps.
     pub proxy: reqwest::Client,
+    /// The same, for apps whose HTTPS certificate is checked.
+    pub proxy_verified: reqwest::Client,
     pub tunnel: Tunnel,
     pub public_ips: RwLock<Vec<IpAddr>>,
     /// Approved devices.
@@ -160,14 +162,17 @@ impl AppState {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()?;
-        let proxy = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .no_proxy()
-            .http1_only()
-            // Local apps commonly serve self-signed certificates.
-            .danger_accept_invalid_certs(true)
-            .connect_timeout(Duration::from_secs(10))
-            .build()?;
+        let proxy_client = || {
+            reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .no_proxy()
+                .http1_only()
+                .connect_timeout(Duration::from_secs(10))
+        };
+        // Local apps commonly serve self-signed certificates; a tunnel can ask
+        // for its app's certificate to be checked instead.
+        let proxy = proxy_client().danger_accept_invalid_certs(true).build()?;
+        let proxy_verified = proxy_client().build()?;
         let tunnel = Tunnel::new(db.setting("cf_tunnel_token")?);
         let token_key = match db.setting("token_key")? {
             Some(key) => hex::decode(key)?,
@@ -187,6 +192,7 @@ impl AppState {
             db,
             http,
             proxy,
+            proxy_verified,
             tunnel,
             public_ips: RwLock::new(Vec::new()),
             device_sessions: Sessions::new("device"),

@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS git_tokens (
 ";
 
 /// Columns added to `routes` after its first release, with how to add each.
-const ROUTE_MIGRATIONS: [(&str, &str); 8] = [
+const ROUTE_MIGRATIONS: [(&str, &str); 9] = [
     ("preserve_host", "preserve_host INTEGER NOT NULL DEFAULT 0"),
     (
         "require_password",
@@ -146,6 +146,7 @@ const ROUTE_MIGRATIONS: [(&str, &str); 8] = [
     ("login_idle", "login_idle INTEGER NOT NULL DEFAULT 0"),
     ("require_code", "require_code INTEGER NOT NULL DEFAULT 0"),
     ("oauth", "oauth TEXT NOT NULL DEFAULT ''"),
+    ("verify_tls", "verify_tls INTEGER NOT NULL DEFAULT 0"),
 ];
 
 /// A published tunnel: one hostname on a Cloudflare zone pointing at one local port.
@@ -178,6 +179,8 @@ pub struct Route {
     pub enabled: bool,
     /// Send the app the public name as Host instead of its own address.
     pub preserve_host: bool,
+    /// Check an HTTPS app's certificate instead of taking any, self-signed included.
+    pub verify_tls: bool,
     #[serde(skip)]
     pub password_hash: Option<String>,
     pub password_set: bool,
@@ -302,7 +305,7 @@ pub struct Device {
 
 const ROUTE_COLS: &str = "id, subdomain, zone_id, zone_name, hostname, target_host, target_port, \
      target_scheme, require_lan, require_device, policy_mode, enabled, dns_record_id, created_at, \
-     preserve_host, require_password, password_hash, require_login, login_max, login_idle,      require_code, oauth";
+     preserve_host, require_password, password_hash, require_login, login_max, login_idle,      require_code, oauth, verify_tls";
 
 const USER_COLS: &str =
     "id, username, email, name, password_hash, enabled, all_routes, created_at, last_login, note, \
@@ -341,6 +344,7 @@ fn route_row(r: &Row) -> rusqlite::Result<Route> {
             .filter(|p| !p.is_empty())
             .map(str::to_owned)
             .collect(),
+        verify_tls: r.get(22)?,
     })
 }
 
@@ -554,7 +558,7 @@ impl Db {
         self.conn().execute(
             &format!(
                 "INSERT INTO routes ({ROUTE_COLS})
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)"
             ),
             params![
                 r.id,
@@ -579,6 +583,7 @@ impl Db {
                 r.login_idle,
                 r.require_code,
                 r.oauth.join(","),
+                r.verify_tls,
             ],
         )?;
         Ok(())
@@ -590,7 +595,7 @@ impl Db {
                  require_lan = ?5, require_device = ?6, policy_mode = ?7, enabled = ?8,
                  preserve_host = ?9, require_password = ?10, password_hash = ?11,
                  require_login = ?12, login_max = ?13, login_idle = ?14, require_code = ?15,
-                 oauth = ?16
+                 oauth = ?16, verify_tls = ?17
              WHERE id = ?1",
             params![
                 r.id,
@@ -609,6 +614,7 @@ impl Db {
                 r.login_idle,
                 r.require_code,
                 r.oauth.join(","),
+                r.verify_tls,
             ],
         )?;
         Ok(())

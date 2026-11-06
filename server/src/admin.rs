@@ -1069,6 +1069,8 @@ struct NewRoute {
     oauth: Vec<String>,
     #[serde(default)]
     preserve_host: bool,
+    #[serde(default)]
+    verify_tls: bool,
 }
 
 /// Provider IDs that exist, once each.
@@ -1175,6 +1177,7 @@ async fn create_route(
         require_code: body.require_code,
         oauth: known_providers(body.oauth),
         preserve_host: body.preserve_host,
+        verify_tls: body.verify_tls,
         dns_record_id: Some(record_id.clone()),
         created_at: now(),
     };
@@ -1217,6 +1220,8 @@ struct RouteEdit {
     oauth: Vec<String>,
     #[serde(default)]
     preserve_host: bool,
+    #[serde(default)]
+    verify_tls: bool,
 }
 
 async fn update_route(
@@ -1255,6 +1260,7 @@ async fn update_route(
     route.require_code = body.require_code;
     route.oauth = known_providers(body.oauth);
     route.preserve_host = body.preserve_host;
+    route.verify_tls = body.verify_tls;
     state.db.update_route(&route)?;
     if switched && state.cloudflare().is_ok() {
         tunnel::sync_ingress(&state).await?;
