@@ -41,7 +41,7 @@ function remembered(): "grid" | "list" {
 
 // DrivePage is Storage's Files tab: documents, spreadsheets, presentations and
 // PDFs on this host, in folders, each kind in its own colour.
-export function DrivePage({ nav, convert, shares, onReload }: TabProps) {
+export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabProps) {
   const can = useCan();
   const [path, setPath] = useState("");
   const [listing, setListing] = useState<Listing | null>(null);
@@ -156,7 +156,7 @@ export function DrivePage({ nav, convert, shares, onReload }: TabProps) {
         </div>
         <div className="page-actions">
           <div className="ex-pick"><Dropdown label="Sort by" value={sort} options={SORTS} onChange={setSort} /></div>
-          {shares.button}
+          {tools}
           <button type="button" className="icon-btn" aria-label={view === "grid" ? "List" : "Grid"} title={view === "grid" ? "List" : "Grid"} onClick={() => {
             const next = view === "grid" ? "list" : "grid";
             setView(next);
@@ -314,7 +314,7 @@ export function DrivePage({ nav, convert, shares, onReload }: TabProps) {
         </Dialog>
       )}
       <div className="ex-dock">{convert.panel}{panel}</div>
-      {shares.ui}
+      {extra}
     </div>
   );
 }
