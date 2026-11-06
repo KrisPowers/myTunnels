@@ -58,6 +58,9 @@ const env = {
   CARGO_TARGET_DIR: target,
   DATA_DIR: join(serverDir, "data"),
   ADMIN_ADDR: "127.0.0.1:7071",
+  // No HTTPS listener in development: the page comes through Vite on localhost,
+  // and a listener on every interface makes Windows ask about each new build.
+  ADMIN_TLS_ADDR: "off",
   GATE_ADDR: "127.0.0.1:7080",
   UPSTREAM_HOST: "127.0.0.1",
   UI_DIR: builtUi,
