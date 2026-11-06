@@ -106,8 +106,8 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   }, [load]);
 
   // The browser the admin uses gets its device key here, the first time. The
-  // same key then goes to one tunnel on each domain and comes back, once per set
-  // of domains, so this browser is one device on the dashboard and every tunnel.
+  // same key then goes to every tunnel and comes back, once per set of tunnels,
+  // so this browser is one device on the dashboard and every tunnel.
   useEffect(() => {
     let token: string | null = null;
     try {
