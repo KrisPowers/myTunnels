@@ -4,7 +4,7 @@ import { Dropdown, type Option } from "./Dropdown";
 import { ContextMenu, dropped, extOf, NameDialog, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Files";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
-import { go } from "./route";
+import type { TabProps } from "./Storage";
 import { Callout, Dialog, useNotify } from "./ui";
 
 const drive = filesIn("drive");
@@ -39,9 +39,9 @@ function remembered(): "grid" | "list" {
   }
 }
 
-// DrivePage keeps documents, spreadsheets, presentations and PDFs on this
-// host, in folders, each kind in its own colour.
-export function DrivePage() {
+// DrivePage is Storage's Files tab: documents, spreadsheets, presentations and
+// PDFs on this host, in folders, each kind in its own colour.
+export function DrivePage({ nav, convert, onReload }: TabProps) {
   const can = useCan();
   const [path, setPath] = useState("");
   const [listing, setListing] = useState<Listing | null>(null);
@@ -66,7 +66,8 @@ export function DrivePage() {
   useEffect(() => {
     setListing(null);
     load();
-  }, [load]);
+    onReload(load);
+  }, [load, onReload]);
   const { send, panel } = useUploads("drive", load);
 
   const entries = listing?.entries ?? [];
@@ -119,7 +120,7 @@ export function DrivePage() {
   const items = (entry: FileEntry | null): MenuItem[] => entry ? [
     { label: "Open", icon: entry.dir ? "folder" : opens(entry.name) ? "open_in_new" : "download", run: () => open(entry) },
     { label: "Download", icon: "download", hidden: entry.dir, run: () => download(entry) },
-    { label: "Convert", icon: "swap_horiz", hidden: extOf(entry.name) !== "pdf" || !can("drive.edit"), run: () => go(`#/convert/drive/${encodeURIComponent(join(path, entry.name))}`) },
+    { label: "Convert", icon: "swap_horiz", hidden: extOf(entry.name) !== "pdf" || !can("drive.edit"), run: () => convert.open("drive", [join(path, entry.name)]) },
     { label: "Rename", icon: "edit", hidden: !can("drive.edit"), run: () => setAsking({ rename: entry }) },
     { label: "Delete", icon: "delete", danger: true, hidden: !can("drive.delete"), run: () => setAsking({ remove: entry }) },
   ] : [
@@ -144,16 +145,7 @@ export function DrivePage() {
       }}>
       <div className="page-head">
         <div className="page-head-main">
-          <h1 className="d-crumbs">
-            {["Drive", ...crumbs].map((name, i) => (
-              <span key={i} className="ex-crumb-wrap">
-                {i > 0 && <Icon name="chevron_right" size={24} className="ex-crumb-sep" />}
-                {i === crumbs.length ? <span className="d-crumb on">{name}</span> : (
-                  <button type="button" className="d-crumb" onClick={() => setPath(crumbs.slice(0, i).join("/"))}>{name}</button>
-                )}
-              </span>
-            ))}
-          </h1>
+          <h1>Storage</h1>
           {listing && (
             <div className="page-sub">
               <span><b>{docs.length}</b> file{docs.length === 1 ? "" : "s"} here</span>
@@ -178,6 +170,19 @@ export function DrivePage() {
           }}><Icon name="add" size={18} />New</button>}
         </div>
       </div>
+      {nav}
+      {crumbs.length > 0 && (
+        <div className="st-crumbs">
+          {["Files", ...crumbs].map((name, i) => (
+            <span key={i} className="ex-crumb-wrap">
+              {i > 0 && <Icon name="chevron_right" size={20} className="ex-crumb-sep" />}
+              {i === crumbs.length ? <span className="d-crumb on">{name}</span> : (
+                <button type="button" className="d-crumb" onClick={() => setPath(crumbs.slice(0, i).join("/"))}>{name}</button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="d-chips" role="group" aria-label="Type">
         {ORDER.map((k) => (
           <button key={k} type="button" className={"d-chip " + k + (kind === k ? " on" : "")} aria-pressed={kind === k} onClick={() => setKind(kind === k ? null : k)}>
@@ -271,7 +276,7 @@ export function DrivePage() {
         </div>
       )}
 
-      {dragging && <div className="m-drop"><Icon name="cloud_upload" size={40} /><span>Drop files to upload to {crumbs[crumbs.length - 1] ?? "My Drive"}</span></div>}
+      {dragging && <div className="m-drop"><Icon name="cloud_upload" size={40} /><span>Drop files to upload to {crumbs[crumbs.length - 1] ?? "Files"}</span></div>}
       <input ref={input} type="file" multiple hidden accept={ACCEPT} onChange={(e) => {
         if (e.target.files) start(Array.from(e.target.files, (file) => ({ file, rel: file.name })));
         e.target.value = "";
@@ -306,7 +311,7 @@ export function DrivePage() {
           </div>
         </Dialog>
       )}
-      {panel}
+      <div className="ex-dock">{convert.panel}{panel}</div>
     </div>
   );
 }
