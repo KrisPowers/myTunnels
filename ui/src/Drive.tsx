@@ -9,7 +9,7 @@ import { Callout, Dialog, useNotify } from "./ui";
 
 const drive = filesIn("drive");
 
-type Kind = "doc" | "sheet" | "slides" | "pdf" | "text";
+type Kind = "doc" | "sheet" | "slides" | "pdf" | "text" | "archive";
 
 const KINDS: Record<Kind, { label: string; icon: IconName; exts: string[] }> = {
   doc: { label: "Documents", icon: "article", exts: ["doc", "docx", "docm", "dot", "dotx", "odt", "rtf", "pages"] },
@@ -17,6 +17,7 @@ const KINDS: Record<Kind, { label: string; icon: IconName; exts: string[] }> = {
   slides: { label: "Presentations", icon: "slideshow", exts: ["ppt", "pptx", "pptm", "pps", "ppsx", "odp", "key"] },
   pdf: { label: "PDFs", icon: "picture_as_pdf", exts: ["pdf"] },
   text: { label: "Text", icon: "description", exts: ["txt", "md", "epub"] },
+  archive: { label: "Archives", icon: "folder_zip", exts: ["zip", "7z", "rar"] },
 };
 const ORDER = Object.keys(KINDS) as Kind[];
 
@@ -80,7 +81,7 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
     const fit = picked.filter((p) => kindOf(p.file.name));
     if (fit.length < picked.length) {
       const n = picked.length - fit.length;
-      notify(`Skipped ${n} file${n === 1 ? "" : "s"}: Drive keeps documents, spreadsheets, presentations and PDFs`, "bad");
+      notify(`Skipped ${n} file${n === 1 ? "" : "s"}: Files keeps documents, spreadsheets, presentations, PDFs and archives`, "bad");
     }
     const here = new Set(entries.map((e) => e.name));
     const clash = fit.find((p) => here.has(p.rel));
@@ -111,6 +112,17 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
     await load();
   };
 
+  const extract = async (e: FileEntry) => {
+    notify(`Opening ${e.name}`);
+    try {
+      const { skipped } = await drive.extract(join(path, e.name));
+      notify(skipped ? `Opened ${e.name}; left out ${skipped} file${skipped === 1 ? "" : "s"} Files does not keep` : `Opened ${e.name}`);
+    } catch (err) {
+      notify(message(err), "bad");
+    }
+    await load();
+  };
+
   const contextMenu = (ev: PointerEvent, entry: FileEntry | null) => {
     if (!ownMenu(ev)) return;
     ev.preventDefault();
@@ -122,6 +134,8 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
     { label: "Download", icon: "download", hidden: entry.dir, run: () => download(entry) },
     { label: "Share link", icon: "link", run: () => shares.open("drive", [join(path, entry.name)]) },
     { label: "Convert", icon: "swap_horiz", hidden: extOf(entry.name) !== "pdf" || !can("drive.edit"), run: () => convert.open("drive", [join(path, entry.name)]) },
+    { label: "Extract here", icon: "folder_zip", hidden: kindOf(entry.name) !== "archive" || !can("drive.edit"), run: () => extract(entry) },
+    { label: "Compress to ZIP", icon: "folder_zip", hidden: !can("drive.edit"), run: () => run(() => drive.compress([join(path, entry.name)]), `Packed ${entry.name}`) },
     { label: "Rename", icon: "edit", hidden: !can("drive.edit"), run: () => setAsking({ rename: entry }) },
     { label: "Delete", icon: "delete", danger: true, hidden: !can("drive.delete"), run: () => setAsking({ remove: entry }) },
   ] : [

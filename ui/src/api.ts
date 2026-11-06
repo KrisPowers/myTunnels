@@ -550,6 +550,8 @@ export const filesIn = (space: Space) => ({
   rename: (path: string, name: string) => call<{ path: string }>(`/${space}/fs/rename`, "POST", { path, name }),
   move: (paths: string[], to: string, copy: boolean) => call<{ done: number }>(`/${space}/fs/move`, "POST", { paths, to, copy }),
   remove: (paths: string[]) => call<{ done: number }>(`/${space}/fs/delete`, "POST", { paths }),
+  extract: (path: string) => call<{ path: string; skipped: number }>(`/${space}/fs/extract`, "POST", { path }),
+  compress: (paths: string[]) => call<{ path: string }>(`/${space}/fs/compress`, "POST", { paths }),
 });
 
 // Saves a preview made in the browser beside a photo or video in Media.

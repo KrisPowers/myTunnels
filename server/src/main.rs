@@ -1,4 +1,5 @@
 mod admin;
+mod archive;
 mod cloudflare;
 mod code;
 mod codes;
