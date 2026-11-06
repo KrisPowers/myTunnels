@@ -1128,18 +1128,26 @@ async fn login(
             "This device tried too many accounts. Try again tomorrow.",
         );
     }
+    let account = state.db.user_by_email(&body.email).ok().flatten();
+    let visitor = Visitor::of(state, ip, headers);
+    // Wrong tries against an account lock it only for devices not linked to
+    // it, so a stranger who knows the email cannot lock its owner out.
+    let linked = account.as_ref().is_some_and(|u| {
+        visitor
+            .device_id
+            .as_ref()
+            .is_some_and(|d| u.device_ids.contains(d))
+    });
     if state.locked_out(&by_address)
-        || state.locked_out(&by_account)
+        || (state.locked_out(&by_account) && !linked)
         || state.locked_out(&by_device)
     {
         return locked();
     }
-    let account = state.db.user_by_email(&body.email).ok().flatten();
     let valid = secret::verify_or_waste(
         &body.password,
         account.as_ref().map(|u| u.password_hash.as_str()),
     );
-    let visitor = Visitor::of(state, ip, headers);
 
     let Some(account) = account.filter(|u| valid && u.enabled) else {
         if let Some(u) = state.db.user_by_email(&body.email).ok().flatten() {
