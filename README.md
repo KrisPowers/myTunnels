@@ -279,8 +279,9 @@ Nothing here needs setting up; all of it is on from the first start.
   per device ID as well as per address: 1200 requests and 30 key, password or
   sign-in steps a minute. One address gets at most 20 new device IDs an hour.
 - Password and sign-in attempts need a device ID. Five wrong tries lock that device,
-  that address and, for accounts, that email out for 15 minutes. A device that fails
-  on three different accounts in a day is refused for a day.
+  that address and, for accounts, that email out for 15 minutes, except on the devices
+  linked to the account, so its owner is never locked out by someone else's tries. A
+  device that fails on three different accounts in a day is refused for a day.
 - The panel allows 600 calls and 10 sign-in attempts per address each minute.
 - The panel refuses changes that do not carry the header it sends, so another site
   cannot act through a signed-in browser. It sends a strict Content Security Policy
