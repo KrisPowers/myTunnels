@@ -262,6 +262,8 @@ environment variables:
 | `GATE_ADDR` | `127.0.0.1:7080` | Gateway address, reached only by cloudflared |
 | `UPSTREAM_HOST` | `host.docker.internal` | Default host for tunnel ports, changeable in Settings |
 | `DATA_DIR` | `/data` | Database location |
+| `SECRET_KEY_FILE` | `/keys/secret.key` | Key that seals secrets in the database, made on first start |
+| `SECRET_KEY` | none | The same key as 64 hex digits, in place of the file |
 | `DOCKER_HOST` | `tcp://docker:2375` in `compose.yaml` | Docker API the Dashboard reads containers from (`unix://`, `npipe://` or `tcp://`) |
 | `RUST_LOG` | `info` | Log level |
 
@@ -297,7 +299,10 @@ Nothing here needs setting up; all of it is on from the first start.
   rules in front of it, such as approved devices.
 - The same network check compares public addresses. Behind carrier grade NAT, other
   customers of your ISP can share your public IPv4 address, so prefer device approval there.
-- The Cloudflare API token is stored in the database volume. Treat the volume as secret.
+- The Cloudflare and tunnel tokens, SMTP and OAuth credentials and the session signing key
+  are sealed in the database with a key kept in the separate `keys` volume, so a copy of the
+  data volume alone does not give them away. Keep both volumes; without the key, those
+  secrets must be entered again.
 
 ## Development
 

@@ -7,6 +7,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::util::{lock, random_alnum};
+use crate::vault::{self, Vault};
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS revoked (
@@ -404,10 +405,14 @@ fn grants(conn: &Connection, device_id: &str) -> rusqlite::Result<Vec<String>> {
     Ok(ids)
 }
 
-pub struct Db(Mutex<Connection>);
+pub struct Db {
+    conn: Mutex<Connection>,
+    /// Seals the settings that hold secrets.
+    vault: Vault,
+}
 
 impl Db {
-    pub fn open(path: &Path) -> Result<Self> {
+    pub fn open(path: &Path, vault: Vault) -> Result<Self> {
         let conn = Connection::open(path)?;
         conn.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()))?;
         conn.execute_batch(SCHEMA)?;
@@ -484,21 +489,52 @@ impl Db {
                  INSERT INTO settings (key, value) VALUES ('devices_linked_from_history', '1');",
             )?;
         }
-        Ok(Self(Mutex::new(conn)))
+        let db = Self {
+            conn: Mutex::new(conn),
+            vault,
+        };
+        db.seal_secrets()?;
+        Ok(db)
     }
 
     fn conn(&self) -> MutexGuard<'_, Connection> {
-        lock(&self.0)
+        lock(&self.conn)
+    }
+
+    /// Seals secrets stored before they were sealed, and says so loudly when some
+    /// were sealed with another key, which then count as never entered.
+    fn seal_secrets(&self) -> Result<()> {
+        let rows: Vec<(String, String)> = self
+            .conn()
+            .prepare("SELECT key, value FROM settings")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (key, value) in rows.into_iter().filter(|(k, _)| vault::is_secret(k)) {
+            if !vault::is_sealed(&value) {
+                self.set_setting(&key, &value)?;
+            } else if self.vault.open(&key, &value).is_none() {
+                tracing::error!(
+                    "the stored {key} was sealed with another secrets key; enter it again"
+                );
+            }
+        }
+        Ok(())
     }
 
     pub fn setting(&self, key: &str) -> Result<Option<String>> {
-        let value = self
+        let value: Option<String> = self
             .conn()
             .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
                 r.get(0)
             })
             .optional()?;
-        Ok(value)
+        Ok(value.and_then(|v| {
+            if vault::is_sealed(&v) {
+                self.vault.open(key, &v)
+            } else {
+                Some(v)
+            }
+        }))
     }
 
     /// Signed-out tokens and subjects, `(key, at, expires)`. Ones past use are dropped.
@@ -522,6 +558,13 @@ impl Db {
     }
 
     pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        let sealed;
+        let value = if vault::is_secret(key) {
+            sealed = self.vault.seal(key, value)?;
+            sealed.as_str()
+        } else {
+            value
+        };
         self.conn().execute(
             "INSERT INTO settings (key, value) VALUES (?1, ?2)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -1234,4 +1277,37 @@ fn token_row(r: &rusqlite::Row) -> rusqlite::Result<Token> {
         created_at: r.get(4)?,
         last_used: r.get(5)?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn secrets_are_sealed_at_rest_and_read_back_plain() {
+        let path = std::env::temp_dir().join(format!("vault-{}.db", random_alnum(12)));
+        let db = Db::open(&path, Vault::new(&[3; 32])).unwrap();
+        db.set_setting("cf_token", "token-value").unwrap();
+        db.set_setting("upstream_host", "nas").unwrap();
+        let raw = |key: &str| -> String {
+            db.conn()
+                .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
+                    r.get(0)
+                })
+                .unwrap()
+        };
+        assert!(vault::is_sealed(&raw("cf_token")));
+        assert_eq!(raw("upstream_host"), "nas");
+        assert_eq!(
+            db.setting("cf_token").unwrap().as_deref(),
+            Some("token-value")
+        );
+        drop(db);
+        let other = Db::open(&path, Vault::new(&[4; 32])).unwrap();
+        assert_eq!(other.setting("cf_token").unwrap(), None);
+        drop(other);
+        for end in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{end}", path.display()));
+        }
+    }
 }
