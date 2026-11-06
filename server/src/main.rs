@@ -21,6 +21,7 @@ mod storage;
 mod threads;
 mod tls;
 mod token;
+mod totp;
 mod tunnel;
 mod util;
 mod vault;

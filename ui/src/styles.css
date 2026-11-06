@@ -660,6 +660,8 @@ a.result:hover { background: var(--hover); }
 .edit-block { display: grid; gap: 4px; }
 .edit-switch { display: flex; align-items: center; gap: 10px; color: var(--text-2); cursor: pointer; }
 .edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.totp-qr { display: block; width: 200px; height: 200px; margin: 4px auto 8px; border-radius: var(--round); background: #ffffff; }
+.recovery-codes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 24px; margin: 8px 0 12px; padding: 0; list-style: none; font-size: 14px; }
 .edit-actions-start { margin-right: auto; }
 
 /* A panel over the whole page, the page dimmed behind it; menus inside it sit above. */

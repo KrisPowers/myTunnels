@@ -252,6 +252,12 @@ switch covers every sign-in: the dashboard's (sent to the admin email, or the ac
 and every tunnel with sign-in, including sign-ins through a third-party provider. Turning it on
 sends a test email first, and codes stop on their own if SMTP is removed.
 
+An authenticator app needs no email. Under **Settings, Account**, **Set up** shows a QR code for
+an app such as Aegis, 2FAS or Google Authenticator; enter its first code and ten recovery codes
+are shown once. From then on every sign-in to that account, on the dashboard and at tunnels,
+asks for a code from the app (each works once) or a recovery code, in place of an emailed one.
+**Turn off** takes a code too.
+
 ## Configuration
 
 Settings made in the panel are stored in `/data/gateway.db`. The container reads these

@@ -21,7 +21,7 @@ use tower::ServiceExt;
 use crate::db::{Device, Event, Route, SignIn, User};
 use crate::state::{AppState, Hop, Outcome, Snapshot};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
-use crate::{code, codes, guard, secret};
+use crate::{code, codes, guard, secret, totp};
 use crate::{oauth, proxy};
 
 /// Host-only cookies: the `__Host-` prefix makes browsers refuse them with a domain.
@@ -419,7 +419,7 @@ fn user_session(
     if !s.device.is_empty() && s.device != here {
         return None;
     }
-    if codes::on(state) && !s.mfa {
+    if (codes::on(state) || totp::enrolled(&state.db, &s.subject)) && !s.mfa {
         return None;
     }
     let now = now();
@@ -1352,6 +1352,14 @@ async fn admit(
 ) -> Result<Outcome, ApiError> {
     let account =
         vet(state, route, account, v).map_err(|(status, why)| ApiError(status, why.into()))?;
+    if totp::enrolled(&state.db, &account.id) {
+        let ticket = state.codes.hold(&account.id, &route.id, &v.device_hash);
+        return Ok(Outcome::Code {
+            ticket,
+            sent_to: String::new(),
+            app: true,
+        });
+    }
     if !codes::on(state) {
         return Ok(Outcome::Session(open(state, route, account, v, false)));
     }
@@ -1364,7 +1372,11 @@ async fn admit(
         &route.hostname,
     )
     .await?;
-    Ok(Outcome::Code { ticket, sent_to })
+    Ok(Outcome::Code {
+        ticket,
+        sent_to,
+        app: false,
+    })
 }
 
 /// The checks every sign-in passes, before any code: the account may open this
@@ -1455,10 +1467,17 @@ fn signed_in(outcome: Result<Outcome, ApiError>) -> Response {
             );
             response
         }
-        Ok(Outcome::Code { ticket, sent_to }) => {
-            Json(json!({ "code_required": true, "ticket": ticket, "sent_to": sent_to }))
-                .into_response()
-        }
+        Ok(Outcome::Code {
+            ticket,
+            sent_to,
+            app,
+        }) => Json(json!({
+            "code_required": true,
+            "ticket": ticket,
+            "sent_to": sent_to,
+            "app": app,
+        }))
+        .into_response(),
         Ok(Outcome::Refused(why)) => json_error(StatusCode::FORBIDDEN, &why),
         Err(err) => err.into_response(),
     }
@@ -1479,7 +1498,8 @@ async fn code(
     body: CodeRequest,
 ) -> Response {
     let visitor = Visitor::of(state, ip, headers);
-    let pending = match state.codes.redeem(&body.ticket, &body.code) {
+    let app = |subject: &str, code: &str| totp::verify(&state.db, subject, code);
+    let pending = match state.codes.redeem(&body.ticket, &body.code, app) {
         Ok(p) if p.route_id == route.id && p.device_hash == visitor.device_hash => p,
         Ok(_) => return json_error(StatusCode::FORBIDDEN, "Sign in again on this device."),
         Err(why) => {
@@ -1630,13 +1650,28 @@ async fn oauth_callback(
                 .into_iter()
                 .collect(),
         ),
-        Outcome::Code { ticket, sent_to } => {
+        Outcome::Code {
+            ticket,
+            sent_to,
+            app,
+        } => {
+            let (title, text) = if app {
+                (
+                    "Authenticator code".to_owned(),
+                    "Enter the code from your authenticator app, or a recovery code.".to_owned(),
+                )
+            } else {
+                (
+                    "Check your email".to_owned(),
+                    format!("Enter the code sent to {sent_to}."),
+                )
+            };
             let mut response = gate_page(
                 StatusCode::UNAUTHORIZED,
                 "code",
                 &route.hostname,
-                "Check your email",
-                &format!("Enter the code sent to {sent_to}."),
+                &title,
+                &text,
                 &[],
                 &json!({ "ticket": ticket, "path": path }),
             );

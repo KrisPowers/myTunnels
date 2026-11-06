@@ -25,7 +25,8 @@ pub struct Pending {
     pub route_id: String,
     /// The device the code was asked from, which must enter it.
     pub device_hash: String,
-    hash: String,
+    /// The emailed code's hash; none when the code comes from an authenticator app.
+    hash: Option<String>,
     expires: i64,
     tries: u32,
 }
@@ -47,7 +48,7 @@ impl Codes {
                 subject: subject.to_owned(),
                 route_id: route_id.to_owned(),
                 device_hash: device_hash.to_owned(),
-                hash: sha256_hex(&format!("{ticket}:{code}")),
+                hash: Some(sha256_hex(&format!("{ticket}:{code}"))),
                 expires: now + TTL,
                 tries: 0,
             },
@@ -55,15 +56,47 @@ impl Codes {
         (ticket, code)
     }
 
+    /// Holds a sign-in for a code from the account's authenticator app; returns
+    /// its ticket.
+    pub fn hold(&self, subject: &str, route_id: &str, device_hash: &str) -> String {
+        let ticket = random_hex(16);
+        let now = now();
+        let mut all = lock(&self.0);
+        all.retain(|_, p| p.expires > now);
+        all.insert(
+            ticket.clone(),
+            Pending {
+                subject: subject.to_owned(),
+                route_id: route_id.to_owned(),
+                device_hash: device_hash.to_owned(),
+                hash: None,
+                expires: now + TTL,
+                tries: 0,
+            },
+        );
+        ticket
+    }
+
     /// The sign-in a right code finishes. A wrong one counts against the ticket,
     /// which is dropped after five.
-    pub fn redeem(&self, ticket: &str, code: &str) -> Result<Pending, &'static str> {
+    /// `app` checks a code for a sign-in held for an authenticator app, given its
+    /// subject and the code.
+    pub fn redeem(
+        &self,
+        ticket: &str,
+        code: &str,
+        app: impl FnOnce(&str, &str) -> bool,
+    ) -> Result<Pending, &'static str> {
         let mut all = lock(&self.0);
         let Some(pending) = all.get_mut(ticket).filter(|p| p.expires > now()) else {
             all.remove(ticket);
             return Err("This code has expired. Sign in again.");
         };
-        if pending.hash == sha256_hex(&format!("{ticket}:{}", code.trim())) {
+        let right = match &pending.hash {
+            Some(hash) => *hash == sha256_hex(&format!("{ticket}:{}", code.trim())),
+            None => app(&pending.subject, code),
+        };
+        if right {
             return all
                 .remove(ticket)
                 .ok_or("This code has expired. Sign in again.");
@@ -156,15 +189,21 @@ mod tests {
         let (ticket, code) = codes.issue("u1", "r1", "d1");
         assert_eq!(code.len(), 6);
         let wrong = if code == "000000" { "000001" } else { "000000" };
-        assert!(codes.redeem(&ticket, wrong).is_err());
-        assert_eq!(codes.redeem(&ticket, &code).unwrap().subject, "u1");
-        assert!(codes.redeem(&ticket, &code).is_err());
+        let no_app = |_: &str, _: &str| false;
+        assert!(codes.redeem(&ticket, wrong, no_app).is_err());
+        assert_eq!(codes.redeem(&ticket, &code, no_app).unwrap().subject, "u1");
+        assert!(codes.redeem(&ticket, &code, no_app).is_err());
 
         let (ticket, code) = codes.issue("u1", "r1", "d1");
         for _ in 0..TRIES {
-            let _ = codes.redeem(&ticket, wrong);
+            let _ = codes.redeem(&ticket, wrong, no_app);
         }
-        assert!(codes.redeem(&ticket, &code).is_err());
+        assert!(codes.redeem(&ticket, &code, no_app).is_err());
+
+        let held = codes.hold("u2", "r1", "d1");
+        assert!(codes
+            .redeem(&held, "123456", |s, c| s == "u2" && c == "123456")
+            .is_ok());
     }
 
     #[test]

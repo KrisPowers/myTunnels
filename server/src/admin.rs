@@ -21,7 +21,9 @@ use crate::oauth::{self, Provider};
 use crate::permissions::{self, Caller};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
-use crate::{code, codes, containers, convert, gate, metrics, secret, storage, threads, tunnel};
+use crate::{
+    code, codes, containers, convert, gate, metrics, secret, storage, threads, totp, tunnel,
+};
 
 const ADMIN_COOKIE: &str = "admin_session";
 const ADMIN_TTL: i64 = 7 * 86_400;
@@ -29,6 +31,10 @@ const ADMIN_TTL: i64 = 7 * 86_400;
 pub fn router(state: AppState) -> Router {
     let protected = Router::new()
         .route("/account", get(account).patch(edit_account))
+        .route(
+            "/account/totp",
+            post(start_totp).put(confirm_totp).delete(remove_totp),
+        )
         .route("/oauth", get(list_oauth))
         .route("/oauth/{id}", put(save_oauth).delete(delete_oauth))
         .route("/twofactor", get(two_factor).put(save_two_factor))
@@ -417,6 +423,9 @@ async fn login(
         // username.
         if let Some(user) = dashboard_account(&state, &body.login, &body.password)? {
             state.clear_failures(&key);
+            if totp::enrolled(&state.db, &user.id) {
+                return Ok(app_code(state.codes.hold(&user.id, DASHBOARD, "")));
+            }
             if !dashboard_codes(&state)? {
                 return start_session(&state, &user.id, &secret::tag(&user.password_hash));
             }
@@ -442,6 +451,9 @@ async fn login(
         ));
     }
     state.clear_failures(&key);
+    if totp::enrolled(&state.db, "admin") {
+        return Ok(app_code(state.codes.hold("admin", "", "")));
+    }
     if !dashboard_codes(&state)? {
         return start_admin_session(&state);
     }
@@ -456,6 +468,12 @@ async fn login(
 
 /// Marks an emailed code as one for an account signing in to the dashboard.
 const DASHBOARD: &str = "dashboard";
+
+/// Asks for a code from the authenticator app to finish signing in.
+fn app_code(ticket: String) -> Response {
+    Json(json!({ "code_required": true, "ticket": ticket, "sent_to": "", "app": true }))
+        .into_response()
+}
 
 /// The account `login` names, if it is on, may sign in to the dashboard and
 /// `password` is its own.
@@ -491,7 +509,8 @@ async fn login_code(
     State(state): State<AppState>,
     Json(body): Json<CodeBody>,
 ) -> ApiResult<Response> {
-    match state.codes.redeem(&body.ticket, &body.code) {
+    let app = |subject: &str, code: &str| totp::verify(&state.db, subject, code);
+    match state.codes.redeem(&body.ticket, &body.code, app) {
         Ok(p) if p.subject == "admin" && p.route_id.is_empty() => start_admin_session(&state),
         Ok(p) if p.route_id == DASHBOARD => match state.db.user(&p.subject)? {
             Some(u) if u.enabled && u.permissions.iter().any(|x| x == "dashboard") => {
@@ -551,9 +570,77 @@ async fn account(
             "username": state.db.setting("admin_username")?,
             "email": state.db.setting("admin_email")?,
             "admin": true,
+            "totp": totp::enrolled(&state.db, "admin"),
         }),
-        Caller::Account(u) => json!({ "username": u.username, "email": u.email, "admin": false }),
+        Caller::Account(u) => json!({
+            "username": u.username,
+            "email": u.email,
+            "admin": false,
+            "totp": totp::enrolled(&state.db, &u.id),
+        }),
     }))
+}
+
+/// Starts setting up an authenticator app for the account signed in: its secret,
+/// the link to it, and that link as a QR code to scan.
+async fn start_totp(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+) -> ApiResult<Json<Value>> {
+    let label = match &caller {
+        Caller::Admin => state
+            .db
+            .setting("admin_email")?
+            .or(state.db.setting("admin_username")?)
+            .unwrap_or_else(|| "admin".into()),
+        Caller::Account(u) if !u.email.is_empty() => u.email.clone(),
+        Caller::Account(u) => u.username.clone(),
+    };
+    let secret = totp::start(&state.db, caller.id())?;
+    let uri = totp::uri(&secret, &label);
+    let qr = qrcode::QrCode::new(uri.as_bytes())
+        .map_err(|e| ApiError::from(anyhow::anyhow!("cannot draw the QR code: {e}")))?
+        .render::<qrcode::render::svg::Color>()
+        .min_dimensions(200, 200)
+        .quiet_zone(true)
+        .build();
+    Ok(Json(json!({ "secret": secret, "uri": uri, "qr": qr })))
+}
+
+#[derive(Deserialize)]
+struct TotpCode {
+    code: String,
+}
+
+/// Finishes setting up the app with a code from it; answers with the recovery
+/// codes, shown this once.
+async fn confirm_totp(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Json(body): Json<TotpCode>,
+) -> ApiResult<Json<Value>> {
+    match totp::confirm(&state.db, caller.id(), &body.code)? {
+        Some(codes) => Ok(Json(json!({ "recovery": codes }))),
+        None => Err(ApiError::bad(
+            "That code is not right. Check the time on this device and try the next one.",
+        )),
+    }
+}
+
+/// Turns the app off, given a code from it or a recovery code.
+async fn remove_totp(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Json(body): Json<TotpCode>,
+) -> ApiResult<Json<Value>> {
+    if !totp::verify(&state.db, caller.id(), &body.code) {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "That code is not right.".into(),
+        ));
+    }
+    totp::remove(&state.db, caller.id())?;
+    Ok(Json(json!({ "ok": true })))
 }
 
 #[derive(Deserialize)]
