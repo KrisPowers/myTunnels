@@ -21,7 +21,7 @@ use tower::ServiceExt;
 use crate::db::{Device, Event, Route, SignIn, User};
 use crate::state::{AppState, Hop, Outcome, Snapshot};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
-use crate::{code, codes, guard, passkey, pow, secret, totp};
+use crate::{code, codes, guard, passkey, pow, secret, share, totp};
 use crate::{oauth, proxy};
 
 /// Host-only cookies: the `__Host-` prefix makes browsers refuse them with a domain.
@@ -227,6 +227,16 @@ async fn serve(
         }
         let path = req.uri().path().to_owned();
         return code::serve(state, ip, &path, req).await;
+    }
+    // Share links open at the dashboard's address for anyone holding one, past
+    // the tunnel's access rules; each link is its own key.
+    if route.target_scheme == "dashboard" && req.uri().path().starts_with("/share/") {
+        let mut response = share::serve(state, ip, req).await;
+        response.headers_mut().insert(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=31536000"),
+        );
+        return response;
     }
 
     let mut new_cookies = Vec::new();

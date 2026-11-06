@@ -41,7 +41,7 @@ function remembered(): "grid" | "list" {
 
 // DrivePage is Storage's Files tab: documents, spreadsheets, presentations and
 // PDFs on this host, in folders, each kind in its own colour.
-export function DrivePage({ nav, convert, onReload }: TabProps) {
+export function DrivePage({ nav, convert, shares, onReload }: TabProps) {
   const can = useCan();
   const [path, setPath] = useState("");
   const [listing, setListing] = useState<Listing | null>(null);
@@ -120,6 +120,7 @@ export function DrivePage({ nav, convert, onReload }: TabProps) {
   const items = (entry: FileEntry | null): MenuItem[] => entry ? [
     { label: "Open", icon: entry.dir ? "folder" : opens(entry.name) ? "open_in_new" : "download", run: () => open(entry) },
     { label: "Download", icon: "download", hidden: entry.dir, run: () => download(entry) },
+    { label: "Share link", icon: "link", run: () => shares.open("drive", [join(path, entry.name)]) },
     { label: "Convert", icon: "swap_horiz", hidden: extOf(entry.name) !== "pdf" || !can("drive.edit"), run: () => convert.open("drive", [join(path, entry.name)]) },
     { label: "Rename", icon: "edit", hidden: !can("drive.edit"), run: () => setAsking({ rename: entry }) },
     { label: "Delete", icon: "delete", danger: true, hidden: !can("drive.delete"), run: () => setAsking({ remove: entry }) },
@@ -155,6 +156,7 @@ export function DrivePage({ nav, convert, onReload }: TabProps) {
         </div>
         <div className="page-actions">
           <div className="ex-pick"><Dropdown label="Sort by" value={sort} options={SORTS} onChange={setSort} /></div>
+          {shares.button}
           <button type="button" className="icon-btn" aria-label={view === "grid" ? "List" : "Grid"} title={view === "grid" ? "List" : "Grid"} onClick={() => {
             const next = view === "grid" ? "list" : "grid";
             setView(next);
@@ -312,6 +314,7 @@ export function DrivePage({ nav, convert, onReload }: TabProps) {
         </Dialog>
       )}
       <div className="ex-dock">{convert.panel}{panel}</div>
+      {shares.ui}
     </div>
   );
 }

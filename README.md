@@ -162,6 +162,13 @@ the gateway; a panel at the bottom right follows them, opens what is done and ca
 Converting needs, for a tab, the permissions to view it and to add to it (**Upload photos and
 videos**, or **Upload and change documents**).
 
+**Share link**, in an item's menu or for the photos and videos you tick, makes a link anyone can
+open without an account: to a file, a folder, or a set of photos. It lasts a day, a week, a month
+or until ended, and can ask for a password. Links open at the dashboard's tunnel address, under
+`/share/`, past that tunnel's own access rules; each link is its own key, and its page shows only
+what it shares. The link button at the top of Storage lists your links, how often each was opened,
+and ends them. The dashboard must be published through a tunnel for links to work.
+
 Each tab takes only its own kinds of file. Storage is in the dashboard alone, so publish the
 dashboard through a tunnel to reach it from anywhere.
 

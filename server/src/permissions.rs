@@ -272,7 +272,8 @@ pub fn needed(method: &Method, path: &str) -> Need {
     let at = |i: usize| seg.get(i).copied().unwrap_or("");
     let any = Need::Any;
     match at(0) {
-        "account" | "status" | "device" => Need::SignedIn,
+        // Share links check the space's own permission, and whose link it is.
+        "account" | "status" | "device" | "shares" => Need::SignedIn,
         "oauth" if read => Need::SignedIn,
         "oauth" => any(&["oauth.manage"]),
         "twofactor" => any(&["twofactor.manage"]),

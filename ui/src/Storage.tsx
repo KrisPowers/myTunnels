@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { api, bytes, fileUrl, message, type ConvertJob, type ConvertKind, type ConvertState, type Quality, type Space } from "./api";
+import { ago, api, bytes, fileUrl, message, type ConvertJob, type ConvertKind, type ConvertState, type Quality, type Share, type Space } from "./api";
 import { DrivePage } from "./Drive";
 import { Dropdown, type Option } from "./Dropdown";
 import { convertKind } from "./Files";
 import { Icon, type IconName } from "./Icon";
 import { MediaPage } from "./Media";
 import { useCan } from "./me";
-import { Dialog, useNotify } from "./ui";
+import { Copy, Dialog, TextField, useNotify } from "./ui";
 
 // StoragePage is photos, videos and files kept on this host, in one page with a
 // tab for each: Photos and videos (the media space) and Files (the drive space).
@@ -20,6 +20,7 @@ export function StoragePage({ tab }: { tab: string }) {
   const current = tabs.some(([k]) => k === tab) ? tab : tabs[0]?.[0] ?? "";
   const reloads = useRef<() => unknown>(() => {});
   const convert = useConvert(() => reloads.current());
+  const shares = useShares();
 
   const nav = tabs.length > 1 && (
     <nav className="sub-nav" aria-label="Storage">
@@ -34,7 +35,7 @@ export function StoragePage({ tab }: { tab: string }) {
   const onReload = useCallback((reload: () => unknown) => {
     reloads.current = reload;
   }, []);
-  const props = { nav, convert, onReload };
+  const props = { nav, convert, shares, onReload };
   return current === "files" ? <DrivePage {...props} /> : <MediaPage {...props} />;
 }
 
@@ -43,7 +44,124 @@ export function StoragePage({ tab }: { tab: string }) {
 export interface TabProps {
   nav: ReactNode;
   convert: Converter;
+  shares: Sharer;
   onReload: (reload: () => unknown) => void;
+}
+
+// ---- share links ----
+
+export interface Sharer {
+  // Asks how long a link to these should last, and makes it.
+  open: (space: Space, paths: string[]) => void;
+  // The button that lists the links made, for the page's actions.
+  button: ReactNode;
+  // The dialogs, wherever the page puts them.
+  ui: ReactNode;
+}
+
+const LASTS: Option<number>[] = [
+  { value: 1, label: "1 day" },
+  { value: 7, label: "7 days" },
+  { value: 30, label: "30 days" },
+  { value: 0, label: "Never expires" },
+];
+
+// useShares makes share links and lists them to end them.
+function useShares(): Sharer {
+  const [making, setMaking] = useState<{ space: Space; paths: string[] } | null>(null);
+  const [listing, setListing] = useState(false);
+  const button = (
+    <button type="button" className="icon-btn" aria-label="Shared links" title="Shared links" onClick={() => setListing(true)}><Icon name="link" /></button>
+  );
+  const ui = (
+    <>
+      {making && <ShareDialog {...making} onClose={() => setMaking(null)} />}
+      {listing && <SharesDialog onClose={() => setListing(false)} />}
+    </>
+  );
+  return { open: (space, paths) => setMaking({ space, paths }), button, ui };
+}
+
+const shareName = (s: { paths: string[] }) => (s.paths.length === 1 ? baseName(s.paths[0]) : plural(s.paths.length, "item"));
+
+function ShareDialog({ space, paths, onClose }: { space: Space; paths: string[]; onClose: () => void }) {
+  const [days, setDays] = useState(7);
+  const [password, setPassword] = useState("");
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+  const make = async () => {
+    setBusy(true);
+    try {
+      setUrl((await api.share({ space, paths, password, days })).url);
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+    setBusy(false);
+  };
+  return (
+    <Dialog title={`Share ${shareName({ paths })}`} onClose={onClose}>
+      {url ? (
+        <div className="cv-picker">
+          <p className="muted">Anyone with this link can open it{password ? " with the password" : ""}, without an account.</p>
+          <div className="token-secret"><Copy text={url} /></div>
+          <div className="edit-actions"><button type="button" className="btn primary" onClick={onClose}>Done</button></div>
+        </div>
+      ) : (
+        <div className="cv-picker">
+          <div className="cv-bar-row">
+            <div className="ex-pick"><Dropdown label="Lasts" value={days} options={LASTS} onChange={setDays} /></div>
+          </div>
+          <TextField label="Password, if you want one" type="password" autoComplete="new-password" value={password} onChange={setPassword} />
+          <div className="edit-actions">
+            <button type="button" className="btn text" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn primary" disabled={busy} onClick={make}>{busy && <span className="spinner small on-accent" />}Make link</button>
+          </div>
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
+// SharesDialog lists the links made, each with when it ends and an end button.
+function SharesDialog({ onClose }: { onClose: () => void }) {
+  const [list, setList] = useState<Share[] | null>(null);
+  const notify = useNotify();
+  const load = useCallback(() => api.shares().then((r) => setList(r.shares)).catch((e) => notify(message(e), "bad")), [notify]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const end = async (s: Share) => {
+    try {
+      await api.endShare(s.id);
+      notify("Link ended");
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+    await load();
+  };
+  return (
+    <Dialog title="Shared links" onClose={onClose}>
+      {!list ? <span className="spinner" /> : list.length === 0 ? (
+        <p className="muted">No links yet. Share from an item's menu.</p>
+      ) : (
+        <ul className="item-list">
+          {list.map((s) => (
+            <li key={s.id} className="item-row">
+              <Icon name={s.protected ? "lock" : "link"} size={18} className="item-icon" />
+              <span className="person">
+                <span className="scan-target">{shareName(s)}</span>
+                <small>{[s.expires ? `ends ${new Date(s.expires * 1000).toLocaleDateString()}` : "never ends", `made ${ago(s.created_at)}`, `opened ${plural(s.opened, "time")}`].join(", ")}</small>
+              </span>
+              <button type="button" className="icon-btn small danger" aria-label={`End the link to ${shareName(s)}`} title="End link" onClick={() => end(s)}>
+                <Icon name="close" size={18} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Dialog>
+  );
 }
 
 // ---- converting ----

@@ -18,6 +18,7 @@ mod permissions;
 mod pow;
 mod proxy;
 mod secret;
+mod share;
 mod state;
 mod storage;
 mod threads;

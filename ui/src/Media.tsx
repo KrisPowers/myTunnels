@@ -82,7 +82,7 @@ const dayOf = (at: number) => new Date(at * 1000).toLocaleDateString([], { dateS
 // MediaPage is Storage's Photos and videos tab, a home cloud for them:
 // everything uploaded, newest first and grouped by month, opened one at a time
 // in a viewer.
-export function MediaPage({ nav, convert, onReload }: TabProps) {
+export function MediaPage({ nav, convert, shares, onReload }: TabProps) {
   const can = useCan();
   const [listing, setListing] = useState<Listing | null>(null);
   const [problem, setProblem] = useState("");
@@ -192,6 +192,7 @@ export function MediaPage({ nav, convert, onReload }: TabProps) {
       { label: "Open", icon: "open_in_new", hidden: targets.length > 1, run: () => setViewing(items.findIndex((e) => e.name === name)) },
       { label: selected.has(name) ? "Unselect" : "Select", icon: "check_circle", run: () => toggle(name) },
       { label: "Download" + many, icon: "download", run: () => download(targets) },
+      { label: "Share link", icon: "link", run: () => shares.open("media", targets) },
       { label: "Convert" + many, icon: "swap_horiz", hidden: !can("media.upload"), run: () => convert.open("media", targets) },
       { label: "Delete" + many, icon: "delete", danger: true, hidden: !can("media.delete"), run: () => setRemoving(targets) },
     ];
@@ -227,6 +228,7 @@ export function MediaPage({ nav, convert, onReload }: TabProps) {
             <>
               <span className="m-picked">{selected.size} selected</span>
               <button type="button" className="icon-btn" aria-label="Download" title="Download" onClick={() => download([...selected])}><Icon name="download" /></button>
+              <button type="button" className="icon-btn" aria-label="Share link" title="Share link" onClick={() => shares.open("media", [...selected])}><Icon name="link" /></button>
               {can("media.upload") && [...selected].every(convertKind) && <button type="button" className="icon-btn" aria-label="Convert" title="Convert" onClick={() => convert.open("media", [...selected])}><Icon name="swap_horiz" /></button>}
               {can("media.delete") && <button type="button" className="icon-btn danger" aria-label="Delete" title="Delete" onClick={() => setRemoving([...selected])}><Icon name="delete" /></button>}
               <button type="button" className="icon-btn" aria-label="Clear selection" title="Clear selection" onClick={() => setSelected(new Set())}><Icon name="close" /></button>
@@ -236,6 +238,7 @@ export function MediaPage({ nav, convert, onReload }: TabProps) {
               <div className="ex-pick">
                 <MultiDropdown label="Show" values={kinds} options={KINDS} allLabel="Photos and videos" onChange={setKinds} />
               </div>
+              {shares.button}
               {can("media.upload") && <button type="button" className="btn primary" onClick={() => input.current?.click()}><Icon name="cloud_upload" size={18} />Upload</button>}
             </>
           )}
@@ -302,6 +305,7 @@ export function MediaPage({ nav, convert, onReload }: TabProps) {
       )}
       {menu && <ContextMenu at={menu} items={menuItems(menu.name)} onClose={() => setMenu(null)} />}
       <div className="ex-dock">{convert.panel}{panel}</div>
+      {shares.ui}
     </div>
   );
 }
