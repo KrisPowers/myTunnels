@@ -377,7 +377,7 @@ function Appearance() {
 function About() {
   return (
     <Card title="myTunnels" sub="Publish homelab apps through Cloudflare Tunnel, with an access gateway in front.">
-      <Row title="Admin panel" sub="Keep it on your own network."><span className="mono">{location.host}</span></Row>
+      <Row title="Admin panel" sub="Opens here on this computer only; every other device uses a tunnel."><span className="mono">{location.host}</span></Row>
       <Row title="Source"><a className="btn" href="https://github.com/KrisPowers/myTunnels" target="_blank" rel="noreferrer">GitHub</a></Row>
       <Row title="License"><span>Apache 2.0</span></Row>
     </Card>

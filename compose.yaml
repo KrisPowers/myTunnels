@@ -3,8 +3,10 @@ services:
     build: .
     restart: unless-stopped
     init: true
+    # The panel answers on this computer alone. Every other device, at home or
+    # away, reaches myTunnels through a tunnel, so no port opens on the network.
     ports:
-      - "7070:7070"
+      - "127.0.0.1:7070:7070"
     volumes:
       - data:/data
       # The key that seals secrets in the database, kept apart from it so a

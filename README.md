@@ -28,12 +28,12 @@ browser ──https──> Cloudflare edge ──tunnel──> cloudflared ─�
 docker compose up -d --build
 ```
 
-Open `http://<host>:7070`. Until everything is in place the panel is a short setup, one
+On the computer running it, open `http://localhost:7070`. The panel answers there alone:
+every other device, at home or away, reaches myTunnels through a tunnel, so no port is opened
+on your network. Until everything is in place the panel is a short setup, one
 step at a time, each saved as soon as it is done, so it can be left and resumed:
 
-1. **Admin account.** The setup code, printed in the container's log
-   (`docker compose logs gateway`) and saved in `/data/setup-code`, so no one else on the
-   network can claim the panel first. Then an email, a username and a password for the panel. Either the email
+1. **Admin account.** An email, a username and a password for the panel. Either the email
    or the username signs in, and both can be changed under **Settings, Account**.
 2. **Cloudflare.** **Open Cloudflare** goes to the token page with the permissions already
    picked (Account, Cloudflare Tunnel, Edit; Zone, DNS, Edit; Zone, Zone, Read). Create the
@@ -113,10 +113,10 @@ only its hash is kept. When git asks, give any username and the token as the pas
 
 ```sh
 git clone https://git.example.com/myapp.git       # through the tunnel
-git clone http://<host>:7070/git/myapp.git        # on the LAN
+git clone http://localhost:7070/git/myapp.git     # on this computer
 ```
 
-On the LAN, the panel takes git at `/git/` straight away. For anywhere else, **Publish an
+On this computer, the panel takes git at `/git/` straight away. For any other device, **Publish an
 address** gives Git a subdomain, `git` to start with. That address is for git alone: a browser
 opening it finds nothing, and repositories are browsed here on the dashboard. Git signs in with
 its token, held to the account's Git permissions (**View repositories** to clone, **Push and merge** to
@@ -124,7 +124,7 @@ push). A repository's **Home network only** switch, on its page, lets git reach 
 this host's network or a trusted one.
 
 Cloudflare refuses a single request over 100 MB, so the first push of a very large repository
-goes over the LAN, or in parts. Git needs `git`, which the image includes.
+goes from this computer, or in parts. Git needs `git`, which the image includes.
 
 ### Media
 
@@ -270,7 +270,7 @@ environment variables:
 
 | Variable | Default in the image | Meaning |
 | --- | --- | --- |
-| `ADMIN_ADDR` | `0.0.0.0:7070` | Admin panel address |
+| `ADMIN_ADDR` | `0.0.0.0:7070` | Admin panel address in the container; `compose.yaml` publishes it on `127.0.0.1` only |
 | `GATE_ADDR` | `127.0.0.1:7080` | Gateway address, reached only by cloudflared |
 | `UPSTREAM_HOST` | `host.docker.internal` | Default host for tunnel ports, changeable in Settings |
 | `DATA_DIR` | `/data` | Database location |
@@ -307,8 +307,9 @@ Nothing here needs setting up; all of it is on from the first start.
 
 ## Notes
 
-- The admin panel is on your LAN at port 7070. Publish it through a tunnel only with access
-  rules in front of it, such as approved devices.
+- The admin panel answers only on the computer running it, at `http://localhost:7070`. Every
+  other device opens it through a tunnel; publish it only with access rules in front of it,
+  such as approved devices.
 - The same network check compares public addresses. Behind carrier grade NAT, other
   customers of your ISP can share your public IPv4 address, so prefer device approval there.
 - The Cloudflare and tunnel tokens, SMTP and OAuth credentials and the session signing key

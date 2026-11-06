@@ -26,7 +26,7 @@ impl Config {
         };
         let gate_addr = var("GATE_ADDR", "127.0.0.1:7080");
         Self {
-            admin_addr: var("ADMIN_ADDR", "0.0.0.0:7070"),
+            admin_addr: var("ADMIN_ADDR", "127.0.0.1:7070"),
             gate_service: format!("http://{}", gate_addr.replace("0.0.0.0", "127.0.0.1")),
             gate_addr,
             data_dir: var("DATA_DIR", "data").into(),
