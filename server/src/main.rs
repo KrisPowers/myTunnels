@@ -22,6 +22,7 @@ mod threads;
 mod token;
 mod tunnel;
 mod util;
+mod vault;
 
 use std::net::SocketAddr;
 
@@ -43,7 +44,8 @@ async fn main() -> Result<()> {
     config.default_upstream_host = netinfo::detect_upstream(&config.default_upstream_host).await;
     std::fs::create_dir_all(&config.data_dir)
         .with_context(|| format!("cannot create {}", config.data_dir.display()))?;
-    let db = Db::open(&config.data_dir.join("gateway.db"))?;
+    let key = vault::load_key(&config.secret_key_file)?;
+    let db = Db::open(&config.data_dir.join("gateway.db"), vault::Vault::new(&key))?;
     let state = AppState::new(config, db)?;
 
     let admin_listener = TcpListener::bind(&state.config.admin_addr)

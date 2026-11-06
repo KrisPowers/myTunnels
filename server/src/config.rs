@@ -8,6 +8,8 @@ pub struct Config {
     /// The gateway address as cloudflared should reach it.
     pub gate_service: String,
     pub data_dir: PathBuf,
+    /// The key that seals secrets in the database, kept apart from it.
+    pub secret_key_file: PathBuf,
     pub ui_dir: PathBuf,
     /// Host that tunnel ports point at unless a tunnel names its own.
     pub default_upstream_host: String,
@@ -28,6 +30,7 @@ impl Config {
             gate_service: format!("http://{}", gate_addr.replace("0.0.0.0", "127.0.0.1")),
             gate_addr,
             data_dir: var("DATA_DIR", "data").into(),
+            secret_key_file: var("SECRET_KEY_FILE", "keys/secret.key").into(),
             ui_dir: var("UI_DIR", "../ui/dist").into(),
             default_upstream_host: var("UPSTREAM_HOST", "127.0.0.1"),
             cloudflared_bin: var("CLOUDFLARED_BIN", "cloudflared"),

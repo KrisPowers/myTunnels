@@ -7,6 +7,9 @@ services:
       - "7070:7070"
     volumes:
       - data:/data
+      # The key that seals secrets in the database, kept apart from it so a
+      # copy of the data volume does not carry them.
+      - keys:/keys
     environment:
       DOCKER_HOST: tcp://docker:2375
     extra_hosts:
@@ -41,3 +44,4 @@ services:
 
 volumes:
   data:
+  keys:

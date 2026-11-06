@@ -2,5 +2,6 @@
 .github
 server/target
 server/data
+server/keys
 ui/node_modules
 ui/dist

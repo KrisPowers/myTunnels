@@ -32,8 +32,8 @@ RUN apt-get update \
         ghostscript imagemagick libheif-examples \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home /data app \
-    && mkdir -p /data \
-    && chown app /data
+    && mkdir -p /data /keys \
+    && chown app /data /keys
 # ImageMagick reads and writes only the photo formats Convert uses.
 COPY server/imagemagick-policy.xml /etc/ImageMagick-6/policy.xml
 COPY --from=cloudflared /usr/local/bin/cloudflared /usr/local/bin/cloudflared
@@ -41,11 +41,12 @@ COPY --from=ffmpeg /ffmpeg /ffprobe /usr/local/bin/
 COPY --from=server /usr/local/bin/server /usr/local/bin/server
 COPY --from=ui /ui/dist /app/ui
 ENV DATA_DIR=/data \
+    SECRET_KEY_FILE=/keys/secret.key \
     UI_DIR=/app/ui \
     ADMIN_ADDR=0.0.0.0:7070 \
     GATE_ADDR=127.0.0.1:7080 \
     UPSTREAM_HOST=host.docker.internal
 USER app
-VOLUME /data
+VOLUME /data /keys
 EXPOSE 7070
 ENTRYPOINT ["/usr/local/bin/server"]
