@@ -97,6 +97,11 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
     <div class="row"><button type="submit">Verify</button></div>
   </form>
 
+  <form id="logout" hidden>
+    <div class="error" id="logout-error" role="alert"></div>
+    <div class="row"><button type="submit">Sign out</button></div>
+  </form>
+
   <div id="device" hidden>
     <div class="label">Device ID</div>
     <div class="id-row"><span id="id">....-....</span><button id="copy" class="text" type="button">Copy</button></div>
@@ -187,6 +192,15 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
       $('or').hidden = false;
     }
     form('login', function () { return { email: $('user').value, password: $('secret').value }; });
+  }
+  if (mode === 'logout') {
+    $('logout').hidden = false;
+    $('logout').addEventListener('submit', function (e) {
+      e.preventDefault();
+      post('/__gate/logout', {}).then(function () { location.replace('/'); }).catch(function () {
+        $('logout-error').textContent = 'Could not reach the gateway. Try again.';
+      });
+    });
   }
   if (mode === 'code') form('code', function () { return { ticket: data.ticket, code: $('otp').value.trim() }; });
   if (mode !== 'device') return;
