@@ -30,7 +30,6 @@ mod vault;
 use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
-use axum::middleware;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
@@ -58,17 +57,6 @@ async fn main() -> Result<()> {
     let gate_listener = TcpListener::bind(&state.config.gate_addr)
         .await
         .with_context(|| format!("cannot listen on {}", state.config.gate_addr))?;
-    let https = match &state.config.admin_tls_addr {
-        Some(addr) => {
-            let listener = TcpListener::bind(addr)
-                .await
-                .with_context(|| format!("cannot listen on {addr}"))?;
-            let acceptor = tls::acceptor(&state.config.data_dir.join("tls"))?;
-            tracing::info!("admin panel on https://{addr}");
-            Some((listener, acceptor))
-        }
-        None => None,
-    };
     tracing::info!("admin panel on http://{}", state.config.admin_addr);
     tracing::info!("gateway on {}", state.config.gate_service);
 
@@ -80,27 +68,10 @@ async fn main() -> Result<()> {
     convert::spawn(state.clone());
     tokio::spawn(prune_events(state.clone()));
 
-    // With HTTPS on, browsers on other machines are sent there from plain HTTP.
-    let mut plain = admin::router(state.clone());
-    if let Some(port) = https
-        .as_ref()
-        .and_then(|(l, _)| l.local_addr().ok())
-        .map(|a| a.port())
-    {
-        plain = plain.layer(middleware::from_fn_with_state(port, tls::send_to_https));
-    }
     let admin = axum::serve(
         admin_listener,
-        plain.into_make_service_with_connect_info::<SocketAddr>(),
+        admin::router(state.clone()).into_make_service_with_connect_info::<SocketAddr>(),
     );
-    let secure = async {
-        match https {
-            Some((listener, acceptor)) => {
-                tls::serve(listener, acceptor, admin::router(state.clone())).await
-            }
-            None => std::future::pending().await,
-        }
-    };
     // The gateway serves the panel itself to tunnels aimed at the dashboard.
     let gate = axum::serve(
         gate_listener,
@@ -109,7 +80,6 @@ async fn main() -> Result<()> {
     tokio::select! {
         result = admin => result?,
         result = gate => result?,
-        result = secure => result?,
         _ = shutdown_signal() => tracing::info!("shutting down"),
     }
     Ok(())

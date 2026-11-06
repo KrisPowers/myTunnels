@@ -28,8 +28,7 @@ browser ──https──> Cloudflare edge ──tunnel──> cloudflared ─�
 docker compose up -d --build
 ```
 
-Open `https://<host>:7443` (port 7070 sends you there; the certificate is self-signed until
-you replace it). Until everything is in place the panel is a short setup, one
+Open `http://<host>:7070`. Until everything is in place the panel is a short setup, one
 step at a time, each saved as soon as it is done, so it can be left and resumed:
 
 1. **Admin account.** The setup code, printed in the container's log
@@ -272,7 +271,6 @@ environment variables:
 | Variable | Default in the image | Meaning |
 | --- | --- | --- |
 | `ADMIN_ADDR` | `0.0.0.0:7070` | Admin panel address |
-| `ADMIN_TLS_ADDR` | `0.0.0.0:7443` | Admin panel over HTTPS, or `off` |
 | `GATE_ADDR` | `127.0.0.1:7080` | Gateway address, reached only by cloudflared |
 | `UPSTREAM_HOST` | `host.docker.internal` | Default host for tunnel ports, changeable in Settings |
 | `DATA_DIR` | `/data` | Database location |
@@ -309,11 +307,8 @@ Nothing here needs setting up; all of it is on from the first start.
 
 ## Notes
 
-- The admin panel is on your LAN at `https://<host>:7443`. A browser on another machine that
-  opens port 7070 is sent there, so passwords never cross the network in clear text; git keeps
-  plain HTTP at `/git/`. The certificate is self-signed, made on first start in `/data/tls`;
-  put your own `cert.pem` and `key.pem` there to replace it. Publish the panel through a tunnel
-  only with access rules in front of it, such as approved devices.
+- The admin panel is on your LAN at port 7070. Publish it through a tunnel only with access
+  rules in front of it, such as approved devices.
 - The same network check compares public addresses. Behind carrier grade NAT, other
   customers of your ISP can share your public IPv4 address, so prefer device approval there.
 - The Cloudflare and tunnel tokens, SMTP and OAuth credentials and the session signing key
