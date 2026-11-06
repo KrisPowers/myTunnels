@@ -44,10 +44,9 @@ ENV DATA_DIR=/data \
     SECRET_KEY_FILE=/keys/secret.key \
     UI_DIR=/app/ui \
     ADMIN_ADDR=0.0.0.0:7070 \
-    ADMIN_TLS_ADDR=0.0.0.0:7443 \
     GATE_ADDR=127.0.0.1:7080 \
     UPSTREAM_HOST=host.docker.internal
 USER app
 VOLUME /data /keys
-EXPOSE 7070 7443
+EXPOSE 7070
 ENTRYPOINT ["/usr/local/bin/server"]

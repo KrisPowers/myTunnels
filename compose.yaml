@@ -5,7 +5,6 @@ services:
     init: true
     ports:
       - "7070:7070"
-      - "7443:7443"
     volumes:
       - data:/data
       # The key that seals secrets in the database, kept apart from it so a
