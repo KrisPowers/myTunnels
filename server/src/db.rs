@@ -230,6 +230,16 @@ pub struct User {
     pub permissions: Vec<String>,
 }
 
+impl User {
+    /// True when the account holds `key`, or the Admin role, which holds them all.
+    pub fn holds(&self, key: &str) -> bool {
+        self.permissions.iter().any(|p| p == key || p == ADMIN)
+    }
+}
+
+/// The Admin role: every permission, including making others admins.
+pub const ADMIN: &str = "admin";
+
 /// Something that happened at a tunnel's door: a sign-in or password attempt, a
 /// visitor turned away, a device asking for approval.
 #[derive(Clone, Serialize)]

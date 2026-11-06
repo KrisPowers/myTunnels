@@ -250,12 +250,12 @@ function Tokens({ state, users, onState }: { state: CodeState; users: User[]; on
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
   const nameOf = (id: string) => {
-    if (id === "admin") return "Admin";
+    if (id === "admin") return "Host";
     const u = users.find((x) => x.id === id);
     return u ? u.name || u.username : "Removed account";
   };
   const owners: Option<string>[] = [
-    { value: "admin", label: "Admin", hint: "Every repository" },
+    { value: "admin", label: "Host", hint: "Every repository" },
     ...users.map((u) => ({ value: u.id, label: u.name || u.username, hint: u.email })),
   ];
   const close = () => {

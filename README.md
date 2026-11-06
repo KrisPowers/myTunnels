@@ -107,8 +107,8 @@ A repository has four tabs:
 - **Issues**: bugs and work to do, with comments, closed and reopened as they go.
 - **Settings**: the default branch, **Home network only**, and deleting the repository.
 
-Git signs in with a token. Under **Tokens**, each person makes their own, and the admin (or an
-account allowed to manage everyone's tokens) makes them for others; a token is shown once, and
+Git signs in with a token. Under **Tokens**, each person makes their own, and the host and admins (or an
+account allowed to manage everyone's tokens) make them for others; a token is shown once, and
 only its hash is kept. When git asks, give any username and the token as the password:
 
 ```sh
@@ -186,8 +186,9 @@ set it up:
 
 An account with **Sign in to the dashboard** signs in there with its email or username and its
 own password (and an emailed code, when the dashboard asks for one), and sees only the pages
-and actions its permissions allow; the server checks every call the same way. The admin holds
-every permission. Anyone who manages accounts can give or take only permissions they hold
+and actions its permissions allow; the server checks every call the same way. **Admin** is a role
+any account can be given: it holds every permission, including making others admins. The host
+account, made at setup, always holds them all. Anyone who manages accounts can give or take only permissions they hold
 themselves, cannot change their own, and cannot change an account that can do more than they
 can.
 
@@ -245,9 +246,9 @@ every tunnel on it.
 
 Under **Advanced, Two-Factor Auth**, enter SMTP credentials from any provider, Gmail (with an app
 password), Outlook or your own: host, port, STARTTLS or TLS, username, password and from
-address. Saving checks them, and **Send a test** emails the admin. Then a six digit code,
+address. Saving checks them, and **Send a test** emails the host account. Then a six digit code,
 good once for ten minutes, is asked for after the password once **Email codes** is on. One
-switch covers every sign-in: the dashboard's (sent to the admin email, or the account's own)
+switch covers every sign-in: the dashboard's (sent to the host account's email, or the account's own)
 and every tunnel with sign-in, including sign-ins through a third-party provider. Turning it on
 sends a test email first, and codes stop on their own if SMTP is removed.
 
