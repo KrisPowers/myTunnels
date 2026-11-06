@@ -206,6 +206,38 @@ export interface Container {
   own: boolean;
 }
 
+export interface ImageUser {
+  id: string;
+  name: string;
+  state: string;
+}
+
+export interface Image {
+  id: string;
+  tags: string[];
+  created: number;
+  size: number;
+  containers: ImageUser[];
+}
+
+export interface ImageDetail {
+  id: string;
+  tags: string[];
+  digests: string[];
+  created: string;
+  size: number;
+  platform: string;
+  entrypoint: string[];
+  command: string[];
+  workdir: string;
+  user: string;
+  ports: string[];
+  env: string[];
+  labels: Record<string, string> | null;
+  layers: { created: number; command: string; size: number }[];
+  containers: ImageUser[];
+}
+
 export interface ContainerDetail {
   id: string;
   name: string;
@@ -468,6 +500,9 @@ export const api = {
   containerLogs: (id: string, tail: number) => call<{ lines: string[] }>(`/containers/${encodeURIComponent(id)}/logs?tail=${tail}`),
   containerAction: (id: string, action: ContainerAction) => call(`/containers/${encodeURIComponent(id)}/${action}`, "POST"),
   removeContainer: (id: string) => call(`/containers/${encodeURIComponent(id)}`, "DELETE"),
+  images: () => call<Image[]>("/images"),
+  image: (id: string) => call<ImageDetail>(`/images/${encodeURIComponent(id)}`),
+  removeImage: (id: string) => call(`/images/${encodeURIComponent(id)}`, "DELETE"),
   accounts: (token: string | null) => call<Account[]>("/cloudflare/accounts", "POST", { api_token: token }),
   connect: (token: string | null, accountId: string, tunnelName: string) =>
     call("/settings/cloudflare", "PUT", { api_token: token, account_id: accountId, tunnel_name: tunnelName }),

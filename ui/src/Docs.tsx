@@ -6,6 +6,7 @@ export const DOCS: [string, string, IconName][] = [
   ["start", "Getting started", "info"],
   ["dashboard", "Dashboard", "dashboard"],
   ["containers", "Containers", "deployed_code"],
+  ["images", "Images", "layers"],
   ["git", "Git", "code"],
   ["storage", "Storage", "cloud"],
   ["publish", "Publishing", "public"],
@@ -80,7 +81,20 @@ const CONTENT: Record<string, ReactNode> = {
         <p>Each row's menu holds logs, <b>Forward to a tunnel</b>, start or stop, restart, kill and delete; a project's menu starts, stops or restarts all of it. Search, or show only running ones, to find them. Deleting takes a stopped container away and leaves its volumes. The container myTunnels runs in is marked and is never stopped from here.</p>
       </Doc>
       <Doc title="What Docker allows">
-        <p>myTunnels reaches Docker through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers and the engine's info and nothing else, so images, volumes and networks cannot be changed from here.</p>
+        <p>myTunnels reaches Docker through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers, listing and removing images, and the engine's info, and nothing else, so containers cannot be created and volumes and networks cannot be changed from here.</p>
+      </Doc>
+    </>
+  ),
+  images: (
+    <>
+      <Doc title="What it shows">
+        <p><b>Images</b> lists every image Docker keeps, with its tags, the containers using it, its size and when it was built, and how much space unused images take. Search, or show only images in use or unused.</p>
+      </Doc>
+      <Doc title="One image">
+        <p>Open an image for what it runs (entrypoint, command, working folder, user and exposed ports), its environment and labels, and the layers it was built from, each with the step that made it and its size.</p>
+      </Doc>
+      <Doc title="Deleting">
+        <p>An image no container uses can be deleted from its menu or its page, or every unused one at once with <b>Delete unused</b>. Docker refuses to delete one a container still uses.</p>
       </Doc>
     </>
   ),
