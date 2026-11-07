@@ -1,11 +1,11 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
-import { api, editOf, LEVELS, list, message, redirectUrl, shortId, strength, type Access, type Device, type OAuthProvider, type PolicyMode, type Route, type RouteEdit, type TunnelEvent, type User, type Zone } from "./api";
+import { api, editOf, LEVELS, list, message, redirectUrl, shortId, strength, type Access, type Device, type OAuthProvider, type PolicyMode, type Port, type Route, type RouteEdit, type TunnelEvent, type User, type Zone } from "./api";
 import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
 import { go } from "./route";
 import { ProviderLogo } from "./ProviderLogo";
-import { ArmedButton, Card, Copy, Dialog, LogTable, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
+import { Card, Copy, Dialog, LogTable, MoreMenu, Row, SubNav, Switch, TextField, useNotify, type LogEntry, type MenuAction } from "./ui";
 
 // Chips saying who may open a tunnel.
 export function AccessChips({ route }: { route: Route }) {
@@ -271,17 +271,53 @@ function PasswordSetting({ set, onSave, onCancel }: { set: boolean; onSave: (pas
 
 // ---- publishing ----
 
-// NewTunnel publishes a port: the address on top, then where the app runs, then
-// who can open it.
-export function NewTunnel({ users, providers, onPublished, port: startPort }: { users: User[]; providers: OAuthProvider[]; onPublished: () => Promise<void>; port?: string }) {
+// A port a container's tunnel can go to: one it publishes on the host, or one
+// it listens on, reached by its name on a shared network.
+export interface Reach { port: number; host: string | null; label: string }
+
+// The ways a tunnel can reach a container, published ports first.
+export function reachOf(c: { name: string; ports: Port[] }): Reach[] {
+  const out: Reach[] = [];
+  for (const p of c.ports) {
+    if (p.type !== "tcp") continue;
+    const r = p.public !== null ? { port: p.public, host: null, label: `Port ${p.private}` } : { port: p.private, host: c.name, label: `Port ${p.private}` };
+    if (!out.some((o) => o.port === r.port && o.host === r.host)) out.push(r);
+  }
+  return out.sort((a, b) => Number(a.host !== null) - Number(b.host !== null));
+}
+
+// The tunnels that reach a container: aimed at one of the ports it publishes on
+// the host, or at it by name on a shared network.
+export function tunnelsOf(c: { name: string; ports: Port[] }, routes: Route[]) {
+  const published = c.ports.filter((p) => p.public !== null && p.type === "tcp");
+  return routes.filter((r) => (r.target_scheme === "http" || r.target_scheme === "https") && (
+    (!r.target_host && published.some((p) => p.public === r.target_port))
+    || (r.target_host === c.name && c.ports.some((p) => p.private === r.target_port))
+  ));
+}
+
+const NO_ACCESS: Access = {
+  require_lan: false, require_device: false, require_password: false, require_login: false, require_code: false, oauth: [],
+  login_max: 7 * 86_400, login_idle: 0, policy_mode: "all",
+};
+
+// TunnelComposer publishes an address: the address on top, then where the app
+// runs, then who can open it. For a container, where it runs is the container,
+// so only its port is asked, and only when it has more than one.
+export function TunnelComposer({ users, providers, onPublished, port: startPort, container, sub: startSub = "" }: {
+  users: User[];
+  providers: OAuthProvider[];
+  onPublished: (route: Route) => Promise<void>;
+  port?: string;
+  container?: { name: string; reach: Reach[] };
+  sub?: string;
+}) {
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [zone, setZone] = useState("");
-  const [sub, setSub] = useState("");
+  const [sub, setSub] = useState(startSub.toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/^-+/, "").slice(0, 63));
   const [port, setPort] = useState(/^\d{1,5}$/.test(startPort ?? "") ? startPort! : "");
-  const [access, setAccess] = useState<Access>({
-    require_lan: false, require_device: false, require_password: false, require_login: false, require_code: false, oauth: [],
-    login_max: 7 * 86_400, login_idle: 0, policy_mode: "all",
-  });
+  const [pick, setPick] = useState(0);
+  const [access, setAccess] = useState<Access>(NO_ACCESS);
   const [where, setWhere] = useState<Target>({ target_scheme: "http", target_host: null, preserve_host: false, verify_tls: false });
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
@@ -293,19 +329,24 @@ export function NewTunnel({ users, providers, onPublished, port: startPort }: { 
     }).catch((e) => notify(message(e), "bad"));
   }, [notify]);
 
+  const reach = container?.reach ?? [];
+  const fixed = reach[Math.min(pick, reach.length - 1)];
+  const dashboard = !container && isDashboard(where);
+  const asksPort = !dashboard && !fixed;
   const passwordOk = !access.require_password || strength(access.password ?? "").ok;
-  const dashboard = isDashboard(where);
-  const ready = !!sub && (dashboard || !!port) && !!zone && passwordOk;
+  const ready = !!sub && (!asksPort || !!port) && !!zone && passwordOk;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!ready) return;
     setBusy(true);
     try {
-      const route = await api.publish({ subdomain: sub, zone_id: zone, port: dashboard ? 0 : Number(port), ...where, ...access });
-      await onPublished();
+      const to: Target = container
+        ? { target_scheme: "http", target_host: fixed ? fixed.host : container.name, preserve_host: false, verify_tls: false }
+        : where;
+      const route = await api.publish({ subdomain: sub, zone_id: zone, port: fixed ? fixed.port : dashboard ? 0 : Number(port), ...to, ...access });
       notify(`Published ${route.hostname}`);
-      go(`#/tunnels/${route.id}`);
+      await onPublished(route);
     } catch (err) {
       notify(message(err), "bad");
       setBusy(false);
@@ -313,73 +354,87 @@ export function NewTunnel({ users, providers, onPublished, port: startPort }: { 
   };
 
   return (
-    <form onSubmit={submit}>
-      <div className="page-head">
-        <a className="icon-btn" href="#/" aria-label="Containers" title="Containers"><Icon name="arrow_back" /></a>
-        <div className="page-head-main">
-          <h1>New tunnel</h1>
-          <div className="page-sub">Publish a port on one of your domains.</div>
+    <form className="stack" onSubmit={submit}>
+      <div className="card composer">
+        <div className="composer-row">
+          <TextField className="grow" label="Subdomain" placeholder="app1" autoComplete="off" autoFocus={!startSub} value={sub}
+            onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
+          <span className="composer-dot">.</span>
+          <div className="tf static grow">
+            <div className="tf-box">
+              {zones && zones.length > 0 ? (
+                <Dropdown label="Domain" value={zone} options={zones.map((z) => ({ value: z.id, label: z.name }))} onChange={setZone} />
+              ) : (
+                <span className="dropdown placeholder">{zones ? "No domains on this account" : "Loading domains"}</span>
+              )}
+              <span className="tf-label">Domain</span>
+            </div>
+          </div>
+          {reach.length > 1 && (
+            <>
+              <Icon name="arrow_forward" className="composer-arrow" />
+              <div className="tf static port">
+                <div className="tf-box">
+                  <Dropdown label="Port" value={pick} options={reach.map((r, i) => ({ value: i, label: r.label }))} onChange={setPick} />
+                  <span className="tf-label">Port</span>
+                </div>
+              </div>
+            </>
+          )}
+          {asksPort && (
+            <>
+              <Icon name="arrow_forward" className="composer-arrow" />
+              <TextField className="port" label={container ? "Port" : "Local port"} placeholder="8080" mono inputMode="numeric" value={port}
+                onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
+            </>
+          )}
+          <button className="btn primary composer-go" disabled={busy || !ready}>
+            {busy ? <span className="spinner small on-accent" /> : <Icon name="add" size={18} />}Publish
+          </button>
         </div>
       </div>
-      <div className="page-body stack">
-        <div className="card composer">
-          <div className="composer-row">
-            <TextField className="grow" label="Subdomain" placeholder="app1" autoComplete="off" autoFocus value={sub}
-              onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
-            <span className="composer-dot">.</span>
-            <div className="tf static grow">
-              <div className="tf-box">
-                {zones && zones.length > 0 ? (
-                  <Dropdown label="Domain" value={zone} options={zones.map((z) => ({ value: z.id, label: z.name }))} onChange={setZone} />
-                ) : (
-                  <span className="dropdown placeholder">{zones ? "No domains on this account" : "Loading domains"}</span>
-                )}
-                <span className="tf-label">Domain</span>
-              </div>
-            </div>
-            {!dashboard && (
-              <>
-                <Icon name="arrow_forward" className="composer-arrow" />
-                <TextField className="port" label="Local port" placeholder="8080" mono inputMode="numeric" value={port}
-                  onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
-              </>
-            )}
-            <button className="btn primary composer-go" disabled={busy || !ready}>
-              {busy ? <span className="spinner small on-accent" /> : <Icon name="add" size={18} />}Publish
-            </button>
-          </div>
-        </div>
 
+      {!container && (
         <Card title="Local app">
           <div className="card-pad">
             <LocalApp value={where} onChange={(patch) => setWhere((w) => ({ ...w, ...patch }))} />
           </div>
         </Card>
+      )}
 
-        <AccessCard value={access} users={users} providers={providers} onChange={(patch) => setAccess((a) => ({ ...a, ...patch }))}
-          hostname={sub && zones ? `${sub}.${zones.find((z) => z.id === zone)?.name ?? ""}` : undefined} />
-      </div>
+      <AccessCard value={access} users={users} providers={providers} onChange={(patch) => setAccess((a) => ({ ...a, ...patch }))}
+        hostname={sub && zones ? `${sub}.${zones.find((z) => z.id === zone)?.name ?? ""}` : undefined} />
     </form>
+  );
+}
+
+// NewTunnel publishes any port, such as one on another machine or the dashboard.
+export function NewTunnel({ users, providers, onPublished, port }: { users: User[]; providers: OAuthProvider[]; onPublished: () => Promise<void>; port?: string }) {
+  return (
+    <>
+      <div className="page-head">
+        <a className="icon-btn" href="#/" aria-label="Containers" title="Containers"><Icon name="arrow_back" /></a>
+        <div className="page-head-main">
+          <h1>New tunnel</h1>
+        </div>
+      </div>
+      <div className="page-body">
+        <TunnelComposer users={users} providers={providers} port={port} onPublished={async (route) => {
+          await onPublished();
+          go(`#/tunnels/${route.id}`);
+        }} />
+      </div>
+    </>
   );
 }
 
 // ---- one tunnel ----
 
-const TUNNEL_PAGES: [string, string, IconName][] = [
-  ["access", "Access Control", "shield"],
-  ["devices", "Devices", "devices"],
-  ["activity", "Activity", "history"],
-];
-
-// TunnelPage is one tunnel: its address and target in the heading, each with an
-// edit button, then its sub-pages under a bar.
-export function TunnelPage({ route, page, devices, users, providers, onChanged }: { route: Route; page: string; devices: Device[]; users: User[]; providers: OAuthProvider[]; onChanged: () => Promise<void> }) {
-  const can = useCan();
+// useTunnel holds a tunnel's settings as they are being changed, and saves them.
+function useTunnel(route: Route, onChanged: () => Promise<void>) {
   const [edit, setEdit] = useState<RouteEdit>(() => editOf(route));
-  const [editing, setEditing] = useState<"" | "address" | "target">("");
   const notify = useNotify();
   useEffect(() => setEdit(editOf(route)), [route]);
-  const current = TUNNEL_PAGES.some(([k]) => k === page) ? page : "access";
 
   const save = async (change: Partial<RouteEdit>) => {
     const next = { ...edit, ...change };
@@ -394,8 +449,56 @@ export function TunnelPage({ route, page, devices, users, providers, onChanged }
     }
   };
   const quietly = (change: Partial<RouteEdit>) => save(change).catch((e) => notify(message(e), "bad"));
+  return { edit, save, quietly };
+}
 
-  // Turning on the tunnel password waits for one to be set.
+// TunnelMenu holds changing a tunnel's address and where it goes, and removing it.
+function TunnelMenu({ route, edit, save, onChanged, onRemoved }: {
+  route: Route;
+  edit: RouteEdit;
+  save: (change: Partial<RouteEdit>) => Promise<void>;
+  onChanged: () => Promise<void>;
+  onRemoved: () => void;
+}) {
+  const can = useCan();
+  const [editing, setEditing] = useState<"" | "address" | "target">("");
+  const notify = useNotify();
+  const remove = async () => {
+    try {
+      await api.removeRoute(route.id);
+      notify(`Removed ${route.hostname}`);
+      await onChanged();
+      onRemoved();
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+  };
+  const actions: MenuAction[] = [
+    ...(can("tunnels.edit") ? [
+      { label: "Change address", icon: "edit" as IconName, onClick: () => setEditing("address") },
+      { label: "Change where it goes", icon: "swap_horiz" as IconName, onClick: () => setEditing("target") },
+    ] : []),
+    ...(can("tunnels.delete") ? [{ label: "Remove", icon: "delete" as IconName, danger: true, onClick: remove, confirm: "Remove for good" }] : []),
+  ];
+  return (
+    <>
+      {actions.length > 0 && <MoreMenu label={`Actions for ${route.hostname}`} actions={actions} />}
+      {editing === "address" && <AddressEditor route={route} onDone={() => setEditing("")} onChanged={onChanged} />}
+      {editing === "target" && <TargetEditor edit={edit} onDone={() => setEditing("")} onSave={save} />}
+    </>
+  );
+}
+
+// TunnelAccess is a tunnel's Access Control card. Turning on the tunnel
+// password waits for one to be set.
+function TunnelAccess({ route, edit, save, quietly, users, providers }: {
+  route: Route;
+  edit: RouteEdit;
+  save: (change: Partial<RouteEdit>) => Promise<void>;
+  quietly: (change: Partial<RouteEdit>) => void;
+  users: User[];
+  providers: OAuthProvider[];
+}) {
   const [asking, setAsking] = useState(false);
   const access = (patch: Partial<Access>) => {
     if (patch.require_password && !route.password_set) {
@@ -405,20 +508,27 @@ export function TunnelPage({ route, page, devices, users, providers, onChanged }
     if (patch.require_password === false) setAsking(false);
     quietly(patch);
   };
+  return (
+    <AccessCard value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} providers={providers} hostname={route.hostname} onChange={access}
+      onPassword={async (password) => {
+        await save({ require_password: true, password });
+        setAsking(false);
+      }}
+      onPasswordCancel={() => setAsking(false)} />
+  );
+}
 
-  const remove = async () => {
-    try {
-      await api.removeRoute(route.id);
-      notify(`Removed ${route.hostname}`);
-      await onChanged();
-      go("#/");
-    } catch (e) {
-      notify(message(e), "bad");
-    }
-  };
-
+// TunnelDevices is the approved devices a tunnel lets in, each switched on or off.
+function TunnelDevices({ route, edit, quietly, devices, onChanged }: {
+  route: Route;
+  edit: RouteEdit;
+  quietly: (change: Partial<RouteEdit>) => void;
+  devices: Device[];
+  onChanged: () => Promise<void>;
+}) {
+  const notify = useNotify();
   const approved = devices.filter((d) => d.status === "approved");
-  const grantDevice = async (device: Device, on: boolean) => {
+  const grant = async (device: Device, on: boolean) => {
     const ids = on ? [...device.route_ids, route.id] : device.route_ids.filter((r) => r !== route.id);
     try {
       await api.editDevice(device.id, { route_ids: ids });
@@ -427,58 +537,107 @@ export function TunnelPage({ route, page, devices, users, providers, onChanged }
       notify(message(e), "bad");
     }
   };
+  if (!edit.require_device) {
+    return (
+      <div className="card welcome">
+        <Icon name="devices" size={40} />
+        <h2>Device approval is off</h2>
+        <p className="muted">Turn it on to let in only devices you approve.</p>
+        <button type="button" className="btn primary" onClick={() => quietly({ require_device: true })}>Turn on device approval</button>
+      </div>
+    );
+  }
+  return (
+    <Card title="Devices allowed" sub={approved.length ? undefined : "No device is approved yet. Open the address on a device and approve it under Devices."}>
+      {approved.map((d) => (
+        <Row key={d.id} title={<a href={`#/devices/${d.id}`}>{d.name || shortId(d.id)}</a>} sub={d.all_routes ? "Allowed on every tunnel" : d.info?.platform}>
+          <Switch label={`Allow ${d.name || shortId(d.id)}`} on={d.all_routes || d.route_ids.includes(route.id)} disabled={d.all_routes} onChange={(v) => grant(d, v)} />
+        </Row>
+      ))}
+    </Card>
+  );
+}
+
+// TunnelPanel is a container's tunnel on the container's own page: its address
+// with its switch and menu, then who may open it, its devices and what happened.
+export function TunnelPanel({ route, devices, users, providers, onChanged, onRemoved }: {
+  route: Route;
+  devices: Device[];
+  users: User[];
+  providers: OAuthProvider[];
+  onChanged: () => Promise<void>;
+  onRemoved: () => void;
+}) {
+  const can = useCan();
+  const { edit, save, quietly } = useTunnel(route, onChanged);
+  return (
+    <>
+      <section className="card">
+        <div className="setting tunnel-address">
+          <span className={"dot " + (edit.enabled ? "ok" : "")} role="img" aria-label={edit.enabled ? "Live" : "Off"} />
+          <div className="setting-text">
+            <div className="setting-title"><a href={`https://${route.hostname}`} target="_blank" rel="noreferrer">{route.hostname}<Icon name="open_in_new" size={14} /></a></div>
+            <div className="setting-sub">{edit.enabled ? "Live" : "Off"}, to <span className="mono">{target(route)}</span></div>
+          </div>
+          {can("tunnels.edit") && <Switch label={edit.enabled ? "Live, switch off" : "Off, switch live"} on={edit.enabled} onChange={(v) => quietly({ enabled: v })} />}
+          <TunnelMenu route={route} edit={edit} save={save} onChanged={onChanged} onRemoved={onRemoved} />
+        </div>
+      </section>
+      <TunnelAccess route={route} edit={edit} save={save} quietly={quietly} users={users} providers={providers} />
+      {edit.require_device && <TunnelDevices route={route} edit={edit} quietly={quietly} devices={devices} onChanged={onChanged} />}
+      <section>
+        <h2 className="section-title">Activity</h2>
+        <TunnelLogs route={route} users={users} />
+      </section>
+    </>
+  );
+}
+
+const TUNNEL_PAGES: [string, string, IconName][] = [
+  ["access", "Access Control", "shield"],
+  ["devices", "Devices", "devices"],
+  ["activity", "Activity", "history"],
+];
+
+// TunnelPage is a tunnel to anything but a container: its address and target
+// in the heading, with its switch, Open and one menu, then its sub-pages. A
+// tunnel that reaches a container opens on the container's page.
+export function TunnelPage({ route, page, devices, users, providers, onChanged }: { route: Route; page: string; devices: Device[]; users: User[]; providers: OAuthProvider[]; onChanged: () => Promise<void> }) {
+  const can = useCan();
+  const { edit, save, quietly } = useTunnel(route, onChanged);
+  const current = TUNNEL_PAGES.some(([k]) => k === page) ? page : "access";
+  const containers = can("containers.view");
+
+  useEffect(() => {
+    if (!containers) return;
+    api.containers().then((list) => {
+      const c = list.find((c) => tunnelsOf(c, [route]).length > 0);
+      if (c) go(`#/containers/${encodeURIComponent(c.name)}/tunnel/${route.id}`);
+    }).catch(() => {});
+  }, [containers, route.id, route.target_host, route.target_port]);
+
   return (
     <>
       <div className="page-head">
         <div className="page-head-main">
-          <div className="inline-edit">
-            <h1>{route.hostname}</h1>
-            <button type="button" className="icon-btn" aria-label="Change address" title="Change address" onClick={() => setEditing("address")}><Icon name="edit" size={20} /></button>
-          </div>
-          <div className="page-sub inline-edit">
+          <h1>{route.hostname}</h1>
+          <div className="page-sub">
+            <span className={"chip " + (edit.enabled ? "ok" : "")}>{edit.enabled ? "Live" : "Off"}</span>
             <span>to <span className="mono">{target(route)}</span></span>
-            <button type="button" className="icon-btn small" aria-label="Change where it goes" title="Change where it goes" onClick={() => setEditing("target")}><Icon name="edit" size={18} /></button>
           </div>
-          {editing === "address" && <AddressEditor route={route} onDone={() => setEditing("")} onChanged={onChanged} />}
-          {editing === "target" && <TargetEditor edit={edit} onDone={() => setEditing("")} onSave={save} />}
         </div>
         <div className="page-actions">
-          <Switch label={edit.enabled ? "Live, switch off" : "Off, switch live"} on={edit.enabled} onChange={(v) => quietly({ enabled: v })} />
+          {can("tunnels.edit") && <Switch label={edit.enabled ? "Live, switch off" : "Off, switch live"} on={edit.enabled} onChange={(v) => quietly({ enabled: v })} />}
           <a className="btn" href={`https://${route.hostname}`} target="_blank" rel="noreferrer"><Icon name="open_in_new" size={18} />Open</a>
-          {can("tunnels.delete") && <ArmedButton icon="delete" label="Remove" armedLabel="Remove for good" onConfirm={remove} />}
+          <TunnelMenu route={route} edit={edit} save={save} onChanged={onChanged} onRemoved={() => go("#/")} />
         </div>
       </div>
       <SubNav back="#/" backLabel="Containers" base={`#/tunnels/${route.id}`} items={TUNNEL_PAGES} current={current} />
 
       <div className="page-body stack plain" key={current}>
-        {current === "access" && (
-          <AccessCard value={{ ...edit, require_password: edit.require_password || asking, password_set: route.password_set }} users={users} providers={providers} hostname={route.hostname} onChange={access}
-            onPassword={async (password) => {
-              await save({ require_password: true, password });
-              setAsking(false);
-            }}
-            onPasswordCancel={() => setAsking(false)} />
-        )}
-
-
+        {current === "access" && <TunnelAccess route={route} edit={edit} save={save} quietly={quietly} users={users} providers={providers} />}
+        {current === "devices" && <TunnelDevices route={route} edit={edit} quietly={quietly} devices={devices} onChanged={onChanged} />}
         {current === "activity" && <TunnelLogs route={route} users={users} />}
-
-        {current === "devices" && (!edit.require_device ? (
-          <div className="card welcome">
-            <Icon name="devices" size={40} />
-            <h2>Device approval is off</h2>
-            <p className="muted">Turn it on to let in only devices you approve.</p>
-            <button type="button" className="btn primary" onClick={() => quietly({ require_device: true })}>Turn on device approval</button>
-          </div>
-        ) : (
-          <Card title="Devices allowed" sub={approved.length ? undefined : "No device is approved yet. Open the address on a device and approve it under Devices."}>
-            {approved.map((d) => (
-              <Row key={d.id} title={<a href={`#/devices/${d.id}`}>{d.name || shortId(d.id)}</a>} sub={d.all_routes ? "Allowed on every tunnel" : d.info?.platform}>
-                <Switch label={`Allow ${d.name || shortId(d.id)}`} on={d.all_routes || d.route_ids.includes(route.id)} disabled={d.all_routes} onChange={(v) => grantDevice(d, v)} />
-              </Row>
-            ))}
-          </Card>
-        ))}
       </div>
     </>
   );
