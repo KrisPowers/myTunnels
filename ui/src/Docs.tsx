@@ -6,7 +6,6 @@ export const DOCS: [string, string, IconName][] = [
   ["start", "Getting started", "info"],
   ["dashboard", "Dashboard", "dashboard"],
   ["containers", "Containers", "deployed_code"],
-  ["images", "Images", "layers"],
   ["git", "Git", "code"],
   ["storage", "Storage", "cloud"],
   ["publish", "Publishing", "public"],
@@ -75,26 +74,22 @@ const CONTENT: Record<string, ReactNode> = {
   containers: (
     <>
       <Doc title="What it shows">
-        <p><b>Containers</b> says how many run, their CPU and memory together and how many tunnels are live, then a row per container with its name over its image, published ports (each opens in a new tab), the tunnels that reach it, CPU, memory and how long it has run. Compose projects with more than one container fold under their name. Open one for its Logs, Inspect, Mounts and Stats. Tunnels to anything else are listed beneath, as <b>Other tunnels</b>.</p>
+        <p><b>Containers</b> says how many run, their CPU and memory together and how many tunnels are live, then a row per container with its name over its image, published ports (each opens in a new tab), the tunnels that reach it, CPU, memory and how long it has run. Compose projects with more than one container fold under their name. Tunnels to anything else are listed beneath, as <b>Other tunnels</b>, and <b>New tunnel</b> publishes any port.</p>
+      </Doc>
+      <Doc title="One container">
+        <p>A container and its tunnel are one page. Its heading holds its state, image and address, <b>Open</b>, the one button its state calls for (start, stop or resume) and a menu for the rest. Under it: <b>Overview</b> (what it runs, its state, ports, networks and mounts), <b>Tunnel</b>, <b>Images</b>, <b>Logs</b> and <b>Stats</b>.</p>
+      </Doc>
+      <Doc title="Its tunnel">
+        <p><b>Tunnel</b> gives the container its address: type the subdomain, pick the domain, choose who may open it and press <b>Publish</b>. The port is the container's own, asked only when it has more than one. Once published, the same page switches it live or off, holds its access control, its approved devices and what happened at its door, and its menu changes the address or removes it. The plus adds another address.</p>
+      </Doc>
+      <Doc title="Its images">
+        <p><b>Images</b> lists the image the container runs and the others of the same name, such as earlier versions, with their size and age. Open one for what it runs, its environment and labels, and its layers. One no container uses can be deleted; the menu at the top of Containers deletes every unused image at once.</p>
       </Doc>
       <Doc title="Managing them">
-        <p>Each row's menu holds logs, <b>Forward to a tunnel</b>, start or stop, restart, kill and delete; a project's menu starts, stops or restarts all of it. Search, or show only running ones, to find them. Deleting takes a stopped container away and leaves its volumes. The container myTunnels runs in is marked and is never stopped from here.</p>
+        <p>Each row's menu holds logs, its tunnel, start or stop, restart, kill and delete; a project's menu starts, stops or restarts all of it. Deleting takes a stopped container away and leaves its volumes. The container myTunnels runs in is marked and is never stopped from here.</p>
       </Doc>
       <Doc title="What Docker allows">
         <p>myTunnels reaches Docker through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers, listing and removing images, and the engine's info, and nothing else, so containers cannot be created and volumes and networks cannot be changed from here.</p>
-      </Doc>
-    </>
-  ),
-  images: (
-    <>
-      <Doc title="What it shows">
-        <p><b>Images</b> lists every image Docker keeps, with its tags, the containers using it, its size and when it was built, and how much space unused images take. Search, or show only images in use or unused.</p>
-      </Doc>
-      <Doc title="One image">
-        <p>Open an image for what it runs (entrypoint, command, working folder, user and exposed ports), its environment and labels, and the layers it was built from, each with the step that made it and its size.</p>
-      </Doc>
-      <Doc title="Deleting">
-        <p>An image no container uses can be deleted from its menu or its page, or every unused one at once with <b>Delete unused</b>. Docker refuses to delete one a container still uses.</p>
       </Doc>
     </>
   ),
