@@ -203,7 +203,65 @@ export interface Container {
   ports: Port[];
   project: string | null;
   service: string | null;
+  // The container built from a repository it is, if it is one.
+  deploy: string | null;
   own: boolean;
+}
+
+// A build of a container's repository: one commit made into an image.
+export interface Build {
+  deploy_id: string;
+  number: number;
+  commit: string;
+  message: string;
+  reason: "first" | "push" | "timer" | "manual";
+  status: "queued" | "building" | "ready" | "failed";
+  image: string | null;
+  error: string | null;
+  queued_at: number;
+  started_at: number | null;
+  finished_at: number | null;
+}
+
+export type Updates = "push" | "timer" | "manual";
+
+// A container built from a repository on this host's Git (`repo`) or at an
+// https address (`url`), one of its branches, and how it updates.
+export interface Deploy {
+  id: string;
+  name: string;
+  repo: string;
+  url: string;
+  branch: string;
+  // Empty when the Dockerfile is found on its own.
+  dockerfile: string;
+  // 0 for the port its image exposes.
+  port: number;
+  keep: string[];
+  updates: Updates;
+  every: number;
+  current: number | null;
+  checked_at: number;
+  created_at: number;
+  token_set: boolean;
+  latest: Build | null;
+  running: Build | null;
+  // Only when one is asked for: its builds, and its environment for those who may change it.
+  builds?: Build[];
+  env?: string[];
+}
+
+export interface DeployEdit {
+  repo?: string;
+  url?: string;
+  token?: string;
+  branch?: string;
+  dockerfile?: string;
+  port?: number;
+  env?: string[];
+  keep?: string[];
+  updates?: Updates;
+  every?: number;
 }
 
 export interface ImageUser {
@@ -503,6 +561,15 @@ export const api = {
   images: () => call<Image[]>("/images"),
   image: (id: string) => call<ImageDetail>(`/images/${encodeURIComponent(id)}`),
   removeImage: (id: string) => call(`/images/${encodeURIComponent(id)}`, "DELETE"),
+  deploys: () => call<Deploy[]>("/deploys"),
+  deploy: (id: string) => call<Deploy>(`/deploys/${id}`),
+  addDeploy: (body: { name: string; repo?: string; url?: string; token?: string; branch?: string; updates?: Updates; every?: number }) => call<Deploy>("/deploys", "POST", body),
+  probeSource: (body: { repo?: string; url?: string; token?: string; deploy?: string }) => call<{ branches: string[]; default: string }>("/deploys/probe", "POST", body),
+  editDeploy: (id: string, edit: DeployEdit) => call<Deploy>(`/deploys/${id}`, "PATCH", edit),
+  removeDeploy: (id: string) => call(`/deploys/${id}`, "DELETE"),
+  buildNow: (id: string) => call<Deploy>(`/deploys/${id}/build`, "POST"),
+  buildLog: (id: string, number: number) => call<Build & { log: string }>(`/deploys/${id}/builds/${number}`),
+  useBuild: (id: string, number: number) => call<Deploy>(`/deploys/${id}/builds/${number}/use`, "POST"),
   accounts: (token: string | null) => call<Account[]>("/cloudflare/accounts", "POST", { api_token: token }),
   connect: (token: string | null, accountId: string, tunnelName: string) =>
     call("/settings/cloudflare", "PUT", { api_token: token, account_id: accountId, tunnel_name: tunnelName }),
