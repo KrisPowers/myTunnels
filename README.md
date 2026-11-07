@@ -95,16 +95,48 @@ pause, kill and delete. Under it:
 - **Logs** (followed as it runs, searchable, with or without times) and **Stats** (CPU over
   time, memory, network and disk).
 
+### From a repository
+
+**Add container** makes a container from code: name it, pick a repository on this host's
+**Git** or give any https address (GitHub and the like, with a token for a private one), pick
+its branch and how it updates:
+
+- **When the branch changes**: each new commit is built as it arrives. A repository here is
+  looked at every 30 seconds, one at another address every minute.
+- **On a timer**: every hour to every week, the latest commit is built when there is one.
+- **Only when I press Update**.
+
+**Update**, in its heading, builds the branch's latest commit at any time. A build takes the
+repository's Dockerfile (the one nearest the top, or the one named under **Settings**), builds
+it into an image named after the container and the build's number (`web:12`), then makes the
+container again from it. A build that will not start, or stops straight away, is undone on the
+spot and the build before keeps running. Builds run one at a time.
+
+Its **Images** page lists its builds: each one's commit, why it ran, when and how long it took,
+and how it went, the one running marked. Open one for everything the build printed, followed as
+it runs. **Run this build** goes back to any earlier build whose image is kept; the latest ten
+are.
+
+Its **Settings** page holds the repository and branch, the Dockerfile, how it updates, and how
+it runs: its port (the one its image exposes, unless given), its environment, and the folders
+kept from one build to the next. The folders its image declares are always kept, each in a
+volume named after the container and the folder (`web_data` for `/data`). Changing how it runs
+makes the running build again with it. Tokens and the environment are sealed in the database.
+
+A container made here joins myTunnels' own network and publishes no port, so only its tunnel
+reaches it. Deleting it takes away its container, its images and its copy of the repository;
+its volumes stay.
+
 A tunnel reaches a container when it points at a port the container publishes on the host, or at
 the container by name on a shared network, and opens on that container's page. The container
 myTunnels runs in is marked, cannot be stopped or deleted from here, and asks once more before a
 restart.
 
 The `docker` service in `compose.yaml` allows only the calls the panel makes, by method and
-path: listing, inspecting, logs and stats, start, stop, restart, pause, resume and kill, and
-removing a container; and listing, inspecting and removing an image by its ID. Creating
-containers, exec, pulling or building images, volumes and networks are refused, and only the
-gateway may connect to it.
+path: listing, inspecting, logs and stats, start, stop, restart, pause, resume and kill, making
+and removing a container; building an image from a container's repository; and listing,
+inspecting and removing an image by its ID. Exec, pulling images on their own, volumes and
+networks are refused, and only the gateway may connect to it.
 
 Podman works too, through its Docker-compatible API: mount Podman's socket in place of
 `/var/run/docker.sock` in the `docker` service.

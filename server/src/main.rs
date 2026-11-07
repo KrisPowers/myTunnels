@@ -7,6 +7,7 @@ mod config;
 mod containers;
 mod convert;
 mod db;
+mod deploy;
 mod docker;
 mod dupes;
 mod gate;
@@ -70,6 +71,7 @@ async fn main() -> Result<()> {
     netinfo::spawn(state.clone());
     metrics::spawn();
     convert::spawn(state.clone());
+    deploy::spawn(state.clone());
     tokio::spawn(prune_events(state.clone()));
 
     let admin = axum::serve(

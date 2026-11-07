@@ -1144,6 +1144,10 @@ a.result.thread-row:hover .scan-target { color: var(--accent); }
   background: var(--field); color: var(--text); font: inherit; box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 .text-area:focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+.text-area.mono { font: 13px/1.6 var(--mono); }
+.list-area { display: block; margin-bottom: 16px; }
+.ct-source { display: inline-flex; align-items: center; gap: 6px; }
+.ct-source .icon { color: var(--text-3); }
 .compare-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .compare-bar > .icon { color: var(--text-3); }
 .branch-field { width: 220px; }

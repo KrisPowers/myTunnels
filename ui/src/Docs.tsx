@@ -82,6 +82,10 @@ const CONTENT: Record<string, ReactNode> = {
       <Doc title="Its tunnel">
         <p><b>Tunnel</b> gives the container its address: type the subdomain, pick the domain, choose who may open it and press <b>Publish</b>. The port is the container's own, asked only when it has more than one. Once published, the same page switches it live or off, holds its access control, its approved devices and what happened at its door, and its menu changes the address or removes it. The plus adds another address.</p>
       </Doc>
+      <Doc title="From a repository">
+        <p><b>Add container</b> makes a container from code: name it, pick a repository on this host's <b>Git</b> or give any https address (GitHub and the like, with a token for a private one), pick its branch and how it updates: <b>When the branch changes</b>, <b>On a timer</b> (every hour to every week), or <b>Only when I press Update</b>. <b>Update</b>, in its heading, builds the latest commit at any time.</p>
+        <p>A build takes the repository's Dockerfile, builds it into an image named after the container and the build's number, and makes the container again from it. One that will not start is undone on the spot and the build before keeps running. Its <b>Images</b> page lists its builds and what each printed; <b>Run this build</b> goes back to any of the latest ten. Its <b>Settings</b> page holds the repository, branch and Dockerfile, how it updates, its port, its environment and the folders kept from one build to the next.</p>
+      </Doc>
       <Doc title="Its images">
         <p><b>Images</b> lists the image the container runs and the others of the same name, such as earlier versions, with their size and age. Open one for what it runs, its environment and labels, and its layers. One no container uses can be deleted; the menu at the top of Containers deletes every unused image at once.</p>
       </Doc>
@@ -89,7 +93,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>Each row's menu holds logs, its tunnel, start or stop, restart, kill and delete; a project's menu starts, stops or restarts all of it. Deleting takes a stopped container away and leaves its volumes. The container myTunnels runs in is marked and is never stopped from here.</p>
       </Doc>
       <Doc title="What Docker allows">
-        <p>myTunnels reaches Docker through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers, listing and removing images, and the engine's info, and nothing else, so containers cannot be created and volumes and networks cannot be changed from here.</p>
+        <p>myTunnels reaches Docker through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers, building images from a container's repository, listing and removing images, and the engine's info, and nothing else, so volumes and networks cannot be changed from here.</p>
       </Doc>
     </>
   ),

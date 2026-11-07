@@ -70,6 +70,11 @@ pub const GROUPS: &[Group] = &[
                 "Remove containers",
                 "Stopped ones; their volumes stay",
             ),
+            p(
+                "containers.deploy",
+                "Add and update containers",
+                "Link a repository, build it, update and go back to an earlier build",
+            ),
         ],
     },
     Group {
@@ -281,7 +286,9 @@ pub fn needed(method: &Method, path: &str) -> Need {
         "settings" | "cloudflare" => any(&["settings.manage"]),
         "zones" => any(&["tunnels.create", "tunnels.edit"]),
         "metrics" => any(&["metrics.view", "containers.view"]),
-        "containers" | "images" if read => any(&["containers.view"]),
+        "containers" | "images" | "deploys" if read => any(&["containers.view"]),
+        "deploys" if *method == Method::DELETE => any(&["containers.remove"]),
+        "deploys" => any(&["containers.deploy"]),
         "images" => any(&["containers.remove"]),
         "containers" if *method == Method::DELETE => any(&["containers.remove"]),
         "containers" => any(&["containers.manage"]),
@@ -365,6 +372,11 @@ mod tests {
         assert!(needed(&Method::GET, "/code/repos/app/threads/issues").met(&viewer));
         assert!(needed(&Method::GET, "/convert").met(&viewer));
         assert!(!needed(&Method::POST, "/convert").met(&viewer));
+        let deployer = account(&["dashboard", "containers.view", "containers.deploy"]);
+        assert!(needed(&Method::GET, "/deploys").met(&deployer));
+        assert!(needed(&Method::POST, "/deploys/d1/build").met(&deployer));
+        assert!(!needed(&Method::DELETE, "/deploys/d1").met(&deployer));
+        assert!(!needed(&Method::POST, "/deploys").met(&viewer));
     }
 
     #[test]

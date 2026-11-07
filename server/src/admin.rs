@@ -66,6 +66,26 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/containers/{id}/logs", get(container_logs))
         .route("/containers/{id}/{action}", post(container_action))
+        .route(
+            "/deploys",
+            get(crate::deploy::list).post(crate::deploy::create),
+        )
+        .route("/deploys/probe", post(crate::deploy::probe))
+        .route(
+            "/deploys/{id}",
+            get(crate::deploy::get)
+                .patch(crate::deploy::edit)
+                .delete(crate::deploy::remove),
+        )
+        .route("/deploys/{id}/build", post(crate::deploy::build_now))
+        .route(
+            "/deploys/{id}/builds/{number}",
+            get(crate::deploy::build_log),
+        )
+        .route(
+            "/deploys/{id}/builds/{number}/use",
+            post(crate::deploy::use_build),
+        )
         .route("/routes", get(list_routes).post(create_route))
         .route("/routes/{id}", patch(update_route).delete(delete_route))
         .route("/routes/{id}/address", put(move_route))

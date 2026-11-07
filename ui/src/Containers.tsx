@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Device, type Image, type Metrics, type OAuthProvider, type Port, type Route, type Status, type User } from "./api";
+import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Deploy, type Device, type Image, type Metrics, type OAuthProvider, type Port, type Route, type Status, type User } from "./api";
+import { AddContainer, BuildLog, Builds, DeploySettings, sourceOf, waiting } from "./Builds";
 import { Chart, Meter } from "./Dashboard";
 import { Dropdown } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
@@ -10,6 +11,10 @@ import { AccessChips, reachOf, target, TunnelComposer, TunnelPanel, tunnelsOf } 
 import { Callout, Copy, MoreMenu, SubNav, Switch, useNotify, type MenuAction } from "./ui";
 
 type Act = ContainerAction | "remove";
+
+// What an action runs on: a container, or one built from a repository, whose
+// removal takes its builds too.
+type Target = { id: string; name: string; deploy?: string | null };
 
 const DONE: Record<Act, string> = {
   start: "Started", stop: "Stopped", restart: "Restarted", pause: "Paused", unpause: "Resumed", kill: "Killed", remove: "Deleted",
@@ -23,7 +28,7 @@ const live = (c: { state: string }) => c.state === "running";
 const pageOf = (name: string) => `#/containers/${encodeURIComponent(name)}`;
 
 function tone(state: string) {
-  return state === "running" ? "ok" : state === "paused" || state === "restarting" ? "warn" : state === "dead" ? "bad" : "";
+  return state === "running" ? "ok" : state === "paused" || state === "restarting" || state === "building" ? "warn" : state === "dead" || state === "failed" ? "bad" : "";
 }
 
 // Metrics keeps each running container's usage; this polls it with the list.
@@ -54,12 +59,13 @@ function useMetrics() {
 function useActions(reload: () => Promise<void>) {
   const notify = useNotify();
   const [busy, setBusy] = useState<Set<string>>(new Set());
-  const run = async (targets: { id: string; name: string }[], action: Act) => {
+  const run = async (targets: Target[], action: Act) => {
     setBusy(new Set(targets.map((t) => t.id)));
     const failed: string[] = [];
     for (const t of targets) {
       try {
-        if (action === "remove") await api.removeContainer(t.id);
+        if (action === "remove" && t.deploy) await api.removeDeploy(t.deploy);
+        else if (action === "remove") await api.removeContainer(t.id);
         else await api.containerAction(t.id, action);
       } catch (e) {
         failed.push(`${t.name}: ${message(e)}`);
@@ -88,6 +94,16 @@ function PortLinks({ ports, max = 3 }: { ports: Port[]; max?: number }) {
       {shown.length > max && <span className="muted">+{shown.length - max}</span>}
     </span>
   );
+}
+
+// A container from a repository that is not made yet: its first build is
+// waiting, running or failed.
+function pending(d: Deploy): Container {
+  const failed = d.latest?.status === "failed";
+  return {
+    id: "", name: d.name, image: sourceOf(d), state: failed ? "failed" : "building", status: failed ? "Build failed" : "Building",
+    created: d.created_at, ports: [], project: null, service: null, deploy: d.id, own: false,
+  };
 }
 
 // What a container's page and its tunnel need from the dashboard.
@@ -122,6 +138,8 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
   const seeTunnels = can("tunnels.view");
   const [list, setList] = useState<Container[] | null>(null);
   const [images, setImages] = useState<Image[] | null>(null);
+  const [deploys, setDeploys] = useState<Deploy[]>([]);
+  const [adding, setAdding] = useState(false);
   const [problem, setProblem] = useState("");
   const [q, setQ] = useState("");
   const [show, setShow] = useState<Show>("all");
@@ -131,11 +149,12 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
   const load = useCallback(async () => {
     if (!seeContainers) return;
     try {
-      const [next, imgs] = await Promise.all([api.containers(), api.images()]);
+      const [next, imgs, deps] = await Promise.all([api.containers(), api.images(), api.deploys()]);
       listed.clear();
       for (const c of next) listed.set(c.name, c);
       setList(next);
       setImages(imgs);
+      setDeploys(deps);
       setProblem("");
     } catch (e) {
       setProblem(message(e));
@@ -160,7 +179,9 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
   // Usage is sampled under each container's short ID.
   const stats = useMemo(() => Object.fromEntries((m?.docker.containers ?? []).map((s) => [shortId(s.id), s])), [m]);
   const needle = q.trim().toLowerCase();
-  const shown = (list ?? []).filter((c) => (show === "all" || live(c)) && (!needle || [c.name, c.image, c.id, c.project ?? ""].some((v) => v.toLowerCase().includes(needle))));
+  const made = new Set((list ?? []).map((c) => c.name));
+  const all = [...(list ?? []), ...deploys.filter((d) => !made.has(d.name)).map(pending)];
+  const shown = all.filter((c) => (show === "all" || live(c)) && (!needle || [c.name, c.image, c.id, c.project ?? ""].some((v) => v.toLowerCase().includes(needle))));
   const sorted = [...shown].sort((a, b) => (a.project ?? a.name).localeCompare(b.project ?? b.name) || a.name.localeCompare(b.name));
   const counts = new Map<string, number>();
   for (const c of sorted) if (c.project) counts.set(c.project, (counts.get(c.project) ?? 0) + 1);
@@ -205,18 +226,25 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
             ))}
           </div>
           <button type="button" className="icon-btn" aria-label="Refresh" title="Refresh" onClick={load}><Icon name="refresh" /></button>
-          {can("tunnels.create") && <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>}
+          {can("tunnels.create") && <a className="btn" href="#/new"><Icon name="public" size={18} />New tunnel</a>}
+          {can("containers.deploy") && <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="add" size={18} />Add container</button>}
           {cleanup.busy ? <span className="spinner small" /> : pageMenu.length > 0 && <MoreMenu label="More" actions={pageMenu} />}
         </div>
       </div>
       <div className="page-body stack">
       {problem && <Callout tone="bad" icon="error">Docker is not reachable: {problem}</Callout>}
 
-      {seeContainers && list && (list.length === 0 ? (
+      {adding && <AddContainer onClose={() => setAdding(false)} onAdded={async (d) => {
+        await load();
+        go(`${pageOf(d.name)}/images`);
+      }} />}
+
+      {seeContainers && list && (all.length === 0 ? (
         <div className="card welcome">
           <Icon name="deployed_code" size={40} />
           <h2>No containers</h2>
-          <p className="muted">Containers on this host show here once Docker runs some.</p>
+          <p className="muted">Add one from a repository, or containers Docker runs here show up on their own.</p>
+          {can("containers.deploy") && <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="add" size={18} />Add container</button>}
         </div>
       ) : (
         <div className="card">
@@ -236,7 +264,7 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
                       return next;
                     })} />
                 ) : (
-                  <Row key={r.id} c={r} s={stats[shortId(r.id)]} busy={busy.has(r.id)} run={run} reaching={seeTunnels ? reaching : null} />
+                  <Row key={r.id || r.name} c={r} s={stats[shortId(r.id)]} busy={busy.has(r.id)} run={run} reaching={seeTunnels ? reaching : null} />
                 ))}
                 {shown.length === 0 && <tr><td colSpan={seeTunnels ? 7 : 6} className="empty-note ct-none">No containers match.</td></tr>}
               </tbody>
@@ -296,9 +324,12 @@ function TunnelLinks({ c, routes }: { c: Container; routes: Route[] }) {
 
 // The actions a container's menu holds, by what it may do now. `page` leaves
 // out what the page itself shows, its logs and tunnel.
-function actionsOf(c: Container | ContainerDetail, run: (targets: { id: string; name: string }[], action: Act) => void, can: (key: string) => boolean, page = false): MenuAction[] {
+function actionsOf(c: (Container | ContainerDetail) & { deploy?: string | null }, run: (targets: Target[], action: Act) => void, can: (key: string) => boolean, page = false): MenuAction[] {
   const on = live(c);
   const manage = can("containers.manage");
+  const remove = can("containers.remove") && !c.own && !on && c.state !== "paused"
+    ? [{ label: "Delete", icon: "delete" as IconName, danger: true, onClick: () => run([c], "remove"), confirm: "Delete for good" }] : [];
+  if (!c.id) return remove;
   return [
     ...(page ? [] : [
       { label: "Logs", icon: "terminal" as IconName, onClick: () => go(`${pageOf(c.name)}/logs`) },
@@ -310,8 +341,7 @@ function actionsOf(c: Container | ContainerDetail, run: (targets: { id: string; 
     ...(manage && on ? [{ label: "Restart", icon: "restart_alt" as IconName, onClick: () => run([c], "restart"), confirm: c.own ? "Restart myTunnels" : undefined }] : []),
     ...(manage && !c.own && on && page ? [{ label: "Pause", icon: "pause" as IconName, onClick: () => run([c], "pause") }] : []),
     ...(manage && !c.own && on ? [{ label: "Kill", icon: "block" as IconName, danger: true, onClick: () => run([c], "kill"), confirm: "Kill it now" }] : []),
-    ...(can("containers.remove") && !c.own && !on && c.state !== "paused"
-      ? [{ label: "Delete", icon: "delete" as IconName, danger: true, onClick: () => run([c], "remove"), confirm: "Delete for good" }] : []),
+    ...remove,
   ];
 }
 
@@ -319,7 +349,7 @@ function Row({ c, s, busy, run, grouped, reaching }: {
   c: Container;
   s?: ContainerStats;
   busy: boolean;
-  run: (targets: { id: string; name: string }[], action: Act) => void;
+  run: (targets: Target[], action: Act) => void;
   grouped?: boolean;
   reaching: ((c: Container) => Route[]) | null;
 }) {
@@ -351,7 +381,7 @@ function Group({ name, items, stats, busy, run, open, onFold, reaching }: {
   items: Container[];
   stats: Record<string, ContainerStats>;
   busy: Set<string>;
-  run: (targets: { id: string; name: string }[], action: Act) => void;
+  run: (targets: Target[], action: Act) => void;
   open: boolean;
   onFold: () => void;
   reaching: ((c: Container) => Route[]) | null;
@@ -400,6 +430,7 @@ const TABS: [string, string, IconName][] = [
   ["images", "Images", "layers"],
   ["logs", "Logs", "terminal"],
   ["stats", "Stats", "dashboard"],
+  ["settings", "Settings", "settings"],
 ];
 
 // ContainerPage is one container and its tunnel together: its name, state and
@@ -407,29 +438,42 @@ const TABS: [string, string, IconName][] = [
 // menu for the rest; then its sub-pages.
 function ContainerPage({ name, tab, more, routes, devices, users, providers, onChanged }: { name: string; tab: string; more: string[] } & Shared) {
   const [c, setC] = useState<ContainerDetail | null>(null);
+  // The repository it is built from: undefined until known, null for none.
+  const [d, setD] = useState<Deploy | null | undefined>(undefined);
   const [problem, setProblem] = useState("");
+  const [updating, setUpdating] = useState(false);
   const can = useCan();
-  const tabs = TABS.filter(([k]) => k !== "tunnel" || can("tunnels.view"));
-  const current = tabs.some(([k]) => k === tab) ? tab : "overview";
+  const notify = useNotify();
   const base = pageOf(name);
 
   const load = useCallback(async () => {
-    try {
-      setC(await api.container(name));
+    const [found, deploys] = await Promise.allSettled([api.container(name), api.deploys()]);
+    const mine = deploys.status === "fulfilled" ? deploys.value.find((x) => x.name === name) : undefined;
+    setD(mine ? await api.deploy(mine.id).catch(() => mine) : deploys.status === "fulfilled" ? null : undefined);
+    if (found.status === "fulfilled") {
+      setC(found.value);
       setProblem("");
-    } catch (e) {
-      setProblem(message(e));
+    } else {
+      setC(null);
+      setProblem(message(found.reason));
     }
   }, [name]);
+  const building = waiting(d?.latest);
   useEffect(() => {
     load();
-    const t = setInterval(load, 5000);
+    const t = setInterval(load, building ? 2500 : 5000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, building]);
   const { busy, run } = useActions(load);
 
-  // What the list knew draws the page at once; the full details fill it in.
-  const head = c ?? listed.get(name);
+  // What the list knew draws the page at once; the full details fill it in. A
+  // container from a repository that is not made yet shows its builds.
+  const head = c ?? listed.get(name) ?? (d ? pending(d) : undefined);
+  const made = !!head?.id;
+  const tabs = TABS.filter(([k]) => (k !== "tunnel" || can("tunnels.view"))
+    && (made || !["overview", "logs", "stats"].includes(k))
+    && (k !== "settings" || (!!d && can("containers.deploy"))));
+  const current = tabs.some(([k]) => k === tab) ? tab : tabs[0][0];
   if (!head) {
     return (
       <>
@@ -440,13 +484,27 @@ function ContainerPage({ name, tab, more, routes, devices, users, providers, onC
   }
   const on = live(head);
   const working = busy.size > 0;
-  const act = (action: Act) => run([head], action).then(() => {
+  const act = (action: Act) => run([{ ...head, deploy: d?.id }], action).then(() => {
     if (action === "remove") go("#/");
   });
+  const update = async () => {
+    if (!d) return;
+    setUpdating(true);
+    try {
+      await api.buildNow(d.id);
+      notify(`Updating ${d.name}`);
+      await load();
+      go(`${base}/images`);
+    } catch (e) {
+      notify(message(e), "bad");
+    } finally {
+      setUpdating(false);
+    }
+  };
   const reaching = tunnelsOf(head, routes ?? []);
   const opens = reaching.find((r) => r.enabled);
   const manage = can("containers.manage") && !head.own;
-  const menu = actionsOf(head, (_, action) => act(action), can, true);
+  const menu = actionsOf({ ...head, deploy: d?.id }, (_, action) => act(action), can, true);
 
   return (
     <>
@@ -456,7 +514,9 @@ function ContainerPage({ name, tab, more, routes, devices, users, providers, onC
           <div className="page-sub">
             <span className={"chip " + tone(head.state)}>{head.state}</span>
             {c?.health && <span className={"chip " + (c.health === "healthy" ? "ok" : c.health === "unhealthy" ? "bad" : "warn")}>{c.health}</span>}
-            <span className="mono">{head.image}</span>
+            {d ? (
+              <span className="ct-source"><Icon name="git" size={16} /><span className="mono">{sourceOf(d)}</span>, {d.branch}{d.running && <>, build {d.running.number}</>}</span>
+            ) : <span className="mono">{head.image}</span>}
             {reaching.map((r) => (
               <a key={r.id} className="ct-address" href={`${base}/tunnel/${r.id}`}><span className={"dot " + (r.enabled ? "ok" : "")} />{r.hostname}</a>
             ))}
@@ -465,7 +525,12 @@ function ContainerPage({ name, tab, more, routes, devices, users, providers, onC
         <div className="page-actions">
           {working && <span className="spinner small" />}
           {opens && <a className="btn" href={`https://${opens.hostname}`} target="_blank" rel="noreferrer"><Icon name="open_in_new" size={18} />Open</a>}
-          {manage && (on ? <button type="button" className="btn" disabled={working} onClick={() => act("stop")}><Icon name="stop" size={18} />Stop</button>
+          {d && can("containers.deploy") && (
+            <button type="button" className="btn" disabled={updating || building} onClick={update}>
+              {updating || building ? <span className="spinner small" /> : <Icon name="autorenew" size={18} />}{building ? "Updating" : "Update"}
+            </button>
+          )}
+          {manage && made && (on ? <button type="button" className="btn" disabled={working} onClick={() => act("stop")}><Icon name="stop" size={18} />Stop</button>
             : head.state === "paused" ? <button type="button" className="btn primary" disabled={working} onClick={() => act("unpause")}><Icon name="play_arrow" size={18} />Resume</button>
             : <button type="button" className="btn primary" disabled={working} onClick={() => act("start")}><Icon name="play_arrow" size={18} />Start</button>)}
           {menu.length > 0 && <MoreMenu label={`Actions for ${head.name}`} actions={menu} />}
@@ -473,13 +538,17 @@ function ContainerPage({ name, tab, more, routes, devices, users, providers, onC
       </div>
       <SubNav back="#/" backLabel="Containers" base={base} items={tabs} current={current} />
       <div className="page-body stack" key={current + (more[0] ?? "")}>
-        {problem && c && <Callout tone="bad" icon="error">{problem}</Callout>}
+        {problem && made && !c && <Callout tone="bad" icon="error">{problem}</Callout>}
         {current === "overview" && (c ? <Overview c={c} /> : <div className="repo-loading"><span className="spinner" /></div>)}
         {current === "tunnel" && !routes && <div className="repo-loading"><span className="spinner" /></div>}
         {current === "tunnel" && routes && (
           <ContainerTunnel c={head} pick={more[0] ?? ""} base={`${base}/tunnel`} routes={reaching} devices={devices} users={users} providers={providers} onChanged={onChanged} />
         )}
-        {current === "images" && (more[0] ? <ImageView id={more[0]} back={`${base}/images`} /> : <ContainerImages c={head} base={`${base}/images`} />)}
+        {current === "images" && (more[0] === "build" && d ? <BuildLog d={d} number={Number(more[1])} back={`${base}/images`} />
+          : more[0] ? <ImageView id={more[0]} back={`${base}/images`} />
+          : d ? <Builds d={d} base={`${base}/images`} onChanged={load} />
+          : d === null ? <ContainerImages c={head} base={`${base}/images`} /> : <div className="repo-loading"><span className="spinner" /></div>)}
+        {current === "settings" && d && <DeploySettings d={d} onChanged={load} />}
         {current === "logs" && <Logs id={head.id} />}
         {current === "stats" && <Stats id={head.id} running={on} />}
       </div>

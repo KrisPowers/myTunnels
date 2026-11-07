@@ -92,6 +92,7 @@ pub async fn list() -> ApiResult<Json<Value>> {
                 "ports": ports(&c["Ports"]),
                 "project": labels["com.docker.compose.project"],
                 "service": labels["com.docker.compose.service"],
+                "deploy": labels["deploy.id"],
                 "own": is_own(id),
             })
         })
