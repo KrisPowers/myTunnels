@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Metrics, type Port, type Route, type Status } from "./api";
+import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Device, type Image, type Metrics, type OAuthProvider, type Port, type Route, type Status, type User } from "./api";
 import { Chart, Meter } from "./Dashboard";
 import { Dropdown } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
+import { ContainerImages, ImageView, useImageRemoval } from "./Images";
 import { useCan } from "./me";
 import { go } from "./route";
-import { AccessChips, target } from "./Tunnels";
-import { ArmedButton, Callout, Copy, MoreMenu, Switch, useNotify, type MenuAction } from "./ui";
+import { AccessChips, reachOf, target, TunnelComposer, TunnelPanel, tunnelsOf } from "./Tunnels";
+import { Callout, Copy, MoreMenu, SubNav, Switch, useNotify, type MenuAction } from "./ui";
 
 type Act = ContainerAction | "remove";
 
@@ -18,6 +19,8 @@ const shortId = (id: string) => id.slice(0, 12);
 const pct = (n: number) => `${n < 10 ? n.toFixed(2) : n.toFixed(1)}%`;
 const rate = (n: number) => `${bytes(n)}/s`;
 const live = (c: { state: string }) => c.state === "running";
+// A container's page goes by its name, which stays when it is made again.
+const pageOf = (name: string) => `#/containers/${encodeURIComponent(name)}`;
 
 function tone(state: string) {
   return state === "running" ? "ok" : state === "paused" || state === "restarting" ? "warn" : state === "dead" ? "bad" : "";
@@ -87,25 +90,24 @@ function PortLinks({ ports, max = 3 }: { ports: Port[]; max?: number }) {
   );
 }
 
-export function ContainersPage({ id, page, routes, status }: { id: string; page: string; routes: Route[] | null; status: Status | null }) {
-  if (id) return <ContainerPage id={id} tab={page} />;
-  return <ContainerList routes={routes} status={status} />;
+// What a container's page and its tunnel need from the dashboard.
+export interface Shared {
+  routes: Route[] | null;
+  devices: Device[];
+  users: User[];
+  providers: OAuthProvider[];
+  onChanged: () => Promise<void>;
 }
 
-// The tunnels that reach a container: aimed at one of the ports it publishes on
-// the host, or at it by name on a shared network.
-function tunnelsOf(c: Container, routes: Route[]) {
-  const published = c.ports.filter((p) => p.public !== null && p.type === "tcp");
-  return routes.filter((r) => (r.target_scheme === "http" || r.target_scheme === "https") && (
-    (!r.target_host && published.some((p) => p.public === r.target_port))
-    || (r.target_host === c.name && c.ports.some((p) => p.private === r.target_port))
-  ));
+export function ContainersPage({ id, page, more, status, ...shared }: { id: string; page: string; more: string[]; status: Status | null } & Shared) {
+  if (id) return <ContainerPage name={id} tab={page} more={more} {...shared} />;
+  return <ContainerList routes={shared.routes} status={status} />;
 }
 
 // ---- the list ----
 
-// The containers as last listed, so one opens at once with what the list knew
-// while its full details load.
+// The containers as last listed, by name, so one opens at once with what the
+// list knew while its full details load.
 const listed = new Map<string, Container>();
 
 type Show = "all" | "running";
@@ -119,6 +121,7 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
   const seeContainers = can("containers.view");
   const seeTunnels = can("tunnels.view");
   const [list, setList] = useState<Container[] | null>(null);
+  const [images, setImages] = useState<Image[] | null>(null);
   const [problem, setProblem] = useState("");
   const [q, setQ] = useState("");
   const [show, setShow] = useState<Show>("all");
@@ -128,10 +131,11 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
   const load = useCallback(async () => {
     if (!seeContainers) return;
     try {
-      const next = await api.containers();
+      const [next, imgs] = await Promise.all([api.containers(), api.images()]);
       listed.clear();
-      for (const c of next) listed.set(c.id, c);
+      for (const c of next) listed.set(c.name, c);
       setList(next);
+      setImages(imgs);
       setProblem("");
     } catch (e) {
       setProblem(message(e));
@@ -143,12 +147,15 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
     return () => clearInterval(t);
   }, [load]);
   const { busy, run } = useActions(load);
+  const cleanup = useImageRemoval(load);
   const allRoutes = seeTunnels ? routes ?? [] : [];
   const reaching = (c: Container) => tunnelsOf(c, allRoutes);
   const matched = new Set((list ?? []).flatMap((c) => reaching(c).map((r) => r.id)));
   const others = allRoutes.filter((r) => !matched.has(r.id));
   const liveTunnels = allRoutes.filter((r) => r.enabled).length;
   const links = status?.connections ?? 0;
+  const unused = (images ?? []).filter((i) => !i.containers.length);
+  const spare = unused.reduce((n, i) => n + i.size, 0);
 
   // Usage is sampled under each container's short ID.
   const stats = useMemo(() => Object.fromEntries((m?.docker.containers ?? []).map((s) => [shortId(s.id), s])), [m]);
@@ -171,6 +178,9 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
   const running = (list ?? []).filter(live);
   const cpu = running.reduce((n, c) => n + (stats[shortId(c.id)]?.cpu ?? 0), 0);
   const memory = running.reduce((n, c) => n + (stats[shortId(c.id)]?.memory ?? 0), 0);
+  const pageMenu: MenuAction[] = can("containers.remove") && unused.length > 0
+    ? [{ label: `Delete unused images, ${bytes(spare)}`, icon: "layers", danger: true, onClick: () => cleanup.remove(unused), confirm: `Delete ${unused.length} for good` }]
+    : [];
 
   return (
     <>
@@ -196,6 +206,7 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
           </div>
           <button type="button" className="icon-btn" aria-label="Refresh" title="Refresh" onClick={load}><Icon name="refresh" /></button>
           {can("tunnels.create") && <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>}
+          {cleanup.busy ? <span className="spinner small" /> : pageMenu.length > 0 && <MoreMenu label="More" actions={pageMenu} />}
         </div>
       </div>
       <div className="page-body stack">
@@ -241,7 +252,7 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
             <div className="card welcome">
               <Icon name="public" size={40} />
               <h2>Nothing published yet</h2>
-              <p className="muted">Forward a container from its menu, or publish any port on one of your domains, and choose who can open it.</p>
+              <p className="muted">Open a container to give it an address, or publish any port on one of your domains, and choose who can open it.</p>
               {can("tunnels.create") && <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>}
             </div>
           ) : (
@@ -268,13 +279,14 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
   );
 }
 
-// TunnelLinks are the addresses reaching a container, each opening its tunnel.
-function TunnelLinks({ routes }: { routes: Route[] }) {
+// TunnelLinks are the addresses reaching a container, each opening its tunnel
+// on the container's page.
+function TunnelLinks({ c, routes }: { c: Container; routes: Route[] }) {
   if (!routes.length) return <span className="muted">None</span>;
   return (
     <span className="port-links">
       {routes.map((r) => (
-        <a key={r.id} href={`#/tunnels/${r.id}`} title={r.enabled ? "Live" : "Off"}>
+        <a key={r.id} href={`${pageOf(c.name)}/tunnel/${r.id}`} title={r.enabled ? "Live" : "Off"}>
           <span className={"dot " + (r.enabled ? "ok" : "")} />{r.hostname}
         </a>
       ))}
@@ -282,22 +294,21 @@ function TunnelLinks({ routes }: { routes: Route[] }) {
   );
 }
 
-// The actions a container's menu holds, by what it may do now.
-function rowActions(c: Container | ContainerDetail, run: (targets: { id: string; name: string }[], action: Act) => void, can: (key: string) => boolean): MenuAction[] {
+// The actions a container's menu holds, by what it may do now. `page` leaves
+// out what the page itself shows, its logs and tunnel.
+function actionsOf(c: Container | ContainerDetail, run: (targets: { id: string; name: string }[], action: Act) => void, can: (key: string) => boolean, page = false): MenuAction[] {
   const on = live(c);
   const manage = can("containers.manage");
-  const ports = "ports" in c ? c.ports.filter((p) => p.public !== null && p.type === "tcp") : [];
   return [
-    { label: "Logs", icon: "terminal" as IconName, onClick: () => (location.hash = `#/containers/${c.id}/logs`) },
-    ...(can("tunnels.create") ? ports.map((p) => ({
-      label: ports.length > 1 ? `Forward port ${p.public} to a tunnel` : "Forward to a tunnel",
-      icon: "public" as IconName,
-      onClick: () => go(`#/new/${p.public}`),
-    })) : []),
-    ...(manage && !c.own && on ? [{ label: "Stop", icon: "stop" as IconName, onClick: () => run([c], "stop") }] : []),
-    ...(manage && !c.own && c.state === "paused" ? [{ label: "Resume", icon: "play_arrow" as IconName, onClick: () => run([c], "unpause") }] : []),
-    ...(manage && !on && c.state !== "paused" ? [{ label: "Start", icon: "play_arrow" as IconName, onClick: () => run([c], "start") }] : []),
+    ...(page ? [] : [
+      { label: "Logs", icon: "terminal" as IconName, onClick: () => go(`${pageOf(c.name)}/logs`) },
+      ...(can("tunnels.create") ? [{ label: "Tunnel", icon: "public" as IconName, onClick: () => go(`${pageOf(c.name)}/tunnel`) }] : []),
+    ]),
+    ...(manage && !c.own && on && !page ? [{ label: "Stop", icon: "stop" as IconName, onClick: () => run([c], "stop") }] : []),
+    ...(manage && !c.own && c.state === "paused" && !page ? [{ label: "Resume", icon: "play_arrow" as IconName, onClick: () => run([c], "unpause") }] : []),
+    ...(manage && !on && c.state !== "paused" && !page ? [{ label: "Start", icon: "play_arrow" as IconName, onClick: () => run([c], "start") }] : []),
     ...(manage && on ? [{ label: "Restart", icon: "restart_alt" as IconName, onClick: () => run([c], "restart"), confirm: c.own ? "Restart myTunnels" : undefined }] : []),
+    ...(manage && !c.own && on && page ? [{ label: "Pause", icon: "pause" as IconName, onClick: () => run([c], "pause") }] : []),
     ...(manage && !c.own && on ? [{ label: "Kill", icon: "block" as IconName, danger: true, onClick: () => run([c], "kill"), confirm: "Kill it now" }] : []),
     ...(can("containers.remove") && !c.own && !on && c.state !== "paused"
       ? [{ label: "Delete", icon: "delete" as IconName, danger: true, onClick: () => run([c], "remove"), confirm: "Delete for good" }] : []),
@@ -317,7 +328,7 @@ function Row({ c, s, busy, run, grouped, reaching }: {
   return (
     <tr className={(on ? "" : "stopped") + (grouped ? " in-group" : "")}>
       <td>
-        <a className="ct-name" href={`#/containers/${c.id}`}>
+        <a className="ct-name" href={pageOf(c.name)}>
           <span className={"dot " + tone(c.state)} title={c.state} />
           <span className="ct-name-text">
             <b>{c.name}{c.own && <span className="chip plain small-chip">myTunnels</span>}</b>
@@ -326,11 +337,11 @@ function Row({ c, s, busy, run, grouped, reaching }: {
         </a>
       </td>
       <td><PortLinks ports={c.ports} max={2} /></td>
-      {reaching && <td><TunnelLinks routes={reaching(c)} /></td>}
+      {reaching && <td><TunnelLinks c={c} routes={reaching(c)} /></td>}
       <td className="num">{on && s ? pct(s.cpu) : "–"}</td>
       <td className="num">{on && s ? bytes(s.memory) : "–"}</td>
       <td className="muted ct-status">{c.status}</td>
-      <td className="ct-menu">{busy ? <span className="spinner small" /> : <MoreMenu label={`Actions for ${c.name}`} actions={rowActions(c, run, can)} />}</td>
+      <td className="ct-menu">{busy ? <span className="spinner small" /> : <MoreMenu label={`Actions for ${c.name}`} actions={actionsOf(c, run, can)} />}</td>
     </tr>
   );
 }
@@ -384,26 +395,32 @@ function Group({ name, items, stats, busy, run, open, onFold, reaching }: {
 // ---- one container ----
 
 const TABS: [string, string, IconName][] = [
+  ["overview", "Overview", "info"],
+  ["tunnel", "Tunnel", "public"],
+  ["images", "Images", "layers"],
   ["logs", "Logs", "terminal"],
-  ["inspect", "Inspect", "info"],
-  ["mounts", "Mounts", "folder"],
   ["stats", "Stats", "dashboard"],
 ];
 
-function ContainerPage({ id, tab }: { id: string; tab: string }) {
+// ContainerPage is one container and its tunnel together: its name, state and
+// address in the heading, with Open, the one button its state calls for, and a
+// menu for the rest; then its sub-pages.
+function ContainerPage({ name, tab, more, routes, devices, users, providers, onChanged }: { name: string; tab: string; more: string[] } & Shared) {
   const [c, setC] = useState<ContainerDetail | null>(null);
   const [problem, setProblem] = useState("");
-  const current = TABS.some(([k]) => k === tab) ? tab : "logs";
   const can = useCan();
+  const tabs = TABS.filter(([k]) => k !== "tunnel" || can("tunnels.view"));
+  const current = tabs.some(([k]) => k === tab) ? tab : "overview";
+  const base = pageOf(name);
 
   const load = useCallback(async () => {
     try {
-      setC(await api.container(id));
+      setC(await api.container(name));
       setProblem("");
     } catch (e) {
       setProblem(message(e));
     }
-  }, [id]);
+  }, [name]);
   useEffect(() => {
     load();
     const t = setInterval(load, 5000);
@@ -412,70 +429,110 @@ function ContainerPage({ id, tab }: { id: string; tab: string }) {
   const { busy, run } = useActions(load);
 
   // What the list knew draws the page at once; the full details fill it in.
-  const head = c ?? listed.get(id);
+  const head = c ?? listed.get(name);
   if (!head) {
-    return problem ? <Callout tone="bad" icon="error">{problem}</Callout> : (
+    return (
       <>
-        <div className="page-head"><div className="page-head-main"><h1 className="d-crumbs"><span className="ex-crumb-wrap"><a className="d-crumb" href="#/containers">Containers</a></span></h1></div></div>
-        <div className="repo-loading"><span className="spinner" /></div>
+        <div className="page-head"><div className="page-head-main"><h1>{name}</h1></div></div>
+        {problem ? <Callout tone="bad" icon="error">{problem}</Callout> : <div className="repo-loading"><span className="spinner" /></div>}
       </>
     );
   }
   const on = live(head);
   const working = busy.size > 0;
   const act = (action: Act) => run([head], action).then(() => {
-    if (action === "remove") location.hash = "#/containers";
+    if (action === "remove") go("#/");
   });
+  const reaching = tunnelsOf(head, routes ?? []);
+  const opens = reaching.find((r) => r.enabled);
+  const manage = can("containers.manage") && !head.own;
+  const menu = actionsOf(head, (_, action) => act(action), can, true);
 
   return (
     <>
       <div className="page-head">
         <div className="page-head-main">
-          <h1 className="d-crumbs">
-            <span className="ex-crumb-wrap"><a className="d-crumb" href="#/containers">Containers</a></span>
-            <span className="ex-crumb-wrap"><Icon name="chevron_right" size={24} className="ex-crumb-sep" /><span className="d-crumb on">{head.name}</span></span>
-          </h1>
+          <h1>{head.name}{head.own && <span className="chip plain small-chip">myTunnels</span>}</h1>
           <div className="page-sub">
             <span className={"chip " + tone(head.state)}>{head.state}</span>
             {c?.health && <span className={"chip " + (c.health === "healthy" ? "ok" : c.health === "unhealthy" ? "bad" : "warn")}>{c.health}</span>}
             <span className="mono">{head.image}</span>
-            <span className="ct-id"><span className="mono">{shortId(head.id)}</span><Copy text="" copyText={head.id} plain /></span>
-            <PortLinks ports={head.ports} max={6} />
+            {reaching.map((r) => (
+              <a key={r.id} className="ct-address" href={`${base}/tunnel/${r.id}`}><span className={"dot " + (r.enabled ? "ok" : "")} />{r.hostname}</a>
+            ))}
           </div>
         </div>
         <div className="page-actions">
           {working && <span className="spinner small" />}
-          {can("containers.manage") && (head.own ? (
-            <ArmedButton icon="restart_alt" label="Restart" armedLabel="Restart myTunnels" onConfirm={() => act("restart")} />
-          ) : (
-            <>
-              {on ? <button type="button" className="btn" disabled={working} onClick={() => act("stop")}><Icon name="stop" size={18} />Stop</button>
-                : head.state === "paused" ? <button type="button" className="btn primary" disabled={working} onClick={() => act("unpause")}><Icon name="play_arrow" size={18} />Resume</button>
-                : <button type="button" className="btn primary" disabled={working} onClick={() => act("start")}><Icon name="play_arrow" size={18} />Start</button>}
-              {on && <button type="button" className="btn" disabled={working} onClick={() => act("restart")}><Icon name="restart_alt" size={18} />Restart</button>}
-              {on && <button type="button" className="btn" disabled={working} onClick={() => act("pause")}><Icon name="pause" size={18} />Pause</button>}
-            </>
-          ))}
-          {can("containers.remove") && !head.own && !on && head.state !== "paused" && (
-            <ArmedButton icon="delete" label="Delete" armedLabel="Delete for good" onConfirm={() => act("remove")} />
-          )}
+          {opens && <a className="btn" href={`https://${opens.hostname}`} target="_blank" rel="noreferrer"><Icon name="open_in_new" size={18} />Open</a>}
+          {manage && (on ? <button type="button" className="btn" disabled={working} onClick={() => act("stop")}><Icon name="stop" size={18} />Stop</button>
+            : head.state === "paused" ? <button type="button" className="btn primary" disabled={working} onClick={() => act("unpause")}><Icon name="play_arrow" size={18} />Resume</button>
+            : <button type="button" className="btn primary" disabled={working} onClick={() => act("start")}><Icon name="play_arrow" size={18} />Start</button>)}
+          {menu.length > 0 && <MoreMenu label={`Actions for ${head.name}`} actions={menu} />}
         </div>
       </div>
-      <nav className="sub-nav" aria-label="Container">
-        {TABS.map(([key, label, icon]) => (
-          <a key={key} className={"sub-nav-item" + (current === key ? " on" : "")} href={`#/containers/${head.id}/${key}`} aria-current={current === key ? "page" : undefined}>
-            <Icon name={icon} size={18} />
-            <span>{label}</span>
-          </a>
-        ))}
-      </nav>
-      <div className="page-body stack" key={current}>
-        {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
+      <SubNav back="#/" backLabel="Containers" base={base} items={tabs} current={current} />
+      <div className="page-body stack" key={current + (more[0] ?? "")}>
+        {problem && c && <Callout tone="bad" icon="error">{problem}</Callout>}
+        {current === "overview" && (c ? <Overview c={c} /> : <div className="repo-loading"><span className="spinner" /></div>)}
+        {current === "tunnel" && !routes && <div className="repo-loading"><span className="spinner" /></div>}
+        {current === "tunnel" && routes && (
+          <ContainerTunnel c={head} pick={more[0] ?? ""} base={`${base}/tunnel`} routes={reaching} devices={devices} users={users} providers={providers} onChanged={onChanged} />
+        )}
+        {current === "images" && (more[0] ? <ImageView id={more[0]} back={`${base}/images`} /> : <ContainerImages c={head} base={`${base}/images`} />)}
         {current === "logs" && <Logs id={head.id} />}
-        {current === "inspect" && (c ? <Inspect c={c} /> : <div className="repo-loading"><span className="spinner" /></div>)}
-        {current === "mounts" && (c ? <Mounts c={c} /> : <div className="repo-loading"><span className="spinner" /></div>)}
         {current === "stats" && <Stats id={head.id} running={on} />}
       </div>
+    </>
+  );
+}
+
+// ContainerTunnel is the container's address: publishing one when it has none,
+// otherwise the tunnel itself. With several, a row of them picks which.
+function ContainerTunnel({ c, pick, base, routes, devices, users, providers, onChanged }: {
+  c: Container | ContainerDetail;
+  pick: string;
+  base: string;
+  routes: Route[];
+  devices: Device[];
+  users: User[];
+  providers: OAuthProvider[];
+  onChanged: () => Promise<void>;
+}) {
+  const can = useCan();
+  const adding = pick === "new" || routes.length === 0;
+  const route = adding ? undefined : routes.find((r) => r.id === pick) ?? routes[0];
+  const picker = (routes.length > 1 || (routes.length > 0 && can("tunnels.create"))) && (
+    <div className="ct-picker">
+      <div className="seg-tabs" role="tablist" aria-label="Addresses">
+        {routes.map((r) => (
+          <button key={r.id} type="button" role="tab" aria-selected={route?.id === r.id} className={route?.id === r.id ? "on" : ""} onClick={() => go(`${base}/${r.id}`)}>{r.hostname}</button>
+        ))}
+        {can("tunnels.create") && (
+          <button type="button" role="tab" aria-selected={adding} className={adding ? "on" : ""} aria-label="Another address" title="Another address" onClick={() => go(`${base}/new`)}><Icon name="add" size={18} /></button>
+        )}
+      </div>
+    </div>
+  );
+  if (adding) {
+    if (!can("tunnels.create")) {
+      return <div className="card welcome"><Icon name="public" size={40} /><h2>No address</h2><p className="muted">Nothing reaches this container through a tunnel.</p></div>;
+    }
+    return (
+      <>
+        {picker}
+        <TunnelComposer users={users} providers={providers} sub={routes.length ? "" : c.name} container={{ name: c.name, reach: reachOf(c) }}
+          onPublished={async (r) => {
+            await onChanged();
+            go(`${base}/${r.id}`);
+          }} />
+      </>
+    );
+  }
+  return (
+    <>
+      {picker}
+      {route && <TunnelPanel key={route.id} route={route} devices={devices} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go(base)} />}
     </>
   );
 }
@@ -584,83 +641,77 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   return <div className="kv"><span className="kv-label">{label}</span><span className="kv-value">{children}</span></div>;
 }
 
-// Inspect is how the container is set up: what it runs, how it restarts, its
-// ports and networks.
-function Inspect({ c }: { c: ContainerDetail }) {
+// Overview is how the container is set up: what it runs and how it restarts,
+// its ports and networks, and what it has mounted.
+function Overview({ c }: { c: ContainerDetail }) {
   return (
-    <div className="ct-inspect">
-      <section className="card ct-panel">
-        <h2>Overview</h2>
-        <Fact label="Name">{c.name}</Fact>
-        <Fact label="ID"><span className="ct-id"><span className="mono">{c.id}</span></span></Fact>
-        <Fact label="Image"><span className="mono">{c.image}</span></Fact>
-        <Fact label="Command"><span className="mono">{c.command || "None"}</span></Fact>
-        <Fact label="Working folder"><span className="mono">{c.workdir || "/"}</span></Fact>
-        {c.project && <Fact label="Compose">{c.project}, service {c.service ?? ""}</Fact>}
-      </section>
-      <section className="card ct-panel">
-        <h2>State</h2>
-        <Fact label="Status"><span className={"chip " + tone(c.state)}>{c.state}</span></Fact>
-        <Fact label="Created">{when(c.created)}</Fact>
-        <Fact label={live(c) ? "Started" : "Ended"}>{live(c) ? when(c.started) : `${when(c.finished)}, exit code ${c.exit_code}`}</Fact>
-        <Fact label="Restart policy">{c.restart_policy || "no"}</Fact>
-        <Fact label="Restarts">{c.restarts}</Fact>
-        {c.health && <Fact label="Health">{c.health}</Fact>}
-      </section>
-      <section className="card ct-panel">
-        <h2>Ports</h2>
-        {c.ports.length ? (
-          <table className="table">
-            <thead><tr><th className="grow">Container port</th><th>Host port</th></tr></thead>
-            <tbody>
-              {c.ports.map((p) => (
-                <tr key={`${p.private}-${p.public}-${p.type}`}>
-                  <td className="mono">{p.private}/{p.type}</td>
-                  <td>{p.public !== null ? <a href={`http://${location.hostname}:${p.public}`} target="_blank" rel="noreferrer" className="mono">{p.public}</a> : <span className="muted">Not published</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : <p className="empty-note">None exposed.</p>}
-      </section>
-      <section className="card ct-panel">
-        <h2>Networks</h2>
-        {c.networks.length ? (
-          <table className="table">
-            <thead><tr><th className="grow">Network</th><th>Address</th></tr></thead>
-            <tbody>
-              {c.networks.map((n) => <tr key={n.name}><td>{n.name}</td><td className="mono">{n.ip || "None"}</td></tr>)}
-            </tbody>
-          </table>
-        ) : <p className="empty-note">Not on any network.</p>}
-      </section>
-    </div>
-  );
-}
-
-// Mounts are the volumes and host folders the container sees, and where.
-function Mounts({ c }: { c: ContainerDetail }) {
-  if (!c.mounts.length) {
-    return <div className="card welcome"><Icon name="folder" size={40} /><h2>Nothing mounted</h2><p className="muted">This container keeps no volumes or host folders.</p></div>;
-  }
-  return (
-    <div className="card">
-      <div className="table-wrap">
-        <table className="table">
-          <thead><tr><th>Type</th><th className="grow">Source</th><th>Destination</th><th>Mode</th></tr></thead>
-          <tbody>
-            {c.mounts.map((mnt) => (
-              <tr key={mnt.destination}>
-                <td><span className="chip">{mnt.kind === "volume" ? "Volume" : mnt.kind === "bind" ? "Bind" : mnt.kind}</span></td>
-                <td className="mono ct-image" title={mnt.source}>{mnt.source}</td>
-                <td className="mono">{mnt.destination}</td>
-                <td>{mnt.writable ? "Read and write" : <span className="chip warn">Read only</span>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <>
+      <div className="ct-inspect">
+        <section className="card ct-panel">
+          <h2>Details</h2>
+          <Fact label="ID"><span className="ct-id"><span className="mono">{shortId(c.id)}</span><Copy text="" copyText={c.id} plain /></span></Fact>
+          <Fact label="Image"><span className="mono">{c.image}</span></Fact>
+          <Fact label="Command"><span className="mono">{c.command || "None"}</span></Fact>
+          <Fact label="Working folder"><span className="mono">{c.workdir || "/"}</span></Fact>
+          {c.project && <Fact label="Compose">{c.project}, service {c.service ?? ""}</Fact>}
+        </section>
+        <section className="card ct-panel">
+          <h2>State</h2>
+          <Fact label="Created">{when(c.created)}</Fact>
+          <Fact label={live(c) ? "Started" : "Ended"}>{live(c) ? when(c.started) : `${when(c.finished)}, exit code ${c.exit_code}`}</Fact>
+          <Fact label="Restart policy">{c.restart_policy || "no"}</Fact>
+          <Fact label="Restarts">{c.restarts}</Fact>
+          {c.health && <Fact label="Health">{c.health}</Fact>}
+        </section>
+        <section className="card ct-panel">
+          <h2>Ports</h2>
+          {c.ports.length ? (
+            <table className="table">
+              <thead><tr><th className="grow">Container port</th><th>Host port</th></tr></thead>
+              <tbody>
+                {c.ports.map((p) => (
+                  <tr key={`${p.private}-${p.public}-${p.type}`}>
+                    <td className="mono">{p.private}/{p.type}</td>
+                    <td>{p.public !== null ? <a href={`http://${location.hostname}:${p.public}`} target="_blank" rel="noreferrer" className="mono">{p.public}</a> : <span className="muted">Not published</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : <p className="empty-note">None exposed.</p>}
+        </section>
+        <section className="card ct-panel">
+          <h2>Networks</h2>
+          {c.networks.length ? (
+            <table className="table">
+              <thead><tr><th className="grow">Network</th><th>Address</th></tr></thead>
+              <tbody>
+                {c.networks.map((n) => <tr key={n.name}><td>{n.name}</td><td className="mono">{n.ip || "None"}</td></tr>)}
+              </tbody>
+            </table>
+          ) : <p className="empty-note">Not on any network.</p>}
+        </section>
       </div>
-    </div>
+      <section className="card ct-panel">
+        <h2>Mounts</h2>
+        {c.mounts.length ? (
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Type</th><th className="grow">Source</th><th>Destination</th><th>Mode</th></tr></thead>
+              <tbody>
+                {c.mounts.map((mnt) => (
+                  <tr key={mnt.destination}>
+                    <td><span className="chip">{mnt.kind === "volume" ? "Volume" : mnt.kind === "bind" ? "Bind" : mnt.kind}</span></td>
+                    <td className="mono ct-image" title={mnt.source}>{mnt.source}</td>
+                    <td className="mono">{mnt.destination}</td>
+                    <td>{mnt.writable ? "Read and write" : <span className="chip warn">Read only</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="empty-note">Nothing mounted.</p>}
+      </section>
+    </>
   );
 }
 
