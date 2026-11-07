@@ -1,6 +1,7 @@
-//! Secrets at rest: the Cloudflare and tunnel tokens, SMTP and OAuth credentials
-//! and the session signing key are sealed in the database with a key kept outside
-//! it, so a copy of the data volume or a backup of it does not give them away.
+//! Secrets at rest: the Cloudflare and tunnel tokens, SMTP and OAuth credentials,
+//! repository tokens, container environments and the session signing key are
+//! sealed in the database with a key kept outside it, so a copy of the data
+//! volume or a backup of it does not give them away.
 
 use std::path::Path;
 
@@ -20,6 +21,8 @@ pub fn is_secret(key: &str) -> bool {
         || key.starts_with("oauth_")
         || key.starts_with("totp:")
         || key.starts_with("totp_pending:")
+        || key.starts_with("deploy_token:")
+        || key.starts_with("deploy_env:")
 }
 
 pub fn is_sealed(value: &str) -> bool {

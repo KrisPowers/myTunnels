@@ -6,6 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::deploy::{Build, Deploy};
 use crate::share::Share;
 use crate::util::{lock, random_alnum};
 use crate::vault::{self, Vault};
@@ -151,6 +152,36 @@ CREATE TABLE IF NOT EXISTS device_sign_ins (
     device_hash TEXT PRIMARY KEY,
     token TEXT NOT NULL,
     expires INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS deploys (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    repo TEXT NOT NULL,
+    url TEXT NOT NULL,
+    branch TEXT NOT NULL,
+    dockerfile TEXT NOT NULL,
+    port INTEGER NOT NULL,
+    keep TEXT NOT NULL,
+    updates TEXT NOT NULL,
+    every INTEGER NOT NULL,
+    current INTEGER,
+    checked_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS builds (
+    deploy_id TEXT NOT NULL REFERENCES deploys(id) ON DELETE CASCADE,
+    number INTEGER NOT NULL,
+    commit_id TEXT NOT NULL,
+    message TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL,
+    image TEXT,
+    error TEXT,
+    log TEXT NOT NULL DEFAULT '',
+    queued_at INTEGER NOT NULL,
+    started_at INTEGER,
+    finished_at INTEGER,
+    PRIMARY KEY (deploy_id, number)
 );
 CREATE TABLE IF NOT EXISTS git_tokens (
     id TEXT PRIMARY KEY,
@@ -1442,6 +1473,201 @@ impl Db {
         Ok(())
     }
 
+    pub fn deploys(&self) -> Result<Vec<Deploy>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!("SELECT {DEPLOY_COLS} FROM deploys ORDER BY name"))?;
+        let rows = stmt
+            .query_map([], deploy_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn deploy(&self, id: &str) -> Result<Option<Deploy>> {
+        let d = self
+            .conn()
+            .query_row(
+                &format!("SELECT {DEPLOY_COLS} FROM deploys WHERE id = ?1"),
+                [id],
+                deploy_row,
+            )
+            .optional()?;
+        Ok(d)
+    }
+
+    pub fn insert_deploy(&self, d: &Deploy) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO deploys (id, name, repo, url, branch, dockerfile, port, keep, updates,
+                 every, current, checked_at, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                d.id,
+                d.name,
+                d.repo,
+                d.url,
+                d.branch,
+                d.dockerfile,
+                d.port,
+                d.keep.join("\n"),
+                d.updates,
+                d.every,
+                d.current,
+                d.checked_at,
+                d.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Saves what can be changed: the source, how it is built and run, and
+    /// how it updates.
+    pub fn save_deploy(&self, d: &Deploy) -> Result<()> {
+        self.conn().execute(
+            "UPDATE deploys SET repo = ?2, url = ?3, branch = ?4, dockerfile = ?5, port = ?6,
+                 keep = ?7, updates = ?8, every = ?9 WHERE id = ?1",
+            params![
+                d.id,
+                d.repo,
+                d.url,
+                d.branch,
+                d.dockerfile,
+                d.port,
+                d.keep.join("\n"),
+                d.updates,
+                d.every
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_current(&self, id: &str, number: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE deploys SET current = ?2 WHERE id = ?1",
+            params![id, number],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_checked(&self, id: &str, at: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE deploys SET checked_at = ?2 WHERE id = ?1",
+            params![id, at],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_deploy(&self, id: &str) -> Result<()> {
+        let conn = self.conn();
+        conn.execute("DELETE FROM builds WHERE deploy_id = ?1", [id])?;
+        conn.execute("DELETE FROM deploys WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    /// A container's builds, newest first, without their logs.
+    pub fn builds(&self, deploy_id: &str, limit: i64) -> Result<Vec<Build>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {BUILD_COLS} FROM builds WHERE deploy_id = ?1 ORDER BY number DESC LIMIT ?2"
+        ))?;
+        let rows = stmt
+            .query_map(params![deploy_id, limit], build_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// One build with its log.
+    pub fn build(&self, deploy_id: &str, number: i64) -> Result<Option<(Build, String)>> {
+        let found = self
+            .conn()
+            .query_row(
+                &format!(
+                    "SELECT {BUILD_COLS}, log FROM builds WHERE deploy_id = ?1 AND number = ?2"
+                ),
+                params![deploy_id, number],
+                |r| Ok((build_row(r)?, r.get(11)?)),
+            )
+            .optional()?;
+        Ok(found)
+    }
+
+    /// Adds a build to the queue and gives back its number.
+    pub fn queue_build(&self, deploy_id: &str, commit: &str, reason: &str, at: i64) -> Result<i64> {
+        let conn = self.conn();
+        let number: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(number), 0) + 1 FROM builds WHERE deploy_id = ?1",
+            [deploy_id],
+            |r| r.get(0),
+        )?;
+        conn.execute(
+            "INSERT INTO builds (deploy_id, number, commit_id, message, reason, status, queued_at)
+             VALUES (?1, ?2, ?3, '', ?4, 'queued', ?5)",
+            params![deploy_id, number, commit, reason, at],
+        )?;
+        Ok(number)
+    }
+
+    /// The build waiting longest.
+    pub fn next_build(&self) -> Result<Option<Build>> {
+        let b = self
+            .conn()
+            .query_row(
+                &format!(
+                    "SELECT {BUILD_COLS} FROM builds WHERE status = 'queued'
+                     ORDER BY queued_at, number LIMIT 1"
+                ),
+                [],
+                build_row,
+            )
+            .optional()?;
+        Ok(b)
+    }
+
+    pub fn has_waiting_build(&self, deploy_id: &str) -> Result<bool> {
+        let n: i64 = self.conn().query_row(
+            "SELECT COUNT(*) FROM builds WHERE deploy_id = ?1 AND status IN ('queued', 'building')",
+            [deploy_id],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
+    pub fn save_build(&self, b: &Build) -> Result<()> {
+        self.conn().execute(
+            "UPDATE builds SET commit_id = ?3, message = ?4, status = ?5, image = ?6, error = ?7,
+                 started_at = ?8, finished_at = ?9
+             WHERE deploy_id = ?1 AND number = ?2",
+            params![
+                b.deploy_id,
+                b.number,
+                b.commit,
+                b.message,
+                b.status,
+                b.image,
+                b.error,
+                b.started_at,
+                b.finished_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_build_log(&self, deploy_id: &str, number: i64, log: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE builds SET log = ?3 WHERE deploy_id = ?1 AND number = ?2",
+            params![deploy_id, number, log],
+        )?;
+        Ok(())
+    }
+
+    /// Builds that were running when myTunnels stopped end as failed.
+    pub fn end_interrupted_builds(&self, at: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE builds SET status = 'failed', error = 'Stopped when myTunnels restarted',
+                 finished_at = ?1 WHERE status = 'building'",
+            [at],
+        )?;
+        Ok(())
+    }
+
     pub fn pending_count(&self) -> Result<i64> {
         let count = self.conn().query_row(
             "SELECT COUNT(*) FROM devices WHERE status = 'pending'",
@@ -1480,6 +1706,51 @@ fn token_row(r: &rusqlite::Row) -> rusqlite::Result<Token> {
         hash: r.get(3)?,
         created_at: r.get(4)?,
         last_used: r.get(5)?,
+    })
+}
+
+const DEPLOY_COLS: &str = "id, name, repo, url, branch, dockerfile, port, keep, updates, every, \
+     current, checked_at, created_at";
+
+fn deploy_row(r: &Row) -> rusqlite::Result<Deploy> {
+    let keep: String = r.get(7)?;
+    Ok(Deploy {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        repo: r.get(2)?,
+        url: r.get(3)?,
+        branch: r.get(4)?,
+        dockerfile: r.get(5)?,
+        port: r.get(6)?,
+        keep: keep
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(str::to_owned)
+            .collect(),
+        updates: r.get(8)?,
+        every: r.get(9)?,
+        current: r.get(10)?,
+        checked_at: r.get(11)?,
+        created_at: r.get(12)?,
+    })
+}
+
+const BUILD_COLS: &str = "deploy_id, number, commit_id, message, reason, status, image, error, \
+     queued_at, started_at, finished_at";
+
+fn build_row(r: &Row) -> rusqlite::Result<Build> {
+    Ok(Build {
+        deploy_id: r.get(0)?,
+        number: r.get(1)?,
+        commit: r.get(2)?,
+        message: r.get(3)?,
+        reason: r.get(4)?,
+        status: r.get(5)?,
+        image: r.get(6)?,
+        error: r.get(7)?,
+        queued_at: r.get(8)?,
+        started_at: r.get(9)?,
+        finished_at: r.get(10)?,
     })
 }
 

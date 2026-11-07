@@ -91,7 +91,11 @@ pub(crate) async fn git(dir: &Path, args: &[&str]) -> ApiResult<Vec<u8>> {
 }
 
 /// Runs git with more of the environment set, such as who a commit is by.
-async fn git_with(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> ApiResult<Vec<u8>> {
+pub(crate) async fn git_with(
+    dir: &Path,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> ApiResult<Vec<u8>> {
     let out = run(dir, args, env).await?;
     if out.status.success() {
         Ok(out.stdout)
@@ -127,7 +131,7 @@ async fn run(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> ApiResult<std::
 
 /// Repositories belong to this process whoever made the folders, so git's
 /// check on who owns them is waived.
-fn safe_env() -> [(&'static str, &'static str); 3] {
+pub(crate) fn safe_env() -> [(&'static str, &'static str); 3] {
     [
         ("GIT_CONFIG_COUNT", "1"),
         ("GIT_CONFIG_KEY_0", "safe.directory"),
