@@ -1,58 +1,38 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ago, api, bytes, message, type Image, type ImageDetail, type ImageUser } from "./api";
+import { ago, api, bytes, message, type Image, type ImageDetail } from "./api";
 import { Icon } from "./Icon";
 import { useCan } from "./me";
 import { go } from "./route";
-import { ArmedButton, Callout, Copy, MoreMenu, useNotify } from "./ui";
+import { Callout, Copy, MoreMenu, useNotify } from "./ui";
 
-const shortId = (id: string) => id.replace(/^sha256:/, "").slice(0, 12);
+export const imageId = (id: string) => id.replace(/^sha256:/, "");
+const shortId = (id: string) => imageId(id).slice(0, 12);
 const nameOf = (i: { tags: string[]; id: string }) => i.tags[0] ?? `Untagged ${shortId(i.id)}`;
 
-type Show = "all" | "used" | "unused";
-
-export function ImagesPage({ id }: { id: string }) {
-  return id ? <ImagePage id={id} /> : <ImageList />;
+// The repository part of an image name, without its tag: `web` for `web:12`,
+// `host:5000/app` for `host:5000/app:1`.
+export function repoOf(name: string) {
+  const at = name.lastIndexOf(":");
+  return at > name.lastIndexOf("/") ? name.slice(0, at) : name;
 }
 
-// UsedBy links to each container built from an image.
-function UsedBy({ list }: { list: ImageUser[] }) {
-  if (!list.length) return <span className="muted">Unused</span>;
-  return (
-    <span className="port-links">
-      {list.map((c) => (
-        <a key={c.id} href={`#/containers/${c.id}`} title={c.state}>
-          <span className={"dot " + (c.state === "running" ? "ok" : "")} />{c.name}
-        </a>
-      ))}
-    </span>
-  );
+// The images of one container: the one it runs and the others of the same
+// repository, such as earlier builds and versions, newest first.
+export function imagesOf(c: { id: string; image: string }, all: Image[]) {
+  const current = all.find((i) => i.containers.some((u) => u.id === c.id));
+  const repo = repoOf(current?.tags[0] ?? c.image);
+  return {
+    current,
+    list: all
+      .filter((i) => i === current || i.tags.some((t) => repoOf(t) === repo))
+      .sort((a, b) => b.created - a.created),
+  };
 }
 
-// ImageList is a row per image the engine keeps: its tags, the containers
-// using it, its size and age. One nothing uses can be deleted.
-function ImageList() {
-  const [list, setList] = useState<Image[] | null>(null);
-  const [problem, setProblem] = useState("");
-  const [q, setQ] = useState("");
-  const [show, setShow] = useState<Show>("all");
-  const [busy, setBusy] = useState(false);
+// Deletes images, says how it went, then reloads.
+export function useImageRemoval(reload: () => Promise<void>) {
   const notify = useNotify();
-  const can = useCan();
-
-  const load = useCallback(async () => {
-    try {
-      setList(await api.images());
-      setProblem("");
-    } catch (e) {
-      setProblem(message(e));
-    }
-  }, []);
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 10000);
-    return () => clearInterval(t);
-  }, [load]);
-
+  const [busy, setBusy] = useState(false);
   const remove = async (targets: Image[]) => {
     setBusy(true);
     const failed: string[] = [];
@@ -66,95 +46,78 @@ function ImageList() {
     setBusy(false);
     if (failed.length) notify(failed.join("; "), "bad");
     else notify(targets.length === 1 ? `Deleted ${nameOf(targets[0])}` : `Deleted ${targets.length} images`);
-    await load();
+    await reload();
   };
+  return { busy, remove };
+}
 
-  const needle = q.trim().toLowerCase();
-  const unused = (list ?? []).filter((i) => !i.containers.length);
-  const shown = (list ?? [])
-    .filter((i) => show === "all" || (show === "used") === i.containers.length > 0)
-    .filter((i) => !needle || [i.id, ...i.tags, ...i.containers.map((c) => c.name)].some((v) => v.toLowerCase().includes(needle)))
-    .sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
-  const total = (list ?? []).reduce((n, i) => n + i.size, 0);
-  const spare = unused.reduce((n, i) => n + i.size, 0);
-  const deletes = can("containers.remove");
+// ContainerImages is a row per image of one container: its tag, size and age,
+// the one it runs marked. One nothing uses can be deleted; each opens for its
+// details.
+export function ContainerImages({ c, base }: { c: { id: string; image: string }; base: string }) {
+  const [all, setAll] = useState<Image[] | null>(null);
+  const [problem, setProblem] = useState("");
+  const can = useCan();
 
+  const load = useCallback(async () => {
+    try {
+      setAll(await api.images());
+      setProblem("");
+    } catch (e) {
+      setProblem(message(e));
+    }
+  }, []);
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, [load]);
+  const { busy, remove } = useImageRemoval(load);
+
+  if (problem) return <Callout tone="bad" icon="error">Docker is not reachable: {problem}</Callout>;
+  if (!all) return <div className="repo-loading"><span className="spinner" /></div>;
+  const { current, list } = imagesOf(c, all);
+  if (!list.length) {
+    return <div className="card welcome"><Icon name="layers" size={40} /><h2>No images</h2><p className="muted">Its image is no longer kept here.</p></div>;
+  }
   return (
-    <>
-      <div className="page-head">
-        <div className="page-head-main">
-          <h1>Images</h1>
-          {list && (
-            <div className="page-sub">
-              <span><b>{list.length}</b> image{list.length === 1 ? "" : "s"}, {bytes(total)}</span>
-              <span><b>{unused.length}</b> unused, {bytes(spare)}</span>
-            </div>
-          )}
-        </div>
-        <div className="page-actions">
-          <label className="ct-search">
-            <Icon name="search" size={18} />
-            <input type="search" placeholder="Search" aria-label="Search images" value={q} onChange={(e) => setQ(e.target.value)} spellCheck={false} />
-          </label>
-          <div className="seg-tabs" role="tablist" aria-label="Show">
-            {(["all", "used", "unused"] as Show[]).map((k) => (
-              <button key={k} type="button" role="tab" aria-selected={show === k} className={show === k ? "on" : ""} onClick={() => setShow(k)}>
-                {k === "all" ? "All" : k === "used" ? "In use" : "Unused"}
-              </button>
-            ))}
-          </div>
-          <button type="button" className="icon-btn" aria-label="Refresh" title="Refresh" onClick={load}><Icon name="refresh" /></button>
-          {busy && <span className="spinner small" />}
-          {deletes && unused.length > 0 && !busy && (
-            <ArmedButton icon="delete" label="Delete unused" armedLabel={`Delete ${unused.length} for good`} onConfirm={() => remove(unused)} />
-          )}
-        </div>
-      </div>
-      {problem && <Callout tone="bad" icon="error">Docker is not reachable: {problem}</Callout>}
-
-      {list && (list.length === 0 ? (
-        <div className="card welcome">
-          <Icon name="layers" size={40} />
-          <h2>No images</h2>
-          <p className="muted">Images built or pulled on this host show here.</p>
-        </div>
-      ) : (
-        <div className="card">
-          <div className="table-wrap">
-            <table className="table ct-table">
-              <thead>
-                <tr><th className="grow">Image</th><th>Used by</th><th>Size</th><th>Created</th><th aria-label="Actions" /></tr>
-              </thead>
-              <tbody>
-                {shown.map((i) => (
-                  <tr key={i.id} className={i.containers.length ? "" : "stopped"}>
-                    <td>
-                      <a className="ct-name" href={`#/images/${i.id.replace(/^sha256:/, "")}`}>
-                        <Icon name="layers" size={20} />
-                        <span className="ct-name-text">
-                          <b>{nameOf(i)}</b>
-                          <small className="mono">{i.tags.length > 1 ? `${shortId(i.id)}, also ${i.tags.slice(1).join(", ")}` : shortId(i.id)}</small>
-                        </span>
-                      </a>
-                    </td>
-                    <td><UsedBy list={i.containers} /></td>
-                    <td className="num">{bytes(i.size)}</td>
-                    <td className="muted">{ago(i.created)}</td>
-                    <td className="ct-menu">
+    <div className="card">
+      <div className="table-wrap">
+        <table className="table img-table">
+          <thead>
+            <tr><th className="grow">Image</th><th>Size</th><th>Created</th><th aria-label="Actions" /></tr>
+          </thead>
+          <tbody>
+            {list.map((i) => {
+              const open = `${base}/${imageId(i.id)}`;
+              return (
+                <tr key={i.id} className={i.containers.length ? "" : "stopped"}>
+                  <td>
+                    <a className="ct-name" href={open}>
+                      <Icon name="layers" size={20} />
+                      <span className="ct-name-text">
+                        <b>{nameOf(i)}{i === current && <span className="chip ok small-chip">Running</span>}</b>
+                        <small className="mono">{shortId(i.id)}</small>
+                      </span>
+                    </a>
+                  </td>
+                  <td className="num">{bytes(i.size)}</td>
+                  <td className="muted">{ago(i.created)}</td>
+                  <td className="ct-menu">
+                    {busy ? <span className="spinner small" /> : (
                       <MoreMenu label={`Actions for ${nameOf(i)}`} actions={[
-                        { label: "Details", icon: "info", onClick: () => go(`#/images/${i.id.replace(/^sha256:/, "")}`) },
-                        ...(deletes && !i.containers.length ? [{ label: "Delete", icon: "delete" as const, danger: true, onClick: () => remove([i]), confirm: "Delete for good" }] : []),
+                        { label: "Details", icon: "info", onClick: () => go(open) },
+                        ...(can("containers.remove") && !i.containers.length ? [{ label: "Delete", icon: "delete" as const, danger: true, onClick: () => remove([i]), confirm: "Delete for good" }] : []),
                       ]} />
-                    </td>
-                  </tr>
-                ))}
-                {shown.length === 0 && <tr><td colSpan={5} className="empty-note ct-none">No images match.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ))}
-    </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -167,9 +130,9 @@ const when = (iso: string) => {
   return t > 0 ? new Date(t).toLocaleString() : "Unknown";
 };
 
-// ImagePage is one image: what it runs, the containers using it, and the
+// ImageView is one image: what it runs, its environment and labels, and the
 // layers it was built from, newest first.
-function ImagePage({ id }: { id: string }) {
+export function ImageView({ id, back }: { id: string; back: string }) {
   const [i, setI] = useState<ImageDetail | null>(null);
   const [problem, setProblem] = useState("");
   const notify = useNotify();
@@ -179,51 +142,30 @@ function ImagePage({ id }: { id: string }) {
     api.image(id).then(setI, (e) => setProblem(message(e)));
   }, [id]);
 
+  if (!i) return problem ? <Callout tone="bad" icon="error">{problem}</Callout> : <div className="repo-loading"><span className="spinner" /></div>;
+  const env = i.env.map((e) => e.split("=")).map(([k, ...v]) => [k, v.join("=")]);
+  const labels = Object.entries(i.labels ?? {});
   const remove = async () => {
-    if (!i) return;
     try {
       await api.removeImage(i.id);
       notify(`Deleted ${nameOf(i)}`);
-      go("#/images");
+      go(back);
     } catch (e) {
       notify(message(e), "bad");
     }
   };
 
-  const crumbs = (
-    <h1 className="d-crumbs">
-      <span className="ex-crumb-wrap"><a className="d-crumb" href="#/images">Images</a></span>
-      {i && <span className="ex-crumb-wrap"><Icon name="chevron_right" size={24} className="ex-crumb-sep" /><span className="d-crumb on">{nameOf(i)}</span></span>}
-    </h1>
-  );
-  if (!i) {
-    return (
-      <>
-        <div className="page-head"><div className="page-head-main">{crumbs}</div></div>
-        {problem ? <Callout tone="bad" icon="error">{problem}</Callout> : <div className="repo-loading"><span className="spinner" /></div>}
-      </>
-    );
-  }
-  const env = i.env.map((e) => e.split("=")).map(([k, ...v]) => [k, v.join("=")]);
-  const labels = Object.entries(i.labels ?? {});
-
   return (
     <>
-      <div className="page-head">
-        <div className="page-head-main">
-          {crumbs}
-          <div className="page-sub">
-            <span className="ct-id"><span className="mono">{shortId(i.id)}</span><Copy text="" copyText={i.id} plain /></span>
-            <span>{bytes(i.size)}</span>
-            <span>{i.platform}</span>
-            <span>Created {when(i.created)}</span>
-          </div>
-        </div>
-        <div className="page-actions">
-          {can("containers.remove") && !i.containers.length && (
-            <ArmedButton icon="delete" label="Delete" armedLabel="Delete for good" onConfirm={remove} />
-          )}
-        </div>
+      <div className="img-head">
+        <a className="icon-btn" href={back} aria-label="Images" title="Images"><Icon name="arrow_back" /></a>
+        <h2>{nameOf(i)}</h2>
+        <span className="ct-id"><span className="mono">{shortId(i.id)}</span><Copy text="" copyText={i.id} plain /></span>
+        <span className="muted">{bytes(i.size)}, {i.platform}, made {when(i.created)}</span>
+        <span className="ex-grow" />
+        {can("containers.remove") && !i.containers.length && (
+          <MoreMenu label={`Actions for ${nameOf(i)}`} actions={[{ label: "Delete", icon: "delete", danger: true, onClick: remove, confirm: "Delete for good" }]} />
+        )}
       </div>
       <div className="ct-inspect">
         <section className="card ct-panel">
@@ -235,10 +177,6 @@ function ImagePage({ id }: { id: string }) {
           <Fact label="Working folder"><span className="mono">{i.workdir || "/"}</span></Fact>
           <Fact label="User"><span className="mono">{i.user || "root"}</span></Fact>
           <Fact label="Ports"><span className="mono">{i.ports.join(", ") || "None"}</span></Fact>
-        </section>
-        <section className="card ct-panel">
-          <h2>Used by</h2>
-          {i.containers.length ? <UsedBy list={i.containers} /> : <p className="empty-note">No container uses this image.</p>}
         </section>
         <section className="card ct-panel">
           <h2>Environment</h2>

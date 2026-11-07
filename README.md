@@ -43,9 +43,9 @@ step at a time, each saved as soon as it is done, so it can be left and resumed:
    most setups.
 4. **Ready.** A summary, the connector coming online, and the theme.
 
-Then, on **Containers**, choose **Forward to a tunnel** in a container's menu, or press **New
-tunnel** for any port: type the subdomain, pick the domain, check the port and press **Publish**.
-Open the tunnel to choose who can open it.
+Then, on **Containers**, open a container and its **Tunnel** page: type the subdomain, pick the
+domain, choose who can open it and press **Publish**. **New tunnel** publishes any other port the
+same way.
 
 To manage myTunnels from anywhere, publish the dashboard itself: under **Local app**, set
 **Runs on** to **This dashboard**, with no port. It takes the same access rules as any
@@ -72,31 +72,33 @@ does and Docker Desktop does not.
 **Containers** is where containers and tunnels meet. It says how many containers run, their CPU
 and memory together, and how many tunnels are live, then a row per container: its state, name
 over its image, published ports (each a link to open), the tunnels that reach it, CPU, memory
-and how long it has run. Its menu holds logs, **Forward to a tunnel** (one per published port),
-start or stop, restart, kill and delete. Compose projects with more than one container fold
-under their name, with start, stop and restart for all of them. Search by name, image or ID, or
-show only running ones. Tunnels to anything else, such as another machine or the dashboard, are
-listed beneath as **Other tunnels**, and **New tunnel** publishes any port.
+and how long it has run. Its menu holds logs, its tunnel, start or stop, restart, kill and
+delete. Compose projects with more than one container fold under their name, with start, stop
+and restart for all of them. Search by name, image or ID, or show only running ones. Tunnels to
+anything else, such as another machine or the dashboard, are listed beneath as **Other
+tunnels**, and **New tunnel** publishes any port. The menu at the top deletes every image no
+container uses.
+
+A container and its tunnel are one page. Its heading holds its state, image and address,
+**Open**, the one button its state calls for (start, stop or resume), and a menu for restart,
+pause, kill and delete. Under it:
+
+- **Overview**: what it runs, its state and restarts, its ports, networks and mounts.
+- **Tunnel**: its address. With none, type the subdomain, pick the domain, choose who can open
+  it and press **Publish**; the port is the container's own, asked only when it has more than
+  one. Once published, the same page switches it live or off, holds its access control, its
+  approved devices and what happened at its door, and its menu changes the address or removes
+  it. The plus adds another address.
+- **Images**: the image it runs and the others of the same name, such as earlier versions, with
+  their size and age. Open one for its entrypoint, command, working folder, user, exposed ports,
+  environment, labels and layers. One no container uses can be deleted.
+- **Logs** (followed as it runs, searchable, with or without times) and **Stats** (CPU over
+  time, memory, network and disk).
 
 A tunnel reaches a container when it points at a port the container publishes on the host, or at
-the container by name on a shared network.
-
-Open a container for its **Logs** (followed as it runs, searchable, with or without times),
-**Inspect** (what it runs, its state, ports and networks), **Mounts** and **Stats** (CPU over
-time, memory, network and disk). The container myTunnels runs in is marked, cannot be stopped
-or deleted from here, and asks once more before a restart.
-
-Podman works too, through its Docker-compatible API: mount Podman's socket in place of
-`/var/run/docker.sock` in the `docker` service.
-
-## Images
-
-**Images**, under **Developer Tools**, lists every image the engine keeps: its tags, the
-containers using it (each a link), its size and when it was built. It says how much space all
-images and the unused ones take. Search by tag, ID or container, or show only images in use or
-unused. Open one for its entrypoint, command, working folder, user, exposed ports, environment,
-labels and the layers it was built from, each with the step that made it and its size. An image
-no container uses can be deleted, one at a time or all unused at once.
+the container by name on a shared network, and opens on that container's page. The container
+myTunnels runs in is marked, cannot be stopped or deleted from here, and asks once more before a
+restart.
 
 The `docker` service in `compose.yaml` allows only the calls the panel makes, by method and
 path: listing, inspecting, logs and stats, start, stop, restart, pause, resume and kill, and
@@ -104,10 +106,12 @@ removing a container; and listing, inspecting and removing an image by its ID. C
 containers, exec, pulling or building images, volumes and networks are refused, and only the
 gateway may connect to it.
 
+Podman works too, through its Docker-compatible API: mount Podman's socket in place of
+`/var/run/docker.sock` in the `docker` service.
+
 ## Git and Storage
 
-**Storage** is a page of its own in the sidebar. **Git** sits under **Developer Tools** with
-**Images**; the heading folds them away.
+**Storage** and **Git** are pages of their own in the sidebar.
 
 ### Git
 

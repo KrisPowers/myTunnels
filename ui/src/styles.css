@@ -1231,6 +1231,21 @@ a.result.thread-row:hover .scan-target { color: var(--accent); }
 .ct-panel h2 { margin-bottom: 8px; font-size: 16px; font-weight: 700; }
 .img-step { white-space: pre-wrap; word-break: break-word; font-size: 12px; }
 .ct-inspect + .ct-panel { margin-top: 14px; }
+.stack > .ct-inspect + .ct-panel { margin-top: 0; }
+.page-head h1 .small-chip { margin-left: 10px; vertical-align: middle; }
+.ct-address { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-weight: 600; }
+.ct-address .dot { width: 8px; height: 8px; }
+.ct-picker { display: flex; }
+.ct-picker .seg-tabs button { display: inline-flex; align-items: center; }
+.tunnel-address { border-top: 0; }
+.tunnel-address .setting-title a { display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
+.tunnel-address .setting-title a:hover { color: var(--accent); }
+.img-table td { height: 58px; }
+.img-table tr.stopped td { color: var(--text-3); }
+.img-table .chip { text-transform: none; }
+.img-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.img-head h2 { font-size: 18px; font-weight: 700; }
+.img-head > .icon-btn { margin-left: -8px; }
 .ct-panel .table th:first-child, .ct-panel .table td:first-child { padding-left: 12px; }
 
 @media (max-width: 900px) {
