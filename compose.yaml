@@ -19,7 +19,7 @@ services:
       DOCKER_HOST: tcp://docker:2375
       # This computer's own figures for the Dashboard, from `server host`
       # running on it; without it, they are those of the machine Docker runs.
-      HOST_URL: http://host.docker.internal:7092
+      HOST_URL: http://host.docker.internal:7093
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
