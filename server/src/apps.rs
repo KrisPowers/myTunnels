@@ -804,6 +804,8 @@ fn host_url() -> Option<String> {
 
 /// The catalog, with what the host has and can install.
 pub async fn list(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    // An older `server host` answers, with its figures, but has no apps.
+    let mut outdated = false;
     let host = match host_url() {
         Some(url) => {
             let got = state
@@ -814,7 +816,11 @@ pub async fn list(State(state): State<AppState>) -> ApiResult<Json<Value>> {
                 .await;
             match got {
                 Ok(r) if r.status().is_success() => r.json::<Value>().await.ok(),
-                _ => None,
+                Ok(r) => {
+                    outdated = r.status() == StatusCode::NOT_FOUND;
+                    None
+                }
+                Err(_) => None,
             }
         }
         None => Some(local_status().await),
@@ -831,6 +837,7 @@ pub async fn list(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         "catalog": catalog,
         "host": host,
         "remote": host_url().is_some(),
+        "outdated": outdated,
     })))
 }
 

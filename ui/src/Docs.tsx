@@ -101,7 +101,7 @@ const CONTENT: Record<string, ReactNode> = {
   apps: (
     <>
       <Doc title="The catalog">
-        <p><b>Apps</b> is the software a homelab or engineering machine usually needs, in one place: Docker, Kubernetes' tools, cloudflared and Cloudflare's other tools, Git and the GitHub CLI, languages such as Rust, Go, Python, Java and .NET, and runtimes such as Node.js, Bun and Deno. A tile each; the filters over them narrow it to what the host has, what myTunnels uses, or one kind.</p>
+        <p><b>Apps</b> is the software a homelab or engineering machine usually needs, in one place: Docker, Kubernetes' tools, cloudflared and Cloudflare's other tools, Git and the GitHub CLI, languages such as Rust, Go, Python, Java and .NET, and runtimes such as Node.js, Bun and Deno. A tile each; search, and pick kinds and a status (installed, not installed, used by myTunnels), to narrow it.</p>
       </Doc>
       <Doc title="Installing">
         <p><b>Install</b> offers both: <b>On the host</b> installs it there in one click, through winget, Homebrew or apt, for accounts allowed to install apps; Windows may ask to allow some. <b>On this device</b> gives the command for your own machine, and a link to its makers' download. An app the host has says <b>Installed</b>; its menu updates or uninstalls it there, or offers it for this device.</p>

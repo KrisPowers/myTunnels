@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api, message, type AppAction, type AppItem, type Apps, type HostApp, type Needs, type Os } from "./api";
 import { AppLogo } from "./AppLogo";
+import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
 import { go } from "./route";
@@ -34,9 +35,15 @@ function deviceOs(): Os {
   return "linux";
 }
 
-// What the catalog can be narrowed to: everything, what the host has, what
-// myTunnels itself needs, or one kind.
-type Filter = "all" | "installed" | "used" | string;
+// Which apps show by what the host has: all of them, those it has, those it
+// lacks, or those myTunnels itself uses.
+type Status = "all" | "installed" | "missing" | "used";
+const STATUS: Option<Status>[] = [
+  { value: "all", label: "Any status" },
+  { value: "installed", label: "Installed" },
+  { value: "missing", label: "Not installed" },
+  { value: "used", label: "Used by myTunnels" },
+];
 
 const DOING: Record<AppAction, string> = { install: "Installing", update: "Updating", uninstall: "Removing" };
 const DONE: Record<AppAction, string> = { install: "Install", update: "Update", uninstall: "Uninstall" };
@@ -46,7 +53,9 @@ const DONE: Record<AppAction, string> = { install: "Install", update: "Update", 
 export function AppsPage({ open }: { open: string }) {
   const [apps, setApps] = useState<Apps | null>(null);
   const [problem, setProblem] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [q, setQ] = useState("");
+  const [kinds, setKinds] = useState<string[]>([]);
+  const [status, setStatus] = useState<Status>("all");
   const notify = useNotify();
   const load = useCallback(async () => {
     try {
@@ -76,13 +85,12 @@ export function AppsPage({ open }: { open: string }) {
   const host = apps?.host;
   const catalog = apps?.catalog ?? [];
   const has = (a: AppItem) => !!host?.apps[a.id]?.installed;
-  const filters: [Filter, string, (a: AppItem) => boolean][] = [
-    ["all", "All", () => true],
-    ["installed", "Installed", has],
-    ["used", "Used by myTunnels", (a) => a.used],
-    ...[...new Set(catalog.map((a) => a.group))].map((g): [Filter, string, (a: AppItem) => boolean] => [g, g, (a) => a.group === g]),
-  ];
-  const pass = (filters.find(([k]) => k === filter) ?? filters[0])[2];
+  const groups = [...new Set(catalog.map((a) => a.group))];
+  const needle = q.trim().toLowerCase();
+  const shown = catalog.filter((a) =>
+    (!needle || [a.name, a.about, a.group].some((t) => t.toLowerCase().includes(needle)))
+    && (!kinds.length || kinds.includes(a.group))
+    && (status === "all" || (status === "installed" ? has(a) : status === "missing" ? !has(a) : a.used)));
   const picked = catalog.find((a) => a.id === open);
 
   return (
@@ -92,27 +100,28 @@ export function AppsPage({ open }: { open: string }) {
           <h1>Apps</h1>
           {apps && host && <div className="page-sub"><span><b>{catalog.filter(has).length}</b> of {catalog.length} on the host</span></div>}
         </div>
+        <div className="page-actions">
+          <label className="ct-search">
+            <Icon name="search" size={18} />
+            <input type="search" placeholder="Search" aria-label="Search apps" value={q} onChange={(e) => setQ(e.target.value)} spellCheck={false} />
+          </label>
+          <div className="ex-pick"><MultiDropdown label="Kind" values={kinds} options={groups.map((g) => ({ value: g, label: g }))} allLabel="Every kind" onChange={setKinds} /></div>
+          <div className="ex-pick"><Dropdown label="Status" value={status} options={STATUS} onChange={setStatus} /></div>
+        </div>
       </div>
       <div className="page-body stack">
         {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
-        {apps && !host && (
+        {apps && !host && (apps.outdated ? (
+          <Callout tone="warn" icon="warning"><span className="mono">server host</span> on the host is an older version, which cannot tell what is installed. Start the new one in its place.</Callout>
+        ) : (
           <Callout tone="warn" icon="warning">The host is not answering, so apps cannot be installed there. Run <span className="mono">server host</span> on it.</Callout>
-        )}
+        ))}
         {!apps && !problem && <div className="repo-loading"><span className="spinner" /></div>}
-        {apps && (
-          <>
-            <div className="filters" role="tablist">
-              {filters.map(([key, label, test]) => (
-                <button key={key} type="button" role="tab" className="filter" aria-selected={filter === key} onClick={() => setFilter(key)}>
-                  {label}<span>{catalog.filter(test).length}</span>
-                </button>
-              ))}
-            </div>
-            <div className="provider-grid">
-              {catalog.filter(pass).map((a) => <Tile key={a.id} app={a} state={host?.apps[a.id]} onAct={(action) => act(a, action)} />)}
-            </div>
-          </>
-        )}
+        {apps && (shown.length ? (
+          <div className="provider-grid">
+            {shown.map((a) => <Tile key={a.id} app={a} state={host?.apps[a.id]} onAct={(action) => act(a, action)} />)}
+          </div>
+        ) : <p className="empty-note">No apps match.</p>)}
       </div>
       {apps && picked && (
         <InstallDialog app={picked} apps={apps} onInstalled={load} onClose={() => go("#/apps")} />
