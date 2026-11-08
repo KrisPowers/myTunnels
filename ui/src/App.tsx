@@ -249,7 +249,7 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
           {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} port={id} />}
           {route && <TunnelPage route={route} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
           {device && <DevicePage device={device} routes={apps ?? []} users={users ?? []} onChanged={load} />}
-          {view === "users" && id === "new" && <NewUser devices={devices ?? []} onAdded={load} />}
+          {view === "users" && id === "new" && <NewUser devices={devices ?? []} routes={apps ?? []} onAdded={load} />}
           {user && <UserPage user={user} page={page} routes={apps ?? []} devices={devices ?? []} catalog={catalog} me={me} onChanged={load} />}
           {view === "security" && <SecurityPage tab={id} users={users} devices={devices} routes={apps ?? []} onChanged={load} />}
           {view === "settings" && <Settings sections={settings} section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
