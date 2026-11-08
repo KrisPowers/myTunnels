@@ -1,5 +1,5 @@
-mod addons;
 mod admin;
+mod apps;
 mod archive;
 mod cloudflare;
 mod code;

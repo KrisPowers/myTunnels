@@ -2,7 +2,7 @@
 // `#/new` publishing a tunnel (`#/new/<port>` to that port),
 // `#/tunnels/<id>/<page>` one tunnel; `#/security/<tab>`, Security & Roles,
 // whose Users and Devices tabs are also `#/users` and `#/devices`, with
-// `/<id>/<page>` for one of them; `#/apps`, the add-on catalog; `#/controller`, Device Controller;
+// `/<id>/<page>` for one of them; `#/apps`, the apps catalog (`#/apps/<id>` to install one); `#/controller`, Device Controller;
 // `#/settings/<section>`; `#/preferences`, how the dashboard looks; and
 // `#/docs/<section>`; `#/dashboard`, the host and its containers;
 // `#/git`, the repositories, `#/git/tokens`, and `#/git/r/<name>/<tab>/...`
@@ -31,7 +31,8 @@ export function readHash(): Place {
   if ((first === "users" || first === "devices") && !second) return { view: "security", id: first, page: "", more: [] };
   // Appearance was a section of Settings; it is Preferences now.
   if (first === "settings" && second === "appearance") return { view: "preferences", id: "", page: "", more: [] };
-  if (first === "dashboard" || first === "apps" || first === "controller" || first === "preferences") return { view: first, id: "", page: "", more: [] };
+  if (first === "dashboard" || first === "controller" || first === "preferences") return { view: first, id: "", page: "", more: [] };
+  if (first === "apps") return { view: first, id: second, page: "", more: [] };
   // `#/new/<port>` starts a tunnel to that port.
   if (first === "new") return { view: first, id: second, page: "", more: [] };
   // Media, Drive and Convert became Storage's tabs and its Convert action.

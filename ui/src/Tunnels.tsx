@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { NeedsApp } from "./Apps";
 import { api, editOf, LEVELS, list, message, redirectUrl, shortId, strength, type Access, type OAuthProvider, type PolicyMode, type Port, type Route, type RouteEdit, type TunnelEvent, type User, type Zone } from "./api";
 import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
@@ -414,7 +415,8 @@ export function NewTunnel({ users, providers, onPublished, port }: { users: User
           <h1>New tunnel</h1>
         </div>
       </div>
-      <div className="page-body">
+      <div className="page-body stack">
+        <NeedsApp app="cloudflared" what="Publishing a tunnel" />
         <TunnelComposer users={users} providers={providers} port={port} onPublished={async (route) => {
           await onPublished();
           go(`#/tunnels/${route.id}`);
@@ -562,6 +564,7 @@ export function TunnelsView({ routes, pick, base, add, users, providers, onChang
   return (
     <div className="tn-layout">
       <div className="tn-main stack">
+        <NeedsApp app="cloudflared" what="A tunnel" />
         <section className="card">
           <div className="card-head">
             <div className="card-titles"><h2>{routes.length === 1 ? "Address" : "Addresses"}</h2></div>

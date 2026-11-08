@@ -1,4 +1,5 @@
 import { useCallback, useContext, useEffect, useState, type FormEvent } from "react";
+import { NeedsApp } from "./Apps";
 import { ago, api, message, repos, type CodeState, type Repo, type User, type Zone } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { NameDialog } from "./Files";
@@ -119,6 +120,7 @@ export function GitPage({ id, page, more, users, onChanged }: { id: string; page
         ))}
       </nav>
       <div className="page-body stack plain" key={current}>
+        <NeedsApp app="git" what="Git" />
         {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
         {current === "" && list && (list.length === 0 ? (
           <div className="card welcome">

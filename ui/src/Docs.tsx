@@ -13,7 +13,7 @@ export const DOCS: [string, string, IconName][] = [
   ["users", "Users", "group"],
   ["oauth", "Third-Party OAuth", "key"],
   ["twofactor", "Two-Factor Auth", "lock"],
-  ["addons", "Add-ons", "extension"],
+  ["apps", "Apps", "apps"],
   ["git", "Git", "code"],
   ["controller", "Device Controller", "mode_fan"],
   ["trouble", "When something is off", "help"],
@@ -100,11 +100,17 @@ const CONTENT: Record<string, ReactNode> = {
       </Doc>
     </>
   ),
-  addons: (
+  apps: (
     <>
-      <Doc title="What they are">
-        <p><b>Add-ons</b> are apps beside myTunnels' own pages. <b>Apps</b>, in the sidebar for the host and admins, is their catalog: a tile each, with <b>Install</b>, then <b>Open</b> and a menu to remove it. Each one installed has a page under Add-ons in the sidebar. <b>Git</b> comes installed; <b>Device Controller</b> does not.</p>
-        <p>Removing one takes its page away and refuses its calls; what it kept stays, for when it is installed again. Each has permissions of its own for other accounts.</p>
+      <Doc title="The catalog">
+        <p><b>Apps</b> is the software a homelab or engineering machine usually needs, in one place: Docker, Kubernetes' tools, cloudflared and Cloudflare's other tools, Git and the GitHub CLI, languages such as Rust, Go, Python, Java and .NET, and runtimes such as Node.js, Bun and Deno. A tile each, with what the host has.</p>
+      </Doc>
+      <Doc title="Installing">
+        <p><b>Install</b> offers both: <b>On the host</b> installs it there in one click, through winget, Homebrew or apt, for accounts allowed to install apps; Windows may ask to allow some. <b>On this device</b> gives the command for your own machine, and a link to its makers' download.</p>
+        <p>When myTunnels runs in Docker, the host is reached through <span className="mono">server host</span> running on it. It pairs with the first myTunnels to ask and installs only for that one; to pair again, remove the <span className="mono">paired</span> file it names.</p>
+      </Doc>
+      <Doc title="What features need">
+        <p>Containers need Docker, tunnels need cloudflared, and Git and containers from a repository need Git, where myTunnels runs. Without one, the feature stays and says which app to install.</p>
       </Doc>
     </>
   ),

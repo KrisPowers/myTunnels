@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode } from "react";
-import { ADDONS, AppsPage } from "./Addons";
-import { api, deviceInfo, message, shortId, type Auth, type Device, type Flag, type Group, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent } from "react";
+import { AppsPage, NeedsContext } from "./Apps";
+import { api, deviceInfo, message, shortId, type Auth, type Device, type Flag, type Group, type Needs, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { GitPage } from "./Git";
 import { NewMenu } from "./Builds";
 import { ContainersPage } from "./Containers";
@@ -56,7 +56,7 @@ function Root() {
   if (!auth.authenticated || !auth.setup.done || !auth.me) return <Setup auth={auth} onChange={load} />;
   return (
     <MeContext.Provider value={auth.me}>
-      <Dashboard me={auth.me} catalog={auth.catalog} installed={auth.addons} onSignOut={async () => {
+      <Dashboard me={auth.me} catalog={auth.catalog} onSignOut={async () => {
         await api.logout().catch(() => {});
         await load();
       }} />
@@ -65,17 +65,16 @@ function Root() {
 }
 
 // Dashboard is the frame every page sits in, after Google's apps: a header with
-// the name, the search bar, help and a settings menu; a sidebar with the pages, then
-// the add-ons installed; and the page.
-function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Group[]; installed: string[]; onSignOut: () => void }) {
+// the name, the search bar, help and a settings menu; a sidebar with the pages; and
+// the page.
+function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSignOut: () => void }) {
   const [place, setPlace] = useState(readHash);
-  const [addons, setAddons] = useState(installed);
-  const has = (id: string) => addons.includes(id);
   const can = useCan();
   const [routes, setRoutes] = useState<Route[] | null>(null);
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [users, setUsers] = useState<User[] | null>(null);
   const [flags, setFlags] = useState<Flag[]>([]);
+  const [needs, setNeeds] = useState<Needs | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [providers, setProviders] = useState<OAuthProvider[]>([]);
   const [drawer, setDrawer] = useState(false);
@@ -98,13 +97,14 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
   };
 
   const load = useCallback(async () => {
-    const [r, d, u, s, o, f] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status(), api.oauth(), api.flags()]);
+    const [r, d, u, s, o, f, n] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status(), api.oauth(), api.flags(), api.needs()]);
     if (r.status === "fulfilled") setRoutes(r.value);
     if (d.status === "fulfilled") setDevices(d.value);
     if (u.status === "fulfilled") setUsers(u.value);
     if (s.status === "fulfilled") setStatus(s.value);
     if (o.status === "fulfilled") setProviders(o.value.providers.filter((p) => p.configured));
     if (f.status === "fulfilled") setFlags(f.value);
+    if (n.status === "fulfilled") setNeeds(n.value);
   }, []);
 
   useEffect(() => {
@@ -180,16 +180,14 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
     ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
     ["containers", "Containers", "deployed_code", "#/", can("containers.view") || can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("media.view") || can("drive.view")],
+    ["git", "Git", "git", "#/git", can("code.view")],
+    ["controller", "Device Controller", "mode_fan", "#/controller", can("hardware.control")],
     ["security", "Security & Roles", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
-    ["apps", "Apps", "apps", "#/apps", me.admin],
+    ["apps", "Apps", "apps", "#/apps", true],
   ];
-  const extras: [string, string, IconName, string, boolean][] = ADDONS.map((a) => [a.view, a.name, a.icon, `#/${a.view}`, has(a.id) && can(a.can)]);
-  const home = [...pages, ...extras].find((p) => p[4])?.[3] ?? "#/preferences";
-  // An add-on's page is open only while it is installed.
-  const away = ADDONS.some((a) => view === a.view && !has(a.id));
+  const home = pages.find((p) => p[4])?.[3] ?? "#/preferences";
   useEffect(() => {
     if (view === "containers" && !id && !can("containers.view") && !can("tunnels.view") && home !== "#/") go(home);
-    if (away) go(home);
   });
   const settings = SETTINGS.filter(([k]) => can("settings.manage") || !["cloudflare", "network", "connector"].includes(k));
   const sections = view === "settings" ? settings : view === "docs" ? DOCS : null;
@@ -200,6 +198,7 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
   );
 
   return (
+    <NeedsContext.Provider value={needs}>
     <div className={"app" + (rail ? " rail" : "")}>
       <header className="header">
         <div className="header-start">
@@ -231,19 +230,16 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
               ))}
             </>
           ) : (
-            <>
-              {pages.map(item)}
-              {extras.some((p) => p[4]) && <NavGroup id="addons" label="Add-ons">{extras.map(item)}</NavGroup>}
-            </>
+            pages.map(item)
           )}
         </nav>
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
 
         <main className="page" key={view + id}>
-          {view === "git" && has("git") && <GitPage id={id} page={page} more={place.more} users={users ?? []} onChanged={load} />}
+          {view === "git" && can("code.view") && <GitPage id={id} page={page} more={place.more} users={users ?? []} onChanged={load} />}
           {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
-          {view === "apps" && me.admin && <AppsPage installed={addons} onChange={setAddons} />}
-          {view === "controller" && has("controller") && <ControllerPage />}
+          {view === "apps" && <AppsPage open={id} />}
+          {view === "controller" && can("hardware.control") && <ControllerPage />}
           {view === "storage" && <StoragePage tab={id} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} status={status}
             users={users ?? []} providers={providers} onChanged={load} />}
@@ -259,36 +255,7 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
         </main>
       </div>
     </div>
-  );
-}
-
-// NavGroup is a category of pages under its name, which folds it away; the
-// fold is remembered in this browser.
-function NavGroup({ id, label, children }: { id: string; label: string; children: ReactNode }) {
-  const key = `nav.folded.${id}`;
-  const [folded, setFolded] = useState(() => {
-    try {
-      return localStorage.getItem(key) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const toggle = () => {
-    setFolded(!folded);
-    try {
-      localStorage.setItem(key, folded ? "0" : "1");
-    } catch {
-      // Kept until the page closes.
-    }
-  };
-  return (
-    <div className="nav-group">
-      <button type="button" className="nav-group-head" aria-expanded={!folded} onClick={toggle}>
-        <span>{label}</span>
-        <Icon name="expand_more" size={18} className={folded ? "folded" : undefined} />
-      </button>
-      {!folded && children}
-    </div>
+    </NeedsContext.Provider>
   );
 }
 
