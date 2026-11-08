@@ -41,6 +41,8 @@ pub struct App {
     pub url: &'static str,
     /// Another app it is installed with, such as Node.js for npm packages.
     pub needs: Option<&'static str>,
+    /// A feature of myTunnels needs it where myTunnels runs.
+    pub used: bool,
     #[serde(skip)]
     bins: &'static [&'static str],
     #[serde(skip)]
@@ -75,6 +77,7 @@ const fn app(
         logo,
         url,
         needs: None,
+        used: false,
         bins,
         version: V,
         winget: None,
@@ -100,6 +103,10 @@ impl App {
     const fn npm(mut self, name: &'static str) -> Self {
         self.npm = Some(name);
         self.needs = Some("nodejs");
+        self
+    }
+    const fn used(mut self) -> Self {
+        self.used = true;
         self
     }
     const fn version(mut self, args: &'static [&'static str]) -> Self {
@@ -131,6 +138,7 @@ pub const CATALOG: &[App] = &[
         "https://www.docker.com/products/docker-desktop/",
         &["docker"],
     )
+    .used()
     .winget("Docker.DockerDesktop")
     .brew("--cask docker")
     .apt("docker.io"),
@@ -179,6 +187,7 @@ pub const CATALOG: &[App] = &[
         "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
         &["cloudflared"],
     )
+    .used()
     .winget("Cloudflare.cloudflared")
     .brew("cloudflared"),
     app(
@@ -211,6 +220,7 @@ pub const CATALOG: &[App] = &[
         "https://git-scm.com/downloads",
         &["git"],
     )
+    .used()
     .winget("Git.Git")
     .brew("git")
     .apt("git"),
@@ -400,28 +410,75 @@ fn install_command(
     a: &App,
     m: Option<Manager>,
     dirs: &[PathBuf],
+    action: Action,
 ) -> Option<(PathBuf, Vec<String>)> {
     let words = |s: &str| s.split_whitespace().map(str::to_owned).collect::<Vec<_>>();
     if let Some(pkg) = a.npm {
         let npm = which("npm", dirs)?;
-        return Some((npm, vec!["install".into(), "-g".into(), pkg.into()]));
+        let verb = match action {
+            Action::Install => "install",
+            Action::Update => "update",
+            Action::Uninstall => "uninstall",
+        };
+        return Some((npm, vec![verb.into(), "-g".into(), pkg.into()]));
     }
     match m? {
         Manager::Winget => {
-            let mut args = words("install --exact --silent --disable-interactivity --accept-package-agreements --accept-source-agreements --id");
+            let mut args = words(match action {
+                Action::Install => "install --exact --silent --disable-interactivity --accept-package-agreements --accept-source-agreements --id",
+                Action::Update => "upgrade --exact --silent --disable-interactivity --accept-package-agreements --accept-source-agreements --id",
+                Action::Uninstall => "uninstall --exact --silent --disable-interactivity --accept-source-agreements --id",
+            });
             args.push(a.winget?.into());
             Some((which("winget", dirs)?, args))
         }
         Manager::Brew => {
-            let mut args = vec!["install".to_owned()];
+            let verb = match action {
+                Action::Install => "install",
+                Action::Update => "upgrade",
+                Action::Uninstall => "uninstall",
+            };
+            let mut args = vec![verb.to_owned()];
             args.extend(words(a.brew?));
             Some((which("brew", dirs)?, args))
         }
         Manager::Apt => {
             // Without a password: sudo set up for it, or running as root.
-            let mut args = words("-n apt-get install -y");
+            let mut args = words(match action {
+                Action::Install => "-n apt-get install -y",
+                Action::Update => "-n apt-get install --only-upgrade -y",
+                Action::Uninstall => "-n apt-get remove -y",
+            });
             args.push(a.apt?.into());
             Some((which("sudo", dirs)?, args))
+        }
+    }
+}
+
+/// What is done to an app on the host.
+#[derive(Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Action {
+    Install,
+    Update,
+    Uninstall,
+}
+
+impl Action {
+    fn parse(word: &str) -> Option<Self> {
+        match word {
+            "install" => Some(Self::Install),
+            "update" => Some(Self::Update),
+            "uninstall" => Some(Self::Uninstall),
+            _ => None,
+        }
+    }
+
+    fn doing(self) -> &'static str {
+        match self {
+            Self::Install => "installed",
+            Self::Update => "updated",
+            Self::Uninstall => "removed",
         }
     }
 }
@@ -550,6 +607,7 @@ async fn version_of(bin: &FsPath, args: &[&str]) -> Option<String> {
 /// An install running or done here.
 #[derive(Clone, Serialize)]
 struct Job {
+    action: Action,
     running: bool,
     failed: bool,
     /// The last of what the installer said.
@@ -588,7 +646,7 @@ pub async fn local_status() -> Value {
                     json!({
                         "installed": version.is_some(),
                         "version": version,
-                        "can": install_command(a, m, &dirs).is_some(),
+                        "can": install_command(a, m, &dirs, Action::Install).is_some(),
                     }),
                 );
             }
@@ -604,17 +662,19 @@ pub async fn local_status() -> Value {
 }
 
 /// Starts installing `id` here; it carries on after the call returns.
-pub fn local_install(id: &str) -> Result<(), String> {
+pub fn local_install(id: &str, action: Action) -> Result<(), String> {
     let a = find(id).ok_or("No such app")?;
-    if lock(&JOBS).get(id).is_some_and(|j| j.running) {
-        return Err(format!("{} is being installed already", a.name));
+    if let Some(j) = lock(&JOBS).get(id).filter(|j| j.running) {
+        return Err(format!("{} is being {} already", a.name, j.action.doing()));
     }
     let dirs = search_dirs();
-    let (program, args) = install_command(a, manager(&dirs), &dirs).ok_or_else(|| match a.npm {
-        Some(_) => "Install Node.js first, for npm".to_owned(),
-        None => format!("{} cannot be installed here; get it from {}", a.name, a.url),
-    })?;
-    let job = |running, failed, log: String| Job {
+    let (program, args) =
+        install_command(a, manager(&dirs), &dirs, action).ok_or_else(|| match a.npm {
+            Some(_) => "Install Node.js first, for npm".to_owned(),
+            None => format!("{} cannot be installed here; get it from {}", a.name, a.url),
+        })?;
+    let job = move |running, failed, log: String| Job {
+        action,
         running,
         failed,
         log,
@@ -679,7 +739,7 @@ pub fn host_routes() -> Router {
     Router::new()
         .route("/apps", get(|| async { Json(local_status().await) }))
         .route("/pair", post(pair))
-        .route("/apps/{id}/install", post(host_install))
+        .route("/apps/{id}/{action}", post(host_install))
 }
 
 /// Gives the first myTunnels to ask the key installs need; later asks are
@@ -712,9 +772,10 @@ async fn pair() -> Result<Json<Value>, (StatusCode, String)> {
 }
 
 async fn host_install(
-    Path(id): Path<String>,
+    Path((id, action)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, (StatusCode, String)> {
+    let action = Action::parse(&action).ok_or((StatusCode::NOT_FOUND, "No such action".into()))?;
     let held = std::fs::read_to_string(paired_file()).unwrap_or_default();
     let given = headers
         .get(KEY_HEADER)
@@ -724,7 +785,7 @@ async fn host_install(
     if held.trim().is_empty() || held.trim() != given {
         return Err((StatusCode::UNAUTHORIZED, "Not paired with this host".into()));
     }
-    local_install(&id).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    local_install(&id, action).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -773,14 +834,15 @@ pub async fn list(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     })))
 }
 
-/// Installs an app on the host.
+/// Installs, updates or uninstalls an app on the host.
 pub async fn install(
     State(state): State<AppState>,
-    Path(id): Path<String>,
+    Path((id, word)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
     let app = find(&id).ok_or_else(ApiError::not_found)?;
+    let action = Action::parse(&word).ok_or_else(ApiError::not_found)?;
     let Some(url) = host_url() else {
-        local_install(app.id).map_err(ApiError::bad)?;
+        local_install(app.id, action).map_err(ApiError::bad)?;
         return Ok(Json(json!({ "ok": true })));
     };
     let unreachable = |_| {
@@ -811,7 +873,7 @@ pub async fn install(
     };
     let r = state
         .http
-        .post(format!("{url}/apps/{}/install", app.id))
+        .post(format!("{url}/apps/{}/{word}", app.id))
         .header(KEY_HEADER, key)
         .send()
         .await

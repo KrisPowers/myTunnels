@@ -262,7 +262,8 @@ dashboard through a tunnel to reach it from anywhere.
 ## Apps
 
 **Apps** is a catalog of the software a homelab or engineering machine usually needs, a tile
-each by kind: Docker, kubectl, minikube and Helm; cloudflared, Cloudflare WARP and Wrangler;
+each, narrowed by the filters over it to what the host has, what myTunnels uses, or one kind:
+Docker, kubectl, minikube and Helm; cloudflared, Cloudflare WARP and Wrangler;
 Git and the GitHub CLI; Rust, Go, Python, Java and .NET; Node.js, fnm, Bun and Deno;
 Terraform and WireGuard. **Install** offers two places:
 
@@ -271,6 +272,9 @@ Terraform and WireGuard. **Install** offers two places:
   host** permission, and Windows may ask to allow some installers.
 - **On this device**, the command for the visitor's own machine and a link to the makers'
   download.
+
+An app the host has says **Installed**, and its menu updates or uninstalls it there, or offers
+it for this device.
 
 When myTunnels runs inside Docker, installs reach the host through `server host` on it (see
 the Dashboard). It pairs with the first myTunnels to ask and installs only for that one; to
