@@ -14,11 +14,12 @@ use std::process::Stdio;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
+use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::process::Command;
 
@@ -398,8 +399,11 @@ fn install_command(
     m: Option<Manager>,
     dirs: &[PathBuf],
     action: Action,
+    version: Option<&str>,
 ) -> Option<(PathBuf, Vec<String>)> {
     let words = |s: &str| s.split_whitespace().map(str::to_owned).collect::<Vec<_>>();
+    // A version is only ever installed, never updated to or removed by number.
+    let version = version.filter(|_| action == Action::Install);
     if let Some(pkg) = a.npm {
         let npm = which("npm", dirs)?;
         let verb = match action {
@@ -407,7 +411,11 @@ fn install_command(
             Action::Update => "update",
             Action::Uninstall => "uninstall",
         };
-        return Some((npm, vec![verb.into(), "-g".into(), pkg.into()]));
+        let pkg = match version {
+            Some(v) => format!("{pkg}@{v}"),
+            None => pkg.to_owned(),
+        };
+        return Some((npm, vec![verb.into(), "-g".into(), pkg]));
     }
     match m? {
         Manager::Winget => {
@@ -417,6 +425,10 @@ fn install_command(
                 Action::Uninstall => "uninstall --exact --silent --disable-interactivity --accept-source-agreements --id",
             });
             args.push(a.winget?.into());
+            if let Some(v) = version {
+                // `--force` lets it replace whichever version is there.
+                args.extend(["--version".into(), v.into(), "--force".into()]);
+            }
             Some((which("winget", dirs)?, args))
         }
         Manager::Brew => {
@@ -436,7 +448,11 @@ fn install_command(
                 Action::Update => "-n apt-get install --only-upgrade -y",
                 Action::Uninstall => "-n apt-get remove -y",
             });
-            args.push(a.apt?.into());
+            let pkg = a.apt?;
+            args.push(match version {
+                Some(v) => format!("{pkg}={v}"),
+                None => pkg.into(),
+            });
             Some((which("sudo", dirs)?, args))
         }
     }
@@ -633,7 +649,7 @@ pub async fn local_status() -> Value {
                     json!({
                         "installed": version.is_some(),
                         "version": version,
-                        "can": install_command(a, m, &dirs, Action::Install).is_some(),
+                        "can": install_command(a, m, &dirs, Action::Install, None).is_some(),
                     }),
                 );
             }
@@ -645,18 +661,22 @@ pub async fn local_status() -> Value {
     for (id, job) in lock(&JOBS).iter() {
         status["apps"][id]["job"] = json!(job);
     }
+    warm_versions();
     status
 }
 
 /// Starts installing `id` here; it carries on after the call returns.
-pub fn local_install(id: &str, action: Action) -> Result<(), String> {
+pub fn local_install(id: &str, action: Action, version: Option<&str>) -> Result<(), String> {
     let a = find(id).ok_or("No such app")?;
+    if version.is_some_and(|v| !valid_version(v)) {
+        return Err("That is not a version".into());
+    }
     if let Some(j) = lock(&JOBS).get(id).filter(|j| j.running) {
         return Err(format!("{} is being {} already", a.name, j.action.doing()));
     }
     let dirs = search_dirs();
     let (program, args) =
-        install_command(a, manager(&dirs), &dirs, action).ok_or_else(|| match a.npm {
+        install_command(a, manager(&dirs), &dirs, action, version).ok_or_else(|| match a.npm {
             Some(_) => "Install Node.js first, for npm".to_owned(),
             None => format!("{} cannot be installed here; get it from {}", a.name, a.url),
         })?;
@@ -707,6 +727,139 @@ pub fn local_install(id: &str, action: Action) -> Result<(), String> {
     Ok(())
 }
 
+/// A version as package managers write them: `2.52.0`, `1:2.39.5-0+deb12u2`.
+fn valid_version(v: &str) -> bool {
+    (1..=64).contains(&v.len())
+        && v.as_bytes()[0].is_ascii_alphanumeric()
+        && v.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b".-+_~:".contains(&b))
+}
+
+/// Each app's versions, the newest first, kept for an hour: new ones come out
+/// rarely, and asking takes most of a second.
+type Kept = HashMap<String, (Instant, Vec<String>)>;
+static VERSIONS: LazyLock<Mutex<Kept>> = LazyLock::new(Mutex::default);
+const VERSIONS_FOR: Duration = Duration::from_secs(3600);
+/// When the versions of every app were last looked up ahead of being asked.
+static WARMED: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(Mutex::default);
+
+/// What a program printed, if it ran and ended well.
+async fn output(program: &FsPath, args: &[&str]) -> Option<String> {
+    let run = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .kill_on_drop(true)
+        .output();
+    let out = tokio::time::timeout(Duration::from_secs(60), run)
+        .await
+        .ok()?
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// The versions this machine's package manager offers for `a`, the newest
+/// first. Homebrew offers only its latest.
+async fn lookup_versions(a: &App, m: Option<Manager>, dirs: &[PathBuf]) -> Vec<String> {
+    let found = if let Some(pkg) = a.npm {
+        let Some(npm) = which("npm", dirs) else {
+            return Vec::new();
+        };
+        let text = output(&npm, &["view", pkg, "versions", "--json"]).await;
+        let mut list: Vec<String> = text
+            .and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok())
+            .unwrap_or_default();
+        list.reverse();
+        list
+    } else {
+        match (m, a.winget, a.apt) {
+            (Some(Manager::Winget), Some(id), _) => {
+                let Some(winget) = which("winget", dirs) else {
+                    return Vec::new();
+                };
+                let args = [
+                    "show",
+                    "--id",
+                    id,
+                    "--exact",
+                    "--versions",
+                    "--accept-source-agreements",
+                    "--disable-interactivity",
+                ];
+                output(&winget, &args)
+                    .await
+                    .map(|t| winget_versions(&t))
+                    .unwrap_or_default()
+            }
+            (Some(Manager::Apt), _, Some(pkg)) => {
+                let Some(cache) = which("apt-cache", dirs) else {
+                    return Vec::new();
+                };
+                output(&cache, &["madison", pkg])
+                    .await
+                    .map(|t| {
+                        t.lines()
+                            .filter_map(|l| l.split('|').nth(1))
+                            .map(|v| v.trim().to_owned())
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            }
+            _ => Vec::new(),
+        }
+    };
+    found.into_iter().filter(|v| valid_version(v)).collect()
+}
+
+/// The versions in `winget show --versions`: one a line, under the dashes.
+fn winget_versions(text: &str) -> Vec<String> {
+    text.lines()
+        .skip_while(|l| !l.trim_start().starts_with("---"))
+        .skip(1)
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// `id`'s versions, from what was kept or asked for now.
+pub async fn local_versions(id: &str) -> Result<Vec<String>, String> {
+    let a = find(id).ok_or("No such app")?;
+    let kept = lock(&VERSIONS)
+        .get(id)
+        .filter(|(at, _)| at.elapsed() < VERSIONS_FOR)
+        .map(|(_, v)| v.clone());
+    if let Some(list) = kept {
+        return Ok(list);
+    }
+    let dirs = search_dirs();
+    let list = lookup_versions(a, manager(&dirs), &dirs).await;
+    lock(&VERSIONS).insert(id.into(), (Instant::now(), list.clone()));
+    Ok(list)
+}
+
+/// Looks up every app's versions in the background, a few at a time, once an
+/// hour at most, so a version list is there before it is opened.
+fn warm_versions() {
+    {
+        let mut warmed = lock(&WARMED);
+        if warmed.is_some_and(|at| at.elapsed() < VERSIONS_FOR) {
+            return;
+        }
+        *warmed = Some(Instant::now());
+    }
+    tokio::spawn(async {
+        for chunk in CATALOG.chunks(4) {
+            let mut set = tokio::task::JoinSet::new();
+            for a in chunk {
+                set.spawn(async move { local_versions(a.id).await });
+            }
+            while set.join_next().await.is_some() {}
+        }
+    });
+}
+
 // ---- `server host`: the machine, for a myTunnels inside Docker ----
 
 /// Where `server host` keeps the hash of the key it was paired with.
@@ -726,6 +879,15 @@ pub fn host_routes() -> Router {
     Router::new()
         .route("/apps", get(|| async { Json(local_status().await) }))
         .route("/pair", post(pair))
+        .route(
+            "/apps/{id}/versions",
+            get(|Path(id): Path<String>| async move {
+                local_versions(&id)
+                    .await
+                    .map(Json)
+                    .map_err(|e| (StatusCode::NOT_FOUND, e))
+            }),
+        )
         .route("/apps/{id}/{action}", post(host_install))
 }
 
@@ -758,9 +920,23 @@ async fn pair() -> Result<Json<Value>, (StatusCode, String)> {
     Ok(Json(json!({ "key": key })))
 }
 
+/// What an install may ask for: a version, in place of the latest.
+#[derive(Default, Deserialize, Serialize)]
+pub struct ActionBody {
+    #[serde(default)]
+    version: Option<String>,
+}
+
+impl ActionBody {
+    fn of(body: &[u8]) -> Self {
+        serde_json::from_slice(body).unwrap_or_default()
+    }
+}
+
 async fn host_install(
     Path((id, action)): Path<(String, String)>,
     headers: HeaderMap,
+    body: Bytes,
 ) -> Result<Json<Value>, (StatusCode, String)> {
     let action = Action::parse(&action).ok_or((StatusCode::NOT_FOUND, "No such action".into()))?;
     let held = std::fs::read_to_string(paired_file()).unwrap_or_default();
@@ -772,7 +948,9 @@ async fn host_install(
     if held.trim().is_empty() || held.trim() != given {
         return Err((StatusCode::UNAUTHORIZED, "Not paired with this host".into()));
     }
-    local_install(&id, action).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let body = ActionBody::of(&body);
+    local_install(&id, action, body.version.as_deref())
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -820,15 +998,48 @@ pub async fn list(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     })))
 }
 
-/// Installs, updates or uninstalls an app on the host.
+/// An app's versions, the newest first.
+pub async fn versions(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Vec<String>>> {
+    let app = find(&id).ok_or_else(ApiError::not_found)?;
+    let Some(url) = host_url() else {
+        return local_versions(app.id)
+            .await
+            .map(Json)
+            .map_err(ApiError::bad);
+    };
+    let r = state
+        .http
+        .get(format!("{url}/apps/{}/versions", app.id))
+        .timeout(Duration::from_secs(90))
+        .send()
+        .await
+        .map_err(|_| {
+            ApiError(
+                StatusCode::BAD_GATEWAY,
+                "server host is not answering".into(),
+            )
+        })?;
+    if !r.status().is_success() {
+        return Err(ApiError::bad(r.text().await.unwrap_or_default()));
+    }
+    Ok(Json(r.json().await.unwrap_or_default()))
+}
+
+/// Installs, updates or uninstalls an app on the host; an install may name a
+/// version.
 pub async fn install(
     State(state): State<AppState>,
     Path((id, word)): Path<(String, String)>,
+    body: Bytes,
 ) -> ApiResult<Json<Value>> {
     let app = find(&id).ok_or_else(ApiError::not_found)?;
     let action = Action::parse(&word).ok_or_else(ApiError::not_found)?;
+    let body = ActionBody::of(&body);
     let Some(url) = host_url() else {
-        local_install(app.id, action).map_err(ApiError::bad)?;
+        local_install(app.id, action, body.version.as_deref()).map_err(ApiError::bad)?;
         return Ok(Json(json!({ "ok": true })));
     };
     let unreachable = |_| {
@@ -861,6 +1072,7 @@ pub async fn install(
         .http
         .post(format!("{url}/apps/{}/{word}", app.id))
         .header(KEY_HEADER, key)
+        .json(&body)
         .send()
         .await
         .map_err(unreachable)?;
@@ -929,6 +1141,15 @@ mod tests {
         unique.sort_unstable();
         unique.dedup();
         assert_eq!(ids.len(), unique.len());
+    }
+
+    #[test]
+    fn versions_are_read_from_winget() {
+        let text = "Found Git [Git.Git]\nVersion\n-------\n2.52.0\n2.51.2\n\n";
+        assert_eq!(winget_versions(text), ["2.52.0", "2.51.2"]);
+        assert!(valid_version("1:2.39.5-0+deb12u2"));
+        assert!(!valid_version("--force"));
+        assert!(!valid_version("1.0 && x"));
     }
 
     #[test]

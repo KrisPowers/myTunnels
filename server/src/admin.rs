@@ -109,6 +109,7 @@ pub fn router(state: AppState) -> Router {
         .route("/convert", get(convert::list).post(convert::start))
         .route("/convert/{id}", delete(convert::remove))
         .route("/apps", get(crate::apps::list))
+        .route("/apps/{id}/versions", get(crate::apps::versions))
         .route("/apps/{id}/{action}", post(crate::apps::install))
         .route("/needs", get(crate::apps::needs))
         .route_layer(middleware::from_fn_with_state(
