@@ -74,7 +74,7 @@ const CONTENT: Record<string, ReactNode> = {
   containers: (
     <>
       <Doc title="What it shows">
-        <p><b>Containers</b> says how many run, their CPU and memory together and how many tunnels are live, then a row per container with its name over its image, published ports (each opens in a new tab), the tunnels that reach it, CPU, memory and how long it has run. Compose projects with more than one container fold under their name. Tunnels to anything else are listed beneath, as <b>Other tunnels</b>. The plus at the top adds a container from a repository or a tunnel to any port.</p>
+        <p><b>Containers</b> is one catalog: every container, and every tunnel to a port elsewhere, a row each with what it is in a tile tinted by its state, its name over where it comes from, its address, and its CPU and memory while it runs. Compose projects with more than one container fold under their name. Search, or pick <b>All</b> or <b>Running</b>; it refreshes on its own. The plus, here and in the header, adds a <b>Tunnel</b> or a <b>Container from Git</b>, <b>from GitHub</b> or <b>from an image</b>.</p>
       </Doc>
       <Doc title="One container">
         <p>A container and its tunnel are one page. Its heading holds its state, image and address, <b>Open</b>, the one button its state calls for (start, stop or resume) and a menu for the rest. Under it: <b>Overview</b> (its CPU, memory, network and disk while it runs, then what it runs, its state, ports, networks and mounts), <b>Tunnel</b>, <b>Images</b> and <b>Logs</b>.</p>
@@ -83,8 +83,9 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Tunnel</b> lists the container's addresses in the middle, each with its state, where it goes and who may open it, and the picked one's activity under them. Its controls sit at the side: Open, its live switch, a menu to change the address or remove it, its access control and its approved devices. The plus publishes an address: type the subdomain, pick the domain, choose who may open it and press <b>Publish</b>; the port is the container's own, asked only when it has more than one.</p>
       </Doc>
       <Doc title="From a repository">
-        <p><b>Container from a repository</b>, under the plus at the top of Containers, makes a container from code: name it, pick a repository on this host's <b>Git</b> or give any https address (GitHub and the like, with a token for a private one), pick its branch and how it updates: <b>When the branch changes</b>, <b>On a timer</b> (every hour to every week), or <b>Only when I press Update</b>. <b>Update</b>, in its heading, builds the latest commit at any time.</p>
+        <p><b>Container from Git</b> and <b>from GitHub</b> make a container from code: pick a repository on this host's <b>Git</b> or give any https address (GitHub and the like, with a token for a private one), then its branch, its name and how it updates: <b>When the branch changes</b>, <b>On a timer</b> (every hour to every week), or <b>Only when I press Update</b>. <b>Update</b>, in its heading, builds the latest commit at any time.</p>
         <p>A build takes the repository's Dockerfile, builds it into an image named after the container and the build's number, and makes the container again from it. One that will not start is undone on the spot and the build before keeps running. Its <b>Images</b> page lists its builds and what each printed; <b>Run this build</b> goes back to any of the latest ten. Its <b>Settings</b> page holds the repository, branch and Dockerfile, how it updates, its port, its environment and the folders kept from one build to the next.</p>
+        <p><b>Container from an image</b> runs a Docker image, such as <code>nginx:1.27</code>. Its updates pull the image again, on a timer or with <b>Update</b>, and run it when it changed; each pull is listed like a build, so going back works the same way.</p>
       </Doc>
       <Doc title="Its images">
         <p><b>Images</b> lists the image the container runs and the others of the same name, such as earlier versions, with their size and age. Open one for what it runs, its environment and labels, and its layers. One no container uses can be deleted; the menu at the top of Containers deletes every unused image at once.</p>
@@ -177,7 +178,7 @@ const CONTENT: Record<string, ReactNode> = {
   users: (
     <>
       <Doc title="Accounts">
-        <p>Users, under Security &amp; Roles, holds the accounts people sign in with. Each has a username, an optional email (either signs in), and a password held to the same rule as every password here.</p>
+        <p>Users, under Security &amp; Roles, holds the accounts people sign in with, yours among them: the account made at setup holds the <b>Host</b> and <b>Admin</b> roles, and only it changes itself, under Settings, Account. Each has a username, an email (either signs in), and a password held to the same rule as every password here.</p>
       </Doc>
       <Doc title="What an account opens">
         <p>On an account's <b>Profile</b>, <b>Tunnels</b> holds the tunnels it may open, and <b>Security</b> the devices it signs in from. One sign-in covers every tunnel on the same domain that the account may open. Suspending an account, or removing it, ends its sessions at once.</p>

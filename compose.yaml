@@ -22,9 +22,9 @@ services:
   # The Dashboard and Containers pages' view of Docker. Only the calls the
   # panel makes are allowed, by method and path: listing, inspecting, logs and
   # stats; start, stop, restart, pause, resume and kill; making and removing a
-  # container; building an image from a container's repository; and listing,
-  # inspecting and removing images by ID. Exec, pulling images on their own,
-  # volumes and networks are refused, and only the gateway may connect. The
+  # container; building an image from a container's repository or pulling
+  # the image a container runs; and listing, inspecting and removing images
+  # by ID. Exec, volumes and networks are refused, and only the gateway may connect. The
   # gateway never holds the Docker socket itself.
   docker:
     image: wollomatic/socket-proxy:1.13.2@sha256:ff95d6ff6c27853005ef85eb8f4ab5923dc3d2f1e055f98fb6aeeaceec3fe848
@@ -40,7 +40,7 @@ services:
       - '-listenip=0.0.0.0'
       - '-allowfrom=gateway'
       - '-allowGET=(/v[0-9.]+)?/(_ping|info|containers/json|containers/[a-zA-Z0-9][a-zA-Z0-9_.-]*/(json|logs|stats)|images/json|images/sha256:[a-f0-9]{64}/(json|history))'
-      - '-allowPOST=(/v[0-9.]+)?/(build|containers/create|containers/[a-zA-Z0-9][a-zA-Z0-9_.-]*/(start|stop|restart|pause|unpause|kill))'
+      - '-allowPOST=(/v[0-9.]+)?/(build|images/create|containers/create|containers/[a-zA-Z0-9][a-zA-Z0-9_.-]*/(start|stop|restart|pause|unpause|kill))'
       - '-allowDELETE=(/v[0-9.]+)?/(containers/[a-zA-Z0-9][a-zA-Z0-9_.-]*|images/sha256:[a-f0-9]{64})'
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro

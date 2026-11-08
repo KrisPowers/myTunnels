@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode } from "react";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type Group, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { GitPage } from "./Git";
+import { NewMenu } from "./Builds";
 import { ContainersPage } from "./Containers";
 
 import { DashboardPage } from "./Dashboard";
@@ -203,7 +204,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
         </div>
         <Search routes={apps} devices={devices} />
         <div className="header-actions">
-          {can("tunnels.create") && <a className={"icon-btn" + (view === "new" ? " on" : "")} href="#/new" aria-label="New tunnel" title="New tunnel"><Icon name="add" /></a>}
+          <NewMenu />
           <a className={"icon-btn" + (view === "docs" ? " on" : "")} href="#/docs" aria-label="Help" title="Help"><Icon name="help" /></a>
           <a className={"icon-btn" + (view === "settings" ? " on" : "")} href="#/settings" aria-label="Settings" title="Settings"><Icon name="settings" /></a>
           <span className="header-user" title={me.host ? "Host" : me.admin ? "Admin" : "Signed in"}><Icon name="person" size={18} />{me.name || "Host"}</span>

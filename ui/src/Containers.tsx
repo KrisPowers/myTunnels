@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Deploy, type Device, type Image, type Metrics, type OAuthProvider, type Port, type Route, type Status, type User } from "./api";
-import { AddContainer, BuildLog, Builds, DeploySettings, sourceOf, waiting } from "./Builds";
+import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Deploy, type Device, type Image, type Metrics, type OAuthProvider, type Route, type Status, type User } from "./api";
+import { BuildLog, Builds, DeploySettings, NewMenu, sourceOf, waiting } from "./Builds";
 import { Chart, Meter } from "./Dashboard";
-import { Dropdown } from "./Dropdown";
+import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { ContainerImages, ImageView, useImageRemoval } from "./Images";
 import { useCan } from "./me";
@@ -79,23 +79,6 @@ function useActions(reload: () => Promise<void>) {
   return { busy, run };
 }
 
-// PortLinks are the ports published on the host, each opening in a new tab.
-function PortLinks({ ports, max = 3 }: { ports: Port[]; max?: number }) {
-  const shown = ports.filter((p) => p.public !== null);
-  if (!shown.length) return <span className="muted">None</span>;
-  return (
-    <span className="port-links">
-      {shown.slice(0, max).map((p) => (
-        <a key={`${p.public}-${p.private}-${p.type}`} href={`http://${location.hostname}:${p.public}`} target="_blank" rel="noreferrer"
-          title={`Host port ${p.public} to container port ${p.private}/${p.type}`} onClick={(e) => e.stopPropagation()}>
-          {p.public}:{p.private}{p.type === "udp" ? "/udp" : ""}<Icon name="open_in_new" size={12} />
-        </a>
-      ))}
-      {shown.length > max && <span className="muted">+{shown.length - max}</span>}
-    </span>
-  );
-}
-
 // A container from a repository that is not made yet: its first build is
 // waiting, running or failed.
 function pending(d: Deploy): Container {
@@ -117,7 +100,7 @@ export interface Shared {
 
 export function ContainersPage({ id, page, more, status, ...shared }: { id: string; page: string; more: string[]; status: Status | null } & Shared) {
   if (id) return <ContainerPage name={id} tab={page} more={more} {...shared} />;
-  return <ContainerList routes={shared.routes} status={status} />;
+  return <ContainerList routes={shared.routes} status={status} onChanged={shared.onChanged} />;
 }
 
 // ---- the list ----
@@ -128,23 +111,32 @@ const listed = new Map<string, Container>();
 
 type Show = "all" | "running";
 
-// ContainerList is a row per container: its state, name and image, published
-// ports, the tunnels reaching it, CPU, memory and how long it has run,
-// everything else behind its menu. Compose projects of two or more fold under
-// their name. Tunnels to anything else are listed beneath.
-function ContainerList({ routes, status }: { routes: Route[] | null; status: Status | null }) {
+const SHOW: Option<Show>[] = [
+  { value: "all", label: "All" },
+  { value: "running", label: "Running" },
+];
+
+// One thing in the catalog: a container, or a tunnel to a port elsewhere,
+// which is a container of another kind.
+type Item = { key: string; name: string; project: string | null; on: boolean } & ({ c: Container } | { r: Route });
+
+// ContainerList is the one catalog: every container and every tunnel to a port
+// elsewhere, a row each with what it is, its state, its address and its use,
+// and one menu. Compose projects of two or more fold under their name. It
+// refreshes on its own.
+function ContainerList({ routes, status, onChanged }: { routes: Route[] | null; status: Status | null; onChanged: () => Promise<void> }) {
   const can = useCan();
   const seeContainers = can("containers.view");
   const seeTunnels = can("tunnels.view");
   const [list, setList] = useState<Container[] | null>(null);
   const [images, setImages] = useState<Image[] | null>(null);
   const [deploys, setDeploys] = useState<Deploy[]>([]);
-  const [adding, setAdding] = useState(false);
   const [problem, setProblem] = useState("");
   const [q, setQ] = useState("");
   const [show, setShow] = useState<Show>("all");
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const m = useMetrics();
+  const notify = useNotify();
 
   const load = useCallback(async () => {
     if (!seeContainers) return;
@@ -167,45 +159,66 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
   }, [load]);
   const { busy, run } = useActions(load);
   const cleanup = useImageRemoval(load);
-  const allRoutes = seeTunnels ? routes ?? [] : [];
-  const reaching = (c: Container) => tunnelsOf(c, allRoutes);
-  const matched = new Set((list ?? []).flatMap((c) => reaching(c).map((r) => r.id)));
-  const others = allRoutes.filter((r) => !matched.has(r.id));
-  const liveTunnels = allRoutes.filter((r) => r.enabled).length;
-  const links = status?.connections ?? 0;
-  const unused = (images ?? []).filter((i) => !i.containers.length);
-  const spare = unused.reduce((n, i) => n + i.size, 0);
 
-  // Usage is sampled under each container's short ID.
-  const stats = useMemo(() => Object.fromEntries((m?.docker.containers ?? []).map((s) => [shortId(s.id), s])), [m]);
-  const needle = q.trim().toLowerCase();
+  const allRoutes = seeTunnels ? routes ?? [] : [];
   const made = new Set((list ?? []).map((c) => c.name));
-  const all = [...(list ?? []), ...deploys.filter((d) => !made.has(d.name)).map(pending)];
-  const shown = all.filter((c) => (show === "all" || live(c)) && (!needle || [c.name, c.image, c.id, c.project ?? ""].some((v) => v.toLowerCase().includes(needle))));
-  const sorted = [...shown].sort((a, b) => (a.project ?? a.name).localeCompare(b.project ?? b.name) || a.name.localeCompare(b.name));
+  const containers = [...(list ?? []), ...deploys.filter((d) => !made.has(d.name)).map(pending)];
+  const reached = new Set(containers.flatMap((c) => tunnelsOf(c, allRoutes).map((r) => r.id)));
+  const items: Item[] = [
+    ...containers.map((c) => ({ key: c.id || c.name, name: c.name, project: c.project, on: live(c), c })),
+    ...allRoutes.filter((r) => !reached.has(r.id)).map((r) => ({ key: r.id, name: r.hostname, project: null, on: r.enabled, r })),
+  ];
+  const byDeploy = new Map(deploys.map((d) => [d.id, d]));
+  const stats = useMemo(() => Object.fromEntries((m?.docker.containers ?? []).map((s) => [shortId(s.id), s])), [m]);
+
+  const needle = q.trim().toLowerCase();
+  const shown = items
+    .filter((i) => show === "all" || i.on)
+    .filter((i) => !needle || [i.name, i.project ?? "", "c" in i ? i.c.image : target(i.r)].some((v) => v.toLowerCase().includes(needle)))
+    .sort((a, b) => (a.project ?? a.name).localeCompare(b.project ?? b.name) || a.name.localeCompare(b.name));
   const counts = new Map<string, number>();
-  for (const c of sorted) if (c.project) counts.set(c.project, (counts.get(c.project) ?? 0) + 1);
-  const rows: ({ group: string; items: Container[] } | Container)[] = [];
-  for (const c of sorted) {
-    if (c.project && (counts.get(c.project) ?? 0) > 1) {
-      const last = rows[rows.length - 1];
-      if (last && "group" in last && last.group === c.project) last.items.push(c);
-      else rows.push({ group: c.project, items: [c] });
-    } else {
-      rows.push(c);
-    }
-  }
+  for (const i of shown) if (i.project) counts.set(i.project, (counts.get(i.project) ?? 0) + 1);
 
   const running = (list ?? []).filter(live);
   const cpu = running.reduce((n, c) => n + (stats[shortId(c.id)]?.cpu ?? 0), 0);
   const memory = running.reduce((n, c) => n + (stats[shortId(c.id)]?.memory ?? 0), 0);
-  const newMenu: MenuAction[] = [
-    ...(can("containers.deploy") ? [{ label: "Container from a repository", icon: "deployed_code" as IconName, onClick: () => setAdding(true) }] : []),
-    ...(can("tunnels.create") ? [{ label: "Tunnel to a port", icon: "public" as IconName, onClick: () => go("#/new") }] : []),
-  ];
+  const liveTunnels = allRoutes.filter((r) => r.enabled).length;
+  const unused = (images ?? []).filter((i) => !i.containers.length);
+  const spare = unused.reduce((n, i) => n + i.size, 0);
   const pageMenu: MenuAction[] = can("containers.remove") && unused.length > 0
     ? [{ label: `Delete unused images, ${bytes(spare)}`, icon: "layers", danger: true, onClick: () => cleanup.remove(unused), confirm: `Delete ${unused.length} for good` }]
     : [];
+
+  const removeTunnel = async (r: Route) => {
+    try {
+      await api.removeRoute(r.id);
+      notify(`Removed ${r.hostname}`);
+      await onChanged();
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+  };
+  const fold = (project: string) => setFolded((f) => {
+    const next = new Set(f);
+    if (next.has(project)) next.delete(project);
+    else next.add(project);
+    return next;
+  });
+
+  const rows: ReactNode[] = [];
+  let group = "";
+  for (const i of shown) {
+    const grouped = !!i.project && (counts.get(i.project) ?? 0) > 1;
+    if (grouped && i.project !== group) {
+      const members = shown.filter((x) => x.project === i.project && "c" in x).map((x) => (x as { c: Container }).c);
+      rows.push(<GroupHead key={"g-" + i.project} name={i.project!} items={members} open={!folded.has(i.project!)} onFold={() => fold(i.project!)} run={run} />);
+    }
+    group = grouped ? i.project! : "";
+    if (grouped && folded.has(i.project!)) continue;
+    rows.push("c" in i
+      ? <ContainerRow key={i.key} c={i.c} d={i.c.deploy ? byDeploy.get(i.c.deploy) : undefined} s={stats[shortId(i.c.id)]} routes={tunnelsOf(i.c, allRoutes)} busy={busy.has(i.c.id)} run={run} grouped={grouped} />
+      : <TunnelRow key={i.key} r={i.r} onRemove={() => removeTunnel(i.r)} />);
+  }
 
   return (
     <>
@@ -214,9 +227,9 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
           <h1>Containers</h1>
           <div className="page-sub">
             {list && <span><b>{running.length}</b> of {list.length} running</span>}
-            {list && m && <span>CPU <b>{pct(cpu)}</b> of {m.host.threads * 100}%</span>}
-            {list && m && <span>Memory <b>{bytes(memory)}</b> of {bytes(m.memory_total)}</span>}
-            {seeTunnels && <span><b>{liveTunnels}</b> tunnel{liveTunnels === 1 ? "" : "s"} live, {links > 0 ? "connector online" : status?.running ? "connector starting" : "connector offline"}</span>}
+            {list && m && <span>CPU <b>{pct(cpu)}</b></span>}
+            {list && m && <span>Memory <b>{bytes(memory)}</b></span>}
+            {seeTunnels && <span><b>{liveTunnels}</b> tunnel{liveTunnels === 1 ? "" : "s"} live{status && !status.connections ? ", connector offline" : ""}</span>}
           </div>
         </div>
         <div className="page-actions">
@@ -224,102 +237,124 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
             <Icon name="search" size={18} />
             <input type="search" placeholder="Search" aria-label="Search containers" value={q} onChange={(e) => setQ(e.target.value)} spellCheck={false} />
           </label>
-          <div className="seg-tabs" role="tablist" aria-label="Show">
-            {(["all", "running"] as Show[]).map((k) => (
-              <button key={k} type="button" role="tab" aria-selected={show === k} className={show === k ? "on" : ""} onClick={() => setShow(k)}>{k === "all" ? "All" : "Running"}</button>
-            ))}
-          </div>
-          <button type="button" className="icon-btn" aria-label="Refresh" title="Refresh" onClick={load}><Icon name="refresh" /></button>
-          {newMenu.length > 0 && <MoreMenu label="New" icon="add" actions={newMenu} />}
+          <div className="ex-pick"><Dropdown label="Show" value={show} options={SHOW} onChange={setShow} /></div>
+          <NewMenu />
           {cleanup.busy ? <span className="spinner small" /> : pageMenu.length > 0 && <MoreMenu label="More" actions={pageMenu} />}
         </div>
       </div>
       <div className="page-body stack">
-      {problem && <Callout tone="bad" icon="error">Docker is not reachable: {problem}</Callout>}
-
-      {adding && <AddContainer onClose={() => setAdding(false)} onAdded={async (d) => {
-        await load();
-        go(`${pageOf(d.name)}/images`);
-      }} />}
-
-      {seeContainers && list && (all.length === 0 ? (
-        <div className="card welcome">
-          <Icon name="deployed_code" size={40} />
-          <h2>No containers</h2>
-          <p className="muted">Add one from a repository with the plus, or containers Docker runs here show up on their own.</p>
-        </div>
-      ) : (
-        <div className="card">
-          <div className="table-wrap">
-            <table className="table ct-table">
-              <thead>
-                <tr><th className="grow">Container</th><th>Ports</th>{seeTunnels && <th>Tunnels</th>}<th>CPU</th><th>Memory</th><th>Status</th><th aria-label="Actions" /></tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => "group" in r ? (
-                  <Group key={"g-" + r.group} name={r.group} items={r.items} stats={stats} busy={busy} run={run} reaching={seeTunnels ? reaching : null}
-                    open={!folded.has(r.group)}
-                    onFold={() => setFolded((f) => {
-                      const next = new Set(f);
-                      if (next.has(r.group)) next.delete(r.group);
-                      else next.add(r.group);
-                      return next;
-                    })} />
-                ) : (
-                  <Row key={r.id || r.name} c={r} s={stats[shortId(r.id)]} busy={busy.has(r.id)} run={run} reaching={seeTunnels ? reaching : null} />
-                ))}
-                {shown.length === 0 && <tr><td colSpan={seeTunnels ? 7 : 6} className="empty-note ct-none">No containers match.</td></tr>}
-              </tbody>
-            </table>
+        {problem && <Callout tone="bad" icon="error">Docker is not reachable: {problem}</Callout>}
+        {(list || !seeContainers) && (items.length === 0 ? (
+          <div className="card welcome">
+            <Icon name="deployed_code" size={40} />
+            <h2>Nothing here yet</h2>
+            <p className="muted">Add a container or a tunnel with the plus. Containers Docker runs here show up on their own.</p>
           </div>
-        </div>
-      ))}
-
-      {seeTunnels && routes && (others.length > 0 || allRoutes.length === 0) && (
-        <section className="stack">
-          <h2 className="section-title">{seeContainers ? "Other tunnels" : "Tunnels"}</h2>
-          {allRoutes.length === 0 ? (
-            <div className="card welcome">
-              <Icon name="public" size={40} />
-              <h2>Nothing published yet</h2>
-              <p className="muted">Open a container to give it an address, or publish any port with the plus, and choose who can open it.</p>
-            </div>
-          ) : (
-            <div className="card">
-              <ul className="results">
-                {others.map((r) => (
-                  <li key={r.id}>
-                    <a className="result tunnel-row" href={`#/tunnels/${r.id}`}>
-                      <span className={"dot " + (r.enabled ? "ok" : "")} role="img" aria-label={r.enabled ? "Live" : "Off"} title={r.enabled ? "Live" : "Off"} />
-                      <span className="scan-target">{r.hostname}</span>
-                      <span className="result-service mono">{target(r)}</span>
-                      <span className="result-what"><AccessChips route={r} /></span>
-                      <Icon name="chevron_right" className="result-go" />
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </section>
-      )}
+        ) : (
+          <div className="card">
+            <ul className="results ct-list">
+              {rows}
+              {shown.length === 0 && <li className="empty-note ct-none">Nothing matches.</li>}
+            </ul>
+          </div>
+        ))}
       </div>
     </>
   );
 }
 
-// TunnelLinks are the addresses reaching a container, each opening its tunnel
-// on the container's page.
-function TunnelLinks({ c, routes }: { c: Container; routes: Route[] }) {
-  if (!routes.length) return <span className="muted">None</span>;
+// The icon for what a container is: built from Git, run from an image, or one
+// Docker runs that was made elsewhere.
+function kindOf(d?: Deploy): IconName {
+  if (d) return d.image ? "layers" : "git";
+  return "deployed_code";
+}
+
+// Usage, for a container that runs.
+function Use({ s }: { s?: ContainerStats }) {
+  if (!s) return <span className="ct-use" />;
+  return <span className="ct-use">{pct(s.cpu)}<span>{bytes(s.memory)}</span></span>;
+}
+
+function ContainerRow({ c, d, s, routes, busy, run, grouped }: {
+  c: Container;
+  d?: Deploy;
+  s?: ContainerStats;
+  routes: Route[];
+  busy: boolean;
+  run: (targets: Target[], action: Act) => void;
+  grouped: boolean;
+}) {
+  const can = useCan();
+  const first = routes[0];
   return (
-    <span className="port-links">
-      {routes.map((r) => (
-        <a key={r.id} href={`${pageOf(c.name)}/tunnel/${r.id}`} title={r.enabled ? "Live" : "Off"}>
-          <span className={"dot " + (r.enabled ? "ok" : "")} />{r.hostname}
-        </a>
-      ))}
-    </span>
+    <li className={"ct-row" + (grouped ? " in-group" : "")}>
+      <a className="ct-row-main" href={pageOf(c.name)}>
+        <span className={"ct-kind " + tone(c.state)} title={c.status || c.state}><Icon name={kindOf(d)} /></span>
+        <span className="ct-name-text">
+          <b>{c.name}{c.own && <span className="chip plain small-chip">myTunnels</span>}</b>
+          <small className="mono">{d ? `${sourceOf(d)}${d.branch ? `, ${d.branch}` : ""}` : c.image}</small>
+        </span>
+        <span className="ct-reach">
+          {first && <><span className={"dot " + (first.enabled ? "ok" : "")} />{first.hostname}{routes.length > 1 && <span className="muted">+{routes.length - 1}</span>}</>}
+        </span>
+        {live(c) ? <Use s={s} /> : <span className="ct-use muted">{c.status}</span>}
+      </a>
+      <span className="ct-menu">{busy ? <span className="spinner small" /> : <MoreMenu label={`Actions for ${c.name}`} actions={actionsOf(c, run, can)} />}</span>
+    </li>
+  );
+}
+
+// TunnelRow is a tunnel to a port on this computer or another machine.
+function TunnelRow({ r, onRemove }: { r: Route; onRemove: () => void }) {
+  const can = useCan();
+  return (
+    <li className="ct-row">
+      <a className="ct-row-main" href={`#/tunnels/${r.id}`}>
+        <span className={"ct-kind " + (r.enabled ? "ok" : "")} title={r.enabled ? "Live" : "Off"}><Icon name="public" /></span>
+        <span className="ct-name-text">
+          <b>{r.hostname}</b>
+          <small className="mono">to {target(r)}</small>
+        </span>
+        <span className="ct-reach"><AccessChips route={r} /></span>
+        <span className="ct-use muted">{r.enabled ? "Live" : "Off"}</span>
+      </a>
+      <span className="ct-menu">
+        <MoreMenu label={`Actions for ${r.hostname}`} actions={[
+          { label: "Open", icon: "open_in_new", onClick: () => window.open(`https://${r.hostname}`, "_blank", "noreferrer") },
+          ...(can("tunnels.delete") ? [{ label: "Remove", icon: "delete" as IconName, danger: true, onClick: onRemove, confirm: "Remove for good" }] : []),
+        ]} />
+      </span>
+    </li>
+  );
+}
+
+// GroupHead is a Compose project's name over its containers, folding them away.
+function GroupHead({ name, items, open, onFold, run }: {
+  name: string;
+  items: Container[];
+  open: boolean;
+  onFold: () => void;
+  run: (targets: Target[], action: Act) => void;
+}) {
+  const can = useCan();
+  const up = items.filter(live);
+  const others = items.filter((c) => !c.own);
+  return (
+    <li className="ct-group-head">
+      <button type="button" className="ct-fold" aria-expanded={open} onClick={onFold}>
+        <Icon name="chevron_right" size={18} className={open ? "open" : ""} />
+        <b>{name}</b>
+        <small>{up.length} of {items.length} running</small>
+      </button>
+      {can("containers.manage") && others.length > 0 && (
+        <MoreMenu label={`Actions for ${name}`} actions={[
+          ...(others.some((c) => !live(c)) ? [{ label: "Start all", icon: "play_arrow" as IconName, onClick: () => run(others.filter((c) => !live(c)), "start") }] : []),
+          ...(others.some(live) ? [{ label: "Stop all", icon: "stop" as IconName, onClick: () => run(others.filter(live), "stop") }] : []),
+          ...(others.some(live) ? [{ label: "Restart all", icon: "restart_alt" as IconName, onClick: () => run(others.filter(live), "restart") }] : []),
+        ]} />
+      )}
+    </li>
   );
 }
 
@@ -344,83 +379,6 @@ function actionsOf(c: (Container | ContainerDetail) & { deploy?: string | null }
     ...(manage && !c.own && on ? [{ label: "Kill", icon: "block" as IconName, danger: true, onClick: () => run([c], "kill"), confirm: "Kill it now" }] : []),
     ...remove,
   ];
-}
-
-function Row({ c, s, busy, run, grouped, reaching }: {
-  c: Container;
-  s?: ContainerStats;
-  busy: boolean;
-  run: (targets: Target[], action: Act) => void;
-  grouped?: boolean;
-  reaching: ((c: Container) => Route[]) | null;
-}) {
-  const can = useCan();
-  const on = live(c);
-  return (
-    <tr className={(on ? "" : "stopped") + (grouped ? " in-group" : "")}>
-      <td>
-        <a className="ct-name" href={pageOf(c.name)}>
-          <span className={"dot " + tone(c.state)} title={c.state} />
-          <span className="ct-name-text">
-            <b>{c.name}{c.own && <span className="chip plain small-chip">myTunnels</span>}</b>
-            <small className="mono" title={c.image}>{c.image}</small>
-          </span>
-        </a>
-      </td>
-      <td><PortLinks ports={c.ports} max={2} /></td>
-      {reaching && <td><TunnelLinks c={c} routes={reaching(c)} /></td>}
-      <td className="num">{on && s ? pct(s.cpu) : "–"}</td>
-      <td className="num">{on && s ? bytes(s.memory) : "–"}</td>
-      <td className="muted ct-status">{c.status}</td>
-      <td className="ct-menu">{busy ? <span className="spinner small" /> : <MoreMenu label={`Actions for ${c.name}`} actions={actionsOf(c, run, can)} />}</td>
-    </tr>
-  );
-}
-
-function Group({ name, items, stats, busy, run, open, onFold, reaching }: {
-  name: string;
-  items: Container[];
-  stats: Record<string, ContainerStats>;
-  busy: Set<string>;
-  run: (targets: Target[], action: Act) => void;
-  open: boolean;
-  onFold: () => void;
-  reaching: ((c: Container) => Route[]) | null;
-}) {
-  const can = useCan();
-  const up = items.filter(live);
-  const cpu = up.reduce((n, c) => n + (stats[shortId(c.id)]?.cpu ?? 0), 0);
-  const memory = up.reduce((n, c) => n + (stats[shortId(c.id)]?.memory ?? 0), 0);
-  const others = items.filter((c) => !c.own);
-  return (
-    <>
-      <tr className="ct-group">
-        <td>
-          <button type="button" className="ct-fold" aria-expanded={open} onClick={onFold}>
-            <Icon name="chevron_right" size={18} className={open ? "open" : ""} />
-            <Icon name="deployed_code" size={18} className="ct-stack-icon" />
-            <b>{name}</b>
-            <small>{up.length} of {items.length} running</small>
-          </button>
-        </td>
-        <td />
-        {reaching && <td />}
-        <td className="num">{up.length ? pct(cpu) : "–"}</td>
-        <td className="num">{up.length ? bytes(memory) : "–"}</td>
-        <td />
-        <td className="ct-menu">
-          {can("containers.manage") && others.length > 0 && (
-            <MoreMenu label={`Actions for ${name}`} actions={[
-              ...(others.some((c) => !live(c)) ? [{ label: "Start all", icon: "play_arrow" as IconName, onClick: () => run(others.filter((c) => !live(c)), "start") }] : []),
-              ...(others.some(live) ? [{ label: "Stop all", icon: "stop" as IconName, onClick: () => run(others.filter(live), "stop") }] : []),
-              ...(others.some(live) ? [{ label: "Restart all", icon: "restart_alt" as IconName, onClick: () => run(others.filter(live), "restart") }] : []),
-            ]} />
-          )}
-        </td>
-      </tr>
-      {open && items.map((c) => <Row key={c.id} c={c} s={stats[shortId(c.id)]} busy={busy.has(c.id)} run={run} grouped reaching={reaching} />)}
-    </>
-  );
 }
 
 // ---- one container ----

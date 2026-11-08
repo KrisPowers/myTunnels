@@ -6,6 +6,18 @@ import { Dropdown } from "./Dropdown";
 import { useCan } from "./me";
 import { AddMenu, Avatar, Callout, Card, Dialog, LogTable, MoreMenu, Row, SubNav, Switch, TextField, useNotify, type LogEntry } from "./ui";
 
+// The roles an account holds: Host, the account made at setup, and Admin.
+function Roles({ u }: { u: User }) {
+  const host = u.permissions.includes("host");
+  const admin = u.permissions.includes("admin");
+  return (
+    <>
+      {host && <span className="chip plain small-chip">Host</span>}
+      {admin && <span className="chip plain small-chip">Admin</span>}
+    </>
+  );
+}
+
 function state(u: User): [string, string] {
   if (u.note) return ["bad", "Held for review"];
   return u.enabled ? ["ok", "Active"] : ["", "Suspended"];
@@ -50,7 +62,7 @@ export function Users({ users, routes }: { users: User[] | null; routes: Route[]
                     <a className="result user-row" href={`#/users/${u.id}`}>
                       <Avatar name={u.name || u.username} />
                       <span className="person">
-                        <span className="scan-target">{u.name || u.username}</span>
+                        <span className="scan-target">{u.name || u.username}<Roles u={u} /></span>
                         <small>{u.email}</small>
                       </span>
                       <span className="result-service mono">{u.username}</span>
@@ -229,12 +241,15 @@ export function UserPage({ user, page, routes, devices, catalog, me, onChanged }
             <div className="page-sub">
               <span>{user.email}</span>
               <span className={"chip " + tone}>{label}</span>
+              <Roles u={user} />
             </div>
           </div>
         </div>
         <div className="page-actions">
           <div className="head-meta">
-            {can("users.manage") && <MoreMenu label="Account actions" actions={[
+            {can("users.manage") && <MoreMenu label="Account actions" actions={user.permissions.includes("host") ? [
+              { label: "Sign out everywhere", icon: "logout", onClick: () => api.signOutUser(user.id).then(() => notify("Signed out everywhere")).catch((e) => notify(message(e), "bad")) },
+            ] : [
               user.enabled
                 ? { label: "Suspend", icon: "block", onClick: () => quietly({ enabled: false }, "Suspended") }
                 : { label: user.note ? "Unlock" : "Reinstate", icon: "check_circle", onClick: () => quietly({ enabled: true }, user.note ? "Unlocked" : "Reinstated") },
