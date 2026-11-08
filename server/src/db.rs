@@ -283,6 +283,14 @@ impl User {
 /// The Admin role: every permission, including making others admins.
 pub const ADMIN: &str = "admin";
 
+/// The Host role: the account made at setup. It holds Admin too, and only it
+/// changes itself.
+pub const HOST: &str = "host";
+
+/// The host account's ID, under which its app codes, passkeys, tokens and pins
+/// have always been kept.
+pub const HOST_ID: &str = "admin";
+
 /// Something that happened at a tunnel's door: a sign-in or password attempt, a
 /// visitor turned away, a device asking for approval.
 #[derive(Clone, Serialize)]
@@ -584,6 +592,46 @@ impl Db {
             "INSERT OR IGNORE INTO user_routes (user_id, route_id)
                  SELECT u.id, r.id FROM users u, routes r WHERE u.all_routes = 1;
              UPDATE users SET all_routes = 0 WHERE all_routes = 1;",
+        )?;
+        // The host account was kept in settings before it was an account like
+        // any other; it moves into users, as the account it is.
+        let host_rows: i64 =
+            conn.query_row("SELECT COUNT(*) FROM users WHERE id = ?1", [HOST_ID], |r| {
+                r.get(0)
+            })?;
+        let old = |key: &str| -> rusqlite::Result<Option<String>> {
+            conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
+                r.get(0)
+            })
+            .optional()
+        };
+        if let (0, Some(hash)) = (host_rows, old("admin_password")?) {
+            let mut username = old("admin_username")?.unwrap_or_else(|| "host".into());
+            let taken: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM users WHERE username = ?1 COLLATE NOCASE",
+                [&username],
+                |r| r.get(0),
+            )?;
+            if taken > 0 {
+                username.push_str("-host");
+            }
+            conn.execute(
+                "INSERT INTO users (id, username, email, name, password_hash, enabled, all_routes,
+                     created_at, last_login, note, permissions)
+                 VALUES (?1, ?2, ?3, '', ?4, 1, 0, ?5, NULL, NULL, ?6)",
+                params![
+                    HOST_ID,
+                    username,
+                    old("admin_email")?.unwrap_or_default(),
+                    hash,
+                    crate::util::now(),
+                    format!("{HOST},{ADMIN}")
+                ],
+            )?;
+        }
+        conn.execute_batch(
+            "DELETE FROM settings WHERE key IN ('admin_username', 'admin_email', 'admin_password')
+                 AND EXISTS (SELECT 1 FROM users WHERE id = 'admin');",
         )?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         // Accounts made before devices were linked take the devices they already
@@ -1008,6 +1056,11 @@ impl Db {
     }
 
     /// The account that signs in with this email.
+    /// The host account, once setup has made it.
+    pub fn host(&self) -> Result<Option<User>> {
+        self.user(HOST_ID)
+    }
+
     pub fn user_by_email(&self, email: &str) -> Result<Option<User>> {
         let email = email.trim();
         Ok(self
@@ -1757,6 +1810,26 @@ fn build_row(r: &Row) -> rusqlite::Result<Build> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_host_kept_in_settings_becomes_an_account() {
+        let path = std::env::temp_dir().join(format!("host-{}.db", random_alnum(12)));
+        let db = Db::open(&path, Vault::new(&[3; 32])).unwrap();
+        db.set_setting("admin_username", "sam").unwrap();
+        db.set_setting("admin_email", "sam@example.com").unwrap();
+        db.set_setting("admin_password", "hash").unwrap();
+        drop(db);
+        let db = Db::open(&path, Vault::new(&[3; 32])).unwrap();
+        let host = db.host().unwrap().unwrap();
+        assert_eq!(
+            (host.username.as_str(), host.email.as_str()),
+            ("sam", "sam@example.com")
+        );
+        assert_eq!(host.password_hash, "hash");
+        assert!(host.holds(HOST) && host.holds(ADMIN));
+        assert!(db.setting("admin_password").unwrap().is_none());
+        assert_eq!(db.users().unwrap().len(), 1);
+    }
 
     #[test]
     fn secrets_are_sealed_at_rest_and_read_back_plain() {

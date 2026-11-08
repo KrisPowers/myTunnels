@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::cloudflare::{Account, Cloudflare, Zone};
-use crate::db::{Device, Event, Route, SignIn, User};
+use crate::db::{Device, Event, Route, SignIn, User, ADMIN, HOST, HOST_ID};
 use crate::mail::{self, Smtp};
 use crate::netinfo;
 use crate::oauth::{self, Provider};
@@ -235,15 +235,15 @@ async fn harden(req: Request, next: Next) -> Response {
 
 // Auth
 
-/// Who a panel session belongs to: the admin, with the admin password as it is
-/// now, or an account that is on, may sign in to the dashboard, and has the
+/// Who a panel session belongs to: the host, with its password as it is now,
+/// or an account that is on, may sign in to the dashboard, and has the
 /// password it signed in with.
 fn caller(state: &AppState, headers: &HeaderMap) -> Option<Caller> {
     let session =
         cookie(headers, ADMIN_COOKIE).and_then(|v| state.session(&state.admin_sessions, v))?;
-    if session.subject == "admin" {
-        let hash = state.db.setting("admin_password").ok().flatten()?;
-        return (secret::tag(&hash) == session.tag).then_some(Caller::Host);
+    if session.subject == HOST_ID {
+        let host = state.db.host().ok().flatten()?;
+        return (secret::tag(&host.password_hash) == session.tag).then_some(Caller::Host);
     }
     let user = state.snapshot().users.get(&session.subject).cloned()?;
     let may =
@@ -271,13 +271,19 @@ async fn require_session(State(state): State<AppState>, mut req: Request, next: 
 /// Setup is done once there is an admin account and Cloudflare is connected.
 async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let db = &state.db;
-    let password = db.setting("admin_password")?.is_some();
+    let host = db.host()?;
+    let password = host.is_some();
     let me = caller(&state, &headers).map(|c| {
         let name = match &c {
-            Caller::Host => db
-                .setting("admin_username")
-                .ok()
-                .flatten()
+            Caller::Host => host
+                .as_ref()
+                .map(|h| {
+                    if h.name.is_empty() {
+                        h.username.clone()
+                    } else {
+                        h.name.clone()
+                    }
+                })
                 .unwrap_or_default(),
             Caller::Account(u) if u.name.is_empty() => u.username.clone(),
             Caller::Account(u) => u.name.clone(),
@@ -297,7 +303,7 @@ async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
         "catalog": permissions::GROUPS,
         "setup": {
             "password": password,
-            "account": db.setting("admin_username")?.is_some(),
+            "account": password,
             "token": db.setting("cf_token")?.is_some(),
             "cloudflare": state.cloudflare().is_ok(),
             "done": password && state.cloudflare().is_ok(),
@@ -312,24 +318,37 @@ struct AccountBody {
     password: String,
 }
 
-/// Creates the admin account: an email, a username and a password.
+/// Creates the host's account: an email, a username and a password. It is an
+/// account like any other under Users, with the Host and Admin roles.
 async fn setup(
     State(state): State<AppState>,
     Json(body): Json<AccountBody>,
 ) -> ApiResult<Response> {
-    if state.db.setting("admin_password")?.is_some() {
-        return Err(ApiError::conflict("The admin account already exists"));
+    if state.db.host()?.is_some() {
+        return Err(ApiError::conflict("The host account already exists"));
     }
     let username = admin_username(&body.username)?;
     let email = clean_email(&body.email)?;
     if !secret::strong(&body.password) {
         return Err(ApiError::bad(secret::RULE));
     }
-    state.db.set_setting("admin_username", &username)?;
-    state.db.set_setting("admin_email", &email)?;
-    state
-        .db
-        .set_setting("admin_password", &secret::hash(&body.password)?)?;
+    check_unique(&state, HOST_ID, &username, &email)?;
+    state.db.save_user(&User {
+        id: HOST_ID.into(),
+        username,
+        email,
+        name: String::new(),
+        password_hash: secret::hash(&body.password)?,
+        enabled: true,
+        all_routes: false,
+        route_ids: Vec::new(),
+        device_ids: Vec::new(),
+        created_at: now(),
+        last_login: None,
+        note: None,
+        permissions: vec![HOST.into(), ADMIN.into()],
+    })?;
+    state.reload()?;
     start_admin_session(&state)
 }
 
@@ -361,18 +380,12 @@ async fn sign_in_challenge(
     Json(pow::issue(state.failure_count(&format!("admin:{ip}"))))
 }
 
-/// True when `login` names the admin account, or when there is no account to name.
-fn names_admin(state: &AppState, login: &str) -> ApiResult<bool> {
+/// True when `login` is the host account's username or email.
+fn names_host(host: &User, login: &str) -> bool {
     let login = login.trim();
-    let username = state.db.setting("admin_username")?;
-    let email = state.db.setting("admin_email")?;
-    if username.is_none() && email.is_none() {
-        return Ok(true);
-    }
-    Ok([username, email]
-        .into_iter()
-        .flatten()
-        .any(|v| !login.is_empty() && v.eq_ignore_ascii_case(login)))
+    !login.is_empty()
+        && (host.username.eq_ignore_ascii_case(login)
+            || (!host.email.is_empty() && host.email.eq_ignore_ascii_case(login)))
 }
 
 async fn login(
@@ -380,8 +393,8 @@ async fn login(
     Extension(Peer(ip)): Extension<Peer>,
     Json(body): Json<LoginBody>,
 ) -> ApiResult<Response> {
-    let Some(hash) = state.db.setting("admin_password")? else {
-        return Err(ApiError::bad("Create the admin account first"));
+    let Some(host) = state.db.host()? else {
+        return Err(ApiError::bad("Create the host account first"));
     };
     let key = format!("admin:{ip}");
     if state.locked_out(&key) {
@@ -396,8 +409,8 @@ async fn login(
         ));
     }
     // The password is checked either way, so a wrong name takes as long to refuse.
-    let password_ok = secret::verify(&body.password, &hash);
-    if !(password_ok && names_admin(&state, &body.login)?) {
+    let password_ok = secret::verify(&body.password, &host.password_hash);
+    if !(password_ok && names_host(&host, &body.login)) {
         // Any other account that may sign in to the dashboard, by its email or
         // username.
         if let Some(user) = dashboard_account(&state, &body.login, &body.password)? {
@@ -436,9 +449,15 @@ async fn login(
     if !dashboard_codes(&state)? {
         return start_admin_session(&state);
     }
-    let email = state.db.setting("admin_email")?.unwrap_or_default();
-    let (ticket, sent_to) =
-        codes::send(&state, "admin", &email, "", "", "the myTunnels dashboard").await?;
+    let (ticket, sent_to) = codes::send(
+        &state,
+        HOST_ID,
+        &host.email,
+        "",
+        "",
+        "the myTunnels dashboard",
+    )
+    .await?;
     Ok(
         Json(json!({ "code_required": true, "ticket": ticket, "sent_to": sent_to }))
             .into_response(),
@@ -461,10 +480,16 @@ fn dashboard_account(state: &AppState, login: &str, password: &str) -> ApiResult
     if login.is_empty() {
         return Ok(None);
     }
-    let found = state.db.users()?.into_iter().find(|u| {
-        u.username.eq_ignore_ascii_case(login)
-            || (!u.email.is_empty() && u.email.eq_ignore_ascii_case(login))
-    });
+    // The host signs in as the host, above.
+    let found = state
+        .db
+        .users()?
+        .into_iter()
+        .filter(|u| u.id != HOST_ID)
+        .find(|u| {
+            u.username.eq_ignore_ascii_case(login)
+                || (!u.email.is_empty() && u.email.eq_ignore_ascii_case(login))
+        });
     Ok(found.filter(|u| {
         u.enabled && u.holds("dashboard") && secret::verify(password, &u.password_hash)
     }))
@@ -501,8 +526,11 @@ async fn login_code(
 }
 
 fn start_admin_session(state: &AppState) -> ApiResult<Response> {
-    let hash = state.db.setting("admin_password")?.unwrap_or_default();
-    start_session(state, "admin", &secret::tag(&hash))
+    let host = state
+        .db
+        .host()?
+        .ok_or_else(|| ApiError::bad("Create the host account first"))?;
+    start_session(state, HOST_ID, &secret::tag(&host.password_hash))
 }
 
 /// Opens a panel session for `subject`, the admin or an account, tied to the
@@ -543,12 +571,15 @@ async fn account(
     Extension(caller): Extension<Caller>,
 ) -> ApiResult<Json<Value>> {
     Ok(Json(match caller {
-        Caller::Host => json!({
-            "username": state.db.setting("admin_username")?,
-            "email": state.db.setting("admin_email")?,
-            "host": true,
-            "totp": totp::enrolled(&state.db, "admin"),
-        }),
+        Caller::Host => {
+            let host = state.db.host()?.ok_or_else(ApiError::not_found)?;
+            json!({
+                "username": host.username,
+                "email": host.email,
+                "host": true,
+                "totp": totp::enrolled(&state.db, HOST_ID),
+            })
+        }
         Caller::Account(u) => json!({
             "username": u.username,
             "email": u.email,
@@ -588,16 +619,17 @@ fn panel_site(state: &AppState, headers: &HeaderMap, https: bool) -> ApiResult<(
     Ok((zone.unwrap_or(name), origin))
 }
 
-/// What a passkey is called by default: the email, or the username.
+/// What a passkey or an authenticator app calls the account: its email, or
+/// its username.
 fn caller_label(state: &AppState, caller: &Caller) -> ApiResult<String> {
-    Ok(match caller {
-        Caller::Host => state
-            .db
-            .setting("admin_email")?
-            .or(state.db.setting("admin_username")?)
-            .unwrap_or_else(|| "admin".into()),
-        Caller::Account(u) if !u.email.is_empty() => u.email.clone(),
-        Caller::Account(u) => u.username.clone(),
+    let user = match caller {
+        Caller::Host => state.db.host()?.ok_or_else(ApiError::not_found)?,
+        Caller::Account(u) => (**u).clone(),
+    };
+    Ok(if user.email.is_empty() {
+        user.username
+    } else {
+        user.email
     })
 }
 
@@ -698,15 +730,7 @@ async fn start_totp(
     State(state): State<AppState>,
     Extension(caller): Extension<Caller>,
 ) -> ApiResult<Json<Value>> {
-    let label = match &caller {
-        Caller::Host => state
-            .db
-            .setting("admin_email")?
-            .or(state.db.setting("admin_username")?)
-            .unwrap_or_else(|| "admin".into()),
-        Caller::Account(u) if !u.email.is_empty() => u.email.clone(),
-        Caller::Account(u) => u.username.clone(),
-    };
+    let label = caller_label(&state, &caller)?;
     let secret = totp::start(&state.db, caller.id())?;
     let uri = totp::uri(&secret, &label);
     let qr = qrcode::QrCode::new(uri.as_bytes())
@@ -771,14 +795,16 @@ async fn edit_account(
             "Only the host changes the host account".into(),
         ));
     }
+    let mut host = state.db.host()?.ok_or_else(ApiError::not_found)?;
     if let Some(username) = body.username {
-        state
-            .db
-            .set_setting("admin_username", &admin_username(&username)?)?;
+        host.username = admin_username(&username)?;
     }
     if let Some(email) = body.email {
-        state.db.set_setting("admin_email", &clean_email(&email)?)?;
+        host.email = clean_email(&email)?;
     }
+    check_unique(&state, HOST_ID, &host.username, &host.email)?;
+    state.db.save_user(&host)?;
+    state.reload()?;
     account(State(state), Extension(caller)).await
 }
 
@@ -2031,6 +2057,12 @@ struct UserEdit {
 /// Whether `caller` may change `target`: the admin always; anyone else only an
 /// account that can do no more than they can, and never their own powers.
 fn may_manage(caller: &Caller, target: &User) -> ApiResult<()> {
+    if target.id == HOST_ID && !matches!(caller, Caller::Host) {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "Only the host changes the host account".into(),
+        ));
+    }
     if target.permissions.iter().all(|p| caller.can(p)) {
         Ok(())
     } else {
@@ -2113,6 +2145,9 @@ async fn update_user(
             return Err(ApiError::bad(secret::RULE));
         }
         user.password_hash = secret::hash(&password)?;
+    }
+    if body.enabled == Some(false) && user.id == HOST_ID {
+        return Err(ApiError::bad("The host account cannot be suspended"));
     }
     if let Some(enabled) = body.enabled {
         user.enabled = enabled;

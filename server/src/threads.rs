@@ -18,21 +18,6 @@ const MAX_BODY: usize = 64 * 1024;
 
 /// How a person shows on issues and pull requests, and signs a merge.
 fn person(state: &AppState, id: &str) -> (String, String) {
-    if id == "admin" {
-        let name = state
-            .db
-            .setting("admin_username")
-            .ok()
-            .flatten()
-            .unwrap_or_else(|| "admin".into());
-        let email = state
-            .db
-            .setting("admin_email")
-            .ok()
-            .flatten()
-            .unwrap_or_default();
-        return (name, email);
-    }
     match state.snapshot().users.get(id) {
         Some(u) => (
             if u.name.is_empty() {
