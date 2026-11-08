@@ -10,11 +10,12 @@ import { AddMenu, Avatar, Callout, Card, Dialog, LogTable, MoreMenu, Row, SubNav
 function Roles({ u }: { u: User }) {
   const host = u.permissions.includes("host");
   const admin = u.permissions.includes("admin");
+  if (!host && !admin) return null;
   return (
-    <>
+    <span className="roles">
       {host && <span className="chip plain small-chip">Host</span>}
       {admin && <span className="chip plain small-chip">Admin</span>}
-    </>
+    </span>
   );
 }
 
