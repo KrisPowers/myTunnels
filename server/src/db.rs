@@ -159,6 +159,7 @@ CREATE TABLE IF NOT EXISTS deploys (
     repo TEXT NOT NULL,
     url TEXT NOT NULL,
     branch TEXT NOT NULL,
+    image TEXT NOT NULL DEFAULT '',
     dockerfile TEXT NOT NULL,
     port INTEGER NOT NULL,
     keep TEXT NOT NULL,
@@ -593,6 +594,14 @@ impl Db {
                  SELECT u.id, r.id FROM users u, routes r WHERE u.all_routes = 1;
              UPDATE users SET all_routes = 0 WHERE all_routes = 1;",
         )?;
+        // Containers can run an image as well as build a repository.
+        let deploy_columns: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('deploys')")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        if !deploy_columns.iter().any(|c| c == "image") {
+            conn.execute_batch("ALTER TABLE deploys ADD COLUMN image TEXT NOT NULL DEFAULT '';")?;
+        }
         // The host account was kept in settings before it was an account like
         // any other; it moves into users, as the account it is.
         let host_rows: i64 =
@@ -1550,8 +1559,8 @@ impl Db {
     pub fn insert_deploy(&self, d: &Deploy) -> Result<()> {
         self.conn().execute(
             "INSERT INTO deploys (id, name, repo, url, branch, dockerfile, port, keep, updates,
-                 every, current, checked_at, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                 every, current, checked_at, created_at, image)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 d.id,
                 d.name,
@@ -1565,7 +1574,8 @@ impl Db {
                 d.every,
                 d.current,
                 d.checked_at,
-                d.created_at
+                d.created_at,
+                d.image
             ],
         )?;
         Ok(())
@@ -1576,7 +1586,7 @@ impl Db {
     pub fn save_deploy(&self, d: &Deploy) -> Result<()> {
         self.conn().execute(
             "UPDATE deploys SET repo = ?2, url = ?3, branch = ?4, dockerfile = ?5, port = ?6,
-                 keep = ?7, updates = ?8, every = ?9 WHERE id = ?1",
+                 keep = ?7, updates = ?8, every = ?9, image = ?10 WHERE id = ?1",
             params![
                 d.id,
                 d.repo,
@@ -1586,7 +1596,8 @@ impl Db {
                 d.port,
                 d.keep.join("\n"),
                 d.updates,
-                d.every
+                d.every,
+                d.image
             ],
         )?;
         Ok(())
@@ -1711,6 +1722,14 @@ impl Db {
         Ok(())
     }
 
+    pub fn delete_build(&self, deploy_id: &str, number: i64) -> Result<()> {
+        self.conn().execute(
+            "DELETE FROM builds WHERE deploy_id = ?1 AND number = ?2",
+            params![deploy_id, number],
+        )?;
+        Ok(())
+    }
+
     /// Builds that were running when myTunnels stopped end as failed.
     pub fn end_interrupted_builds(&self, at: i64) -> Result<()> {
         self.conn().execute(
@@ -1763,7 +1782,7 @@ fn token_row(r: &rusqlite::Row) -> rusqlite::Result<Token> {
 }
 
 const DEPLOY_COLS: &str = "id, name, repo, url, branch, dockerfile, port, keep, updates, every, \
-     current, checked_at, created_at";
+     current, checked_at, created_at, image";
 
 fn deploy_row(r: &Row) -> rusqlite::Result<Deploy> {
     let keep: String = r.get(7)?;
@@ -1785,6 +1804,7 @@ fn deploy_row(r: &Row) -> rusqlite::Result<Deploy> {
         current: r.get(10)?,
         checked_at: r.get(11)?,
         created_at: r.get(12)?,
+        image: r.get(13)?,
     })
 }
 

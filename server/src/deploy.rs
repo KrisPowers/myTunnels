@@ -1,6 +1,6 @@
 //! Containers built from a repository: a repository on this host's Git or at
 //! any https address (GitHub and the like), one of its branches, and how it
-//! updates. Each update builds the branch's latest commit into an image tagged
+//! updates; or run from a Docker image, pulled again to update. Each update builds the branch's latest commit into an image tagged
 //! with the build's number, then makes the container again from it, its kept
 //! folders and environment carried over. A build that will not start is undone
 //! on the spot, and any earlier build whose image is still kept can be run
@@ -49,6 +49,8 @@ pub struct Deploy {
     /// An https address to clone from, or empty for a repository here.
     pub url: String,
     pub branch: String,
+    /// A Docker image to run, such as `nginx:1.27`, in place of a repository.
+    pub image: String,
     /// The Dockerfile's path in the repository; empty to find it.
     pub dockerfile: String,
     /// The port the app listens on; 0 for the one its image exposes.
@@ -135,6 +137,27 @@ fn valid_url(url: &str) -> bool {
         && !url
             .bytes()
             .any(|b| b.is_ascii_whitespace() || b.is_ascii_control())
+}
+
+/// An image as Docker names it: `nginx`, `nginx:1.27`, `ghcr.io/me/app:2` or
+/// one pinned by digest; nothing the engine could take for anything else.
+fn valid_image(image: &str) -> bool {
+    (1..=255).contains(&image.len())
+        && image.as_bytes()[0].is_ascii_alphanumeric()
+        && image
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-/:@".contains(&b))
+}
+
+/// An image's name and its tag, `latest` when none is given.
+fn image_parts(image: &str) -> (&str, &str) {
+    if image.contains('@') {
+        return (image, "");
+    }
+    match image.rsplit_once(':') {
+        Some((name, tag)) if !tag.contains('/') => (name, tag),
+        _ => (image, "latest"),
+    }
 }
 
 /// A Dockerfile's path inside the repository.
@@ -648,6 +671,10 @@ async fn run(state: &AppState, mut b: Build) {
         _ => Err("The container is gone".into()),
     };
     b.finished_at = Some(now());
+    if matches!(&outcome, Err(why) if why == UNCHANGED) {
+        let _ = state.db.delete_build(&b.deploy_id, b.number);
+        return;
+    }
     match outcome {
         Ok(()) => b.status = "ready".into(),
         Err(why) => {
@@ -660,7 +687,65 @@ async fn run(state: &AppState, mut b: Build) {
     }
 }
 
+/// Pulls a container's image, and runs it when it is new.
+async fn pull_and_run(state: &AppState, d: &Deploy, b: &mut Build) -> Result<(), String> {
+    let (name, tag) = image_parts(&d.image);
+    let query = serde_urlencoded::to_string([("fromImage", name), ("tag", tag)])
+        .map_err(|e| e.to_string())?;
+    let mut progress = Progress::default();
+    progress.push(&format!("Pulling {}\n", d.image));
+    let endpoint = Endpoint::from_env();
+    docker::stream(
+        &endpoint,
+        &format!("/images/create?{query}"),
+        "text/plain",
+        docker::empty(),
+        |line| {
+            progress.line(line);
+        },
+    )
+    .await
+    .map_err(|e| format!("{e:#}"))?;
+    let _ = state
+        .db
+        .set_build_log(&b.deploy_id, b.number, &progress.log);
+    if let Some(error) = progress.error {
+        return Err(error);
+    }
+    let pulled = docker::get(&endpoint, &format!("/images/{}/json", d.image))
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    let image = pulled["Id"].as_str().unwrap_or_default().to_owned();
+    b.commit = image
+        .trim_start_matches("sha256:")
+        .chars()
+        .take(12)
+        .collect();
+    b.message = d.image.clone();
+    b.image = Some(image.clone());
+    let running = d
+        .current
+        .and_then(|n| state.db.build(&d.id, n).ok().flatten())
+        .and_then(|(r, _)| r.image);
+    if b.reason == "timer" && running.as_deref() == Some(image.as_str()) {
+        return Err(UNCHANGED.into());
+    }
+    let _ = state.db.save_build(b);
+    roll_out(state, d, &image, b.number)
+        .await
+        .map_err(|why| format!("Pulled, but it did not start: {why}"))?;
+    prune(state, &d.id).await;
+    Ok(())
+}
+
+/// What a timed pull ends with when the image has not changed; that build is
+/// dropped, as nothing happened.
+const UNCHANGED: &str = "unchanged";
+
 async fn build_and_run(state: &AppState, d: &Deploy, b: &mut Build) -> Result<(), String> {
+    if !d.image.is_empty() {
+        return pull_and_run(state, d, b).await;
+    }
     let dir = source(state, d).await?;
     let wanted = (!b.commit.is_empty())
         .then(|| format!("{}^{{commit}}", b.commit))
@@ -953,6 +1038,13 @@ async fn watch(state: AppState) {
             if !due || state.db.has_waiting_build(&d.id).unwrap_or(true) {
                 continue;
             }
+            if !d.image.is_empty() {
+                let _ = state.db.set_checked(&d.id, now());
+                if d.updates == "timer" {
+                    let _ = queue(&state, &d.id, "", "timer");
+                }
+                continue;
+            }
             let head = head_of(&state, &d).await;
             let _ = state.db.set_checked(&d.id, now());
             let Ok(head) = head else { continue };
@@ -1078,6 +1170,8 @@ pub struct NewDeploy {
     repo: String,
     #[serde(default)]
     url: String,
+    #[serde(default)]
+    image: String,
     token: Option<String>,
     branch: Option<String>,
     updates: Option<String>,
@@ -1116,34 +1210,55 @@ pub async fn create(
             "There is already a container called {name}"
         )));
     }
-    let (repo, url) = (
+    let (repo, url, image) = (
         body.repo.trim().to_owned(),
         body.url.trim().trim_end_matches('/').to_owned(),
+        body.image.trim().to_owned(),
     );
-    if repo.is_empty() == url.is_empty() {
-        return Err(ApiError::bad(
-            "Pick a repository on this host or give an address",
-        ));
-    }
     let token = body.token.filter(|t| !t.trim().is_empty());
-    let (list, default) = branches(&state, &caller, &repo, &url, token.as_deref()).await?;
-    let branch = body.branch.filter(|b| !b.is_empty()).unwrap_or(default);
-    if !list.contains(&branch) {
-        return Err(ApiError::bad(if list.is_empty() {
-            "The repository has no branches yet; push to it first".to_owned()
-        } else {
-            format!("There is no branch {branch}")
-        }));
-    }
-    let updates = body.updates.unwrap_or_else(|| "push".into());
+    let branch = if !image.is_empty() {
+        if !valid_image(&image) {
+            return Err(ApiError::bad(
+                "That is not an image name, such as nginx:1.27",
+            ));
+        }
+        String::new()
+    } else {
+        if repo.is_empty() == url.is_empty() {
+            return Err(ApiError::bad(
+                "Pick a repository on this host, give an address or an image",
+            ));
+        }
+        let (list, default) = branches(&state, &caller, &repo, &url, token.as_deref()).await?;
+        let branch = body.branch.filter(|b| !b.is_empty()).unwrap_or(default);
+        if !list.contains(&branch) {
+            return Err(ApiError::bad(if list.is_empty() {
+                "The repository has no branches yet; push to it first".to_owned()
+            } else {
+                format!("There is no branch {branch}")
+            }));
+        }
+        branch
+    };
+    let updates = body
+        .updates
+        .unwrap_or_else(|| if image.is_empty() { "push" } else { "manual" }.into());
     let every = body.every.unwrap_or(86_400);
     check_updates(&updates, every)?;
+    if !image.is_empty() && updates == "push" {
+        return Err(ApiError::bad("An image updates on a timer or by hand"));
+    }
     let d = Deploy {
         id: random_hex(8),
         name,
-        repo: if url.is_empty() { repo } else { String::new() },
-        url,
+        repo: if url.is_empty() && image.is_empty() {
+            repo
+        } else {
+            String::new()
+        },
+        url: if image.is_empty() { url } else { String::new() },
         branch,
+        image,
         dockerfile: String::new(),
         port: 0,
         keep: Vec::new(),
@@ -1154,7 +1269,7 @@ pub async fn create(
         created_at: now(),
     };
     state.db.insert_deploy(&d)?;
-    if let Some(token) = token {
+    if let Some(token) = token.filter(|_| !d.url.is_empty()) {
         state.db.set_setting(&token_key(&d.id), token.trim())?;
     }
     queue(&state, &d.id, "", "first")?;
@@ -1163,6 +1278,7 @@ pub async fn create(
 
 #[derive(Deserialize)]
 pub struct DeployEdit {
+    image: Option<String>,
     repo: Option<String>,
     url: Option<String>,
     token: Option<String>,
@@ -1183,7 +1299,26 @@ pub async fn edit(
 ) -> ApiResult<Json<Value>> {
     let mut d = find(&state, &id)?;
     let mut rerun = false;
-    if body.repo.is_some() || body.url.is_some() || body.token.is_some() || body.branch.is_some() {
+    if let Some(image) = body.image.map(|i| i.trim().to_owned()) {
+        if d.image.is_empty() {
+            return Err(ApiError::bad("This container is built from a repository"));
+        }
+        if !valid_image(&image) {
+            return Err(ApiError::bad(
+                "That is not an image name, such as nginx:1.27",
+            ));
+        }
+        d.image = image;
+    }
+    if !d.image.is_empty() && body.updates.as_deref() == Some("push") {
+        return Err(ApiError::bad("An image updates on a timer or by hand"));
+    }
+    if d.image.is_empty()
+        && (body.repo.is_some()
+            || body.url.is_some()
+            || body.token.is_some()
+            || body.branch.is_some())
+    {
         let repo = body.repo.map(|r| r.trim().to_owned());
         let url = body.url.map(|u| u.trim().trim_end_matches('/').to_owned());
         let (repo, url) = match (repo, url) {
@@ -1399,6 +1534,18 @@ mod tests {
     }
 
     #[test]
+    fn image_names_split_into_name_and_tag() {
+        assert!(valid_image("nginx"));
+        assert!(valid_image("ghcr.io/me/app:2"));
+        assert!(!valid_image("-nginx"));
+        assert!(!valid_image("nginx latest"));
+        assert_eq!(image_parts("nginx"), ("nginx", "latest"));
+        assert_eq!(image_parts("nginx:1.27"), ("nginx", "1.27"));
+        assert_eq!(image_parts("host:5000/app"), ("host:5000/app", "latest"));
+        assert_eq!(image_parts("host:5000/app:3"), ("host:5000/app", "3"));
+    }
+
+    #[test]
     fn branches_come_from_ls_remote() {
         let listing =
             "ref: refs/heads/main\tHEAD\nabc\tHEAD\nabc\trefs/heads/main\ndef\trefs/heads/dev\n";
@@ -1456,6 +1603,7 @@ mod tests {
             repo: "web".into(),
             url: String::new(),
             branch: "main".into(),
+            image: String::new(),
             dockerfile: String::new(),
             port: 0,
             keep: vec!["/uploads".into()],
