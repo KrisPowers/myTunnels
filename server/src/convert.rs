@@ -128,6 +128,8 @@ enum Phase {
 #[derive(Clone)]
 struct Work {
     id: String,
+    /// The account whose collection it reads and writes.
+    owner: String,
     space: Space,
     source: String,
     kind: Kind,
@@ -138,7 +140,6 @@ struct Work {
 
 struct Job {
     work: Work,
-    owner: String,
     phase: Phase,
     /// How far along, 0 to 1, for videos.
     progress: f32,
@@ -196,7 +197,7 @@ pub async fn list(Extension(caller): Extension<Caller>) -> Json<Value> {
     let jobs: Vec<Value> = lock(&JOBS)
         .iter()
         .rev()
-        .filter(|j| j.owner == caller.id())
+        .filter(|j| j.work.owner == caller.id())
         .map(Job::view)
         .collect();
     let kinds: Vec<Value> = [Kind::Photo, Kind::Video, Kind::Pdf]
@@ -239,7 +240,7 @@ pub async fn start(
     if order.paths.is_empty() || order.paths.len() > 500 {
         return Err(ApiError::bad("Pick between 1 and 500 files"));
     }
-    let store = Store::open(&state, space)?;
+    let store = Store::open(&state, space, caller.id())?;
     let mut queued = Vec::new();
     for path in &order.paths {
         let rel = segments(path)?;
@@ -265,6 +266,7 @@ pub async fn start(
         queued.push(Job {
             work: Work {
                 id: random_hex(8),
+                owner: caller.id().to_owned(),
                 space,
                 source: rel.join("/"),
                 kind,
@@ -272,7 +274,6 @@ pub async fn start(
                 size: order.size,
                 quality: order.quality,
             },
-            owner: caller.id().to_owned(),
             phase: Phase::Waiting,
             progress: 0.0,
             created: now(),
@@ -297,7 +298,7 @@ pub async fn remove(
     let mut jobs = lock(&JOBS);
     let at = jobs
         .iter()
-        .position(|j| j.work.id == id && j.owner == caller.id())
+        .position(|j| j.work.id == id && j.work.owner == caller.id())
         .ok_or_else(ApiError::not_found)?;
     let job = jobs.remove(at);
     if let Some(abort) = job.abort {
@@ -403,7 +404,7 @@ fn naming(to: &str) -> (&str, &str) {
 
 /// Removes what a job that did not finish left behind.
 async fn clean(state: &AppState, work: &Work) {
-    let Ok(store) = Store::open(state, work.space) else {
+    let Ok(store) = Store::open(state, work.space, &work.owner) else {
         return;
     };
     let Ok(rel) = segments(&work.source) else {
@@ -422,7 +423,7 @@ async fn clean(state: &AppState, work: &Work) {
 /// Makes the copy and gives it its name beside the original: its path in the
 /// collection and its size.
 async fn run(state: AppState, work: Work) -> ApiResult<(String, u64)> {
-    let store = Store::open(&state, work.space)?;
+    let store = Store::open(&state, work.space, &work.owner)?;
     let rel = segments(&work.source)?;
     let source = std::fs::canonicalize(store.real(&rel)?).map_err(io_error)?;
     let dir = source.parent().ok_or_else(ApiError::not_found)?.to_owned();
@@ -431,6 +432,10 @@ async fn run(state: AppState, work: Work) -> ApiResult<(String, u64)> {
         Kind::Photo => photo(&source, &out, &dir, &work).await?,
         Kind::Video => video(&source, &out, &work).await?,
         Kind::Pdf => pdf(&source, &out, &work).await?,
+    }
+    if let Err(e) = store.within() {
+        let _ = tokio::fs::remove_file(&out).await;
+        return Err(e);
     }
 
     // "clip.mov" becomes "clip.mp4", or "clip (2).mp4" when that is taken.

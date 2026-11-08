@@ -11,7 +11,7 @@ use axum::http::StatusCode;
 use serde_json::{json, Value};
 use tokio::process::Command;
 
-use crate::storage::{io_error, Space, Store};
+use crate::storage::{io_error, size_of, Space, Store};
 use crate::util::{ApiError, ApiResult};
 
 /// Kinds of archive that open.
@@ -61,6 +61,7 @@ pub async fn extract(store: &Store, rel: &[String]) -> ApiResult<Value> {
     if opened > MAX_OPENED {
         return Err(ApiError::bad("That archive opens to more than 100 GB"));
     }
+    store.room(opened)?;
 
     let stem = name.rsplit_once('.').map_or(name.as_str(), |(s, _)| s);
     let folder = free(&dir, stem, "");
@@ -145,6 +146,8 @@ pub async fn compress(store: &Store, rels: &[Vec<String>]) -> ApiResult<Value> {
         .iter()
         .map(|r| store.real(r))
         .collect::<ApiResult<Vec<PathBuf>>>()?;
+    // Packed, it takes up no more than its items do.
+    store.room(items.iter().map(|i| size_of(i)).sum())?;
     let dir = store.real(parent)?;
     let stem = if rels.len() == 1 {
         let name = &first[first.len() - 1];

@@ -380,6 +380,7 @@ async fn setup(
         last_login: None,
         note: None,
         permissions: vec![HOST.into(), ADMIN.into()],
+        storage_limit: 0,
     })?;
     state.reload()?;
     start_admin_session(&state)
@@ -1850,12 +1851,22 @@ async fn lan_git(
     code::serve(&state, Some(peer.ip()), &format!("/{path}"), req).await
 }
 
-async fn media_fs(State(state): State<AppState>, Path(op): Path<String>, req: Request) -> Response {
-    storage::fs(&state, storage::Space::Media, &op, req).await
+async fn media_fs(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(op): Path<String>,
+    req: Request,
+) -> Response {
+    storage::fs(&state, storage::Space::Media, caller.id(), &op, req).await
 }
 
-async fn drive_fs(State(state): State<AppState>, Path(op): Path<String>, req: Request) -> Response {
-    storage::fs(&state, storage::Space::Drive, &op, req).await
+async fn drive_fs(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(op): Path<String>,
+    req: Request,
+) -> Response {
+    storage::fs(&state, storage::Space::Drive, caller.id(), &op, req).await
 }
 
 // Devices
@@ -2074,6 +2085,7 @@ async fn create_user(
         last_login: None,
         note: None,
         permissions: Vec::new(),
+        storage_limit: 0,
     };
     state.db.save_user(&user)?;
     state.reload()?;
@@ -2090,6 +2102,8 @@ struct UserEdit {
     route_ids: Option<Vec<String>>,
     device_ids: Option<Vec<String>>,
     permissions: Option<Vec<String>>,
+    /// In bytes; 0 for no limit.
+    storage_limit: Option<u64>,
 }
 
 /// Whether `caller` may change `target`: the admin always; anyone else only an
@@ -2199,6 +2213,18 @@ async fn update_user(
     }
     if let Some(ids) = body.device_ids {
         user.device_ids = known_devices(&state, ids);
+    }
+    if let Some(limit) = body.storage_limit {
+        if user.id == HOST_ID {
+            return Err(ApiError::bad("The host's storage has no limit"));
+        }
+        if caller.id() == user.id {
+            return Err(ApiError(
+                StatusCode::FORBIDDEN,
+                "Someone else sets your storage limit".into(),
+            ));
+        }
+        user.storage_limit = limit;
     }
     state.db.save_user(&user)?;
     state.reload()?;

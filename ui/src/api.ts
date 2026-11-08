@@ -63,6 +63,8 @@ export interface User {
   note: string | null;
   // What it may do on the dashboard; "dashboard" lets it sign in there.
   permissions: string[];
+  // The most its photos and files may take up, in bytes; 0 for no limit.
+  storage_limit: number;
 }
 
 export interface TunnelEvent {
@@ -615,7 +617,7 @@ export const api = {
   users: () => call<User[]>("/users"),
   addUser: (body: { username: string; email: string; password: string; device_id: string }) =>
     call<User>("/users", "POST", body),
-  editUser: (id: string, patch: Partial<Pick<User, "username" | "email" | "name" | "enabled" | "route_ids" | "device_ids" | "permissions">> & { password?: string }) =>
+  editUser: (id: string, patch: Partial<Pick<User, "username" | "email" | "name" | "enabled" | "route_ids" | "device_ids" | "permissions" | "storage_limit">> & { password?: string }) =>
     call<User>(`/users/${id}`, "PATCH", patch),
   removeUser: (id: string) => call(`/users/${id}`, "DELETE"),
   signOutUser: (id: string) => call(`/users/${id}/signout`, "POST"),

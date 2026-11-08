@@ -272,6 +272,8 @@ pub struct User {
     pub note: Option<String>,
     /// What it may do on the dashboard (see `permissions`).
     pub permissions: Vec<String>,
+    /// The most its photos and files may take up, in bytes; 0 for no limit.
+    pub storage_limit: u64,
 }
 
 impl User {
@@ -440,7 +442,7 @@ fn passkey_row(r: &Row) -> rusqlite::Result<Passkey> {
 
 const USER_COLS: &str =
     "id, username, email, name, password_hash, enabled, all_routes, created_at, last_login, note, \
-     permissions";
+     permissions, storage_limit";
 
 const DEVICE_COLS: &str = "id, name, status, all_routes, fingerprint, info, note, first_ip, \
      last_ip, country, first_host, created_at, last_seen";
@@ -499,6 +501,7 @@ fn user_row(r: &Row) -> rusqlite::Result<User> {
             .filter(|p| !p.is_empty())
             .map(str::to_owned)
             .collect(),
+        storage_limit: r.get::<_, i64>(11)?.max(0) as u64,
     })
 }
 
@@ -559,6 +562,11 @@ impl Db {
         if !user_columns.iter().any(|c| c == "permissions") {
             conn.execute_batch(
                 "ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '';",
+            )?;
+        }
+        if !user_columns.iter().any(|c| c == "storage_limit") {
+            conn.execute_batch(
+                "ALTER TABLE users ADD COLUMN storage_limit INTEGER NOT NULL DEFAULT 0;",
             )?;
         }
         let have: Vec<String> = conn
@@ -1083,12 +1091,13 @@ impl Db {
         let tx = conn.transaction()?;
         tx.execute(
             &format!(
-                "INSERT INTO users ({USER_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                "INSERT INTO users ({USER_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                  ON CONFLICT(id) DO UPDATE SET username = excluded.username,
                      email = excluded.email, name = excluded.name,
                      password_hash = excluded.password_hash, enabled = excluded.enabled,
                      all_routes = excluded.all_routes, last_login = excluded.last_login,
-                     note = excluded.note, permissions = excluded.permissions"
+                     note = excluded.note, permissions = excluded.permissions,
+                     storage_limit = excluded.storage_limit"
             ),
             params![
                 u.id,
@@ -1102,6 +1111,7 @@ impl Db {
                 u.last_login,
                 u.note,
                 u.permissions.join(","),
+                i64::try_from(u.storage_limit).unwrap_or(i64::MAX),
             ],
         )?;
         tx.execute("DELETE FROM user_devices WHERE user_id = ?1", [&u.id])?;

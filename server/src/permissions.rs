@@ -360,6 +360,7 @@ mod tests {
             created_at: 0,
             last_login: None,
             note: None,
+            storage_limit: 0,
         }))
     }
 

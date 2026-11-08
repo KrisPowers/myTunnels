@@ -123,7 +123,7 @@ pub async fn create(
     if !(0..=MAX_DAYS).contains(&body.days) {
         return Err(ApiError::bad("A link lasts up to a year"));
     }
-    let store = Store::open(&state, space)?;
+    let store = Store::open(&state, space, caller.id())?;
     let mut paths = Vec::new();
     for path in &body.paths {
         let rel = segments(path)?;
@@ -310,6 +310,7 @@ fn store(state: &AppState, share: &Share) -> ApiResult<Store> {
     Store::open(
         state,
         space_of(&share.space).ok_or_else(ApiError::not_found)?,
+        &share.created_by,
     )
 }
 

@@ -298,6 +298,15 @@ function Permissions({ user, catalog, me, onSet }: { user: User; catalog: Group[
 
 type Patch = Parameters<typeof api.editUser>[1];
 
+const GB = 1024 ** 3;
+
+// The bytes a typed limit in GB comes to; blank or 0 is no limit.
+function limitOf(typed: string) {
+  const gb = typed.trim() ? parseFloat(typed) : 0;
+  if (!(gb >= 0)) throw new Error("Type the limit in GB, or leave it blank for none");
+  return Math.round(gb * GB);
+}
+
 // Profile is an account at a glance: its details and the
 // tunnels it may open on the left, its security and the devices it signs in
 // from on the right.
@@ -323,6 +332,9 @@ function Profile({ user, routes, devices, edit, onChange }: {
             <KeyValue label="Username" value={user.username} onSave={(v) => edit({ username: v })} />
             <KeyValue label="Email" value={user.email} type="email" onSave={(v) => edit({ email: v })} />
             <KeyValue label="Name" value={user.name} onSave={(v) => edit({ name: v })} />
+            {!user.permissions.includes("host") && (
+              <KeyValue label="Storage limit" value={user.storage_limit ? `${+(user.storage_limit / GB).toFixed(2)} GB` : ""} onSave={(v) => edit({ storage_limit: limitOf(v) })} />
+            )}
           </section>
           <section>
             <div className="section-head">
