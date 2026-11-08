@@ -273,6 +273,10 @@ async fn serve(
             new_cookies.extend(cookie_value(SESSION_COOKIE, &sid, None, DEVICE_SESSION_TTL));
         }
     }
+    // Each page a visitor lets through is logged; the files it asks for are not.
+    if verdict.allowed() && page_load(&req) {
+        log(state, &route, "visit", "opened", None, ip, req.headers());
+    }
     let mut response = if verdict.allowed() && route.target_scheme == "dashboard" {
         dashboard(panel, ip, req).await
     } else if verdict.allowed() {
@@ -454,6 +458,16 @@ fn may_open(device: &Device, route: &Route) -> bool {
     device.status == "approved" && (device.all_routes || device.route_ids.contains(&route.id))
 }
 
+/// Whether a request loads a page, rather than a file the page asks for.
+fn page_load(req: &Request) -> bool {
+    req.method() == Method::GET
+        && req
+            .headers()
+            .get(header::ACCEPT)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.contains("text/html"))
+}
+
 /// What a visitor who did not pass sees: the network notice, or the page for one of
 /// the checks they can pass here. `?__gate=password` picks another of those.
 fn refuse(
@@ -464,12 +478,7 @@ fn refuse(
     verdict: &Verdict,
     req: &Request,
 ) -> Response {
-    let html = req.method() == Method::GET
-        && req
-            .headers()
-            .get(header::ACCEPT)
-            .and_then(|v| v.to_str().ok())
-            .is_some_and(|v| v.contains("text/html"));
+    let html = page_load(req);
     let open = verdict.open();
     let network_only = verdict.lan == Some(false) && (!verdict.any || open.is_empty());
     // Page loads turned away are logged; the files a page asks for are not.

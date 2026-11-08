@@ -777,7 +777,7 @@ function TargetEditor({ edit, onDone, onSave }: { edit: RouteEdit; onDone: () =>
 const KINDS: Option<TunnelEvent["kind"]>[] = [
   { value: "sign-in", label: "Sign-ins" },
   { value: "password", label: "Passwords" },
-  { value: "visit", label: "Turned away" },
+  { value: "visit", label: "Visits" },
   { value: "device", label: "Devices" },
 ];
 
@@ -785,6 +785,7 @@ const KINDS: Option<TunnelEvent["kind"]>[] = [
 function line(e: TunnelEvent): [string, string] {
   if (e.kind === "visit") {
     const asked: Record<string, string> = {
+      opened: "Opened",
       network: "Turned away, not on the home network",
       login: "Asked to sign in",
       password: "Asked for the tunnel password",
