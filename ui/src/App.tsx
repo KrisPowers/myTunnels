@@ -177,8 +177,8 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
     ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
     ["containers", "Containers", "deployed_code", "#/", can("containers.view") || can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("media.view") || can("drive.view")],
-    ["security", "Security & Roles", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
     ["apps", "Apps", "apps", "#/apps", true],
+    ["security", "Security", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
   ];
   const home = pages.find((p) => p[4])?.[3] ?? "#/preferences";
   useEffect(() => {

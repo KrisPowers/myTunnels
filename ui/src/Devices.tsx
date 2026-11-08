@@ -16,7 +16,7 @@ function summary(d: Device) {
   return [i.platform, i.webglRenderer, d.country].filter(Boolean).join(", ") || "Unknown hardware";
 }
 
-// Devices is every browser met so far: the body of Security & Roles' Devices tab.
+// Devices is every browser met so far: the body of Security's Devices tab.
 export function Devices({ devices, users }: { devices: Device[] | null; users: User[] | null }) {
   const all = devices ?? [];
   const linked = new Set((users ?? []).flatMap((u) => u.device_ids));

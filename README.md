@@ -241,7 +241,7 @@ need Git.
 
 ## Accounts and permissions
 
-**Users**, a tab of **Security & Roles** in the sidebar beside **Devices**, **Two-Factor Auth**
+**Users**, a tab of **Security** in the sidebar beside **Devices**, **Two-Factor Auth**
 and **Third-Party OAuth**, holds the accounts people sign in with,
 yours among them: the account made at setup, with its email, username and password, holds the
 **Host** and **Admin** roles. Only the host changes the host account, under **Settings,
@@ -293,7 +293,7 @@ it has not opened yet fetches its key from the oldest tunnel with a one-use code
 dashboard's own browser carries its key to every tunnel once. A key no device has any more
 is replaced. One sign-in covers every tunnel the account may open, on that device.
 
-**Security & Roles, Devices** lists them: **Linked**, the devices accounts sign in from, with
+**Security, Devices** lists them: **Linked**, the devices accounts sign in from, with
 what each browser reported when it signed in (platform, GPU, CPU threads, memory, screen,
 time zone, languages, user agent) and where it connected from; and **Other**, the rest.
 
@@ -302,7 +302,7 @@ time zone, languages, user agent) and where it connected from; and **Other**, th
 Tunnels with sign-in on can also offer **Continue with** GitHub, Google, GitLab, Discord,
 Slack or Codeberg; a self-hosted Authentik, Authelia, Keycloak, Pocket ID, Zitadel, Kanidm,
 Gitea or Forgejo; Auth0 or Okta; or any other OpenID Connect provider. Set each up
-once under **Security & Roles, Third-Party OAuth** the way Cloudflare was set up: **Open GitHub** (or
+once under **Security, Third-Party OAuth** the way Cloudflare was set up: **Open GitHub** (or
 the provider's console), register an app, then paste its client ID and secret back. Each
 tunnel then switches on the providers it offers, under **Access Control**.
 
@@ -315,7 +315,7 @@ every tunnel on it.
 
 ## Two-factor sign-in
 
-Under **Security & Roles, Two-Factor Auth**, enter SMTP credentials from any provider, Gmail (with an app
+Under **Security, Two-Factor Auth**, enter SMTP credentials from any provider, Gmail (with an app
 password), Outlook or your own: host, port, STARTTLS or TLS, username, password and from
 address. Saving checks them, and **Send a test** emails the host account. Then a six digit code,
 good once for ten minutes, is asked for after the password once **Email codes** is on. One

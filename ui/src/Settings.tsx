@@ -63,7 +63,7 @@ function AdminAccountCard() {
   if (!account) return null;
   if (!account.host) {
     return (
-      <Card title="Your account" sub="Sign in with either the email or the username. Your details are changed under Security & Roles, Users.">
+      <Card title="Your account" sub="Sign in with either the email or the username. Your details are changed under Security, Users.">
         <Row title="Email" sub={account.email || "None"} />
         <Row title="Username" sub={account.username || "None"} />
         <Authenticator on={account.totp} onChange={(totp) => setAccount({ ...account, totp })} />

@@ -27,7 +27,7 @@ export function SecurityPage({ tab, users, devices }: {
     <>
       <div className="page-head">
         <div className="page-head-main">
-          <h1>Security &amp; Roles</h1>
+          <h1>Security</h1>
         </div>
         {current === "users" && can("users.manage") && (
           <div className="page-actions">
@@ -35,7 +35,7 @@ export function SecurityPage({ tab, users, devices }: {
           </div>
         )}
       </div>
-      <nav className="sub-nav" aria-label="Security & Roles">
+      <nav className="sub-nav" aria-label="Security">
         {tabs.map(([, key, label, icon]) => (
           <a key={key} className={"sub-nav-item" + (current === key ? " on" : "")} href={`#/security/${key}`} aria-current={current === key ? "page" : undefined}>
             <Icon name={icon} size={18} />

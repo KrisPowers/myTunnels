@@ -1,6 +1,6 @@
 // Where the page is, kept in the URL hash: `#/` the containers and tunnels,
 // `#/new` publishing a tunnel (`#/new/<port>` to that port),
-// `#/tunnels/<id>/<page>` one tunnel; `#/security/<tab>`, Security & Roles,
+// `#/tunnels/<id>/<page>` one tunnel; `#/security/<tab>`, Security,
 // whose Users and Devices tabs are also `#/users` and `#/devices`, with
 // `/<id>/<page>` for one of them; `#/apps`, the apps catalog;
 // `#/settings/<section>`; `#/preferences`, how the dashboard looks; and
@@ -21,10 +21,10 @@ export interface Place {
 
 export function readHash(): Place {
   const [found = "", second = "", third = "", ...more] = location.hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
-  // Two-Factor Auth and Third-Party OAuth are tabs of Security & Roles.
+  // Two-Factor Auth and Third-Party OAuth are tabs of Security.
   if (found === "twofactor" || found === "oauth") return { view: "security", id: found, page: "", more: [] };
   const first = found;
-  // Users and Devices are tabs of Security & Roles.
+  // Users and Devices are tabs of Security.
   if ((first === "users" || first === "devices") && !second) return { view: "security", id: first, page: "", more: [] };
   // Appearance was a section of Settings; it is Preferences now.
   if (first === "settings" && second === "appearance") return { view: "preferences", id: "", page: "", more: [] };
