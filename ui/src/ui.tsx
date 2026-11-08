@@ -461,6 +461,8 @@ export function AddMenu({ label, placeholder, items, onPick, empty }: {
 
 export interface MenuAction {
   label: string;
+  // What it does, under its name.
+  hint?: string;
   icon: IconName;
   onClick: () => void;
   danger?: boolean;
@@ -471,7 +473,8 @@ export interface MenuAction {
 // MoreMenu is the three dots that hold a page's less frequent actions, or
 // another icon, such as a plus for what can be added.
 export function MoreMenu({ label, actions, icon = "more_vert" }: { label: string; actions: MenuAction[]; icon?: IconName }) {
-  const pop = usePopover(240);
+  const rich = actions.some((a) => a.hint);
+  const pop = usePopover(rich ? 300 : 240);
   const [armed, setArmed] = useState("");
   return (
     <div className="menu-wrap" ref={pop.anchor}>
@@ -483,7 +486,7 @@ export function MoreMenu({ label, actions, icon = "more_vert" }: { label: string
         <Icon name={icon} />
       </button>
       {pop.open && createPortal(
-        <div ref={pop.panel} className="menu pop-menu" style={pop.style} role="menu">
+        <div ref={pop.panel} className={"menu pop-menu" + (rich ? " rich" : "")} style={pop.style} role="menu">
           {actions.map((a) => (
             <button key={a.label} type="button" role="menuitem" className={"menu-item" + (a.danger ? " danger" : "") + (armed === a.label ? " armed" : "")}
               onClick={() => {
@@ -491,8 +494,10 @@ export function MoreMenu({ label, actions, icon = "more_vert" }: { label: string
                 pop.close();
                 a.onClick();
               }}>
-              <Icon name={a.icon} size={20} />
-              {armed === a.label && a.confirm ? a.confirm : a.label}
+              {rich ? <span className="menu-tile"><Icon name={a.icon} size={20} /></span> : <Icon name={a.icon} size={20} />}
+              {rich ? (
+                <span className="menu-text"><span>{armed === a.label && a.confirm ? a.confirm : a.label}</span>{a.hint && <small>{a.hint}</small>}</span>
+              ) : armed === a.label && a.confirm ? a.confirm : a.label}
             </button>
           ))}
         </div>,
