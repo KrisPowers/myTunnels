@@ -745,6 +745,13 @@ a.result:hover { background: var(--hover); }
 .menu-item.active { background: var(--hover); }
 .person-item, .pick-item { height: 48px; }
 .menu-item.danger { color: var(--bad); }
+.menu.rich { padding: 6px; }
+.menu.rich .menu-item { height: auto; padding: 8px; border-radius: var(--round); }
+.menu-tile { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: var(--round); background: var(--accent-bg); color: var(--on-accent-bg); }
+.menu-tile .icon { color: inherit; }
+.menu-text { display: grid; gap: 1px; min-width: 0; }
+.menu-text > span { font-weight: 600; }
+.menu-text small { color: var(--text-2); font-size: 12px; line-height: 1.35; }
 .menu-item.danger.armed { background: var(--bad-bg); }
 .menu-item:disabled { opacity: .45; cursor: default; background: none; }
 .people { list-style: none; margin: 0; padding: 0 18px 8px; }
@@ -1192,21 +1199,39 @@ a.result.thread-row:hover .scan-target { color: var(--accent); }
 .ct-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); font: inherit; }
 .ct-search input:focus { outline: none; }
 
-/* A row per container: state, name over image, then figures, its menu last. */
-.ct-table td { height: 58px; }
-.ct-table tr.stopped td { color: var(--text-3); }
-.ct-table tr.in-group td:first-child { padding-left: 46px; }
+/* The catalog: a row per container or tunnel. What it is in a tile tinted by
+   its state, its name over where it comes from, its address, its use, and one
+   menu. */
+.ct-list > li + li { box-shadow: inset 0 1px 0 var(--line); }
+.ct-row { display: flex; align-items: center; gap: 4px; padding-right: 10px; }
+.ct-row-main {
+  flex: 1; min-width: 0; display: grid; grid-template-columns: 36px minmax(0, 1.2fr) minmax(0, 1fr) 132px;
+  align-items: center; gap: 14px; padding: 10px 8px 10px 18px; color: var(--text);
+}
+.ct-row-main:hover { text-decoration: none; }
+.ct-row:hover { background: var(--hover); }
+.ct-row:hover .ct-name-text b { color: var(--accent); }
+.ct-row.in-group .ct-row-main { padding-left: 42px; }
+.ct-kind {
+  display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--round);
+  background: var(--card-2); color: var(--text-3);
+}
+.ct-kind.ok { background: var(--ok-bg); color: var(--ok); }
+.ct-kind.warn { background: var(--warn-bg); color: var(--warn); }
+.ct-kind.bad { background: var(--bad-bg); color: var(--bad); }
+.ct-reach { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--text-2); font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+.ct-reach .dot { width: 8px; height: 8px; }
+.ct-reach .access { flex-wrap: nowrap; }
+.ct-use { display: flex; justify-content: flex-end; gap: 10px; color: var(--text-2); font: 12.5px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ct-use.muted { font-family: inherit; color: var(--text-3); }
+.ct-group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 0 10px 0 18px; background: var(--card-2); }
 .ct-name { display: flex; align-items: center; gap: 12px; min-width: 0; color: var(--text); }
 .ct-name:hover b { color: var(--accent); }
 .ct-name-text { display: grid; min-width: 0; }
 .ct-name-text b { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
 .ct-name-text small { overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.ct-table tr.stopped .ct-name-text b { color: var(--text-2); }
-.ct-status { font-size: 12.5px; }
+.ct-name-text .chip { text-transform: none; }
 .ct-menu { width: 1%; text-align: right; }
-.ct-table .chip { text-transform: none; }
-.ct-group td { height: 44px; background: var(--card-2); }
-.ct-table tbody tr.ct-group:hover td { background: var(--card-2); }
 .ct-fold {
   display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent;
   color: var(--text); font: inherit; cursor: pointer;
@@ -1214,13 +1239,9 @@ a.result.thread-row:hover .scan-target { color: var(--accent); }
 .ct-fold small { margin-left: 4px; color: var(--text-3); font-size: 12px; }
 .ct-fold > .icon:first-child { color: var(--text-3); transition: transform .15s var(--ease); }
 .ct-fold > .icon.open { transform: rotate(90deg); }
-.ct-stack-icon { color: var(--accent); }
 .ct-id { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
 .ct-image { max-width: 260px; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
-.ct-none { text-align: center; }
-.port-links { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
-.port-links a { display: inline-flex; align-items: center; gap: 3px; font: 12.5px var(--mono); }
-.port-links a:hover { text-decoration: underline; }
+.ct-none { padding: 18px; text-align: center; }
 
 /* A container: logs, how it is set up, its mounts and its usage. */
 .ct-logs { display: flex; flex-direction: column; }
@@ -1270,8 +1291,8 @@ a.tn-row:hover { background: var(--hover); text-decoration: none; }
 @media (max-width: 900px) {
   .ct-inspect { grid-template-columns: minmax(0, 1fr); }
   .ct-search { width: 140px; }
-  .ct-table th:nth-child(2), .ct-table td:nth-child(2), .ct-table th:nth-child(4), .ct-table td:nth-child(4),
-  .ct-table th:nth-child(5), .ct-table td:nth-child(5) { display: none; }
+  .ct-row-main { grid-template-columns: 36px minmax(0, 1fr); }
+  .ct-reach, .ct-use { display: none; }
 }
 
 .nav-group { display: block; }
