@@ -2049,7 +2049,9 @@ struct NewUser {
     username: String,
     email: String,
     password: String,
-    /// The device the account signs in from; more can be linked later.
+    /// The device the account signs in from. Left empty, the first device to
+    /// sign in to the account is linked to it.
+    #[serde(default)]
     device_id: String,
 }
 
@@ -2068,9 +2070,15 @@ async fn create_user(
     if !secret::strong(&body.password) {
         return Err(ApiError::bad(secret::RULE));
     }
-    let device_id = known_devices(&state, vec![body.device_id])
-        .pop()
-        .ok_or_else(|| ApiError::bad("Pick the device this account signs in from"))?;
+    let device_ids = if body.device_id.is_empty() {
+        Vec::new()
+    } else {
+        let ids = known_devices(&state, vec![body.device_id]);
+        if ids.is_empty() {
+            return Err(ApiError::bad("That device is gone. Pick another."));
+        }
+        ids
+    };
     let user = User {
         id: random_hex(8),
         username,
@@ -2080,7 +2088,7 @@ async fn create_user(
         enabled: true,
         all_routes: false,
         route_ids: Vec::new(),
-        device_ids: vec![device_id],
+        device_ids,
         created_at: now(),
         last_login: None,
         note: None,

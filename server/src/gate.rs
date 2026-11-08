@@ -1517,8 +1517,9 @@ fn record(state: &AppState, route: &Route, v: &Visitor, user_id: &str, outcome: 
 }
 
 /// Lets in an account whose owner has proved who they are, by password or through
-/// another service: if it may open this tunnel, from a device linked to it, and the
-/// sign-in does not look like someone else holding it. Returns the session token.
+/// another service: if it may open this tunnel, from a device linked to it (or its
+/// first device, for an account with none yet), and the sign-in does not look like
+/// someone else holding it. Returns the session token.
 async fn admit(
     state: &AppState,
     route: &Route,
@@ -1566,13 +1567,17 @@ fn vet(
         return Err((StatusCode::FORBIDDEN, "This account cannot open this app."));
     }
 
-    // An account signs in only from the devices an administrator linked to it.
-    // One with none cannot sign in, so a leaked password never brings its own device.
-    if !v
-        .device_id
-        .as_ref()
-        .is_some_and(|d| account.device_ids.contains(d))
-    {
+    // An account signs in only from the devices linked to it. One with none yet
+    // takes the first device that signs in, and is held to it from then on.
+    let Some(device) = v.device_id.clone() else {
+        record(state, route, v, &account.id, "unlinked");
+        return Err((
+            StatusCode::FORBIDDEN,
+            "This browser has no device ID yet. Reload the page and try again.",
+        ));
+    };
+    let claim = account.device_ids.is_empty();
+    if !claim && !account.device_ids.contains(&device) {
         record(state, route, v, &account.id, "unlinked");
         return Err((
             StatusCode::FORBIDDEN,
@@ -1604,6 +1609,10 @@ fn vet(
         ));
     }
 
+    // Saved only once the sign-in finishes, so a code never entered links nothing.
+    if claim {
+        account.device_ids.push(device);
+    }
     Ok(account)
 }
 
@@ -1612,6 +1621,8 @@ fn open(state: &AppState, route: &Route, mut account: User, v: &Visitor, mfa: bo
     record(state, route, v, &account.id, "ok");
     account.last_login = Some(now());
     let _ = state.db.save_user(&account);
+    // Keeps a device linked by this sign-in in the cached accounts too.
+    let _ = state.reload();
     let token = state.open_session(
         &state.user_sessions,
         &account.id,
