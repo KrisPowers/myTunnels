@@ -21,6 +21,18 @@ const GUIDE: Record<string, { link?: (domain: string) => string; how: string; is
     link: () => "https://console.cloud.google.com/apis/credentials/oauthclient",
     how: "Create an OAuth client ID of type Web application. Add each tunnel's redirect URL under Authorized redirect URIs as you switch Google on there.",
   },
+  microsoft: {
+    link: () => "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+    how: "Register a new application for accounts in any organizational directory and personal Microsoft accounts, add each tunnel's redirect URL as a Web redirect URI, then make a client secret under Certificates & secrets. Work and school accounts also need the xms_edov optional claim on the ID token, under Token configuration.",
+  },
+  facebook: {
+    link: () => "https://developers.facebook.com/apps/creation/",
+    how: "Create an app with the Facebook Login use case, add each tunnel's redirect URL under Valid OAuth Redirect URIs, then copy the App ID and App secret from App settings, Basic.",
+  },
+  linkedin: {
+    link: () => "https://www.linkedin.com/developers/apps/new",
+    how: "Create an app, add the Sign In with LinkedIn using OpenID Connect product, list each tunnel's redirect URL under Auth, then copy the client ID and secret from there.",
+  },
   gitlab: {
     link: () => "https://gitlab.com/-/user_settings/applications",
     how: "Add a new application, keep it Confidential, tick the openid and email scopes, and list each tunnel's redirect URL.",
@@ -33,20 +45,8 @@ const GUIDE: Record<string, { link?: (domain: string) => string; how: string; is
     link: () => "https://api.slack.com/apps",
     how: "Create an app, add the openid and email user scopes and each tunnel's redirect URL under OAuth & Permissions, then copy the keys from Basic Information.",
   },
-  codeberg: {
-    link: () => "https://codeberg.org/user/settings/applications",
-    how: "Add an OAuth2 application with each tunnel's redirect URL and keep it confidential.",
-  },
   authentik: { how: "In Authentik, make an OAuth2/OpenID provider and application; " + OWN, issuer: "https://auth.example.com/application/o/mytunnels/" },
-  authelia: { how: "In Authelia's configuration, add an OpenID Connect client; " + OWN, issuer: "https://auth.example.com" },
   keycloak: { how: "In your Keycloak realm, " + OWN, issuer: "https://keycloak.example.com/realms/home" },
-  pocketid: { how: "In Pocket ID, add an OIDC client; " + OWN, issuer: "https://id.example.com" },
-  zitadel: { how: "In a Zitadel project, add a web application; " + OWN, issuer: "https://example.zitadel.cloud" },
-  kanidm: { how: "In Kanidm, make an OAuth2 resource server; " + OWN, issuer: "https://idm.example.com/oauth2/openid/mytunnels" },
-  gitea: { how: "Under Settings, Applications in Gitea, add an OAuth2 application with each tunnel's redirect URL, then enter your Gitea address.", issuer: "https://gitea.example.com" },
-  forgejo: { how: "Under Settings, Applications in Forgejo, add an OAuth2 application with each tunnel's redirect URL, then enter your Forgejo address.", issuer: "https://git.example.com" },
-  auth0: { how: "In Auth0, create a Regular Web Application with each tunnel's redirect URL as an allowed callback, then enter your tenant's address.", issuer: "https://example.us.auth0.com/" },
-  okta: { how: "In Okta, create an OIDC Web Application with each tunnel's redirect URL as a sign-in redirect, then enter its authorization server.", issuer: "https://example.okta.com/oauth2/default" },
   oidc: { how: "In any OpenID Connect provider, " + OWN, issuer: "https://auth.example.com" },
 };
 
