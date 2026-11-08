@@ -1301,7 +1301,6 @@ a.tn-row:hover { background: var(--hover); text-decoration: none; }
 .app-tile > .menu-wrap { position: absolute; top: 6px; right: 6px; }
 .app-tile .muted { font-size: 12.5px; }
 .app-tile .btn { margin-top: 4px; }
-.install-log { max-height: 160px; overflow: auto; margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: var(--card-2); font-size: 12px; white-space: pre-wrap; }
 
 /* ---- Device Controller: a row per fan, its mark spinning as fast as it turns ---- */
 .fan-row {

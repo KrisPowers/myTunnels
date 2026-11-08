@@ -223,18 +223,14 @@ dashboard through a tunnel to reach it from anywhere.
 each, narrowed by a search and by kind and status (installed, not installed, used by myTunnels):
 Docker, kubectl, minikube and Helm; cloudflared, Cloudflare WARP and Wrangler;
 Git and the GitHub CLI; Rust, Go, Python, Java and .NET; Node.js, fnm, Bun and Deno;
-Terraform and WireGuard. **Install** offers two places:
+Terraform and WireGuard.
 
-- **On the host**, in one click, through its package manager: winget on Windows, Homebrew on
-  macOS, apt on Linux (with `sudo` that needs no password). It takes the **Install apps on the
-  host** permission, and Windows may ask to allow some installers.
-- **On this device**, the command for the visitor's own machine and a link to the makers'
-  download.
+**Install** installs one in one click on the machine myTunnels runs on, through its package
+manager: winget on Windows, Homebrew on macOS, apt on Linux (with `sudo` that needs no
+password). It takes the **Install apps** permission, and Windows may ask to allow some
+installers. An app already there says **Installed**, and its menu updates or uninstalls it.
 
-An app the host has says **Installed**, and its menu updates or uninstalls it there, or offers
-it for this device.
-
-When myTunnels runs inside Docker, installs reach the host through `server host` on it (see
+When myTunnels runs inside Docker, installs reach that machine through `server host` on it (see
 the Dashboard). It pairs with the first myTunnels to ask and installs only for that one; to
 pair again, remove the `paired` file in its data folder (`%LOCALAPPDATA%\myTunnels` on
 Windows, `~/.local/share/myTunnels` elsewhere).
@@ -253,7 +249,7 @@ Account**, and it cannot be suspended or removed. Open any other to set it up:
 
 - **Permissions**, a card per feature: **Sign in to the dashboard**, then what it may do there,
   such as viewing containers or starting and stopping them, publishing, changing or removing
-  tunnels, naming devices, managing accounts, installing apps on the host, uploading and
+  tunnels, naming devices, managing accounts, installing apps, uploading and
   deleting in Storage, and the settings pages.
 - **Profile**: its details; **Security**, with its password, status, **Device lock** and the
   devices it signs in from; and **Tunnels**, the tunnels it may open, added with **+** and

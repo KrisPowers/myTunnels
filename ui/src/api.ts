@@ -468,13 +468,10 @@ export interface AppItem {
   group: string;
   about: string;
   logo: string;
-  url: string;
   // Another app it is installed with.
   needs: string | null;
   // A feature of myTunnels needs it where myTunnels runs.
   used: boolean;
-  // How to install it, as typed on each kind of machine; null where not carried.
-  commands: Record<Os, string | null>;
 }
 
 export type AppAction = "install" | "update" | "uninstall";
