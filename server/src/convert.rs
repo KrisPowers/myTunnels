@@ -433,6 +433,10 @@ async fn run(state: AppState, work: Work) -> ApiResult<(String, u64)> {
         Kind::Video => video(&source, &out, &work).await?,
         Kind::Pdf => pdf(&source, &out, &work).await?,
     }
+    if let Err(e) = store.within() {
+        let _ = tokio::fs::remove_file(&out).await;
+        return Err(e);
+    }
 
     // "clip.mov" becomes "clip.mp4", or "clip (2).mp4" when that is taken.
     let name = &rel[rel.len() - 1];

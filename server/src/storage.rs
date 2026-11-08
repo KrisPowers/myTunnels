@@ -111,6 +111,9 @@ impl Space {
 pub struct Store {
     pub space: Space,
     base: PathBuf,
+    /// The most the account's photos and files together may take up, and the
+    /// folder holding them all; for accounts that have a limit.
+    limit: Option<(u64, PathBuf)>,
 }
 
 impl Store {
@@ -119,7 +122,38 @@ impl Store {
     pub fn open(state: &AppState, space: Space, owner: &str) -> ApiResult<Self> {
         let base = base(&state.config.data_dir, space, owner)?;
         std::fs::create_dir_all(&base).map_err(io_error)?;
-        Ok(Self { space, base })
+        let limit = state
+            .snapshot()
+            .users
+            .get(owner)
+            .map(|u| u.storage_limit)
+            .filter(|&l| l > 0 && owner != HOST_ID)
+            .and_then(|l| Some((l, base.parent()?.to_owned())));
+        Ok(Self { space, base, limit })
+    }
+
+    /// The bytes the account's limit leaves free, when it has one.
+    fn left(&self) -> Option<u64> {
+        self.limit
+            .as_ref()
+            .map(|(limit, root)| limit.saturating_sub(size_of(root)))
+    }
+
+    /// Refuses `adding` bytes more than the account's limit leaves room for.
+    pub fn room(&self, adding: u64) -> ApiResult<()> {
+        match self.left() {
+            Some(left) if adding > left => Err(full()),
+            _ => Ok(()),
+        }
+    }
+
+    /// Refuses once the account takes up more than its limit, for what is
+    /// only measured once it is made.
+    pub fn within(&self) -> ApiResult<()> {
+        match &self.limit {
+            Some((limit, root)) if size_of(root) > *limit => Err(full()),
+            _ => Ok(()),
+        }
     }
 
     /// Where a photo's or video's preview is kept, beside the collection.
@@ -170,6 +204,13 @@ impl Store {
         }
         self.real(rel)
     }
+}
+
+fn full() -> ApiError {
+    ApiError(
+        StatusCode::INSUFFICIENT_STORAGE,
+        "That does not fit in this account's storage limit".into(),
+    )
 }
 
 fn base(data: &Path, space: Space, owner: &str) -> ApiResult<PathBuf> {
@@ -292,7 +333,7 @@ async fn list(store: &Store, at: At) -> ApiResult<Response> {
         "path": joined(&rel),
         "access": "write",
         "entries": entries,
-        "space": space(&dir),
+        "space": store.free(&dir),
         "user": null,
     }))
     .into_response())
@@ -301,18 +342,38 @@ async fn list(store: &Store, at: At) -> ApiResult<Response> {
 /// Where the host's own drive is mounted, empty and read-only, in the container.
 const HOST_DISK: &str = "/host";
 
-/// The free and total bytes there is room for in a folder. Under Docker
-/// Desktop the data volume sits on a virtual disk that claims far more room
-/// than the drive holding it, so that drive's own room bounds it.
-fn space(dir: &Path) -> Option<Value> {
-    let (mut free, mut total) = disk(dir)?;
-    if virtual_disk() {
-        if let Some((f, t)) = disk(Path::new(HOST_DISK)) {
-            free = free.min(f);
-            total = total.min(t);
+impl Store {
+    /// The free and total bytes there is room for in a folder: the disk's, or
+    /// less where the account's limit leaves less. Under Docker Desktop the
+    /// data volume sits on a virtual disk that claims far more room than the
+    /// drive holding it, so that drive's own room bounds it too.
+    fn free(&self, dir: &Path) -> Option<Value> {
+        let (mut free, mut total) = disk(dir)?;
+        if virtual_disk() {
+            if let Some((f, t)) = disk(Path::new(HOST_DISK)) {
+                free = free.min(f);
+                total = total.min(t);
+            }
         }
+        if let (Some(left), Some((limit, _))) = (self.left(), &self.limit) {
+            free = free.min(left);
+            total = total.min(*limit);
+        }
+        Some(json!({ "free": free, "total": total }))
     }
-    Some(json!({ "free": free, "total": total }))
+}
+
+/// The bytes a file, or a folder and everything in it, takes up.
+pub fn size_of(path: &Path) -> u64 {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return 0;
+    };
+    if !meta.is_dir() {
+        return meta.len();
+    }
+    std::fs::read_dir(path)
+        .map(|read| read.flatten().map(|e| size_of(&e.path())).sum())
+        .unwrap_or(0)
 }
 
 /// Whether this runs in Docker Desktop's virtual machine, on Windows or macOS.
@@ -531,6 +592,9 @@ async fn relocate(store: &Store, body: Relocate) -> ApiResult<Response> {
         if tokio::fs::symlink_metadata(&into).await.is_ok() {
             return Err(ApiError::conflict(format!("{name} already exists there")));
         }
+        if body.copy {
+            store.room(size_of(&from))?;
+        }
         let (from, into, copy) = (from.clone(), into.clone(), body.copy);
         tokio::task::spawn_blocking(move || {
             if copy {
@@ -636,6 +700,7 @@ async fn upload(store: &Store, req: Request) -> ApiResult<Response> {
     let temp = dir.join(format!(".{}{PART}", piece.id));
 
     if piece.offset == 0 {
+        store.room(piece.total)?;
         if !piece.replace && tokio::fs::symlink_metadata(&target).await.is_ok() {
             return Err(ApiError::conflict(format!(
                 "{} already exists",
