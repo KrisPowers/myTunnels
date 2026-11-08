@@ -167,8 +167,8 @@ kbd {
 }
 .page-head-main { flex: 1; min-width: 0; display: grid; gap: 4px; }
 
-/* What changes from page to page, under a heading that stays put. */
-.page-body { animation: rise .2s var(--ease) both; }
+/* A new page fades in once; its tabs, sub-pages and cards change in place. */
+main.page { animation: fade .15s both; }
 
 .doc-title { margin-bottom: 4px; font-size: 18px; font-weight: 700; }
 .page-head h1 { min-width: 0; font-size: 24px; font-weight: 700; letter-spacing: -.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -246,7 +246,7 @@ kbd {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---- panels: square, bordered, a bold title ---- */
-.card { border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); overflow: hidden; animation: rise .2s var(--ease) both; }
+.card { border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); overflow: hidden; }
 .card-head { display: flex; align-items: center; gap: 16px; padding: 14px 18px 12px; }
 .card-titles { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .card-head h2 { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 17px; font-weight: 700; }
