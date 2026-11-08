@@ -20,7 +20,7 @@ import { StoragePage } from "./Storage";
 import { NewTunnel, target, TunnelPage } from "./Tunnels";
 import { NewUser, UserPage } from "./Users";
 import { SecurityPage } from "./Security";
-import { Callout, Notices, Tooltips } from "./ui";
+import { Callout, MoreMenu, Notices, Tooltips } from "./ui";
 
 export function App() {
   return (
@@ -65,7 +65,7 @@ function Root() {
 }
 
 // Dashboard is the frame every page sits in, after Google's apps: a header with
-// the name, the search bar, help and settings; a sidebar with the pages, then
+// the name, the search bar, help and a settings menu; a sidebar with the pages, then
 // the add-ons installed; and the page.
 function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Group[]; installed: string[]; onSignOut: () => void }) {
   const [place, setPlace] = useState(readHash);
@@ -211,9 +211,13 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
         <div className="header-actions">
           <NewMenu />
           <a className={"icon-btn" + (view === "docs" ? " on" : "")} href="#/docs" aria-label="Help" title="Help"><Icon name="help" /></a>
-          <a className={"icon-btn" + (view === "settings" ? " on" : "")} href="#/settings" aria-label="Settings" title="Settings"><Icon name="settings" /></a>
-          <span className="header-user" title={me.host ? "Host" : me.admin ? "Admin" : "Signed in"}><Icon name="person" size={18} />{me.name || "Host"}</span>
-          <button type="button" className="icon-btn" aria-label="Sign out" title="Sign out" onClick={onSignOut}><Icon name="logout" /></button>
+          <MoreMenu label="Settings" icon="settings" actions={[
+            { label: "Settings", icon: "settings", onClick: () => go("#/settings") },
+            { label: "Preferences", icon: "brightness_auto", onClick: () => go("#/settings/appearance") },
+            { label: "Account", icon: "person", onClick: () => go("#/settings/account") },
+            { label: "About", icon: "info", onClick: () => go("#/settings/about") },
+            { label: "Sign out", icon: "logout", onClick: onSignOut },
+          ]} />
         </div>
       </header>
 

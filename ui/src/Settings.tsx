@@ -11,7 +11,7 @@ export const SETTINGS: [string, string, IconName][] = [
   ["cloudflare", "Cloudflare", "cloud"],
   ["network", "Network", "router"],
   ["connector", "Connector", "dns"],
-  ["appearance", "Appearance", "brightness_auto"],
+  ["appearance", "Preferences", "brightness_auto"],
   ["account", "Account", "person"],
   ["about", "About", "info"],
 ];
