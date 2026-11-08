@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode } from "react";
 import { ADDONS, AppsPage } from "./Addons";
-import { api, deviceInfo, message, shortId, type Auth, type Device, type Group, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
+import { api, deviceInfo, message, shortId, type Auth, type Device, type Flag, type Group, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { GitPage } from "./Git";
 import { NewMenu } from "./Builds";
 import { ContainersPage } from "./Containers";
@@ -75,6 +75,7 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
   const [routes, setRoutes] = useState<Route[] | null>(null);
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [users, setUsers] = useState<User[] | null>(null);
+  const [flags, setFlags] = useState<Flag[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
   const [providers, setProviders] = useState<OAuthProvider[]>([]);
   const [drawer, setDrawer] = useState(false);
@@ -97,12 +98,13 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
   };
 
   const load = useCallback(async () => {
-    const [r, d, u, s, o] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status(), api.oauth()]);
+    const [r, d, u, s, o, f] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status(), api.oauth(), api.flags()]);
     if (r.status === "fulfilled") setRoutes(r.value);
     if (d.status === "fulfilled") setDevices(d.value);
     if (u.status === "fulfilled") setUsers(u.value);
     if (s.status === "fulfilled") setStatus(s.value);
     if (o.status === "fulfilled") setProviders(o.value.providers.filter((p) => p.configured));
+    if (f.status === "fulfilled") setFlags(f.value);
   }, []);
 
   useEffect(() => {
@@ -160,7 +162,6 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
   }, []);
 
   const { view, id, page } = place;
-  const pending = devices?.filter((d) => d.status === "pending").length ?? 0;
   // Git's address is a tunnel kept on its own page.
   const apps = routes?.filter((r) => r.target_scheme !== "code") ?? null;
   const route = view === "tunnels" && id ? apps?.find((r) => r.id === id) : undefined;
@@ -195,7 +196,7 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
   const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
     <NavItem key={key} to={to} icon={icon} label={label}
       on={view === key || (key === "containers" && (view === "new" || view === "tunnels")) || (key === "security" && (view === "users" || view === "devices"))}
-      count={key === "security" ? pending || undefined : undefined} rail={rail} />
+      count={key === "dashboard" ? flags.length || undefined : undefined} rail={rail} />
   );
 
   return (
@@ -240,18 +241,18 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
 
         <main className="page" key={view + id}>
           {view === "git" && has("git") && <GitPage id={id} page={page} more={place.more} users={users ?? []} onChanged={load} />}
-          {view === "dashboard" && <DashboardPage />}
+          {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
           {view === "apps" && me.admin && <AppsPage installed={addons} onChange={setAddons} />}
           {view === "controller" && has("controller") && <ControllerPage />}
           {view === "storage" && <StoragePage tab={id} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} status={status}
-            devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
+            users={users ?? []} providers={providers} onChanged={load} />}
           {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} port={id} />}
-          {route && <TunnelPage route={route} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
-          {device && <DevicePage device={device} routes={apps ?? []} users={users ?? []} onChanged={load} />}
-          {view === "users" && id === "new" && <NewUser devices={devices ?? []} routes={apps ?? []} onAdded={load} />}
+          {route && <TunnelPage route={route} users={users ?? []} providers={providers} onChanged={load} />}
+          {device && <DevicePage device={device} users={users ?? []} onChanged={load} />}
+          {view === "users" && id === "new" && <NewUser routes={apps ?? []} onAdded={load} />}
           {user && <UserPage user={user} page={page} routes={apps ?? []} devices={devices ?? []} catalog={catalog} me={me} onChanged={load} />}
-          {view === "security" && <SecurityPage tab={id} users={users} devices={devices} routes={apps ?? []} onChanged={load} />}
+          {view === "security" && <SecurityPage tab={id} users={users} devices={devices} />}
           {view === "settings" && <Settings sections={settings} section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
           {view === "preferences" && <Preferences />}
           {view === "docs" && <Docs section={id} />}
@@ -327,7 +328,7 @@ function Search({ routes, devices }: { routes: Route[] | null; devices: Device[]
       .map((r) => ({ key: "r" + r.id, icon: "public" as IconName, label: r.hostname, sub: r.target_scheme === "dashboard" ? target(r) : `port ${r.target_port}`, to: `#/tunnels/${r.id}` })),
     ...(devices ?? [])
       .filter((d) => d.id.toLowerCase().includes(needle) || d.name.toLowerCase().includes(needle))
-      .map((d) => ({ key: "d" + d.id, icon: "devices" as IconName, label: d.name || shortId(d.id), sub: d.name ? shortId(d.id) : d.status, to: `#/devices/${d.id}` })),
+      .map((d) => ({ key: "d" + d.id, icon: "devices" as IconName, label: d.name || shortId(d.id), sub: d.name ? shortId(d.id) : d.info?.platform ?? "", to: `#/devices/${d.id}` })),
   ].slice(0, 8) : [];
   const listed = open && items.length > 0;
 

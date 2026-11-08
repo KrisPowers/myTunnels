@@ -1,49 +1,28 @@
 import { useEffect, useState } from "react";
-import { ago, api, message, shortId, type Device, type DeviceStatus, type Route, type SignIn, type User } from "./api";
+import { ago, api, message, shortId, type Device, type SignIn, type User } from "./api";
 import { Icon } from "./Icon";
 import { go } from "./route";
-import { ArmedButton, Callout, Card, Copy, Row, SaveField, Switch, useNotify } from "./ui";
+import { ArmedButton, Card, Copy, Row, SaveField, useNotify } from "./ui";
 
-// Two lists: devices let in, and every other device met, waiting to be decided.
-type Tab = "approved" | "requests";
+// Two lists: devices an account signs in from, and every other device met.
+type Tab = "linked" | "other";
 const TABS: [Tab, string][] = [
-  ["approved", "Approved"],
-  ["requests", "Requests"],
+  ["linked", "Linked"],
+  ["other", "Other"],
 ];
-const inTab = (tab: Tab, d: Device) => (tab === "approved") === (d.status === "approved");
-
-const TONE: Record<DeviceStatus, string> = { seen: "", pending: "warn", approved: "ok", denied: "bad" };
-const LABEL: Record<DeviceStatus, string> = { seen: "Request", pending: "Request", approved: "Approved", denied: "Denied" };
 
 function summary(d: Device) {
   const i = d.info ?? {};
   return [i.platform, i.webglRenderer, d.country].filter(Boolean).join(", ") || "Unknown hardware";
 }
 
-// useApprove approves a device. One that has no tunnels yet is given the one
-// it asked for, so approving is all it takes.
-function useApprove(routes: Route[], onChanged: () => Promise<void>) {
-  const notify = useNotify();
-  return async (d: Device) => {
-    const asked = routes.find((r) => r.hostname === d.first_host);
-    const route_ids = !d.all_routes && d.route_ids.length === 0 && asked ? [asked.id] : undefined;
-    try {
-      await api.editDevice(d.id, { status: "approved", route_ids });
-      await onChanged();
-      notify(`Approved ${d.name || shortId(d.id)}${asked && route_ids ? ` for ${asked.hostname}` : ""}`);
-    } catch (e) {
-      notify(message(e), "bad");
-    }
-  };
-}
-
-// Devices is every browser met so far, those approved and requests: the body
-// of Security & Roles' Devices tab.
-export function Devices({ devices, routes, onChanged }: { devices: Device[] | null; routes: Route[]; onChanged: () => Promise<void> }) {
+// Devices is every browser met so far: the body of Security & Roles' Devices tab.
+export function Devices({ devices, users }: { devices: Device[] | null; users: User[] | null }) {
   const all = devices ?? [];
+  const linked = new Set((users ?? []).flatMap((u) => u.device_ids));
+  const inTab = (tab: Tab, d: Device) => (tab === "linked") === linked.has(d.id);
   const count = (tab: Tab) => all.filter((d) => inTab(tab, d)).length;
-  const [tab, setTab] = useState<Tab>(all.some((d) => d.status === "pending") ? "requests" : "approved");
-  const approve = useApprove(routes, onChanged);
+  const [tab, setTab] = useState<Tab>("linked");
   const shown = all.filter((d) => inTab(tab, d));
 
   return (
@@ -59,8 +38,8 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
         {devices && shown.length === 0 && (
           <div className="card welcome">
             <Icon name="devices" size={40} />
-            <h2>{tab === "requests" ? "No requests" : "No approved devices"}</h2>
-            {tab === "requests" && <p className="muted">A device shows up here the first time it opens one of your tunnels.</p>}
+            <h2>{tab === "linked" ? "No linked devices" : "No other devices"}</h2>
+            {tab === "linked" && <p className="muted">A device shows up here once an account signs in from it.</p>}
           </div>
         )}
         {shown.length > 0 && (
@@ -69,19 +48,13 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
               {shown.map((d) => (
                 <li key={d.id}>
                   <a className="result device-row" href={`#/devices/${d.id}`}>
-                    <span className={"dot " + TONE[d.status]} role="img" aria-label={LABEL[d.status]} title={LABEL[d.status]} />
                     <span className="device-name">
                       <span className="scan-target mono">{shortId(d.id)}</span>
                       {d.name && <small>{d.name}</small>}
                     </span>
                     <span className="result-service">{summary(d)}</span>
                     <span className="result-meta">{ago(d.last_seen)}</span>
-                    {d.status !== "approved" ? (
-                      <button type="button" className="btn primary small" onClick={(e) => {
-                        e.preventDefault();
-                        approve(d);
-                      }}>Approve</button>
-                    ) : <Icon name="chevron_right" className="result-go" />}
+                    <Icon name="chevron_right" className="result-go" />
                   </a>
                 </li>
               ))}
@@ -93,22 +66,11 @@ export function Devices({ devices, routes, onChanged }: { devices: Device[] | nu
   );
 }
 
-// DevicePage is one device: what it reported, where from, and which tunnels
-// it may open.
-export function DevicePage({ device, routes, users, onChanged }: { device: Device; routes: Route[]; users: User[]; onChanged: () => Promise<void> }) {
+// DevicePage is one device: what it reported, where from, and who signed in
+// from it.
+export function DevicePage({ device, users, onChanged }: { device: Device; users: User[]; onChanged: () => Promise<void> }) {
   const notify = useNotify();
-  const approve = useApprove(routes, onChanged);
   const i = device.info ?? {};
-  const gated = routes.filter((r) => r.require_device);
-
-  const edit = async (patch: Parameters<typeof api.editDevice>[1]) => {
-    try {
-      await api.editDevice(device.id, patch);
-      await onChanged();
-    } catch (e) {
-      notify(message(e), "bad");
-    }
-  };
 
   const forget = async () => {
     try {
@@ -135,7 +97,7 @@ export function DevicePage({ device, routes, users, onChanged }: { device: Devic
   const network: [string, string | undefined][] = [
     ["Last address", device.last_ip ? `${device.last_ip}${device.country ? ` (${device.country})` : ""}` : undefined],
     ["First address", device.first_ip ?? undefined],
-    ["First asked for", device.first_host ?? undefined],
+    ["First opened", device.first_host ?? undefined],
     ["First seen", new Date(device.created_at * 1000).toLocaleString()],
     ["Last seen", ago(device.last_seen)],
   ];
@@ -147,44 +109,24 @@ export function DevicePage({ device, routes, users, onChanged }: { device: Devic
         <div className="page-head-main">
           <h1 className="mono"><Copy text={shortId(device.id)} copyText={device.id} plain /></h1>
           <div className="page-sub">
-            <span className={"chip " + TONE[device.status]}>{LABEL[device.status]}</span>
             {device.name && <b>{device.name}</b>}
             <span>Seen {ago(device.last_seen)}</span>
           </div>
         </div>
         <div className="page-actions">
-          {device.status !== "approved" && <button type="button" className="btn primary" onClick={() => approve(device)}><Icon name="check" size={18} />Approve</button>}
-          {device.status !== "denied" && (
-            <button type="button" className="btn" onClick={() => edit({ status: "denied" })}><Icon name="block" size={18} />{device.status === "approved" ? "Revoke" : "Deny"}</button>
-          )}
           <ArmedButton icon="delete" label="Forget" armedLabel="Forget for good" onConfirm={forget} />
         </div>
       </div>
       <div className="page-body stack">
-        {device.note && <Callout tone="warn" icon="warning">{device.note}. Compare the hardware below with what you expect before approving it again.</Callout>}
-
         <Card title="Device">
           <Row title="Name" sub="Something you'll recognise, such as Living room tablet.">
             <SaveField label="Name" width={240} placeholder="Unnamed" value={device.name} onSave={(name) => api.editDevice(device.id, { name }).then(onChanged)} />
           </Row>
         </Card>
 
-        <Card title="Can open" sub={device.status === "approved" ? "Tunnels that need an approved device." : "Takes effect once the device is approved."}>
-          <Row title="Every tunnel" sub="Including tunnels added later.">
-            <Switch label="Every tunnel" on={device.all_routes} onChange={(v) => edit({ all_routes: v })} />
-          </Row>
-          {!device.all_routes && gated.map((r) => (
-            <Row key={r.id} title={<span className="mono">{r.hostname}</span>}>
-              <Switch label={`Allow ${r.hostname}`} on={device.route_ids.includes(r.id)}
-                onChange={(v) => edit({ route_ids: v ? [...device.route_ids, r.id] : device.route_ids.filter((x) => x !== r.id) })} />
-            </Row>
-          ))}
-          {!device.all_routes && gated.length === 0 && <p className="card-note muted">No tunnel needs an approved device yet.</p>}
-        </Card>
-
         <Accounts device={device} users={users} />
 
-        <Card title="Hardware" sub="What the browser reported. A change in platform, touch or graphics sends an approved device back to waiting.">
+        <Card title="Hardware" sub="What the browser reported when it last signed in.">
           <Facts rows={hardware} />
         </Card>
         <Card title="Network">

@@ -53,11 +53,6 @@ CREATE TABLE IF NOT EXISTS devices (
     created_at INTEGER NOT NULL,
     last_seen INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS device_routes (
-    device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-    route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
-    PRIMARY KEY (device_id, route_id)
-);
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -80,6 +75,14 @@ CREATE TABLE IF NOT EXISTS sign_ins (
 );
 CREATE INDEX IF NOT EXISTS sign_ins_user ON sign_ins (user_id, at);
 CREATE INDEX IF NOT EXISTS sign_ins_device ON sign_ins (device_id, at);
+CREATE TABLE IF NOT EXISTS flags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_id TEXT REFERENCES devices(id) ON DELETE CASCADE,
+    ip TEXT,
+    country TEXT,
+    at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
@@ -222,7 +225,6 @@ pub struct Route {
     pub target_port: u16,
     pub target_scheme: String,
     pub require_lan: bool,
-    pub require_device: bool,
     /// A password shared for this tunnel alone.
     pub require_password: bool,
     /// Sign-in with an account from Users.
@@ -264,8 +266,10 @@ pub struct User {
     #[serde(skip)]
     pub all_routes: bool,
     pub route_ids: Vec<String>,
-    /// The devices this account may sign in from.
+    /// The devices this account has signed in from.
     pub device_ids: Vec<String>,
+    /// Signs in only from `device_ids`, or from the first device while it has none.
+    pub device_lock: bool,
     pub created_at: i64,
     pub last_login: Option<i64>,
     /// Why the account was locked, while it is.
@@ -303,6 +307,17 @@ pub struct Event {
     pub kind: String,
     pub outcome: String,
     pub user_id: Option<String>,
+    pub device_id: Option<String>,
+    pub ip: Option<String>,
+    pub country: Option<String>,
+    pub at: i64,
+}
+
+/// A sign-in from a device new to the account, until someone looks at it.
+#[derive(Clone, Serialize)]
+pub struct Flag {
+    pub id: i64,
+    pub user_id: String,
     pub device_id: Option<String>,
     pub ip: Option<String>,
     pub country: Option<String>,
@@ -363,19 +378,12 @@ pub struct Token {
     pub last_used: Option<i64>,
 }
 
-/// A browser that has asked for access through the gateway.
+/// A browser met at a tunnel, known by the key it holds.
 #[derive(Clone, Serialize)]
 pub struct Device {
     pub id: String,
     pub name: String,
-    /// "seen" (identified, never asked), "pending", "approved" or "denied".
-    pub status: String,
-    pub all_routes: bool,
-    pub route_ids: Vec<String>,
-    #[serde(skip)]
-    pub fingerprint: String,
     pub info: Value,
-    pub note: Option<String>,
     pub first_ip: Option<String>,
     pub last_ip: Option<String>,
     pub country: Option<String>,
@@ -442,10 +450,10 @@ fn passkey_row(r: &Row) -> rusqlite::Result<Passkey> {
 
 const USER_COLS: &str =
     "id, username, email, name, password_hash, enabled, all_routes, created_at, last_login, note, \
-     permissions, storage_limit";
+     permissions, storage_limit, device_lock";
 
-const DEVICE_COLS: &str = "id, name, status, all_routes, fingerprint, info, note, first_ip, \
-     last_ip, country, first_host, created_at, last_seen";
+const DEVICE_COLS: &str =
+    "id, name, info, first_ip, last_ip, country, first_host, created_at, last_seen";
 
 fn route_row(r: &Row) -> rusqlite::Result<Route> {
     Ok(Route {
@@ -458,7 +466,6 @@ fn route_row(r: &Row) -> rusqlite::Result<Route> {
         target_port: r.get(6)?,
         target_scheme: r.get(7)?,
         require_lan: r.get(8)?,
-        require_device: r.get(9)?,
         policy_mode: r.get(10)?,
         enabled: r.get(11)?,
         dns_record_id: r.get(12)?,
@@ -502,35 +509,23 @@ fn user_row(r: &Row) -> rusqlite::Result<User> {
             .map(str::to_owned)
             .collect(),
         storage_limit: r.get::<_, i64>(11)?.max(0) as u64,
+        device_lock: r.get(12)?,
     })
 }
 
 fn device_row(r: &Row) -> rusqlite::Result<Device> {
-    let info: String = r.get(5)?;
+    let info: String = r.get(2)?;
     Ok(Device {
         id: r.get(0)?,
         name: r.get(1)?,
-        status: r.get(2)?,
-        all_routes: r.get(3)?,
-        route_ids: Vec::new(),
-        fingerprint: r.get(4)?,
         info: serde_json::from_str(&info).unwrap_or(Value::Null),
-        note: r.get(6)?,
-        first_ip: r.get(7)?,
-        last_ip: r.get(8)?,
-        country: r.get(9)?,
-        first_host: r.get(10)?,
-        created_at: r.get(11)?,
-        last_seen: r.get(12)?,
+        first_ip: r.get(3)?,
+        last_ip: r.get(4)?,
+        country: r.get(5)?,
+        first_host: r.get(6)?,
+        created_at: r.get(7)?,
+        last_seen: r.get(8)?,
     })
-}
-
-fn grants(conn: &Connection, device_id: &str) -> rusqlite::Result<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT route_id FROM device_routes WHERE device_id = ?1")?;
-    let ids = stmt
-        .query_map([device_id], |r| r.get(0))?
-        .collect::<rusqlite::Result<Vec<String>>>()?;
-    Ok(ids)
 }
 
 pub struct Db {
@@ -564,6 +559,11 @@ impl Db {
                 "ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '';",
             )?;
         }
+        if !user_columns.iter().any(|c| c == "device_lock") {
+            conn.execute_batch(
+                "ALTER TABLE users ADD COLUMN device_lock INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
         if !user_columns.iter().any(|c| c == "storage_limit") {
             conn.execute_batch(
                 "ALTER TABLE users ADD COLUMN storage_limit INTEGER NOT NULL DEFAULT 0;",
@@ -578,18 +578,22 @@ impl Db {
                 conn.execute_batch(&format!("ALTER TABLE routes ADD COLUMN {ddl};"))?;
             }
         }
-        // Device IDs became 256 characters; earlier short ones are replaced, with
-        // their grants, before foreign keys are enforced.
+        // Tunnels no longer approve devices. One that relied on that alone asks for
+        // a sign-in instead, so it never opens to everyone.
+        conn.execute_batch(
+            "UPDATE routes SET require_login = 1
+                 WHERE require_device = 1 AND require_lan = 0 AND require_password = 0;
+             UPDATE routes SET require_device = 0 WHERE require_device = 1;
+             DROP TABLE IF EXISTS device_routes;",
+        )?;
+        // Device IDs became 256 characters; earlier short ones are replaced before
+        // foreign keys are enforced.
         let short: Vec<String> = conn
             .prepare("SELECT id FROM devices WHERE length(id) != 256")?
             .query_map([], |r| r.get(0))?
             .collect::<rusqlite::Result<_>>()?;
         for old in short {
             let new = random_alnum(256);
-            conn.execute(
-                "UPDATE device_routes SET device_id = ?2 WHERE device_id = ?1",
-                params![old, new],
-            )?;
             conn.execute(
                 "UPDATE devices SET id = ?2 WHERE id = ?1",
                 params![old, new],
@@ -799,7 +803,7 @@ impl Db {
                 r.target_port,
                 r.target_scheme,
                 r.require_lan,
-                r.require_device,
+                false,
                 r.policy_mode,
                 r.enabled,
                 r.dns_record_id,
@@ -821,10 +825,10 @@ impl Db {
     pub fn update_route(&self, r: &Route) -> Result<()> {
         self.conn().execute(
             "UPDATE routes SET target_host = ?2, target_port = ?3, target_scheme = ?4,
-                 require_lan = ?5, require_device = ?6, policy_mode = ?7, enabled = ?8,
-                 preserve_host = ?9, require_password = ?10, password_hash = ?11,
-                 require_login = ?12, login_max = ?13, login_idle = ?14, require_code = ?15,
-                 oauth = ?16, verify_tls = ?17
+                 require_lan = ?5, policy_mode = ?6, enabled = ?7,
+                 preserve_host = ?8, require_password = ?9, password_hash = ?10,
+                 require_login = ?11, login_max = ?12, login_idle = ?13, require_code = ?14,
+                 oauth = ?15, verify_tls = ?16
              WHERE id = ?1",
             params![
                 r.id,
@@ -832,7 +836,6 @@ impl Db {
                 r.target_port,
                 r.target_scheme,
                 r.require_lan,
-                r.require_device,
                 r.policy_mode,
                 r.enabled,
                 r.preserve_host,
@@ -878,39 +881,22 @@ impl Db {
         let mut stmt = conn.prepare(&format!(
             "SELECT {DEVICE_COLS} FROM devices ORDER BY last_seen DESC"
         ))?;
-        let mut devices = stmt
+        let devices = stmt
             .query_map([], device_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        let mut stmt = conn.prepare("SELECT device_id, route_id FROM device_routes")?;
-        let pairs = stmt
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        for device in &mut devices {
-            device.route_ids = pairs
-                .iter()
-                .filter(|(owner, _)| *owner == device.id)
-                .map(|(_, route)| route.clone())
-                .collect();
-        }
         Ok(devices)
     }
 
     fn device_where(&self, column: &str, value: &str) -> Result<Option<Device>> {
-        let conn = self.conn();
-        let device = conn
+        let device = self
+            .conn()
             .query_row(
                 &format!("SELECT {DEVICE_COLS} FROM devices WHERE {column} = ?1"),
                 [value],
                 device_row,
             )
             .optional()?;
-        match device {
-            Some(mut device) => {
-                device.route_ids = grants(&conn, &device.id)?;
-                Ok(Some(device))
-            }
-            None => Ok(None),
-        }
+        Ok(device)
     }
 
     pub fn device(&self, id: &str) -> Result<Option<Device>> {
@@ -924,17 +910,13 @@ impl Db {
     pub fn insert_device(&self, d: &Device, token_hash: &str) -> Result<()> {
         self.conn().execute(
             "INSERT INTO devices (id, token_hash, name, status, all_routes, fingerprint, info,
-                 note, first_ip, last_ip, country, first_host, created_at, last_seen)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                 first_ip, last_ip, country, first_host, created_at, last_seen)
+             VALUES (?1, ?2, ?3, 'seen', 0, '', ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 d.id,
                 token_hash,
                 d.name,
-                d.status,
-                d.all_routes,
-                d.fingerprint,
                 d.info.to_string(),
-                d.note,
                 d.first_ip,
                 d.last_ip,
                 d.country,
@@ -946,20 +928,14 @@ impl Db {
         Ok(())
     }
 
-    /// Saves everything about a device except its route grants.
     pub fn save_device(&self, d: &Device) -> Result<()> {
         self.conn().execute(
-            "UPDATE devices SET name = ?2, status = ?3, all_routes = ?4, fingerprint = ?5,
-                 info = ?6, note = ?7, last_ip = ?8, country = ?9, last_seen = ?10
+            "UPDATE devices SET name = ?2, info = ?3, last_ip = ?4, country = ?5, last_seen = ?6
              WHERE id = ?1",
             params![
                 d.id,
                 d.name,
-                d.status,
-                d.all_routes,
-                d.fingerprint,
                 d.info.to_string(),
-                d.note,
                 d.last_ip,
                 d.country,
                 d.last_seen,
@@ -968,36 +944,14 @@ impl Db {
         Ok(())
     }
 
-    pub fn set_grants(&self, device_id: &str, route_ids: &[String]) -> Result<()> {
-        let mut conn = self.conn();
-        let tx = conn.transaction()?;
-        tx.execute(
-            "DELETE FROM device_routes WHERE device_id = ?1",
-            [device_id],
-        )?;
-        for route_id in route_ids {
-            tx.execute(
-                "INSERT OR IGNORE INTO device_routes (device_id, route_id) VALUES (?1, ?2)",
-                params![device_id, route_id],
-            )?;
-        }
-        tx.commit()?;
-        Ok(())
-    }
-
-    /// Makes `from` and `into` one device, `into`: its accounts, tunnels and history
-    /// move over, it keeps the wider approval of the two, and `from` is gone.
+    /// Makes `from` and `into` one device, `into`: its accounts and history move
+    /// over, and `from` is gone.
     pub fn merge_device(&self, from: &str, into: &str) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         tx.execute(
             "INSERT OR IGNORE INTO user_devices (user_id, device_id)
                  SELECT user_id, ?2 FROM user_devices WHERE device_id = ?1",
-            params![from, into],
-        )?;
-        tx.execute(
-            "INSERT OR IGNORE INTO device_routes (device_id, route_id)
-                 SELECT ?2, route_id FROM device_routes WHERE device_id = ?1",
             params![from, into],
         )?;
         tx.execute(
@@ -1009,11 +963,7 @@ impl Db {
             params![from, into],
         )?;
         tx.execute(
-            "UPDATE devices SET
-                 all_routes = MAX(all_routes, (SELECT all_routes FROM devices WHERE id = ?1)),
-                 status = CASE WHEN (SELECT status FROM devices WHERE id = ?1) = 'approved'
-                     THEN 'approved' ELSE status END
-             WHERE id = ?2",
+            "UPDATE flags SET device_id = ?2 WHERE device_id = ?1",
             params![from, into],
         )?;
         tx.execute("DELETE FROM devices WHERE id = ?1", [from])?;
@@ -1027,12 +977,14 @@ impl Db {
         Ok(())
     }
 
-    /// Keeps at most `keep` devices that were only ever seen, dropping the longest
-    /// unseen, so passing visitors cannot fill the database.
+    /// Keeps at most `keep` devices that no account signed in from and no one
+    /// named, dropping the longest unseen, so passing visitors cannot fill the
+    /// database.
     pub fn prune_seen(&self, keep: i64) -> Result<()> {
         self.conn().execute(
             "DELETE FROM devices WHERE id IN (
-                 SELECT id FROM devices WHERE status = 'seen'
+                 SELECT id FROM devices WHERE name = ''
+                     AND id NOT IN (SELECT device_id FROM user_devices)
                  ORDER BY last_seen DESC LIMIT -1 OFFSET ?1)",
             [keep],
         )?;
@@ -1091,13 +1043,13 @@ impl Db {
         let tx = conn.transaction()?;
         tx.execute(
             &format!(
-                "INSERT INTO users ({USER_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                "INSERT INTO users ({USER_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
                  ON CONFLICT(id) DO UPDATE SET username = excluded.username,
                      email = excluded.email, name = excluded.name,
                      password_hash = excluded.password_hash, enabled = excluded.enabled,
                      all_routes = excluded.all_routes, last_login = excluded.last_login,
                      note = excluded.note, permissions = excluded.permissions,
-                     storage_limit = excluded.storage_limit"
+                     storage_limit = excluded.storage_limit, device_lock = excluded.device_lock"
             ),
             params![
                 u.id,
@@ -1112,6 +1064,7 @@ impl Db {
                 u.note,
                 u.permissions.join(","),
                 i64::try_from(u.storage_limit).unwrap_or(i64::MAX),
+                u.device_lock,
             ],
         )?;
         tx.execute("DELETE FROM user_devices WHERE user_id = ?1", [&u.id])?;
@@ -1141,6 +1094,42 @@ impl Db {
             params![s.user_id, s.device_id, s.ip, s.country, s.at, s.outcome],
         )?;
         conn.execute("DELETE FROM sign_ins WHERE at < ?1", [s.at - 90 * 86_400])?;
+        Ok(())
+    }
+
+    /// Notes a sign-in from a device new to the account.
+    pub fn add_flag(&self, s: &SignIn) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO flags (user_id, device_id, ip, country, at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![s.user_id, s.device_id, s.ip, s.country, s.at],
+        )?;
+        Ok(())
+    }
+
+    /// Sign-ins from new devices no one has looked at yet, newest first.
+    pub fn flags(&self) -> Result<Vec<Flag>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, user_id, device_id, ip, country, at FROM flags ORDER BY at DESC LIMIT 200",
+        )?;
+        let list = stmt
+            .query_map([], |r| {
+                Ok(Flag {
+                    id: r.get(0)?,
+                    user_id: r.get(1)?,
+                    device_id: r.get(2)?,
+                    ip: r.get(3)?,
+                    country: r.get(4)?,
+                    at: r.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(list)
+    }
+
+    pub fn delete_flag(&self, id: i64) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM flags WHERE id = ?1", [id])?;
         Ok(())
     }
 
@@ -1748,15 +1737,6 @@ impl Db {
             [at],
         )?;
         Ok(())
-    }
-
-    pub fn pending_count(&self) -> Result<i64> {
-        let count = self.conn().query_row(
-            "SELECT COUNT(*) FROM devices WHERE status = 'pending'",
-            [],
-            |r| r.get(0),
-        )?;
-        Ok(count)
     }
 }
 

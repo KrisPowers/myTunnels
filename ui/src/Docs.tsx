@@ -82,7 +82,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>A container and its tunnel are one page. Its heading holds its state, image and address, <b>Open</b>, the one button its state calls for (start, stop or resume) and a menu for the rest. Under it: <b>Overview</b> (its CPU, memory, network and disk while it runs, then what it runs, its state, ports, networks and mounts), <b>Tunnel</b>, <b>Images</b> and <b>Logs</b>.</p>
       </Doc>
       <Doc title="Its tunnel">
-        <p><b>Tunnel</b> lists the container's addresses in the middle, each with its state, where it goes and who may open it, and the picked one's activity under them. Its controls sit at the side: Open, its live switch, a menu to change the address or remove it, its access control and its approved devices. The plus publishes an address: type the subdomain, pick the domain, choose who may open it and press <b>Publish</b>; the port is the container's own, asked only when it has more than one.</p>
+        <p><b>Tunnel</b> lists the container's addresses in the middle, each with its state, where it goes and who may open it, and the picked one's activity under them. Its controls sit at the side: Open, its live switch, a menu to change the address or remove it, and its access control. The plus publishes an address: type the subdomain, pick the domain, choose who may open it and press <b>Publish</b>; the port is the container's own, asked only when it has more than one.</p>
       </Doc>
       <Doc title="From a repository">
         <p><b>Container from Git</b> and <b>from GitHub</b> make a container from code: pick a repository on this host's <b>Git</b> or give any https address (GitHub and the like, with a token for a private one), then its branch, its name and how it updates: <b>When the branch changes</b>, <b>On a timer</b> (every hour to every week), or <b>Only when I press Update</b>. <b>Update</b>, in its heading, builds the latest commit at any time.</p>
@@ -172,7 +172,6 @@ const CONTENT: Record<string, ReactNode> = {
         <p>Every layer is optional. With none on, anyone with the link reaches the app, and its own login still applies.</p>
         <ul className="bullets">
           <li><b>Same network as this host</b> lets in visitors coming from this computer's internet connection, or a network listed in Settings, Network.</li>
-          <li><b>Approved devices</b> lets in browsers you have approved under Devices.</li>
           <li><b>Tunnel password</b> asks for one password that belongs to this tunnel alone.</li>
           <li><b>Sign-in</b> asks for an account from Users that may open this tunnel.</li>
         </ul>
@@ -181,7 +180,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>With more than one layer on, choose <b>Require all</b> to need every one, or <b>Any one is enough</b> to let visitors use whichever they have. With any one, the page a visitor sees offers the other ways in.</p>
       </Doc>
       <Doc title="Keeping it safe">
-        <p>Passwords are stored as Argon2 hashes, never as text. After five wrong tries from one place, or against one account, further tries are refused for 15 minutes. Changing a tunnel password or an account's password signs out everyone using the old one.</p>
+        <p>Passwords are stored as Argon2 hashes, never as text. After three wrong tries from one place, or against one account, further tries are refused for 30 minutes; an account's own devices can still sign in. Ten wrong tries on an account in a day hold it to its own devices for a day, and a place that fails on three accounts in a day is refused for a day. Changing a tunnel password or an account's password signs out everyone using the old one.</p>
       </Doc>
     </>
   ),
@@ -190,11 +189,8 @@ const CONTENT: Record<string, ReactNode> = {
       <Doc title="Device keys">
         <p>The first time a browser opens this dashboard or any tunnel, it is given a 256 character device key, kept in a cookie and in the browser's local storage. Tunnels on other domains fetch the same key from the oldest tunnel's address, so one browser is one device everywhere. Only a hash of the key is stored here.</p>
       </Doc>
-      <Doc title="Approving">
-        <p>Devices lists every browser met so far. <b>Seen</b> ones have only visited; <b>Waiting</b> ones asked to open a tunnel that needs an approved device. Approve one for every tunnel or for chosen ones. The browser you use for this dashboard is approved on its own.</p>
-      </Doc>
-      <Doc title="Hardware checks">
-        <p>An approved device reports its platform, touch support and graphics. If the same key later turns up with different hardware, the device goes back to waiting, which stops a copied key from working on another machine.</p>
+      <Doc title="Linked and other">
+        <p>Devices lists every browser met so far. <b>Linked</b> ones are those an account has signed in from, with what the browser reported when it signed in; <b>Other</b> ones have only visited. Name one to know it again, or forget it.</p>
       </Doc>
     </>
   ),
@@ -204,10 +200,10 @@ const CONTENT: Record<string, ReactNode> = {
         <p>Users, under Security &amp; Roles, holds the accounts people sign in with, yours among them: the account made at setup holds the <b>Host</b> and <b>Admin</b> roles, and only it changes itself, under Settings, Account. Each has a username, an email (either signs in), and a password held to the same rule as every password here.</p>
       </Doc>
       <Doc title="What an account opens">
-        <p>On an account's <b>Profile</b>, <b>Tunnels</b> holds the tunnels it may open, and <b>Security</b> the devices it signs in from. An account made without a device takes the first one that signs in to it. One sign-in covers every tunnel on the same domain that the account may open. Suspending an account, or removing it, ends its sessions at once.</p>
+        <p>On an account's <b>Profile</b>, <b>Tunnels</b> holds the tunnels it may open, and <b>Security</b> the devices it signs in from. Every device an account signs in from is added there, and a sign-in from one new to an account that already has others shows under <b>New devices</b> on the Dashboard until it is dismissed. With <b>Device lock</b> on, the account signs in only from those devices; with none yet, the first one to sign in becomes its own. One sign-in covers every tunnel on the same domain that the account may open. Suspending an account, or removing it, ends its sessions at once.</p>
       </Doc>
       <Doc title="Permissions">
-        <p>On an account's <b>Permissions</b>, a card per feature says what it may do. <b>Sign in to the dashboard</b> lets it in here with its own password; then it sees only the pages and actions the rest allow, such as viewing containers, approving devices, or creating repositories. <b>Admin</b> holds them all, including making others admins; the host account made at setup always does. Anyone who manages accounts can give only permissions they hold, and cannot change their own.</p>
+        <p>On an account's <b>Permissions</b>, a card per feature says what it may do. <b>Sign in to the dashboard</b> lets it in here with its own password; then it sees only the pages and actions the rest allow, such as viewing containers, naming devices, or creating repositories. <b>Admin</b> holds them all, including making others admins; the host account made at setup always does. Anyone who manages accounts can give only permissions they hold, and cannot change their own.</p>
       </Doc>
     </>
   ),
@@ -217,7 +213,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>Tunnels with Sign-in on can also offer <b>Continue with</b> GitHub, Google, GitLab, Discord, Slack or Codeberg; a self-hosted Authentik, Authelia, Keycloak, Pocket ID, Zitadel, Kanidm, Gitea or Forgejo; Auth0 or Okta; or any other OpenID Connect provider. Self-hosted and tenant providers also take their issuer URL. Each is set up once under <b>Security &amp; Roles, Third-Party OAuth</b>: register an app with the provider and paste its client ID and secret back. Then each tunnel switches on the ones it offers, under Access Control.</p>
       </Doc>
       <Doc title="Who it lets in">
-        <p>The provider vouches for an email. The account in Users with that email signs in, held to the same rules as signing in with its password: it must be on, may open the tunnel, and be on a device linked to it.</p>
+        <p>The provider vouches for an email. The account in Users with that email signs in, held to the same rules as signing in with its password: it must be on, may open the tunnel, and, with Device lock on, be on one of its own devices.</p>
       </Doc>
       <Doc title="The redirect URL">
         <p>A provider sends people back to the tunnel they signed in at, at <code>/__gate/oauth-callback</code>. Switching a provider on at a tunnel shows that URL to add to the provider's app. GitHub takes one callback URL that covers a whole domain, so registering <code>https://example.com</code> covers every tunnel on it.</p>
@@ -227,7 +223,7 @@ const CONTENT: Record<string, ReactNode> = {
   twofactor: (
     <>
       <Doc title="Emailed codes">
-        <p>With Two-Factor Auth, signing in takes a code sent by email as well as the password. The code is six digits, works once, and lasts ten minutes; five wrong tries and it is gone, and signing in starts again.</p>
+        <p>With Two-Factor Auth, signing in takes a code sent by email as well as the password. The code is six digits, works once, and lasts ten minutes; three wrong tries and it is gone, and signing in starts again.</p>
       </Doc>
       <Doc title="SMTP">
         <p>Codes are sent with SMTP credentials you enter under <b>Security &amp; Roles, Two-Factor Auth</b>: host, port, security, username, password and from address, from Gmail (with an app password), Outlook or any other provider. Saving signs in with them to check them, and <b>Send a test</b> emails the host account.</p>

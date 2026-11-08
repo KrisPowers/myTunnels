@@ -116,32 +116,24 @@ function PasswordField({ label, value, onChange, hint }: { label: string; value:
 
 // ---- a new account ----
 
-function deviceLabel(d: Device) {
-  const where = [d.info?.platform, d.country].filter(Boolean).join(", ");
-  return `${d.name || shortId(d.id)}${where ? `, ${where}` : ""}`;
-}
-
 // What a storage-only account holds: the dashboard, for Storage and nothing else.
 const STORAGE_ONLY = ["dashboard", "media.view", "media.upload", "media.delete", "drive.view", "drive.edit", "drive.delete"];
 
-export function NewUser({ devices, routes, onAdded }: { devices: Device[]; routes: Route[]; onAdded: () => Promise<void> }) {
+export function NewUser({ routes, onAdded }: { routes: Route[]; onAdded: () => Promise<void> }) {
   const [access, setAccess] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
-  const [device, setDevice] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
   const ready = username.trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && strength(password).ok;
-  // Devices seen most recently first.
-  const choices = [...devices].sort((a, b) => b.last_seen - a.last_seen);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!ready) return;
     setBusy(true);
     try {
-      const user = await api.addUser({ username, email, password, device_id: device });
+      const user = await api.addUser({ username, email, password });
       if (access === "storage") {
         await api.editUser(user.id, { permissions: STORAGE_ONLY, route_ids: routes.filter((r) => r.target_scheme === "dashboard").map((r) => r.id) });
       }
@@ -160,7 +152,7 @@ export function NewUser({ devices, routes, onAdded }: { devices: Device[]; route
         <a className="icon-btn" href="#/users" aria-label="All users" title="All users"><Icon name="arrow_back" /></a>
         <div className="page-head-main">
           <h1>New user</h1>
-          <div className="page-sub">They sign in with their email and password, from one device. Add tunnels once the account exists.</div>
+          <div className="page-sub">They sign in with their email and password. Add tunnels once the account exists.</div>
         </div>
       </div>
       <div className="page-body stack">
@@ -169,14 +161,6 @@ export function NewUser({ devices, routes, onAdded }: { devices: Device[]; route
             <TextField label="Username" autoFocus autoComplete="off" value={username} onChange={(v) => setUsername(v.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 40))}
               hint="Letters, digits, dots, dashes and underscores" />
             <TextField label="Email" type="email" autoComplete="off" value={email} onChange={setEmail} hint="What they sign in with" />
-            <div className="tf static span">
-              <div className="tf-box">
-                <Dropdown label="Device" value={device} onChange={setDevice}
-                  options={[{ value: "", label: "First to sign in" }, ...choices.map((d) => ({ value: d.id, label: deviceLabel(d), hint: `Seen ${ago(d.last_seen)}` }))]} />
-                <span className="tf-label">Device</span>
-              </div>
-              <div className="tf-hint">The only device they can sign in from. More can be linked later.</div>
-            </div>
             <div className="tf static span">
               <div className="tf-box">
                 <Dropdown label="Access" value={access} onChange={setAccess}
@@ -378,6 +362,10 @@ function Profile({ user, routes, devices, edit, onChange }: {
           <PasswordValue onSave={(password) => edit({ password })} />
           <div className="kv"><span className="kv-label">Status</span><span className="kv-value"><span className={"chip " + tone}>{label}</span></span></div>
           <div className="kv"><span className="kv-label">Added</span><span className="kv-value">{new Date(user.created_at * 1000).toLocaleDateString()}</span></div>
+          <div className="kv" title="Sign in only from the devices below. With none yet, the first device to sign in.">
+            <span className="kv-label">Device lock</span>
+            <span className="kv-value"><Switch label="Device lock" on={user.device_lock} disabled={!manage} onChange={(v) => onChange({ device_lock: v })} /></span>
+          </div>
           <div className="section-head sub">
             <h4 className="section-title">Devices</h4>
             {manage && (
@@ -404,7 +392,7 @@ function Profile({ user, routes, devices, edit, onChange }: {
                 </li>
               ))}
             </ul>
-          ) : <p className="empty-note">None linked, so they cannot sign in yet</p>}
+          ) : <p className="empty-note">None yet</p>}
         </section>
       </div>
     </>
@@ -525,7 +513,7 @@ function Activity({ user }: { user: User }) {
             at: s.at,
             tone: s.outcome === "ok" ? "ok" : "bad",
             event: s.outcome === "ok" ? "Signed in" : s.outcome === "failed" ? "Wrong password"
-              : s.outcome === "unlinked" ? "Refused, not a linked device" : "Blocked and held for review",
+              : s.outcome === "unlinked" ? "Refused by the device lock" : "Blocked and held for review",
             who: s.device_id ? <a className="mono" href={`#/devices/${s.device_id}`}>{shortId(s.device_id)}</a> : undefined,
             ip: s.ip,
             country: s.country,

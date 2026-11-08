@@ -198,7 +198,7 @@ function Publish({ onClose, onDone }: { onClose: () => void; onDone: () => Promi
     try {
       const route = await api.publish({
         subdomain: sub, zone_id: zone, port: 0, target_host: null, target_scheme: "code", preserve_host: false,
-        require_lan: false, require_device: false, require_password: false, require_login: false, require_code: false, oauth: [],
+        require_lan: false, require_password: false, require_login: false, require_code: false, oauth: [],
         login_max: 7 * 86_400, login_idle: 0, policy_mode: "all",
       });
       notify(`Published ${route.hostname}`);

@@ -4,7 +4,7 @@ A self-hosted gateway for publishing homelab apps through Cloudflare Tunnel. Pic
 port, type a subdomain, choose one of your domains, and the app is reachable at
 `https://<subdomain>.<domain>` without opening a single port on your router. Every request
 passes through an access gateway that can require the visitor to be on your home network,
-to use an approved device, or both.
+to know the tunnel's password, to sign in with an account, or any mix of those.
 
 ## How it works
 
@@ -91,7 +91,7 @@ pause, kill and delete. Under it:
   its state and restarts, its ports, networks and mounts.
 - **Tunnel**: its addresses in the middle, each with its state, where it goes and who can open
   it, and the picked one's activity under them. Its controls sit at the side: Open, its live
-  switch, a menu to change the address or remove it, its access control and approved devices.
+  switch, a menu to change the address or remove it, and its access control.
   The plus publishes an address: type the subdomain, pick the domain, choose who can open it
   and press **Publish**; the port is the container's own, asked only when it has more than one.
 - **Images**: the image it runs and the others of the same name, such as earlier versions, with
@@ -277,11 +277,17 @@ Account**, and it cannot be suspended or removed. Open any other to set it up:
 
 - **Permissions**, a card per feature: **Sign in to the dashboard**, then what it may do there,
   such as viewing containers or starting and stopping them, publishing, changing or removing
-  tunnels, approving devices, managing accounts, viewing, pushing to, creating and deleting
+  tunnels, naming devices, managing accounts, viewing, pushing to, creating and deleting
   repositories in Git, opening issues and pull requests, uploading and deleting in Storage, and the settings pages.
-- **Profile**: its details; **Security**, with its password, status and the devices it signs in
-  from; and **Tunnels**, the tunnels it may open, added with **+** and removed with each one's
-  **x**. **Suspend** in the menu stops it signing in anywhere until reinstated.
+- **Profile**: its details; **Security**, with its password, status, **Device lock** and the
+  devices it signs in from; and **Tunnels**, the tunnels it may open, added with **+** and
+  removed with each one's **x**. **Suspend** in the menu stops it signing in anywhere until
+  reinstated.
+
+Every device an account signs in from is added to it. A sign-in from a device new to an
+account that already has others shows under **New devices** on the Dashboard until it is
+dismissed. With **Device lock** on, the account signs in only from its own devices; one with
+none yet takes the first device that signs in.
 
 An account with **Sign in to the dashboard** signs in there with its email or username and its
 own password (and an emailed code, when the dashboard asks for one), and sees only the pages
@@ -298,32 +304,26 @@ Each tunnel can require nothing, or any combination of:
 | Rule | Passes when |
 | --- | --- |
 | Same network as this host | The visitor's public address (as reported by Cloudflare) is this host's public IPv4 address, inside this host's IPv6 /64, or inside a network listed under **Settings, Network** |
-| Approved device | The browser holds a session for a device that is approved for this tunnel |
+| Tunnel password | The visitor entered this tunnel's own password |
+| Sign-in | The visitor signed in with an account from **Users** that may open this tunnel |
 
-With both rules on, choose **Require both** or **Either is enough**. Either way the app's
-own login still applies; the gateway is an extra layer in front of it.
+With more than one rule on, choose **Require all** or **Any one is enough**. Either way the
+app's own login still applies; the gateway is an extra layer in front of it.
 
-### Device approval
+### Device keys
 
-1. A browser opens a tunnel that requires approved devices.
-2. The gateway shows a page with a short device ID. The browser is assigned a 256 character
-   letter and number key, kept only in a cookie that page scripts cannot read, so the app
-   behind the tunnel never sees it.
-3. The device appears under **Security & Roles, Devices** with what the browser reported (platform, GPU, CPU
-   threads, memory, screen, time zone, languages, user agent) and where it connected from
-   (IP address and country).
-4. Approve it for every tunnel or for selected ones. The waiting page opens the app on its
-   own within a few seconds.
+Every browser is given a 256 character letter and number key the first time it opens a
+tunnel, kept only in a cookie that page scripts cannot read, so the app behind the tunnel
+never sees it. The key is never stored on the server, only its SHA-256 hash. Each tunnel
+keeps it in a cookie for its own address alone, never one for the whole domain, so other
+servers on the domain never receive it. A browser is still one device everywhere: a tunnel
+it has not opened yet fetches its key from the oldest tunnel with a one-use code, and the
+dashboard's own browser carries its key to every tunnel once. A key no device has any more
+is replaced. One sign-in covers every tunnel the account may open, on that device.
 
-The key is never stored on the server, only its SHA-256 hash. Each tunnel keeps it in a
-cookie for its own address alone, never one for the whole domain, so other servers on the
-domain never receive it. A browser is still one device everywhere: a tunnel it has not
-opened yet fetches its key from the oldest tunnel with a one-use code, and the dashboard's
-own browser carries its key to every tunnel once. A key no device has any more is replaced
-by that one device. One approval, and one sign-in, covers every tunnel the device and the
-account may open. If an approved key later shows up with different hardware
-(platform, touch support, or GPU), the device goes back to waiting and is flagged for
-review, which stops a copied key from working on another machine.
+**Security & Roles, Devices** lists them: **Linked**, the devices accounts sign in from, with
+what each browser reported when it signed in (platform, GPU, CPU threads, memory, screen,
+time zone, languages, user agent) and where it connected from; and **Other**, the rest.
 
 ## Third-party sign-in
 
@@ -389,17 +389,20 @@ under **Show target options**.
 
 Nothing here needs setting up; all of it is on from the first start.
 
-- Sessions (admin, device, tunnel password, account) are signed tokens (JWT, HS256).
+- Sessions (admin, tunnel password, account) are signed tokens (JWT, HS256).
   The signing key is made on first start and kept in the database, so sessions
   survive restarts. Signing out, signing an account out everywhere, removing a device
   or account, and changing a password all end the sessions they cover for good.
 - Every browser gets a device ID on its first visit, and the gateway's limits count
-  per device ID as well as per address: 1200 requests and 30 key, password or
-  sign-in steps a minute. One address gets at most 20 new device IDs an hour.
-- Password and sign-in attempts need a device ID. Five wrong tries lock that device,
-  that address and, for accounts, that email out for 15 minutes, except on the devices
-  linked to the account, so its owner is never locked out by someone else's tries. A
-  device that fails on three different accounts in a day is refused for a day.
+  per device ID as well as per address: 1200 requests and 20 key, password or
+  sign-in steps a minute. One address gets at most 10 new device IDs an hour.
+- Password and sign-in attempts need a device ID and a solved puzzle that grows harder
+  after each wrong try. Three wrong tries lock that device, that address and, for
+  accounts, that email out for 30 minutes, except on the account's own devices, so its
+  owner is never locked out by someone else's tries. Ten wrong tries on an account in a
+  day hold it to its own devices for a day. A device or address that fails on three
+  different accounts in a day, or an address with twenty wrong tries in a day, is
+  refused for a day. An emailed or app code allows three tries.
 - The panel allows 600 calls and 10 sign-in attempts per address each minute.
 - The panel refuses changes that do not carry the header it sends, so another site
   cannot act through a signed-in browser. It sends a strict Content Security Policy
@@ -410,9 +413,9 @@ Nothing here needs setting up; all of it is on from the first start.
 
 - The admin panel answers only on the computer running it, at `http://localhost:7070`. Every
   other device opens it through a tunnel; publish it only with access rules in front of it,
-  such as approved devices.
+  such as sign-in.
 - The same network check compares public addresses. Behind carrier grade NAT, other
-  customers of your ISP can share your public IPv4 address, so prefer device approval there.
+  customers of your ISP can share your public IPv4 address, so prefer sign-in there.
 - The Cloudflare and tunnel tokens, SMTP and OAuth credentials and the session signing key
   are sealed in the database with a key kept in the separate `keys` volume, so a copy of the
   data volume alone does not give them away. Keep both volumes; without the key, those

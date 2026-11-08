@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
-import { api, message, type ContainerStats, type Metrics } from "./api";
+import { ago, api, message, shortId, type ContainerStats, type Device, type Flag, type Metrics, type User } from "./api";
 import { Icon } from "./Icon";
-import { Callout } from "./ui";
+import { useCan } from "./me";
+import { Callout, useNotify } from "./ui";
 
 // Chart colours, in a fixed order: blue, magenta, orange.
 const BLUE = "var(--s1)";
@@ -9,8 +10,8 @@ const MAGENTA = "var(--s2)";
 const ORANGE = "var(--s3)";
 
 // DashboardPage reads out the host and its containers as widgets, refreshed as
-// often as the server samples them.
-export function DashboardPage() {
+// often as the server samples them, under any sign-ins from new devices.
+export function DashboardPage({ flags, users, devices, onChanged }: { flags: Flag[]; users: User[]; devices: Device[]; onChanged: () => Promise<void> }) {
   const [m, setM] = useState<Metrics | null>(null);
   const [problem, setProblem] = useState("");
 
@@ -53,7 +54,7 @@ export function DashboardPage() {
         </div>
       </div>
       {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
-      {m && last && <Board m={m} />}
+      {m && last && <Board m={m} lead={flags.length > 0 && <NewDevices flags={flags} users={users} devices={devices} onChanged={onChanged} />} />}
     </>
   );
 }
@@ -88,7 +89,46 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-function Board({ m }: { m: Metrics }) {
+// NewDevices is each sign-in from a device new to its account, until someone
+// dismisses it.
+function NewDevices({ flags, users, devices, onChanged }: { flags: Flag[]; users: User[]; devices: Device[]; onChanged: () => Promise<void> }) {
+  const can = useCan();
+  const notify = useNotify();
+  const dismiss = async (id: number) => {
+    try {
+      await api.clearFlag(id);
+      await onChanged();
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+  };
+  return (
+    <Widget title="New devices" note={`${flags.length} sign-in${flags.length === 1 ? "" : "s"}`} full flush>
+      <div className="table-wrap">
+        <table className="table">
+          <thead><tr><th className="grow">Account</th><th>Device</th><th>From</th><th>When</th>{can("users.manage") && <th />}</tr></thead>
+          <tbody>
+            {flags.map((f) => {
+              const u = users.find((x) => x.id === f.user_id);
+              const d = devices.find((x) => x.id === f.device_id);
+              return (
+                <tr key={f.id}>
+                  <td className="name-cell"><a href={`#/users/${f.user_id}`}>{u ? u.name || u.username : "Removed account"}</a>{u && <small>{u.email}</small>}</td>
+                  <td>{f.device_id ? <a className="mono" href={`#/devices/${f.device_id}`}>{d?.name || shortId(f.device_id)}</a> : "Unknown"}</td>
+                  <td>{[f.ip, f.country].filter(Boolean).join(", ") || "Unknown"}</td>
+                  <td>{ago(f.at)}</td>
+                  {can("users.manage") && <td className="num"><button type="button" className="btn small" onClick={() => dismiss(f.id)}>Dismiss</button></td>}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Widget>
+  );
+}
+
+function Board({ m, lead }: { m: Metrics; lead: ReactNode }) {
   const h = m.history;
   const last = h[h.length - 1];
   const times = h.map((s) => s.at);
@@ -101,6 +141,7 @@ function Board({ m }: { m: Metrics }) {
 
   return (
     <div className="page-body widgets">
+      {lead}
       <Widget title="System Information" wide flush>
         <div className="system">
           <div className="system-mark">
