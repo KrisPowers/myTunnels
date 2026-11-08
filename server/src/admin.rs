@@ -1850,12 +1850,22 @@ async fn lan_git(
     code::serve(&state, Some(peer.ip()), &format!("/{path}"), req).await
 }
 
-async fn media_fs(State(state): State<AppState>, Path(op): Path<String>, req: Request) -> Response {
-    storage::fs(&state, storage::Space::Media, &op, req).await
+async fn media_fs(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(op): Path<String>,
+    req: Request,
+) -> Response {
+    storage::fs(&state, storage::Space::Media, caller.id(), &op, req).await
 }
 
-async fn drive_fs(State(state): State<AppState>, Path(op): Path<String>, req: Request) -> Response {
-    storage::fs(&state, storage::Space::Drive, &op, req).await
+async fn drive_fs(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(op): Path<String>,
+    req: Request,
+) -> Response {
+    storage::fs(&state, storage::Space::Drive, caller.id(), &op, req).await
 }
 
 // Devices

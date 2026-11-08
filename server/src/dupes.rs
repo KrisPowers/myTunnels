@@ -25,7 +25,7 @@ struct Copy {
     modified: i64,
 }
 
-/// Every set of identical files in the spaces the caller may view, the biggest
+/// Every set of identical files in the caller's own spaces that it may view, the biggest
 /// first, each set oldest first.
 pub async fn find(
     State(state): State<AppState>,
@@ -37,7 +37,7 @@ pub async fn find(
         (Space::Drive, "drive", "drive.view"),
     ] {
         if caller.can(permission) {
-            roots.push((name, Store::open(&state, space)?.real(&[])?));
+            roots.push((name, Store::open(&state, space, caller.id())?.real(&[])?));
         }
     }
     let groups = tokio::task::spawn_blocking(move || groups(&roots))

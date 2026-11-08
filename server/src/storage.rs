@@ -1,5 +1,6 @@
 //! Media and Drive: collections myTunnels keeps in its data folder, for photos
-//! and videos, and for documents, browsed and changed from the dashboard.
+//! and videos, and for documents, browsed and changed from the dashboard. Each
+//! account has its own, which no other account sees.
 //!
 //! Paths in the API are under the collection's folder, `/`-separated, `""` for
 //! the folder itself.
@@ -18,6 +19,7 @@ use serde_json::{json, Value};
 use tokio::io::AsyncWriteExt;
 use tower_http::services::ServeFile;
 
+use crate::db::HOST_ID;
 use crate::state::AppState;
 use crate::util::{now, ApiError, ApiResult};
 
@@ -105,15 +107,17 @@ impl Space {
     }
 }
 
-/// A collection's folder.
+/// One account's collection: its folder, apart from everyone else's.
 pub struct Store {
     pub space: Space,
     base: PathBuf,
 }
 
 impl Store {
-    pub fn open(state: &AppState, space: Space) -> ApiResult<Self> {
-        let base = state.config.data_dir.join(space.folder());
+    /// The collection of the account `owner`. The host's is the data folder's
+    /// own; every other account's is under `people`, by its ID.
+    pub fn open(state: &AppState, space: Space, owner: &str) -> ApiResult<Self> {
+        let base = base(&state.config.data_dir, space, owner)?;
         std::fs::create_dir_all(&base).map_err(io_error)?;
         Ok(Self { space, base })
     }
@@ -168,12 +172,22 @@ impl Store {
     }
 }
 
+fn base(data: &Path, space: Space, owner: &str) -> ApiResult<PathBuf> {
+    if owner == HOST_ID {
+        return Ok(data.join(space.folder()));
+    }
+    if owner.is_empty() || !owner.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return Err(ApiError::not_found());
+    }
+    Ok(data.join("people").join(owner).join(space.folder()))
+}
+
 // ---- the files API ----
 
-/// One file operation, `op`, in `space`.
-pub async fn fs(state: &AppState, space: Space, op: &str, req: Request) -> Response {
+/// One file operation, `op`, in `space` of the account `owner`.
+pub async fn fs(state: &AppState, space: Space, owner: &str, op: &str, req: Request) -> Response {
     let result = async {
-        let store = Store::open(state, space)?;
+        let store = Store::open(state, space, owner)?;
         let method = req.method().clone();
         match (method, op) {
             (Method::GET, "list") => list(&store, query(&req)?).await,
