@@ -175,6 +175,8 @@ export interface ContainerStats {
   cpu: number;
   memory: number;
   memory_limit: number;
+  // Processors it may use; 0 for no limit.
+  cpu_limit: number;
   rx: number;
   tx: number;
   read: number;
@@ -329,6 +331,21 @@ export interface ContainerDetail {
 }
 
 export type ContainerAction = "start" | "stop" | "restart" | "pause" | "unpause" | "kill";
+
+// A container's resources. 0 is no limit, and -1 swap is no limit.
+export interface Limits {
+  cpus: number;
+  priority: "low" | "normal" | "high";
+  memory: number;
+  reserve: number;
+  swap: number;
+  pids: number;
+  restart: "no" | "on-failure" | "unless-stopped" | "always";
+  retries: number;
+}
+
+// Its resources, with the most this machine can give.
+export interface Resources { limits: Limits; cpus: number; memory: number }
 
 // Git: repositories kept on this host, browsed here and used with git over
 // HTTPS signing in with a token.
@@ -582,6 +599,8 @@ export const api = {
   containers: () => call<Container[]>("/containers"),
   container: (id: string) => call<ContainerDetail>(`/containers/${encodeURIComponent(id)}`),
   containerLogs: (id: string, tail: number) => call<{ lines: string[] }>(`/containers/${encodeURIComponent(id)}/logs?tail=${tail}`),
+  limits: (id: string) => call<Resources>(`/containers/${encodeURIComponent(id)}/limits`),
+  setLimits: (id: string, limits: Limits) => call<Resources>(`/containers/${encodeURIComponent(id)}/limits`, "PUT", limits),
   containerAction: (id: string, action: ContainerAction) => call(`/containers/${encodeURIComponent(id)}/${action}`, "POST"),
   removeContainer: (id: string) => call(`/containers/${encodeURIComponent(id)}`, "DELETE"),
   images: () => call<Image[]>("/images"),

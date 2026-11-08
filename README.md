@@ -61,8 +61,12 @@ minutes drawn as charts:
 - **Disks**, how full each one is, and every **temperature sensor** the host exposes.
 - **Containers**, each one's CPU, memory, network and disk traffic, and its state.
 
-Inside the container, processors, memory and temperatures are the host's own. Network
-traffic is what passes through myTunnels. Containers come from the Docker API through the
+On a Linux host, processors, memory and temperatures are the host's own. Docker Desktop
+runs containers in a virtual machine, so from inside one they are that machine's. To show
+the computer's own, run `server host` on it (from `server/`, `cargo run --release -- host`):
+it answers on `127.0.0.1:7092` alone, and the Dashboard reads it through `HOST_URL` in
+`compose.yaml`, falling back to its own figures while it is not running. Network traffic is
+what passes through myTunnels, or the computer's while `server host` runs. Containers come from the Docker API through the
 `docker` service in `compose.yaml`, which allows containers and nothing else.
 Temperatures need sensors the host exposes under `/sys/class/hwmon`, which a Linux host
 does and Docker Desktop does not.
@@ -98,6 +102,10 @@ pause, kill and delete. Under it:
   their size and age. Open one for its entrypoint, command, working folder, user, exposed ports,
   environment, labels and layers. One no container uses can be deleted.
 - **Logs**: followed as it runs, searchable, with or without times.
+- **Resources**: its CPU limit and priority, its memory limit, reserved memory and swap, how
+  many processes it may run, and when it restarts. Each change applies at once, without a
+  restart, and is kept by the container's name, so it is given back when the container is
+  made again by Compose or a new build. The Dashboard shows each container against its limits.
 
 ### From a repository or an image
 

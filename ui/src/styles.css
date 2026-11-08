@@ -944,6 +944,7 @@ a.result:hover { background: var(--hover); }
 .cpu-cell { display: inline-flex; align-items: center; gap: 10px; }
 .cpu-cell .spark { width: 80px; height: 24px; }
 .cpu-cell .num { min-width: 44px; }
+.cpu-cell .num small { color: var(--text-3); }
 .chip.small-chip { height: 18px; padding: 0 6px; font-size: 10.5px; }
 
 @media (max-width: 900px) {

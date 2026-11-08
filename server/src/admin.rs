@@ -65,6 +65,10 @@ pub fn router(state: AppState) -> Router {
             get(inspect_container).delete(remove_container),
         )
         .route("/containers/{id}/logs", get(container_logs))
+        .route(
+            "/containers/{id}/limits",
+            get(crate::limits::get).put(crate::limits::set),
+        )
         .route("/containers/{id}/{action}", post(container_action))
         .route(
             "/deploys",

@@ -187,6 +187,10 @@ CREATE TABLE IF NOT EXISTS builds (
     finished_at INTEGER,
     PRIMARY KEY (deploy_id, number)
 );
+CREATE TABLE IF NOT EXISTS limits (
+    name TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS git_tokens (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -738,6 +742,25 @@ impl Db {
             "INSERT INTO revoked (key, at, expires) VALUES (?1, ?2, ?3)
              ON CONFLICT(key) DO UPDATE SET at = excluded.at, expires = excluded.expires",
             params![key, at, expires],
+        )?;
+        Ok(())
+    }
+
+    /// Each container's kept resources, by its name, as JSON.
+    pub fn limits(&self) -> Result<Vec<(String, String)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT name, value FROM limits")?;
+        let list = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(list)
+    }
+
+    pub fn set_limits(&self, name: &str, value: &str) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO limits (name, value) VALUES (?1, ?2)
+             ON CONFLICT(name) DO UPDATE SET value = excluded.value",
+            params![name, value],
         )?;
         Ok(())
     }

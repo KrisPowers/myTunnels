@@ -1,11 +1,20 @@
 //! What the Dashboard page shows: the host's processors, memory, temperatures,
 //! disks and network, and each container's usage, sampled every two seconds
 //! with the last five minutes kept.
+//!
+//! Docker Desktop runs containers in a virtual machine, so from inside one the
+//! host's figures are the machine's that Docker was given. `server host` runs
+//! on the computer itself and serves its own; when `HOST_URL` reaches it, the
+//! Dashboard shows those, with the containers as the engine sees them.
 
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
+use anyhow::Context;
+use axum::routing::get;
+use axum::{Json, Router};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sysinfo::{Components, Disks, Networks, System};
@@ -17,6 +26,10 @@ use crate::util::now;
 const EVERY: Duration = Duration::from_secs(2);
 /// Samples kept: five minutes at one every two seconds.
 const KEEP: usize = 150;
+/// Where `server host` answers by default: this computer alone.
+const HOST_ADDR: &str = "127.0.0.1:7092";
+/// The machine's figures older than this are not shown.
+const FRESH: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Serialize)]
 struct Sample {
@@ -64,6 +77,8 @@ struct Container {
     cpu: f32,
     memory: u64,
     memory_limit: u64,
+    /// Processors it may use; 0 for no limit.
+    cpu_limit: f64,
     rx: u64,
     tx: u64,
     read: u64,
@@ -93,6 +108,8 @@ struct Board {
     disks: Vec<Disk>,
     docker_error: Option<String>,
     containers: Vec<Container>,
+    /// The machine's own figures from `server host`, and when they came.
+    machine: Option<(Instant, Value)>,
 }
 
 static BOARD: LazyLock<Mutex<Board>> = LazyLock::new(Mutex::default);
@@ -100,6 +117,19 @@ static BOARD: LazyLock<Mutex<Board>> = LazyLock::new(Mutex::default);
 /// Everything sampled so far, for `/api/metrics`.
 pub fn view() -> Value {
     let board = BOARD.lock().unwrap();
+    let docker = json!({
+        "reachable": board.docker_error.is_none(),
+        "error": board.docker_error,
+        "containers": board.containers,
+    });
+    if let Some((at, machine)) = &board.machine {
+        if at.elapsed() < FRESH {
+            let mut view = machine.clone();
+            view["host"]["docker"] = board.host["docker"].clone();
+            view["docker"] = docker;
+            return view;
+        }
+    }
     json!({
         "every": EVERY.as_secs(),
         "keep": KEEP,
@@ -112,11 +142,7 @@ pub fn view() -> Value {
         "cores": board.cores,
         "sensors": board.sensors,
         "disks": board.disks,
-        "docker": {
-            "reachable": board.docker_error.is_none(),
-            "error": board.docker_error,
-            "containers": board.containers,
-        },
+        "docker": docker,
     })
 }
 
@@ -129,10 +155,34 @@ fn load() -> Option<[f64; 3]> {
 }
 
 pub fn spawn() {
-    tokio::spawn(run());
+    tokio::spawn(run(true));
 }
 
-async fn run() {
+/// `server host`: samples this computer, without containers, and serves it at
+/// `HOST_ADDR` (127.0.0.1:7092 unless set) for the Dashboard to read.
+pub async fn serve_host() -> anyhow::Result<()> {
+    let addr = std::env::var("HOST_ADDR").unwrap_or_else(|_| HOST_ADDR.into());
+    tokio::spawn(run(false));
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .with_context(|| format!("cannot listen on {addr}"))?;
+    tracing::info!("this computer's figures on http://{addr}/metrics");
+    let app = Router::new().route("/metrics", get(|| async { Json(view()) }));
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
+/// The machine's own figures, from `server host` at `HOST_URL`.
+async fn machine(client: &reqwest::Client, url: &str) -> Option<Value> {
+    let response = client
+        .get(format!("{}/metrics", url.trim_end_matches('/')))
+        .send()
+        .await
+        .ok()?;
+    response.error_for_status().ok()?.json().await.ok()
+}
+
+async fn run(engine: bool) {
     let mut system = System::new();
     system.refresh_cpu_all();
     let mut components = Components::new_with_refreshed_list();
@@ -143,6 +193,12 @@ async fn run() {
     let mut docker_info: Option<Value> = None;
     let mut counters: HashMap<String, Counters> = HashMap::new();
     let mut histories: HashMap<String, VecDeque<f32>> = HashMap::new();
+    let mut cpu_limits: HashMap<String, f64> = HashMap::new();
+    let host_url = std::env::var("HOST_URL").ok().filter(|u| !u.is_empty());
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(1500))
+        .build()
+        .unwrap_or_default();
     let mut last;
     let mut tick = 0u32;
 
@@ -194,12 +250,48 @@ async fn run() {
             temp: cpu_temp(&sensors, &cores),
         };
 
-        let containers = containers(&docker, &mut counters, &mut histories).await;
-        if containers.is_ok() && (docker_info.is_none() || tick.is_multiple_of(150)) {
+        let containers = if engine {
+            // Limits are read again every half minute, and at once after a change.
+            if crate::limits::CHANGED.swap(false, Ordering::Relaxed) || tick.is_multiple_of(15) {
+                cpu_limits.clear();
+            }
+            let machine_cpus = docker_info
+                .as_ref()
+                .and_then(|i| i["NCPU"].as_f64())
+                .unwrap_or(f64::MAX);
+            let found = containers(&docker, &mut counters, &mut histories).await;
+            match found {
+                Ok(mut list) => {
+                    for c in list.iter_mut().filter(|c| c.state == "running") {
+                        if !cpu_limits.contains_key(&c.id) {
+                            let limit = docker::get(&docker, &format!("/containers/{}/json", c.id))
+                                .await
+                                .map_or(0.0, |v| {
+                                    crate::limits::cpus_of(&v["HostConfig"], machine_cpus)
+                                });
+                            cpu_limits.insert(c.id.clone(), limit);
+                        }
+                        c.cpu_limit = cpu_limits[&c.id];
+                    }
+                    Ok(list)
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            Ok(Vec::new())
+        };
+        if engine && containers.is_ok() && (docker_info.is_none() || tick.is_multiple_of(150)) {
             docker_info = docker::get(&docker, "/info").await.ok();
         }
+        let machine = match &host_url {
+            Some(url) => machine(&client, url).await,
+            None => None,
+        };
 
         let mut board = BOARD.lock().unwrap();
+        if let Some(machine) = machine {
+            board.machine = Some((Instant::now(), machine));
+        }
         board.host = host(&system, docker_info.as_ref());
         board.memory_total = system.total_memory();
         board.swap_total = system.total_swap();
@@ -379,6 +471,7 @@ async fn containers(
             cpu: 0.0,
             memory: 0,
             memory_limit: 0,
+            cpu_limit: 0.0,
             rx: 0,
             tx: 0,
             read: 0,
