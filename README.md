@@ -220,7 +220,7 @@ dashboard through a tunnel to reach it from anywhere.
 ## Apps
 
 **Apps** is a catalog of the software a homelab or engineering machine usually needs, a tile
-each, narrowed by the filters over it to what the host has, what myTunnels uses, or one kind:
+each, narrowed by a search and by kind and status (installed, not installed, used by myTunnels):
 Docker, kubectl, minikube and Helm; cloudflared, Cloudflare WARP and Wrangler;
 Git and the GitHub CLI; Rust, Go, Python, Java and .NET; Node.js, fnm, Bun and Deno;
 Terraform and WireGuard. **Install** offers two places:
