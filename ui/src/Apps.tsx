@@ -1,10 +1,11 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type UIEvent } from "react";
+import { createPortal } from "react-dom";
 import { api, message, type AppAction, type AppItem, type Apps, type HostApp, type Needs } from "./api";
 import { AppLogo } from "./AppLogo";
 import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
-import { Callout, MoreMenu, useNotify, type MenuAction } from "./ui";
+import { Callout, MoreMenu, useNotify, usePopover, type MenuAction } from "./ui";
 
 // What features need where myTunnels runs, from the shell.
 export const NeedsContext = createContext<Needs | null>(null);
@@ -60,10 +61,10 @@ export function AppsPage() {
     return () => clearInterval(t);
   }, [load, running]);
 
-  const act = async (app: AppItem, action: AppAction) => {
+  const act = async (app: AppItem, action: AppAction, version?: string) => {
     try {
-      await api.appAction(app.id, action);
-      notify(`${DOING[action]} ${app.name}`);
+      await api.appAction(app.id, action, version);
+      notify(`${DOING[action]} ${app.name}${version ? ` ${version}` : ""}`);
       await load();
     } catch (e) {
       notify(message(e), "bad");
@@ -106,7 +107,7 @@ export function AppsPage() {
         {!apps && !problem && <div className="repo-loading"><span className="spinner" /></div>}
         {apps && (shown.length ? (
           <div className="provider-grid">
-            {shown.map((a) => <Tile key={a.id} app={a} state={host?.apps[a.id]} onAct={(action) => act(a, action)} />)}
+            {shown.map((a) => <Tile key={a.id} app={a} state={host?.apps[a.id]} onAct={(action, version) => act(a, action, version)} />)}
           </div>
         ) : <p className="empty-note">No apps match.</p>)}
       </div>
@@ -124,7 +125,7 @@ function blocked(app: AppItem, state: HostApp | undefined, allowed: boolean): st
 
 // Tile is one app: its mark, name and what it is, and Install, or Installed
 // with its menu for the rest.
-function Tile({ app, state, onAct }: { app: AppItem; state?: HostApp; onAct: (action: AppAction) => void }) {
+function Tile({ app, state, onAct }: { app: AppItem; state?: HostApp; onAct: (action: AppAction, version?: string) => void }) {
   const can = useCan();
   const job = state?.job;
   const why = blocked(app, state, can("apps.install"));
@@ -141,13 +142,81 @@ function Tile({ app, state, onAct }: { app: AppItem; state?: HostApp; onAct: (ac
       {job?.running ? <span className="chip warn"><span className="spinner small" />{DOING[job.action]}</span>
         : job?.failed ? <span className="chip bad" title={job.log}>{DONE[job.action]} failed</span>
         : null}
-      {state?.installed
-        ? <button type="button" className="btn" disabled title={state.version ?? undefined}><Icon name="check" size={18} />Installed</button>
-        : (
-          <button type="button" className="btn primary" disabled={!!why || job?.running} title={why || undefined} onClick={() => onAct("install")}>
-            <Icon name="download" size={18} />Install
-          </button>
-        )}
+      <div className="split">
+        {state?.installed
+          ? <button type="button" className="btn" disabled title={state.version ?? undefined}><Icon name="check" size={18} />Installed</button>
+          : (
+            <button type="button" className="btn primary" disabled={!!why || job?.running} title={why || undefined} onClick={() => onAct("install")}>
+              <Icon name="download" size={18} />Install
+            </button>
+          )}
+        <Versions app={app} installed={state?.installed ? state.version : null} primary={!state?.installed}
+          disabled={!!why || !!job?.running} onPick={(v) => onAct("install", v)} />
+      </div>
+    </div>
+  );
+}
+
+// How many versions the list draws at first, and adds as it nears its end.
+const PAGE = 20;
+
+// True when `line`, what the app said of its version, is version `v`.
+function says(line: string, v: string) {
+  const at = line.indexOf(v);
+  const edge = (c: string | undefined) => !c || !/[0-9.]/.test(c);
+  return at >= 0 && edge(line[at - 1]) && edge(line[at + v.length]);
+}
+
+// Versions is the arrow beside Install: its list offers the latest at once,
+// then the app's versions, newest first, drawn a page at a time as it scrolls.
+// Picking one installs that version, in place of the one there.
+function Versions({ app, installed, primary, disabled, onPick }: {
+  app: AppItem;
+  // What the installed app says of its version, when it is installed.
+  installed: string | null | undefined;
+  primary: boolean;
+  disabled: boolean;
+  onPick: (version?: string) => void;
+}) {
+  const pop = usePopover(220);
+  const [list, setList] = useState<string[] | null>(null);
+  const [problem, setProblem] = useState("");
+  const [shown, setShown] = useState(PAGE);
+  useEffect(() => {
+    if (!pop.open || list) return;
+    api.appVersions(app.id).then(setList, (e) => setProblem(message(e)));
+  }, [pop.open, list, app.id]);
+  const more = (e: UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollTop + el.clientHeight > el.scrollHeight - 48) setShown((n) => n + PAGE);
+  };
+  const pick = (v?: string) => {
+    pop.close();
+    onPick(v);
+  };
+  return (
+    <div className="menu-wrap" ref={pop.anchor}>
+      <button type="button" className={"btn split-more" + (primary ? " primary" : "")} aria-label={`${app.name} versions`} title="Versions"
+        aria-expanded={pop.open} disabled={disabled} onClick={() => pop.setOpen((o) => !o)}>
+        <Icon name="expand_more" size={18} />
+      </button>
+      {pop.open && createPortal(
+        <div ref={pop.panel} className="menu pop-menu versions" style={pop.style} role="menu" onScroll={more}>
+          {!installed && <button type="button" role="menuitem" className="menu-item" onClick={() => pick()}>Latest</button>}
+          {!list && !problem && <div className="menu-note"><span className="spinner small" /></div>}
+          {problem && <div className="menu-note">{problem}</div>}
+          {list && !list.length && <div className="menu-note">Only the latest is offered here</div>}
+          {list?.slice(0, shown).map((v) => {
+            const here = !!installed && says(installed, v);
+            return (
+              <button key={v} type="button" role="menuitem" className="menu-item" disabled={here} onClick={() => pick(v)}>
+                <span className="mono">{v}</span>{here && <small>Installed</small>}
+              </button>
+            );
+          })}
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

@@ -104,7 +104,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Apps</b> is the software a homelab or engineering machine usually needs, in one place: Docker, Kubernetes' tools, cloudflared and Cloudflare's other tools, Git and the GitHub CLI, languages such as Rust, Go, Python, Java and .NET, and runtimes such as Node.js, Bun and Deno. A tile each; search, and pick kinds and a status (installed, not installed, used by myTunnels), to narrow it.</p>
       </Doc>
       <Doc title="Installing">
-        <p><b>Install</b> installs one in one click on the machine myTunnels runs on, through winget, Homebrew or apt, for accounts allowed to install apps; Windows may ask to allow some. An app already there says <b>Installed</b>; its menu updates or uninstalls it.</p>
+        <p><b>Install</b> installs one in one click on the machine myTunnels runs on, through winget, Homebrew or apt, for accounts allowed to install apps; Windows may ask to allow some. An app already there says <b>Installed</b>; its menu updates or uninstalls it. The arrow beside the button lists its versions, newest first; pick one to install it, or to change to it.</p>
         <p>When myTunnels runs in Docker, that machine is reached through <span className="mono">server host</span> running on it. It pairs with the first myTunnels to ask and installs only for that one; to pair again, remove the <span className="mono">paired</span> file it names.</p>
       </Doc>
       <Doc title="What features need">

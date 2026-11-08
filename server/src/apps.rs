@@ -1022,6 +1022,13 @@ pub async fn versions(
                 "server host is not answering".into(),
             )
         })?;
+    if r.status() == StatusCode::NOT_FOUND
+        && r.headers().get("content-length").is_some_and(|l| l == "0")
+    {
+        return Err(ApiError::bad(
+            "The running server host is an older version, which cannot list versions",
+        ));
+    }
     if !r.status().is_success() {
         return Err(ApiError::bad(r.text().await.unwrap_or_default()));
     }

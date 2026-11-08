@@ -229,6 +229,9 @@ Terraform and WireGuard.
 manager: winget on Windows, Homebrew on macOS, apt on Linux (with `sudo` that needs no
 password). It takes the **Install apps** permission, and Windows may ask to allow some
 installers. An app already there says **Installed**, and its menu updates or uninstalls it.
+The arrow beside the button lists the app's versions, newest first, a page at a time as the
+list scrolls: pick one to install it, or to change to it from the one there. winget and npm
+offer every version, apt what its sources carry, and Homebrew only its latest.
 
 When myTunnels runs inside Docker, installs reach that machine through `server host` on it (see
 the Dashboard). It pairs with the first myTunnels to ask and installs only for that one; to

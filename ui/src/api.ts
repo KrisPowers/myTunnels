@@ -555,7 +555,9 @@ export const api = {
   status: () => call<Status>("/status"),
   metrics: () => call<Metrics>("/metrics"),
   apps: () => call<Apps>("/apps"),
-  appAction: (id: string, action: AppAction) => call(`/apps/${id}/${action}`, "POST"),
+  // An install may name a version, in place of the latest.
+  appAction: (id: string, action: AppAction, version?: string) => call(`/apps/${id}/${action}`, "POST", { version }),
+  appVersions: (id: string) => call<string[]>(`/apps/${id}/versions`),
   needs: () => call<Needs>("/needs"),
   containers: () => call<Container[]>("/containers"),
   container: (id: string) => call<ContainerDetail>(`/containers/${encodeURIComponent(id)}`),
