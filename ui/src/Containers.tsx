@@ -495,7 +495,7 @@ function ContainerPage({ name, tab, more, routes, devices, users, providers, onC
         </div>
       </div>
       <SubNav back="#/" backLabel="Containers" base={base} items={tabs} current={current} />
-      <div className="page-body stack" key={current + (more[0] ?? "")}>
+      <div className="page-body stack" key={current}>
         {problem && made && !c && <Callout tone="bad" icon="error">{problem}</Callout>}
         {current === "overview" && (c ? <Overview c={c} /> : <div className="repo-loading"><span className="spinner" /></div>)}
         {current === "tunnel" && !routes && <div className="repo-loading"><span className="spinner" /></div>}
