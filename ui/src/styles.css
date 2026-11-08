@@ -550,6 +550,8 @@ a.result:hover { background: var(--hover); }
 .composer-row { display: flex; align-items: flex-start; gap: 10px; }
 .composer-row .grow { flex: 1; }
 .composer-row .port { width: 132px; flex-shrink: 0; }
+.composer-row .port .dropdown { min-width: 0; width: 100%; }
+.composer-go { flex-shrink: 0; }
 .composer-dot { padding-top: 8px; color: var(--text-3); font-size: 22px; }
 .composer-arrow { margin-top: 12px; color: var(--text-3); }
 .composer-go { height: 44px; padding: 0 20px; }
@@ -835,6 +837,8 @@ a.result:hover { background: var(--hover); }
 }
 .avatar.big { width: 52px; height: 52px; font-size: 20px; }
 .person { display: grid; min-width: 0; }
+.roles { display: inline-flex; gap: 6px; vertical-align: 1px; }
+.person .roles { margin-left: 10px; }
 .person small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12px; }
 .page-head-main.person-head { display: flex; align-items: center; gap: 14px; }
 .callout.held .btn { margin-left: auto; flex-shrink: 0; }
