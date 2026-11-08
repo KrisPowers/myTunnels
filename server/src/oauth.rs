@@ -1,7 +1,6 @@
-//! Signing in at tunnels through another service: GitHub, Google, GitLab,
-//! Discord, Slack and Codeberg, self-hosted providers such as Authentik,
-//! Authelia, Keycloak, Pocket ID, Gitea and Forgejo, hosted ones such as Auth0
-//! and Okta, or any other OpenID Connect provider.
+//! Signing in at tunnels through another service: Google, Microsoft, Facebook,
+//! GitHub, Discord, LinkedIn, Slack and GitLab, a self-hosted Authentik or
+//! Keycloak, or any other OpenID Connect provider.
 //! Credentials are saved once; each tunnel picks the providers it offers and is
 //! its own redirect. The provider vouches for an email, and the account in Users
 //! with that email signs in, held to the same rules as signing in with its password.
@@ -23,6 +22,10 @@ enum Flow {
     GitHub,
     /// Discord's OAuth, with its user record.
     Discord,
+    /// Facebook Login, with the Graph API's user record.
+    Facebook,
+    /// Microsoft's OpenID Connect, for personal, work and school accounts.
+    Microsoft,
     /// OpenID Connect at a fixed issuer.
     Oidc(&'static str),
     /// OpenID Connect at the issuer entered when setting it up.
@@ -43,58 +46,39 @@ impl Spec {
     }
 }
 
-const fn own(id: &'static str, label: &'static str) -> Spec {
-    Spec {
-        id,
-        label,
-        flow: Flow::OwnIssuer,
-    }
+const fn provider(id: &'static str, label: &'static str, flow: Flow) -> Spec {
+    Spec { id, label, flow }
 }
 
 /// Every provider that can be set up, in the order they are shown.
-pub const SPECS: [Spec; 17] = [
-    Spec {
-        id: "github",
-        label: "GitHub",
-        flow: Flow::GitHub,
-    },
-    Spec {
-        id: "google",
-        label: "Google",
-        flow: Flow::Oidc("https://accounts.google.com"),
-    },
-    Spec {
-        id: "gitlab",
-        label: "GitLab",
-        flow: Flow::Oidc("https://gitlab.com"),
-    },
-    Spec {
-        id: "discord",
-        label: "Discord",
-        flow: Flow::Discord,
-    },
-    Spec {
-        id: "slack",
-        label: "Slack",
-        flow: Flow::Oidc("https://slack.com"),
-    },
-    Spec {
-        id: "codeberg",
-        label: "Codeberg",
-        flow: Flow::Oidc("https://codeberg.org"),
-    },
-    own("authentik", "Authentik"),
-    own("authelia", "Authelia"),
-    own("keycloak", "Keycloak"),
-    own("pocketid", "Pocket ID"),
-    own("zitadel", "Zitadel"),
-    own("kanidm", "Kanidm"),
-    own("gitea", "Gitea"),
-    own("forgejo", "Forgejo"),
-    own("auth0", "Auth0"),
-    own("okta", "Okta"),
-    own("oidc", "OpenID Connect"),
+pub const SPECS: [Spec; 11] = [
+    provider(
+        "google",
+        "Google",
+        Flow::Oidc("https://accounts.google.com"),
+    ),
+    provider("microsoft", "Microsoft", Flow::Microsoft),
+    provider("facebook", "Facebook", Flow::Facebook),
+    provider("github", "GitHub", Flow::GitHub),
+    provider("discord", "Discord", Flow::Discord),
+    provider(
+        "linkedin",
+        "LinkedIn",
+        Flow::Oidc("https://www.linkedin.com/oauth"),
+    ),
+    provider("slack", "Slack", Flow::Oidc("https://slack.com")),
+    provider("gitlab", "GitLab", Flow::Oidc("https://gitlab.com")),
+    provider("authentik", "Authentik", Flow::OwnIssuer),
+    provider("keycloak", "Keycloak", Flow::OwnIssuer),
+    provider("oidc", "OpenID Connect", Flow::OwnIssuer),
 ];
+
+/// Microsoft's issuer for every kind of account.
+const MICROSOFT: &str = "https://login.microsoftonline.com/common/v2.0";
+
+/// The tenant every personal Microsoft account belongs to. Microsoft verifies
+/// these accounts' email; a work or school account's only with `xms_edov`.
+const PERSONAL_TENANT: &str = "9188040d-6c67-4c5b-b112-36a304b66dad";
 
 pub fn spec(id: &str) -> Option<&'static Spec> {
     SPECS.iter().find(|s| s.id == id)
@@ -135,8 +119,9 @@ impl Provider {
     fn issuer(&self) -> Option<&str> {
         match self.flow() {
             Flow::Oidc(issuer) => Some(issuer),
+            Flow::Microsoft => Some(MICROSOFT),
             Flow::OwnIssuer => Some(self.issuer.trim()),
-            Flow::GitHub | Flow::Discord => None,
+            Flow::GitHub | Flow::Discord | Flow::Facebook => None,
         }
     }
 }
@@ -186,7 +171,8 @@ pub fn challenge(verifier: &str) -> String {
 struct Endpoints {
     authorize: String,
     token: String,
-    /// GitHub's email list, Discord's user record, or the OpenID userinfo endpoint.
+    /// GitHub's email list, Discord's or Facebook's user record, or the OpenID
+    /// userinfo endpoint.
     emails: String,
 }
 
@@ -214,7 +200,14 @@ async fn endpoints(http: &reqwest::Client, p: &Provider) -> Result<Endpoints> {
                 "https://discord.com/api/users/@me",
             ))
         }
-        Flow::Oidc(_) | Flow::OwnIssuer => p.issuer().unwrap_or_default(),
+        Flow::Facebook => {
+            return Ok(fixed(
+                "https://www.facebook.com/dialog/oauth",
+                "https://graph.facebook.com/oauth/access_token",
+                "https://graph.facebook.com/me?fields=email",
+            ))
+        }
+        Flow::Oidc(_) | Flow::Microsoft | Flow::OwnIssuer => p.issuer().unwrap_or_default(),
     };
     let url = format!(
         "{}/.well-known/openid-configuration",
@@ -261,7 +254,8 @@ pub async fn authorize_url(
     let scope = match p.flow() {
         Flow::GitHub => "read:user user:email",
         Flow::Discord => "identify email",
-        Flow::Oidc(_) | Flow::OwnIssuer => "openid email",
+        Flow::Facebook => "email",
+        Flow::Oidc(_) | Flow::Microsoft | Flow::OwnIssuer => "openid email",
     };
     let mut params = vec![
         ("client_id", p.client_id.as_str()),
@@ -322,9 +316,16 @@ pub async fn verified_emails(
         .json()
         .await?;
     // An OpenID provider may say the email is verified in the ID token alone, as
-    // Gitea and Forgejo do. The token came straight from the provider over TLS.
-    let mut emails = id_token_emails(&token, &p.client_id);
-    for email in emails_from(&info) {
+    // Microsoft does. The token came straight from the provider over TLS.
+    let mut emails = id_token_emails(&token, &p.client_id, p.flow());
+    // Facebook's user record has no verified flag: it shares an email only once
+    // the account has confirmed it.
+    let listed = if p.flow() == Flow::Facebook {
+        single_email(&info)
+    } else {
+        emails_from(&info)
+    };
+    for email in listed {
         if !emails.contains(&email) {
             emails.push(email);
         }
@@ -333,7 +334,7 @@ pub async fn verified_emails(
 }
 
 /// The verified email in an ID token meant for this client, if there is one.
-fn id_token_emails(token: &Value, client_id: &str) -> Vec<String> {
+fn id_token_emails(token: &Value, client_id: &str, flow: Flow) -> Vec<String> {
     let claims = token
         .get("id_token")
         .and_then(Value::as_str)
@@ -348,11 +349,30 @@ fn id_token_emails(token: &Value, client_id: &str) -> Vec<String> {
         Some(Value::Array(list)) => list.iter().any(|a| a.as_str() == Some(client_id)),
         _ => false,
     };
-    if ours {
-        emails_from(&claims)
-    } else {
-        Vec::new()
+    if !ours {
+        return Vec::new();
     }
+    if flow == Flow::Microsoft && microsoft_verified(&claims) {
+        return single_email(&claims);
+    }
+    emails_from(&claims)
+}
+
+/// Microsoft never says `email_verified`: a personal account's email is
+/// verified, and a work or school one's when the ID token carries `xms_edov`.
+fn microsoft_verified(claims: &Value) -> bool {
+    claims.get("tid").and_then(Value::as_str) == Some(PERSONAL_TENANT)
+        || claims.get("xms_edov") == Some(&Value::Bool(true))
+}
+
+/// The one email in a record.
+fn single_email(record: &Value) -> Vec<String> {
+    record
+        .get("email")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .into_iter()
+        .collect()
 }
 
 /// The verified emails in GitHub's email list or in OpenID userinfo.
@@ -393,8 +413,24 @@ mod tests {
     fn id_token_vouches_for_its_client_only() {
         let body = B64.encode(r#"{"aud":"app","email":"e@x.io","email_verified":true}"#);
         let token = json!({ "id_token": format!("h.{body}.s") });
-        assert_eq!(id_token_emails(&token, "app"), ["e@x.io"]);
-        assert!(id_token_emails(&token, "other").is_empty());
+        assert_eq!(id_token_emails(&token, "app", Flow::OwnIssuer), ["e@x.io"]);
+        assert!(id_token_emails(&token, "other", Flow::OwnIssuer).is_empty());
+    }
+
+    #[test]
+    fn microsoft_email_counts_once_microsoft_verified_it() {
+        let token = |claims: Value| json!({ "id_token": format!("h.{}.s", B64.encode(claims.to_string())) });
+        let personal = token(json!({ "aud": "app", "email": "m@x.io", "tid": PERSONAL_TENANT }));
+        assert_eq!(
+            id_token_emails(&personal, "app", Flow::Microsoft),
+            ["m@x.io"]
+        );
+        assert!(id_token_emails(&personal, "app", Flow::OwnIssuer).is_empty());
+        let work = token(json!({ "aud": "app", "email": "w@x.io", "tid": "other" }));
+        assert!(id_token_emails(&work, "app", Flow::Microsoft).is_empty());
+        let edov =
+            token(json!({ "aud": "app", "email": "w@x.io", "tid": "other", "xms_edov": true }));
+        assert_eq!(id_token_emails(&edov, "app", Flow::Microsoft), ["w@x.io"]);
     }
 
     #[test]

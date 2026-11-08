@@ -302,9 +302,9 @@ time zone, languages, user agent) and where it connected from; and **Other**, th
 
 ## Third-party sign-in
 
-Tunnels with sign-in on can also offer **Continue with** GitHub, Google, GitLab, Discord,
-Slack or Codeberg; a self-hosted Authentik, Authelia, Keycloak, Pocket ID, Zitadel, Kanidm,
-Gitea or Forgejo; Auth0 or Okta; or any other OpenID Connect provider. Set each up
+Tunnels with sign-in on can also offer **Continue with** Google, Microsoft, Facebook,
+GitHub, Discord, LinkedIn, Slack or GitLab; a self-hosted Authentik or Keycloak; or any
+other OpenID Connect provider. Set each up
 once under **Security, Third-Party OAuth** the way Cloudflare was set up: **Open GitHub** (or
 the provider's console), register an app, then paste its client ID and secret back. Each
 tunnel then switches on the providers it offers, under **Access Control**.
