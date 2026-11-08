@@ -484,7 +484,7 @@ function ContainerPage({ name, tab, more, routes, devices, users, providers, onC
   }
   const on = live(head);
   const working = busy.size > 0;
-  const act = (action: Act) => run([{ ...head, deploy: d?.id }], action).then(() => {
+  const act = (action: Act) => run([{ ...head, deploy: d?.id ?? null }], action).then(() => {
     if (action === "remove") go("#/");
   });
   const update = async () => {
@@ -504,7 +504,7 @@ function ContainerPage({ name, tab, more, routes, devices, users, providers, onC
   const reaching = tunnelsOf(head, routes ?? []);
   const opens = reaching.find((r) => r.enabled);
   const manage = can("containers.manage") && !head.own;
-  const menu = actionsOf({ ...head, deploy: d?.id }, (_, action) => act(action), can, true);
+  const menu = actionsOf({ ...head, deploy: d?.id ?? null }, (_, action) => act(action), can, true);
 
   return (
     <>
