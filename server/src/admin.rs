@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::cloudflare::{Account, Cloudflare, Zone};
-use crate::db::{Device, Event, Route, SignIn, User, ADMIN, HOST, HOST_ID};
+use crate::db::{Device, Event, Flag, Route, SignIn, User, ADMIN, HOST, HOST_ID};
 use crate::mail::{self, Smtp};
 use crate::netinfo;
 use crate::oauth::{self, Provider};
@@ -98,6 +98,8 @@ pub fn router(state: AppState) -> Router {
         .route("/users/{id}", patch(update_user).delete(delete_user))
         .route("/users/{id}/signout", post(sign_out_user))
         .route("/users/{id}/activity", get(user_activity))
+        .route("/flags", get(list_flags))
+        .route("/flags/{id}", delete(clear_flag))
         .route("/devices/{id}/activity", get(device_activity))
         .route("/code", get(code_overview))
         .route("/code/repos", get(list_repos).post(create_repo))
@@ -376,6 +378,7 @@ async fn setup(
         all_routes: false,
         route_ids: Vec::new(),
         device_ids: Vec::new(),
+        device_lock: false,
         created_at: now(),
         last_login: None,
         note: None,
@@ -434,7 +437,7 @@ async fn login(
     if state.locked_out(&key) {
         return Err(ApiError(
             StatusCode::TOO_MANY_REQUESTS,
-            "Too many wrong tries. Wait 15 minutes and try again.".into(),
+            "Too many wrong tries. Wait 30 minutes and try again.".into(),
         ));
     }
     if !pow::check(body.pow.as_ref()) {
@@ -1332,8 +1335,6 @@ struct NewRoute {
     target_scheme: String,
     #[serde(default)]
     require_lan: bool,
-    #[serde(default)]
-    require_device: bool,
     #[serde(default = "default_mode")]
     policy_mode: String,
     #[serde(default)]
@@ -1447,7 +1448,6 @@ async fn create_route(
         target_port: body.port,
         target_scheme: body.target_scheme,
         require_lan: body.require_lan,
-        require_device: body.require_device,
         policy_mode: body.policy_mode,
         enabled: true,
         require_password: body.require_password,
@@ -1484,7 +1484,6 @@ struct RouteEdit {
     target_host: Option<String>,
     target_scheme: String,
     require_lan: bool,
-    require_device: bool,
     policy_mode: String,
     enabled: bool,
     #[serde(default)]
@@ -1524,7 +1523,6 @@ async fn update_route(
     route.target_port = body.port;
     route.target_scheme = body.target_scheme;
     route.require_lan = body.require_lan;
-    route.require_device = body.require_device;
     route.policy_mode = body.policy_mode;
     let switched = route.enabled != body.enabled;
     route.enabled = body.enabled;
@@ -1878,9 +1876,6 @@ async fn list_devices(State(state): State<AppState>) -> ApiResult<Json<Vec<Devic
 #[derive(Deserialize)]
 struct DeviceEdit {
     name: Option<String>,
-    status: Option<String>,
-    all_routes: Option<bool>,
-    route_ids: Option<Vec<String>>,
 }
 
 async fn update_device(
@@ -1892,30 +1887,7 @@ async fn update_device(
     if let Some(name) = body.name {
         device.name = name.trim().chars().take(80).collect();
     }
-    if let Some(status) = body.status {
-        match status.as_str() {
-            // Approval accepts the hardware the device reported most recently.
-            "approved" => {
-                device.fingerprint = gate::fingerprint(&device.info);
-                device.note = None;
-            }
-            "seen" | "pending" | "denied" => {}
-            _ => return Err(ApiError::bad("Status must be approved, pending or denied")),
-        }
-        device.status = status;
-    }
-    if let Some(all) = body.all_routes {
-        device.all_routes = all;
-    }
     state.db.save_device(&device)?;
-    if let Some(route_ids) = body.route_ids {
-        let snap = state.snapshot();
-        let known: Vec<String> = route_ids
-            .into_iter()
-            .filter(|rid| snap.routes.values().any(|r| &r.id == rid))
-            .collect();
-        state.db.set_grants(&device.id, &known)?;
-    }
     state.reload()?;
     Ok(Json(state.db.device(&id)?.ok_or_else(ApiError::not_found)?))
 }
@@ -1925,7 +1897,6 @@ async fn delete_device(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     state.db.delete_device(&id)?;
-    state.end_sessions_of(&state.device_sessions, &id);
     state.reload()?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -1937,8 +1908,8 @@ struct ThisDevice {
     info: Value,
 }
 
-/// The browser the admin is using: given a device key the first time, approved for
-/// every tunnel, so the host's own browser is never stopped at its own tunnels.
+/// The browser the admin is using, given a device key the first time, so it is one
+/// device on the dashboard and at every tunnel.
 async fn this_device(
     State(state): State<AppState>,
     Json(body): Json<ThisDevice>,
@@ -2049,10 +2020,6 @@ struct NewUser {
     username: String,
     email: String,
     password: String,
-    /// The device the account signs in from. Left empty, the first device to
-    /// sign in to the account is linked to it.
-    #[serde(default)]
-    device_id: String,
 }
 
 async fn create_user(
@@ -2070,15 +2037,6 @@ async fn create_user(
     if !secret::strong(&body.password) {
         return Err(ApiError::bad(secret::RULE));
     }
-    let device_ids = if body.device_id.is_empty() {
-        Vec::new()
-    } else {
-        let ids = known_devices(&state, vec![body.device_id]);
-        if ids.is_empty() {
-            return Err(ApiError::bad("That device is gone. Pick another."));
-        }
-        ids
-    };
     let user = User {
         id: random_hex(8),
         username,
@@ -2088,7 +2046,8 @@ async fn create_user(
         enabled: true,
         all_routes: false,
         route_ids: Vec::new(),
-        device_ids,
+        device_ids: Vec::new(),
+        device_lock: false,
         created_at: now(),
         last_login: None,
         note: None,
@@ -2109,6 +2068,7 @@ struct UserEdit {
     enabled: Option<bool>,
     route_ids: Option<Vec<String>>,
     device_ids: Option<Vec<String>>,
+    device_lock: Option<bool>,
     permissions: Option<Vec<String>>,
     /// In bytes; 0 for no limit.
     storage_limit: Option<u64>,
@@ -2222,6 +2182,9 @@ async fn update_user(
     if let Some(ids) = body.device_ids {
         user.device_ids = known_devices(&state, ids);
     }
+    if let Some(lock) = body.device_lock {
+        user.device_lock = lock;
+    }
     if let Some(limit) = body.storage_limit {
         if user.id == HOST_ID {
             return Err(ApiError::bad("The host's storage has no limit"));
@@ -2245,6 +2208,17 @@ async fn route_activity(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Vec<Event>>> {
     Ok(Json(state.db.events(&id, 300)?))
+}
+
+/// Sign-ins from devices new to their accounts, not yet looked at.
+async fn list_flags(State(state): State<AppState>) -> ApiResult<Json<Vec<Flag>>> {
+    Ok(Json(state.db.flags()?))
+}
+
+/// Marks a new-device sign-in as looked at.
+async fn clear_flag(State(state): State<AppState>, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
+    state.db.delete_flag(id)?;
+    Ok(Json(json!({ "ok": true })))
 }
 
 /// An account's latest sign-ins, and the devices it has used.

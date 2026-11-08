@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Deploy, type Device, type Image, type Metrics, type OAuthProvider, type Route, type Status, type User } from "./api";
+import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Deploy, type Image, type Metrics, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { BuildLog, Builds, DeploySettings, NewMenu, sourceOf, waiting } from "./Builds";
 import { Chart, Meter } from "./Dashboard";
 import { Dropdown, type Option } from "./Dropdown";
@@ -92,7 +92,6 @@ function pending(d: Deploy): Container {
 // What a container's page and its tunnel need from the dashboard.
 export interface Shared {
   routes: Route[] | null;
-  devices: Device[];
   users: User[];
   providers: OAuthProvider[];
   onChanged: () => Promise<void>;
@@ -394,7 +393,7 @@ const TABS: [string, string, IconName][] = [
 // ContainerPage is one container and its tunnel together: its name, state and
 // address in the heading, with Open, the one button its state calls for, and a
 // menu for the rest; then its sub-pages.
-function ContainerPage({ name, tab, more, routes, devices, users, providers, onChanged }: { name: string; tab: string; more: string[] } & Shared) {
+function ContainerPage({ name, tab, more, routes, users, providers, onChanged }: { name: string; tab: string; more: string[] } & Shared) {
   const [c, setC] = useState<ContainerDetail | null>(null);
   // The repository it is built from: undefined until known, null for none.
   const [d, setD] = useState<Deploy | null | undefined>(undefined);
@@ -500,7 +499,7 @@ function ContainerPage({ name, tab, more, routes, devices, users, providers, onC
         {current === "overview" && (c ? <Overview c={c} /> : <div className="repo-loading"><span className="spinner" /></div>)}
         {current === "tunnel" && !routes && <div className="repo-loading"><span className="spinner" /></div>}
         {current === "tunnel" && routes && (
-          <ContainerTunnel c={head} pick={more[0] ?? ""} base={`${base}/tunnel`} routes={reaching} devices={devices} users={users} providers={providers} onChanged={onChanged} />
+          <ContainerTunnel c={head} pick={more[0] ?? ""} base={`${base}/tunnel`} routes={reaching} users={users} providers={providers} onChanged={onChanged} />
         )}
         {current === "images" && (more[0] === "build" && d ? <BuildLog d={d} number={Number(more[1])} back={`${base}/images`} />
           : more[0] ? <ImageView id={more[0]} back={`${base}/images`} />
@@ -515,12 +514,11 @@ function ContainerPage({ name, tab, more, routes, devices, users, providers, onC
 
 // ContainerTunnel is the container's addresses in the middle, the picked
 // one's controls at the side. A new address is published from a dialog.
-function ContainerTunnel({ c, pick, base, routes, devices, users, providers, onChanged }: {
+function ContainerTunnel({ c, pick, base, routes, users, providers, onChanged }: {
   c: Container | ContainerDetail;
   pick: string;
   base: string;
   routes: Route[];
-  devices: Device[];
   users: User[];
   providers: OAuthProvider[];
   onChanged: () => Promise<void>;
@@ -555,7 +553,7 @@ function ContainerTunnel({ c, pick, base, routes, devices, users, providers, onC
   }
   return (
     <>
-      <TunnelsView routes={routes} pick={pick} base={base} devices={devices} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go(base)} add={add} />
+      <TunnelsView routes={routes} pick={pick} base={base} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go(base)} add={add} />
       {dialog}
     </>
   );

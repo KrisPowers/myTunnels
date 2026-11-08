@@ -253,7 +253,7 @@ async fn unlock(
     if state.locked_out(&key) {
         return password_page(
             token,
-            "Too many wrong tries. Wait 15 minutes and try again.",
+            "Too many wrong tries. Wait 30 minutes and try again.",
         );
     }
     let bytes = axum::body::to_bytes(req.into_body(), 4096)

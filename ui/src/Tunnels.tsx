@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { api, editOf, LEVELS, list, message, redirectUrl, shortId, strength, type Access, type Device, type OAuthProvider, type PolicyMode, type Port, type Route, type RouteEdit, type TunnelEvent, type User, type Zone } from "./api";
+import { api, editOf, LEVELS, list, message, redirectUrl, shortId, strength, type Access, type OAuthProvider, type PolicyMode, type Port, type Route, type RouteEdit, type TunnelEvent, type User, type Zone } from "./api";
 import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
@@ -11,7 +11,6 @@ import { Card, Copy, Dialog, LogTable, MoreMenu, Row, SubNav, Switch, TextField,
 export function AccessChips({ route }: { route: Route }) {
   const parts = [
     route.require_lan && "Home network",
-    route.require_device && "Approved device",
     route.require_password && "Password",
     route.require_login && "Sign-in",
   ].filter((p): p is string => Boolean(p));
@@ -144,15 +143,12 @@ export function AccessCard({ value, users, providers, hostname, onChange, onPass
   onPassword?: (password: string) => Promise<unknown>;
   onPasswordCancel?: () => void;
 }) {
-  const layers = [value.require_lan, value.require_device, value.require_password, value.require_login].filter(Boolean).length;
+  const layers = [value.require_lan, value.require_password, value.require_login].filter(Boolean).length;
   const accounts = users.filter((u) => u.enabled).length;
   return (
     <Card title="Access Control">
       <Row title="Same network as this host" sub="Only visitors coming from this host's internet connection, or a trusted network.">
         <Switch label="Same network as this host" on={value.require_lan} onChange={(v) => onChange({ require_lan: v })} />
-      </Row>
-      <Row title="Approved devices" sub="A new device gets an ID and waits under Devices until you approve it.">
-        <Switch label="Approved devices" on={value.require_device} onChange={(v) => onChange({ require_device: v })} />
       </Row>
       <Row title="Tunnel password" sub="One password for this tunnel alone, asked for before anything behind it loads.">
         <Switch label="Tunnel password" on={value.require_password} onChange={(v) => onChange({ require_password: v })} />
@@ -297,7 +293,7 @@ export function tunnelsOf(c: { name: string; ports: Port[] }, routes: Route[]) {
 }
 
 const NO_ACCESS: Access = {
-  require_lan: false, require_device: false, require_password: false, require_login: false, require_code: false, oauth: [],
+  require_lan: false, require_password: false, require_login: false, require_code: false, oauth: [],
   login_max: 7 * 86_400, login_idle: 0, policy_mode: "all",
 };
 
@@ -518,51 +514,10 @@ function TunnelAccess({ route, edit, save, quietly, users, providers }: {
   );
 }
 
-// TunnelDevices is the approved devices a tunnel lets in, each switched on or off.
-function TunnelDevices({ route, edit, quietly, devices, onChanged }: {
-  route: Route;
-  edit: RouteEdit;
-  quietly: (change: Partial<RouteEdit>) => void;
-  devices: Device[];
-  onChanged: () => Promise<void>;
-}) {
-  const notify = useNotify();
-  const approved = devices.filter((d) => d.status === "approved");
-  const grant = async (device: Device, on: boolean) => {
-    const ids = on ? [...device.route_ids, route.id] : device.route_ids.filter((r) => r !== route.id);
-    try {
-      await api.editDevice(device.id, { route_ids: ids });
-      await onChanged();
-    } catch (e) {
-      notify(message(e), "bad");
-    }
-  };
-  if (!edit.require_device) {
-    return (
-      <div className="card welcome">
-        <Icon name="devices" size={40} />
-        <h2>Device approval is off</h2>
-        <p className="muted">Turn it on to let in only devices you approve.</p>
-        <button type="button" className="btn primary" onClick={() => quietly({ require_device: true })}>Turn on device approval</button>
-      </div>
-    );
-  }
-  return (
-    <Card title="Devices allowed" sub={approved.length ? undefined : "No device is approved yet. Open the address on a device and approve it under Devices."}>
-      {approved.map((d) => (
-        <Row key={d.id} title={<a href={`#/devices/${d.id}`}>{d.name || shortId(d.id)}</a>} sub={d.all_routes ? "Allowed on every tunnel" : d.info?.platform}>
-          <Switch label={`Allow ${d.name || shortId(d.id)}`} on={d.all_routes || d.route_ids.includes(route.id)} disabled={d.all_routes} onChange={(v) => grant(d, v)} />
-        </Row>
-      ))}
-    </Card>
-  );
-}
-
 // TunnelControls are one tunnel's controls, at the side of its page: its
-// switch, Open and menu, who may open it, and its devices.
-function TunnelControls({ route, devices, users, providers, onChanged, onRemoved }: {
+// switch, Open and menu, and who may open it.
+function TunnelControls({ route, users, providers, onChanged, onRemoved }: {
   route: Route;
-  devices: Device[];
   users: User[];
   providers: OAuthProvider[];
   onChanged: () => Promise<void>;
@@ -584,7 +539,6 @@ function TunnelControls({ route, devices, users, providers, onChanged, onRemoved
         </div>
       </section>
       <TunnelAccess route={route} edit={edit} save={save} quietly={quietly} users={users} providers={providers} />
-      {edit.require_device && <TunnelDevices route={route} edit={edit} quietly={quietly} devices={devices} onChanged={onChanged} />}
     </>
   );
 }
@@ -592,13 +546,12 @@ function TunnelControls({ route, devices, users, providers, onChanged, onRemoved
 // TunnelsView is the tunnels in the middle, a row each with its state, address,
 // where it goes and who may open it, and the picked one's activity under them;
 // that one's controls sit at the side. `base` links each row to pick it.
-export function TunnelsView({ routes, pick, base, add, devices, users, providers, onChanged, onRemoved }: {
+export function TunnelsView({ routes, pick, base, add, users, providers, onChanged, onRemoved }: {
   routes: Route[];
   pick: string;
   base?: string;
   // What adds another, beside the list's title.
   add?: ReactNode;
-  devices: Device[];
   users: User[];
   providers: OAuthProvider[];
   onChanged: () => Promise<void>;
@@ -642,7 +595,7 @@ export function TunnelsView({ routes, pick, base, add, devices, users, providers
         </section>
       </div>
       <aside className="tn-side stack" key={route.id} aria-label={`Controls for ${route.hostname}`}>
-        <TunnelControls route={route} devices={devices} users={users} providers={providers} onChanged={onChanged} onRemoved={onRemoved} />
+        <TunnelControls route={route} users={users} providers={providers} onChanged={onChanged} onRemoved={onRemoved} />
       </aside>
     </div>
   );
@@ -651,7 +604,7 @@ export function TunnelsView({ routes, pick, base, add, devices, users, providers
 // TunnelPage is a tunnel to anything but a container, laid out as a
 // container's tunnels are. A tunnel that reaches a container opens on the
 // container's page.
-export function TunnelPage({ route, devices, users, providers, onChanged }: { route: Route; devices: Device[]; users: User[]; providers: OAuthProvider[]; onChanged: () => Promise<void> }) {
+export function TunnelPage({ route, users, providers, onChanged }: { route: Route; users: User[]; providers: OAuthProvider[]; onChanged: () => Promise<void> }) {
   const can = useCan();
   const containers = can("containers.view");
 
@@ -676,7 +629,7 @@ export function TunnelPage({ route, devices, users, providers, onChanged }: { ro
       </div>
       <SubNav back="#/" backLabel="Containers" base={`#/tunnels/${route.id}`} items={[]} current="" />
       <div className="page-body">
-        <TunnelsView routes={[route]} pick={route.id} devices={devices} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go("#/")} />
+        <TunnelsView routes={[route]} pick={route.id} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go("#/")} />
       </div>
     </>
   );
@@ -793,7 +746,7 @@ function line(e: TunnelEvent): [string, string] {
     };
     return [e.outcome === "network" ? "bad" : "", asked[e.outcome] ?? e.outcome];
   }
-  if (e.kind === "device") return ["", "Asked for device approval"];
+  if (e.kind === "device") return e.outcome === "blocked" ? ["bad", "Refused for a day, tried several accounts"] : ["", "Asked for device approval"];
   if (e.kind === "password") {
     const said: Record<string, [string, string]> = {
       ok: ["ok", "Tunnel password entered"],
@@ -807,7 +760,7 @@ function line(e: TunnelEvent): [string, string] {
     failed: ["bad", "Wrong password"],
     locked: ["bad", "Locked out after too many tries"],
     blocked: ["bad", "Held for review"],
-    unlinked: ["bad", "Refused, not a linked device"],
+    unlinked: ["bad", "Refused by the device lock"],
     "wrong-code": ["bad", "Wrong email code"],
   };
   return said[e.outcome] ?? ["", e.outcome];

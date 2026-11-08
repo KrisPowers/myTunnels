@@ -14,7 +14,6 @@ export interface Route {
   // myTunnels itself.
   target_scheme: "http" | "https" | "code" | "dashboard";
   require_lan: boolean;
-  require_device: boolean;
   require_password: boolean;
   require_login: boolean;
   require_code: boolean;
@@ -35,7 +34,6 @@ export interface Route {
 // new tunnel password; left out, the one set stays.
 export interface Access {
   require_lan: boolean;
-  require_device: boolean;
   require_password: boolean;
   require_login: boolean;
   // After signing in, a code emailed to the account.
@@ -56,7 +54,10 @@ export interface User {
   name: string;
   enabled: boolean;
   route_ids: string[];
+  // The devices it has signed in from.
   device_ids: string[];
+  // Signs in only from those devices.
+  device_lock: boolean;
   created_at: number;
   last_login: number | null;
   // Why the account is held, while it is.
@@ -87,7 +88,15 @@ export interface SignIn {
   outcome: "ok" | "failed" | "blocked" | "unlinked";
 }
 
-export type DeviceStatus = "seen" | "pending" | "approved" | "denied";
+// A sign-in from a device new to its account, until someone looks at it.
+export interface Flag {
+  id: number;
+  user_id: string;
+  device_id: string | null;
+  ip: string | null;
+  country: string | null;
+  at: number;
+}
 
 export interface DeviceInfo {
   userAgent?: string;
@@ -106,11 +115,7 @@ export interface DeviceInfo {
 export interface Device {
   id: string;
   name: string;
-  status: DeviceStatus;
-  all_routes: boolean;
-  route_ids: string[];
   info: DeviceInfo | null;
-  note: string | null;
   first_ip: string | null;
   last_ip: string | null;
   country: string | null;
@@ -607,7 +612,7 @@ export const api = {
   moveRoute: (id: string, subdomain: string, zone_id: string) => call<Route>(`/routes/${id}/address`, "PUT", { subdomain, zone_id }),
 
   devices: () => call<Device[]>("/devices"),
-  editDevice: (id: string, patch: Partial<Pick<Device, "name" | "status" | "all_routes" | "route_ids">>) =>
+  editDevice: (id: string, patch: Pick<Device, "name">) =>
     call<Device>(`/devices/${id}`, "PATCH", patch),
   forgetDevice: (id: string) => call(`/devices/${id}`, "DELETE"),
   // `hosts` is one tunnel per domain, where this browser's key has to be too.
@@ -615,14 +620,16 @@ export const api = {
   plantDevice: (token: string, back: string) => call<{ url: string }>("/device/plant", "POST", { token, back }),
 
   users: () => call<User[]>("/users"),
-  addUser: (body: { username: string; email: string; password: string; device_id: string }) =>
+  addUser: (body: { username: string; email: string; password: string }) =>
     call<User>("/users", "POST", body),
-  editUser: (id: string, patch: Partial<Pick<User, "username" | "email" | "name" | "enabled" | "route_ids" | "device_ids" | "permissions" | "storage_limit">> & { password?: string }) =>
+  editUser: (id: string, patch: Partial<Pick<User, "username" | "email" | "name" | "enabled" | "route_ids" | "device_ids" | "device_lock" | "permissions" | "storage_limit">> & { password?: string }) =>
     call<User>(`/users/${id}`, "PATCH", patch),
   removeUser: (id: string) => call(`/users/${id}`, "DELETE"),
   signOutUser: (id: string) => call(`/users/${id}/signout`, "POST"),
   userActivity: (id: string) => call<SignIn[]>(`/users/${id}/activity`),
   deviceActivity: (id: string) => call<SignIn[]>(`/devices/${id}/activity`),
+  flags: () => call<Flag[]>("/flags"),
+  clearFlag: (id: number) => call(`/flags/${id}`, "DELETE"),
 
   code: () => call<CodeState>("/code"),
   createRepo: (name: string) => call<{ repos: Repo[] }>("/code/repos", "POST", { name }),
@@ -748,7 +755,6 @@ export function editOf(r: Route): RouteEdit {
     target_host: r.target_host,
     target_scheme: r.target_scheme,
     require_lan: r.require_lan,
-    require_device: r.require_device,
     require_password: r.require_password,
     require_login: r.require_login,
     require_code: r.require_code,

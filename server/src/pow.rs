@@ -1,6 +1,6 @@
 //! Slows password guessing: before a password is checked, the browser finds a
 //! number that, hashed with a one-time challenge, starts with enough zero bits.
-//! About a second of work for a person, done while they type; a bot trying
+//! A couple of seconds of work for a person, done while they type; a bot trying
 //! thousands of passwords pays it on every try, and more after each wrong one.
 
 use std::collections::HashMap;
@@ -13,8 +13,8 @@ use sha2::{Digest, Sha256};
 use crate::util::{lock, now, random_hex};
 
 /// Zero bits asked for with no wrong tries, and the most asked for after many.
-const BASE_BITS: u32 = 16;
-const MAX_BITS: u32 = 22;
+const BASE_BITS: u32 = 17;
+const MAX_BITS: u32 = 24;
 /// How long a challenge stays good, and how many may wait at once.
 const TTL: i64 = 10 * 60;
 const MAX_WAITING: usize = 100_000;

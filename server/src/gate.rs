@@ -5,7 +5,8 @@
 //! keeps the key in a cookie of its own host, never one for the whole domain, so
 //! other servers on the domain never see it. Tunnels fetch the key from the hub (the
 //! oldest tunnel's host) with a one-minute, one-use code, so one browser is one
-//! device everywhere.
+//! device everywhere. An account keeps the devices it signs in from, and a sign-in
+//! from one new to it is flagged on the dashboard.
 
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
@@ -19,14 +20,13 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use crate::db::{Device, Event, Route, SignIn, User};
-use crate::state::{AppState, Hop, Outcome, Snapshot};
+use crate::state::{AppState, Hop, Outcome, Snapshot, DAY};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
 use crate::{code, codes, guard, passkey, pow, secret, share, totp};
 use crate::{oauth, proxy};
 
 /// Host-only cookies: the `__Host-` prefix makes browsers refuse them with a domain.
 pub const DEVICE_COOKIE: &str = "__Host-gate_device";
-const SESSION_COOKIE: &str = "__Host-gate_session";
 const PASS_COOKIE: &str = "__gate_pass";
 const USER_COOKIE: &str = "__Host-gate_user";
 /// The cookies earlier versions set for the whole domain. A device key found there
@@ -37,7 +37,6 @@ const LEGACY_COOKIES: [&str; 3] = ["__gate_device", "__gate_session", "__gate_us
 /// sent round in circles.
 const TRIED_COOKIE: &str = "__gate_tried";
 const DEVICE_COOKIE_TTL: i64 = 400 * 86_400;
-const DEVICE_SESSION_TTL: i64 = 30 * 86_400;
 const PASS_TTL: i64 = 7 * 86_400;
 /// The longest any sign-in lasts; each tunnel can ask for less.
 const USER_TTL: i64 = 30 * 86_400;
@@ -46,24 +45,14 @@ const TOKEN_LEN: usize = 256;
 /// A device's ID: 256 letters and numbers, apart from its secret key, so the
 /// dashboard can show and link it without the key ever leaving the browser.
 pub const DEVICE_ID_LEN: usize = 256;
-const MAX_PENDING: i64 = 100;
 const MAX_SEEN: i64 = 500;
 const TEMPLATE: &str = include_str!("gate.html");
 /// Requests one visitor address may make through the gateway each minute, and how
 /// many of those may be key, password and sign-in steps.
 const REQUESTS_PER_MINUTE: u32 = 1200;
-const ACTIONS_PER_MINUTE: u32 = 30;
+const ACTIONS_PER_MINUTE: u32 = 20;
 /// New device IDs one address may be given each hour.
-const NEW_DEVICES_PER_HOUR: u32 = 20;
-
-/// Browser properties that should not change for the life of a device.
-const FINGERPRINT_KEYS: [&str; 5] = [
-    "platform",
-    "mobile",
-    "maxTouchPoints",
-    "webglVendor",
-    "webglRenderer",
-];
+const NEW_DEVICES_PER_HOUR: u32 = 10;
 
 /// The panel, served to tunnels aimed at the dashboard.
 #[derive(Clone)]
@@ -256,23 +245,7 @@ async fn serve(
         }
     }
 
-    let mut verdict = check(state, snap, &route, ip, req.headers());
-    // A device approved here that has no session on this host yet gets one, so
-    // one approval covers every tunnel without a cookie for the whole domain.
-    if verdict.device == Some(false) {
-        if let Some(device) = approved_here(state, snap, &route, req.headers()) {
-            verdict.device = Some(true);
-            let sid = state.open_session(
-                &state.device_sessions,
-                &device.id,
-                "",
-                "",
-                DEVICE_SESSION_TTL,
-                false,
-            );
-            new_cookies.extend(cookie_value(SESSION_COOKIE, &sid, None, DEVICE_SESSION_TTL));
-        }
-    }
+    let verdict = check(state, snap, &route, ip, req.headers());
     // Each page a visitor lets through is logged; the files it asks for are not.
     if verdict.allowed() && page_load(&req) {
         log(state, &route, "visit", "opened", None, ip, req.headers());
@@ -296,18 +269,6 @@ async fn serve(
         response.headers_mut().append(header::SET_COOKIE, value);
     }
     response
-}
-
-/// The device this browser's key names, if it is approved for this tunnel.
-fn approved_here<'a>(
-    state: &AppState,
-    snap: &'a Snapshot,
-    route: &Route,
-    headers: &HeaderMap,
-) -> Option<&'a Device> {
-    let hash = device_key(headers)?;
-    let id = state.db.device_by_token(&hash).ok().flatten()?.id;
-    snap.devices.get(&id).filter(|d| may_open(d, route))
 }
 
 /// The panel, as at its own address, for a visitor that passed the tunnel's
@@ -334,16 +295,13 @@ async fn dashboard(panel: Router, ip: Option<IpAddr>, mut req: Request) -> Respo
 struct Verdict {
     any: bool,
     lan: Option<bool>,
-    device: Option<bool>,
     password: Option<bool>,
     login: Option<bool>,
 }
 
 impl Verdict {
     fn results(&self) -> impl Iterator<Item = bool> + '_ {
-        [self.lan, self.device, self.password, self.login]
-            .into_iter()
-            .flatten()
+        [self.lan, self.password, self.login].into_iter().flatten()
     }
 
     fn allowed(&self) -> bool {
@@ -360,15 +318,11 @@ impl Verdict {
 
     /// The checks a visitor can still pass on a page here, in the order offered.
     fn open(&self) -> Vec<&'static str> {
-        [
-            ("login", self.login),
-            ("password", self.password),
-            ("device", self.device),
-        ]
-        .into_iter()
-        .filter(|(_, r)| *r == Some(false))
-        .map(|(kind, _)| kind)
-        .collect()
+        [("login", self.login), ("password", self.password)]
+            .into_iter()
+            .filter(|(_, r)| *r == Some(false))
+            .map(|(kind, _)| kind)
+            .collect()
     }
 }
 
@@ -384,9 +338,6 @@ fn check(
         lan: route
             .require_lan
             .then(|| ip.is_some_and(|ip| state.is_local(snap, ip))),
-        device: route
-            .require_device
-            .then(|| device_session(state, snap, headers, route)),
         password: route
             .require_password
             .then(|| password_session(state, headers, route)),
@@ -394,13 +345,6 @@ fn check(
             .require_login
             .then(|| user_session(state, snap, headers, route).is_some()),
     }
-}
-
-fn device_session(state: &AppState, snap: &Snapshot, headers: &HeaderMap, route: &Route) -> bool {
-    cookie(headers, SESSION_COOKIE)
-        .and_then(|sid| state.session(&state.device_sessions, sid))
-        .and_then(|s| snap.devices.get(&s.subject))
-        .is_some_and(|d| may_open(d, route))
 }
 
 fn password_session(state: &AppState, headers: &HeaderMap, route: &Route) -> bool {
@@ -452,10 +396,6 @@ fn user_session(
     }
     state.touch_session(&state.user_sessions, &s);
     Some(s.subject)
-}
-
-fn may_open(device: &Device, route: &Route) -> bool {
-    device.status == "approved" && (device.all_routes || device.route_ids.contains(&route.id))
 }
 
 /// Whether a request loads a page, rather than a file the page asks for.
@@ -517,24 +457,21 @@ fn refuse(
     } else {
         Vec::new()
     };
-    let (title, text) = match kind {
-        "login" => (
+    let (title, text, data) = if kind == "login" {
+        (
             "Sign in",
             "Sign in with the account you were given for this app.",
-        ),
-        "password" => ("Password required", "Enter the password for this app."),
-        _ => (
-            "Device approval required",
-            "This app only opens on approved devices. Give the ID below to the administrator.",
-        ),
-    };
-    let data = match kind {
-        "login" => json!({
-            "providers": sign_in_buttons(state, route),
-            "pow": pow::issue(slow_down(state, ip)),
-        }),
-        "password" => json!({ "pow": pow::issue(slow_down(state, ip)) }),
-        _ => json!({}),
+            json!({
+                "providers": sign_in_buttons(state, route),
+                "pow": pow::issue(slow_down(state, ip)),
+            }),
+        )
+    } else {
+        (
+            "Password required",
+            "Enter the password for this app.",
+            json!({ "pow": pow::issue(slow_down(state, ip)) }),
+        )
     };
     gate_page(
         StatusCode::UNAUTHORIZED,
@@ -689,13 +626,25 @@ fn no_device() -> Response {
 fn locked() -> Response {
     json_error(
         StatusCode::TOO_MANY_REQUESTS,
-        "Too many wrong tries. Wait 15 minutes and try again.",
+        "Too many wrong tries. Wait 30 minutes and try again.",
     )
 }
 
-/// A device that fails on this many different accounts in a day is refused for a day.
+fn locked_for_a_day() -> Response {
+    json_error(
+        StatusCode::TOO_MANY_REQUESTS,
+        "Too many wrong tries. Try again tomorrow.",
+    )
+}
+
+/// A device or address that fails on this many different accounts in a day is
+/// refused for a day.
 const ACCOUNTS_PER_DEVICE: usize = 3;
-const DEVICE_BLOCK: i64 = 86_400;
+const ACCOUNTS_PER_ADDRESS: usize = 3;
+/// Wrong sign-ins in a day before an account signs in only from its own devices
+/// for a day, and before an address is refused for a day.
+const FAILURES_PER_ACCOUNT: u32 = 10;
+const FAILURES_PER_ADDRESS: u32 = 20;
 
 fn too_many() -> Response {
     let mut response = (
@@ -716,14 +665,6 @@ fn json_error(status: StatusCode, message: &str) -> Response {
 
 fn valid_token(token: &str) -> bool {
     token.len() == TOKEN_LEN && token.bytes().all(|b| b.is_ascii_alphanumeric())
-}
-
-pub fn fingerprint(info: &Value) -> String {
-    let parts: Vec<String> = FINGERPRINT_KEYS
-        .iter()
-        .map(|key| info.get(key).map(Value::to_string).unwrap_or_default())
-        .collect();
-    sha256_hex(&parts.join("|"))
 }
 
 /// True when `info` holds what the browser reports about its hardware, not just what
@@ -769,7 +710,7 @@ fn identify(
     // Only the hub makes keys; every other tunnel fetches this browser's from it.
     let at_hub = hub.is_none_or(|h| h.hostname == route.hostname);
     if at_hub {
-        return match new_device(state, route, ip, req.headers(), "seen", Value::Null) {
+        return match new_device(state, route, ip, req.headers()) {
             Ok((_, token)) => cookie_value(DEVICE_COOKIE, &token, None, DEVICE_COOKIE_TTL)
                 .map_or(Identity::Keep, Identity::Here),
             Err(err) => {
@@ -803,15 +744,7 @@ fn new_device(
     route: &Route,
     ip: Option<IpAddr>,
     headers: &HeaderMap,
-    status: &str,
-    info: Value,
 ) -> ApiResult<(Device, String)> {
-    if status == "pending" && state.db.pending_count()? >= MAX_PENDING {
-        return Err(ApiError(
-            StatusCode::TOO_MANY_REQUESTS,
-            "Too many devices are waiting for approval".into(),
-        ));
-    }
     // One address cannot mint device IDs without end to dodge per-device limits.
     let from = ip.map(|ip| ip.to_string()).unwrap_or_default();
     if !state.allow(&format!("new-device:{from}"), NEW_DEVICES_PER_HOUR, 3600) {
@@ -823,24 +756,10 @@ fn new_device(
     let token = random_alnum(TOKEN_LEN);
     let now = now();
     let ip = ip.map(|ip| ip.to_string());
-    let info = if info.is_null() {
-        json!({ "userAgent": headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("") })
-    } else {
-        info
-    };
     let device = Device {
         id: random_alnum(DEVICE_ID_LEN),
         name: String::new(),
-        status: status.into(),
-        all_routes: false,
-        route_ids: Vec::new(),
-        fingerprint: if has_hardware(&info) {
-            fingerprint(&info)
-        } else {
-            String::new()
-        },
-        info,
-        note: None,
+        info: json!({ "userAgent": headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("") }),
         first_ip: ip.clone(),
         last_ip: ip,
         country: headers
@@ -852,9 +771,7 @@ fn new_device(
         last_seen: now,
     };
     state.db.insert_device(&device, &sha256_hex(&token))?;
-    if status == "seen" {
-        state.db.prune_seen(MAX_SEEN)?;
-    }
+    state.db.prune_seen(MAX_SEEN)?;
     state.reload()?;
     tracing::info!("device {} first seen on {}", device.id, route.hostname);
     Ok((device, token))
@@ -899,11 +816,6 @@ async fn action_response(
         ("passkey-add-begin", true) => passkey_add_begin(state, route, req.headers()),
         ("passkey-add", true) => match body::<PasskeyAdd>(req).await {
             Ok((headers, body)) => passkey_add(state, route, &headers, body),
-            Err(status) => status.into_response(),
-        },
-        ("enroll", true) => match body::<EnrollRequest>(req).await {
-            Ok((headers, body)) => register(state, route, ip, &headers, body)
-                .unwrap_or_else(IntoResponse::into_response),
             Err(status) => status.into_response(),
         },
         ("password", true) => match body::<PasswordRequest>(req).await {
@@ -1096,7 +1008,7 @@ fn hub_hand_out(state: &AppState, route: &Route, ip: Option<IpAddr>, req: &Reque
         });
     let token = match held {
         Some(token) => token.to_owned(),
-        None => match new_device(state, route, ip, req.headers(), "seen", Value::Null) {
+        None => match new_device(state, route, ip, req.headers()) {
             Ok((_, token)) => {
                 cookies.extend(cookie_value(DEVICE_COOKIE, &token, None, DEVICE_COOKIE_TTL));
                 token
@@ -1134,7 +1046,7 @@ fn claim(state: &AppState, route: &Route, req: &Request) -> Response {
 
 /// On each tunnel in turn: the dashboard's device key becomes this
 /// browser's key here. A different device this browser was known as here is folded
-/// into the dashboard's, so its accounts and approvals carry over.
+/// into the dashboard's, so its accounts carry over.
 fn plant(state: &AppState, route: &Route, req: &Request) -> Response {
     let Some(Hop::Plant {
         token, hosts, back, ..
@@ -1154,7 +1066,6 @@ fn plant(state: &AppState, route: &Route, req: &Request) -> Response {
     if let Some(old) = before.filter(|d| d.id != planted.id) {
         match state.db.merge_device(&old.id, &planted.id) {
             Ok(()) => {
-                state.end_sessions_of(&state.device_sessions, &old.id);
                 let _ = state.reload();
                 tracing::info!("device {} is now {}", old.id, planted.id);
             }
@@ -1195,104 +1106,6 @@ pub fn planting_hosts(snap: &Snapshot) -> Vec<String> {
         )
     });
     routes.into_iter().map(|r| r.hostname.clone()).collect()
-}
-
-#[derive(Deserialize)]
-struct EnrollRequest {
-    #[serde(default)]
-    info: Value,
-}
-
-/// Identifies the calling browser by its device key, asking for approval when it has not
-/// yet, and opens a session when the device is approved for this tunnel.
-///
-/// The key lives only in an HttpOnly cookie. It is never handed to the page, since
-/// the app behind this tunnel shares the page's origin and could read it there.
-fn register(
-    state: &AppState,
-    route: &Route,
-    ip: Option<IpAddr>,
-    headers: &HeaderMap,
-    body: EnrollRequest,
-) -> ApiResult<Response> {
-    let known = cookie(headers, DEVICE_COOKIE)
-        .filter(|t| valid_token(t))
-        .and_then(|token| {
-            state
-                .db
-                .device_by_token(&sha256_hex(token))
-                .ok()
-                .flatten()
-                .map(|d| (d, token.to_owned()))
-        });
-    let (device, token) = match known {
-        Some((mut device, token)) => {
-            let was = device.status.clone();
-            let print = fingerprint(&body.info);
-            if device.fingerprint.is_empty() && has_hardware(&body.info) {
-                device.fingerprint = print;
-            } else if device.status == "approved" && device.fingerprint != print {
-                tracing::warn!(
-                    "device {} presented different hardware, holding for review",
-                    device.id
-                );
-                device.status = "pending".into();
-                device.note = Some("Hardware changed since approval".into());
-            }
-            if device.status == "seen" {
-                device.status = "pending".into();
-                log(state, route, "device", "asked", None, ip, headers);
-            }
-            device.info = body.info;
-            device.last_ip = ip.map(|ip| ip.to_string()).or(device.last_ip);
-            device.country = headers
-                .get("cf-ipcountry")
-                .and_then(|v| v.to_str().ok())
-                .map(str::to_owned)
-                .or(device.country);
-            device.last_seen = now();
-            state.db.save_device(&device)?;
-            if device.status != was {
-                state.reload()?;
-            }
-            (device, token)
-        }
-        None => {
-            let made = new_device(state, route, ip, headers, "pending", body.info)?;
-            log(state, route, "device", "asked", None, ip, headers);
-            made
-        }
-    };
-
-    let allowed = may_open(&device, route);
-    let mut response = Json(json!({
-        "id": device.id,
-        "status": device.status,
-        "note": device.note,
-        "allowed": allowed,
-    }))
-    .into_response();
-    let out = response.headers_mut();
-    out.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    out.extend(
-        cookie_value(DEVICE_COOKIE, &token, None, DEVICE_COOKIE_TTL)
-            .map(|v| (header::SET_COOKIE, v)),
-    );
-    if allowed {
-        let sid = state.open_session(
-            &state.device_sessions,
-            &device.id,
-            "",
-            "",
-            DEVICE_SESSION_TTL,
-            false,
-        );
-        out.extend(
-            cookie_value(SESSION_COOKIE, &sid, None, DEVICE_SESSION_TTL)
-                .map(|v| (header::SET_COOKIE, v)),
-        );
-    }
-    Ok(response)
 }
 
 #[derive(Deserialize)]
@@ -1380,6 +1193,9 @@ struct LoginRequest {
     email: String,
     password: String,
     pow: Option<pow::Proof>,
+    /// What the browser reports about itself, kept with its device.
+    #[serde(default)]
+    info: Value,
 }
 
 /// Sign-in with an account. One sign-in covers every tunnel the account may open,
@@ -1401,25 +1217,26 @@ async fn login(
         return unsolved();
     }
     let email = body.email.trim().to_ascii_lowercase();
-    let by_address = format!("login:{}", ip.map(|ip| ip.to_string()).unwrap_or_default());
+    let address = ip.map(|ip| ip.to_string()).unwrap_or_default();
+    let by_address = format!("login:{address}");
     let by_account = format!("login-account:{email}");
     let by_device = format!("auth-device:{device}");
-    if state.is_blocked(&by_device) {
-        return json_error(
-            StatusCode::TOO_MANY_REQUESTS,
-            "This device tried too many accounts. Try again tomorrow.",
-        );
+    if state.is_blocked(&by_device) || state.is_blocked(&by_address) {
+        return locked_for_a_day();
     }
     let account = state.db.user_by_email(&body.email).ok().flatten();
     let visitor = Visitor::of(state, ip, headers);
-    // Wrong tries against an account lock it only for devices not linked to
-    // it, so a stranger who knows the email cannot lock its owner out.
+    // Wrong tries against an account lock it only for devices it has signed in
+    // from before, so a stranger who knows the email cannot lock its owner out.
     let linked = account.as_ref().is_some_and(|u| {
         visitor
             .device_id
             .as_ref()
             .is_some_and(|d| u.device_ids.contains(d))
     });
+    if !linked && state.is_blocked(&by_account) {
+        return locked_for_a_day();
+    }
     if state.locked_out(&by_address)
         || (state.locked_out(&by_account) && !linked)
         || state.locked_out(&by_device)
@@ -1445,12 +1262,27 @@ async fn login(
         state.record_failure(&by_account);
         state.record_failure(&by_device);
         state.record_failure(&slow_key(ip));
-        if state.distinct(&format!("emails-device:{device}"), &email, DEVICE_BLOCK)
-            >= ACCOUNTS_PER_DEVICE
-        {
+        if state.distinct(&format!("emails-device:{device}"), &email, DAY) >= ACCOUNTS_PER_DEVICE {
             tracing::warn!("refusing a device for a day: it failed on several accounts");
             log(state, route, "device", "blocked", None, ip, headers);
-            state.block(&by_device, DEVICE_BLOCK);
+            state.block(&by_device, DAY);
+        }
+        // Device IDs cost nothing to make, so the address answers for them too.
+        if state.distinct(&format!("emails-address:{address}"), &email, DAY) >= ACCOUNTS_PER_ADDRESS
+            || !state.allow(
+                &format!("fails-address:{address}"),
+                FAILURES_PER_ADDRESS,
+                DAY,
+            )
+        {
+            tracing::warn!("refusing an address for a day: too many wrong sign-ins");
+            state.block(&by_address, DAY);
+        }
+        if !state.allow(&format!("fails-account:{email}"), FAILURES_PER_ACCOUNT, DAY) {
+            tracing::warn!(
+                "holding an account to its own devices for a day: too many wrong sign-ins"
+            );
+            state.block(&by_account, DAY);
         }
         tokio::time::sleep(Duration::from_millis(700)).await;
         return json_error(StatusCode::UNAUTHORIZED, "Those details are not right.");
@@ -1458,6 +1290,7 @@ async fn login(
     state.clear_failures(&by_address);
     state.clear_failures(&by_account);
     state.clear_failures(&by_device);
+    describe(state, &visitor, body.info);
     let offer = offer_passkey(state, route, &account.id);
     signed_in(admit(state, route, account, &visitor).await, offer)
 }
@@ -1481,6 +1314,25 @@ impl Visitor {
             ip,
             country: country(headers),
         }
+    }
+}
+
+/// Keeps what the browser signing in reports about itself with its device.
+fn describe(state: &AppState, v: &Visitor, info: Value) {
+    if !has_hardware(&info) {
+        return;
+    }
+    let Some(mut device) = v
+        .device_id
+        .as_ref()
+        .and_then(|id| state.db.device(id).ok().flatten())
+    else {
+        return;
+    };
+    device.info = info;
+    device.last_seen = now();
+    if state.db.save_device(&device).is_ok() {
+        let _ = state.reload();
     }
 }
 
@@ -1517,9 +1369,9 @@ fn record(state: &AppState, route: &Route, v: &Visitor, user_id: &str, outcome: 
 }
 
 /// Lets in an account whose owner has proved who they are, by password or through
-/// another service: if it may open this tunnel, from a device linked to it (or its
-/// first device, for an account with none yet), and the sign-in does not look like
-/// someone else holding it. Returns the session token.
+/// another service: if it may open this tunnel, from a device it may sign in from,
+/// and the sign-in does not look like someone else holding it. Returns the session
+/// token.
 async fn admit(
     state: &AppState,
     route: &Route,
@@ -1556,7 +1408,8 @@ async fn admit(
 }
 
 /// The checks every sign-in passes, before any code: the account may open this
-/// tunnel, from a device linked to it, and does not look like it is in other hands.
+/// tunnel, from a device it may sign in from, and does not look like it is in other
+/// hands.
 fn vet(
     state: &AppState,
     route: &Route,
@@ -1567,21 +1420,20 @@ fn vet(
         return Err((StatusCode::FORBIDDEN, "This account cannot open this app."));
     }
 
-    // An account signs in only from the devices linked to it. One with none yet
-    // takes the first device that signs in, and is held to it from then on.
-    let Some(device) = v.device_id.clone() else {
-        record(state, route, v, &account.id, "unlinked");
+    let Some(device) = v.device_id.as_ref() else {
         return Err((
             StatusCode::FORBIDDEN,
             "This browser has no device ID yet. Reload the page and try again.",
         ));
     };
-    let claim = account.device_ids.is_empty();
-    if !claim && !account.device_ids.contains(&device) {
+    // A locked account signs in only from its own devices; with none yet, the
+    // first device to sign in becomes its own.
+    if account.device_lock && !account.device_ids.is_empty() && !account.device_ids.contains(device)
+    {
         record(state, route, v, &account.id, "unlinked");
         return Err((
             StatusCode::FORBIDDEN,
-            "This device is not linked to the account. Ask the administrator to link it.",
+            "This account signs in only from its own devices. Ask the administrator to link this one.",
         ));
     }
 
@@ -1609,19 +1461,33 @@ fn vet(
         ));
     }
 
-    // Saved only once the sign-in finishes, so a code never entered links nothing.
-    if claim {
-        account.device_ids.push(device);
-    }
     Ok(account)
 }
 
-/// Signs a vetted account in; returns the session token.
+/// Signs a vetted account in; returns the session token. The device becomes one
+/// of the account's own, flagged on the dashboard when the account had others.
 fn open(state: &AppState, route: &Route, mut account: User, v: &Visitor, mfa: bool) -> String {
     record(state, route, v, &account.id, "ok");
+    if let Some(device) = v
+        .device_id
+        .as_ref()
+        .filter(|d| !account.device_ids.contains(d))
+    {
+        if !account.device_ids.is_empty() {
+            tracing::warn!("account {} signed in from a new device", account.username);
+            let _ = state.db.add_flag(&SignIn {
+                user_id: account.id.clone(),
+                device_id: Some(device.clone()),
+                ip: v.ip.map(|ip| ip.to_string()),
+                country: v.country.clone(),
+                at: now(),
+                outcome: "ok".into(),
+            });
+        }
+        account.device_ids.push(device.clone());
+    }
     account.last_login = Some(now());
     let _ = state.db.save_user(&account);
-    // Keeps a device linked by this sign-in in the cached accounts too.
     let _ = state.reload();
     let token = state.open_session(
         &state.user_sessions,
@@ -1957,7 +1823,7 @@ fn log_event(state: &AppState, event: Event) {
 
 // ---- the dashboard's own device ----
 
-/// Registers the browser the admin uses, approved for every tunnel, and returns its key.
+/// Registers the browser the admin uses and returns its key.
 pub fn dashboard_device(
     state: &AppState,
     token: Option<String>,
@@ -1976,12 +1842,7 @@ pub fn dashboard_device(
     let device = Device {
         id: random_alnum(DEVICE_ID_LEN),
         name: "This computer".into(),
-        status: "approved".into(),
-        all_routes: true,
-        route_ids: Vec::new(),
-        fingerprint: fingerprint(&info),
         info,
-        note: None,
         first_ip: None,
         last_ip: None,
         country: None,
@@ -1997,15 +1858,6 @@ pub fn dashboard_device(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn fingerprint_ignores_volatile_fields() {
-        let a = json!({ "platform": "Win32", "webglRenderer": "GPU", "userAgent": "A/1" });
-        let b = json!({ "platform": "Win32", "webglRenderer": "GPU", "userAgent": "A/2" });
-        let c = json!({ "platform": "MacIntel", "webglRenderer": "GPU", "userAgent": "A/1" });
-        assert_eq!(fingerprint(&a), fingerprint(&b));
-        assert_ne!(fingerprint(&a), fingerprint(&c));
-    }
 
     #[test]
     fn tokens_must_be_256_alphanumerics() {
@@ -2026,14 +1878,12 @@ mod tests {
     fn verdict(
         any: bool,
         lan: Option<bool>,
-        device: Option<bool>,
         password: Option<bool>,
         login: Option<bool>,
     ) -> Verdict {
         Verdict {
             any,
             lan,
-            device,
             password,
             login,
         }
@@ -2041,13 +1891,13 @@ mod tests {
 
     #[test]
     fn checks_combine_by_mode() {
-        assert!(verdict(false, None, None, None, None).allowed());
-        assert!(!verdict(false, Some(true), None, Some(false), None).allowed());
-        assert!(verdict(true, Some(false), None, Some(true), None).allowed());
-        assert!(!verdict(true, Some(false), Some(false), None, None).allowed());
+        assert!(verdict(false, None, None, None).allowed());
+        assert!(!verdict(false, Some(true), Some(false), None).allowed());
+        assert!(verdict(true, Some(false), Some(true), None).allowed());
+        assert!(!verdict(true, Some(false), None, Some(false)).allowed());
         assert_eq!(
-            verdict(true, None, Some(false), Some(false), Some(false)).open(),
-            ["login", "password", "device"]
+            verdict(true, None, Some(false), Some(false)).open(),
+            ["login", "password"]
         );
     }
 

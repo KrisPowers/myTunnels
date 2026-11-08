@@ -111,8 +111,10 @@ pub struct CfSettings {
 }
 
 /// Failed password and sign-in attempts allowed per window before refusing.
-const MAX_FAILURES: u32 = 5;
-const FAILURE_WINDOW: i64 = 15 * 60;
+const MAX_FAILURES: u32 = 3;
+const FAILURE_WINDOW: i64 = 30 * 60;
+
+pub const DAY: i64 = 86_400;
 
 pub struct Inner {
     pub config: Config,
@@ -125,8 +127,6 @@ pub struct Inner {
     pub proxy_verified: reqwest::Client,
     pub tunnel: Tunnel,
     pub public_ips: RwLock<Vec<IpAddr>>,
-    /// Approved devices.
-    pub device_sessions: Sessions,
     /// Tunnel passwords entered.
     pub pass_sessions: Sessions,
     /// Accounts signed in.
@@ -200,7 +200,6 @@ impl AppState {
             proxy_verified,
             tunnel,
             public_ips: RwLock::new(Vec::new()),
-            device_sessions: Sessions::new("device"),
             pass_sessions: Sessions::new("pass"),
             user_sessions: Sessions::new("user"),
             admin_sessions: Sessions::new("admin"),

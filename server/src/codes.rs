@@ -1,4 +1,4 @@
-//! Sign-in codes sent by email: six digits, good once, for ten minutes and five
+//! Sign-in codes sent by email: six digits, good once, for ten minutes and three
 //! tries. Once switched on, the dashboard and every tunnel with sign-in ask for
 //! one after the password.
 
@@ -13,7 +13,7 @@ use crate::state::AppState;
 use crate::util::{lock, now, random_hex, sha256_hex, ApiError};
 
 const TTL: i64 = 10 * 60;
-const TRIES: u32 = 5;
+const TRIES: u32 = 3;
 /// Codes one account may be sent in a quarter of an hour.
 const SENDS: u32 = 5;
 
@@ -78,7 +78,7 @@ impl Codes {
     }
 
     /// The sign-in a right code finishes. A wrong one counts against the ticket,
-    /// which is dropped after five.
+    /// which is dropped after three.
     /// `app` checks a code for a sign-in held for an authenticator app, given its
     /// subject and the code.
     pub fn redeem(

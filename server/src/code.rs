@@ -1154,7 +1154,7 @@ pub async fn serve(state: &AppState, ip: Option<IpAddr>, path: &str, req: Reques
     if state.locked_out(&key) {
         return refuse(
             StatusCode::TOO_MANY_REQUESTS,
-            "Too many wrong tokens. Wait 15 minutes and try again.",
+            "Too many wrong tokens. Wait 30 minutes and try again.",
         );
     }
     let Some(name) = path
