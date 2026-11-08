@@ -175,7 +175,7 @@ const CONTENT: Record<string, ReactNode> = {
   users: (
     <>
       <Doc title="Accounts">
-        <p>Users, under Security &amp; Roles, holds the accounts people sign in with, yours among them: the account made at setup holds the <b>Host</b> and <b>Admin</b> roles, and only it changes itself, under Settings, Account. Each has a username, an email (either signs in), and a password held to the same rule as every password here.</p>
+        <p>Users, under Security, holds the accounts people sign in with, yours among them: the account made at setup holds the <b>Host</b> and <b>Admin</b> roles, and only it changes itself, under Settings, Account. Each has a username, an email (either signs in), and a password held to the same rule as every password here.</p>
       </Doc>
       <Doc title="What an account opens">
         <p>On an account's <b>Profile</b>, <b>Tunnels</b> holds the tunnels it may open, and <b>Security</b> the devices it signs in from. Every device an account signs in from is added there, and a sign-in from one new to an account that already has others shows under <b>New devices</b> on the Dashboard until it is dismissed. With <b>Device lock</b> on, the account signs in only from those devices; with none yet, the first one to sign in becomes its own. One sign-in covers every tunnel on the same domain that the account may open. Suspending an account, or removing it, ends its sessions at once.</p>
@@ -188,7 +188,7 @@ const CONTENT: Record<string, ReactNode> = {
   oauth: (
     <>
       <Doc title="Other ways to sign in">
-        <p>Tunnels with Sign-in on can also offer <b>Continue with</b> GitHub, Google, GitLab, Discord, Slack or Codeberg; a self-hosted Authentik, Authelia, Keycloak, Pocket ID, Zitadel, Kanidm, Gitea or Forgejo; Auth0 or Okta; or any other OpenID Connect provider. Self-hosted and tenant providers also take their issuer URL. Each is set up once under <b>Security &amp; Roles, Third-Party OAuth</b>: register an app with the provider and paste its client ID and secret back. Then each tunnel switches on the ones it offers, under Access Control.</p>
+        <p>Tunnels with Sign-in on can also offer <b>Continue with</b> GitHub, Google, GitLab, Discord, Slack or Codeberg; a self-hosted Authentik, Authelia, Keycloak, Pocket ID, Zitadel, Kanidm, Gitea or Forgejo; Auth0 or Okta; or any other OpenID Connect provider. Self-hosted and tenant providers also take their issuer URL. Each is set up once under <b>Security, Third-Party OAuth</b>: register an app with the provider and paste its client ID and secret back. Then each tunnel switches on the ones it offers, under Access Control.</p>
       </Doc>
       <Doc title="Who it lets in">
         <p>The provider vouches for an email. The account in Users with that email signs in, held to the same rules as signing in with its password: it must be on, may open the tunnel, and, with Device lock on, be on one of its own devices.</p>
@@ -204,7 +204,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>With Two-Factor Auth, signing in takes a code sent by email as well as the password. The code is six digits, works once, and lasts ten minutes; three wrong tries and it is gone, and signing in starts again.</p>
       </Doc>
       <Doc title="SMTP">
-        <p>Codes are sent with SMTP credentials you enter under <b>Security &amp; Roles, Two-Factor Auth</b>: host, port, security, username, password and from address, from Gmail (with an app password), Outlook or any other provider. Saving signs in with them to check them, and <b>Send a test</b> emails the host account.</p>
+        <p>Codes are sent with SMTP credentials you enter under <b>Security, Two-Factor Auth</b>: host, port, security, username, password and from address, from Gmail (with an app password), Outlook or any other provider. Saving signs in with them to check them, and <b>Send a test</b> emails the host account.</p>
       </Doc>
       <Doc title="Where codes are asked">
         <p><b>Email codes</b> is one switch for every sign-in: the dashboard's and every tunnel with Sign-in on, each code sent to the account's email (the host account's for the host). Turning it on sends a test email first, so credentials that do not deliver cannot lock you out, and codes stop on their own if SMTP is removed. This covers sign-ins through a third-party provider as well.</p>

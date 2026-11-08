@@ -25,7 +25,7 @@ function state(u: User): [string, string] {
 }
 
 // Users are the accounts people sign in with, by email, at tunnels that ask
-// for one: the body of Security & Roles' Users tab.
+// for one: the body of Security's Users tab.
 export function Users({ users }: { users: User[] | null }) {
   const can = useCan();
   return (
