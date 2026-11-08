@@ -533,12 +533,44 @@ export interface Fan {
   mode: "auto" | "manual" | "full" | "none";
 }
 
+// Apps: the catalog, and what the host has of it.
+export type Os = "windows" | "macos" | "linux";
+
+export interface AppItem {
+  id: string;
+  name: string;
+  group: string;
+  about: string;
+  logo: string;
+  url: string;
+  // Another app it is installed with.
+  needs: string | null;
+  // How to install it, as typed on each kind of machine; null where not carried.
+  commands: Record<Os, string | null>;
+}
+
+export interface HostApp {
+  installed: boolean;
+  version: string | null;
+  // Whether the host can install it.
+  can: boolean;
+  job?: { running: boolean; failed: boolean; log: string };
+}
+
+export interface Apps {
+  catalog: AppItem[];
+  // Null while `server host` is not answering.
+  host: { os: Os; manager: string | null; apps: Record<string, HostApp> } | null;
+  remote: boolean;
+}
+
+// What features need where myTunnels runs, and whether it is there.
+export interface Needs { docker: boolean; git: boolean; cloudflared: boolean }
+
 export interface Auth {
   authenticated: boolean;
   me: Me | null;
   catalog: Group[];
-  // The add-ons installed, by id.
-  addons: string[];
   setup: { password: boolean; account: boolean; token: boolean; cloudflare: boolean; done: boolean };
 }
 
@@ -593,7 +625,9 @@ export const api = {
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),
   metrics: () => call<Metrics>("/metrics"),
-  setAddon: (id: string, installed: boolean) => call<{ addons: string[] }>(`/addons/${id}`, "PUT", { installed }),
+  apps: () => call<Apps>("/apps"),
+  installApp: (id: string) => call(`/apps/${id}/install`, "POST"),
+  needs: () => call<Needs>("/needs"),
   fans: () => call<Fan[]>("/hardware/fans"),
   setFan: (id: string, auto: boolean, speed: number) => call<Fan>(`/hardware/fans/${id}`, "PUT", { auto, speed }),
   containers: () => call<Container[]>("/containers"),

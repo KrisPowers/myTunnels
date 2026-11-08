@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { NeedsApp } from "./Apps";
 import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Deploy, type Image, type Metrics, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { BuildLog, Builds, DeploySettings, NewMenu, sourceOf, waiting } from "./Builds";
 import { Chart, Meter } from "./Dashboard";
@@ -243,6 +244,7 @@ function ContainerList({ routes, status, onChanged }: { routes: Route[] | null; 
         </div>
       </div>
       <div className="page-body stack">
+        <NeedsApp app="docker" what="Containers" />
         {problem && <Callout tone="bad" icon="error">Docker is not reachable: {problem}</Callout>}
         {(list || !seeContainers) && (items.length === 0 ? (
           <div className="card welcome">

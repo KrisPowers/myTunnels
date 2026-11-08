@@ -22,7 +22,7 @@ use crate::permissions::{self, Caller};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
 use crate::{
-    addons, code, codes, containers, convert, gate, hardware, metrics, passkey, pow, secret, share,
+    code, codes, containers, convert, gate, hardware, metrics, passkey, pow, secret, share,
     storage, threads, totp, tunnel,
 };
 
@@ -131,7 +131,9 @@ pub fn router(state: AppState) -> Router {
         .route("/drive/fs/{op}", any(drive_fs))
         .route("/convert", get(convert::list).post(convert::start))
         .route("/convert/{id}", delete(convert::remove))
-        .route("/addons/{id}", put(set_addon))
+        .route("/apps", get(crate::apps::list))
+        .route("/apps/{id}/install", post(crate::apps::install))
+        .route("/needs", get(crate::apps::needs))
         .route("/hardware/fans", get(hardware::list_fans))
         .route("/hardware/fans/{id}", put(hardware::set_fan))
         .route_layer(middleware::from_fn_with_state(
@@ -272,37 +274,8 @@ async fn require_session(State(state): State<AppState>, mut req: Request, next: 
         )
         .into_response();
     }
-    // A removed add-on's calls are refused.
-    let segment = req.uri().path().trim_start_matches('/').split('/').next();
-    let removed = segment.and_then(|s| {
-        addons::installed(&state.db)
-            .ok()
-            .and_then(|list| addons::missing(&list, s))
-    });
-    if let Some(name) = removed {
-        return ApiError(StatusCode::NOT_FOUND, format!("{name} is not installed")).into_response();
-    }
     req.extensions_mut().insert(caller);
     next.run(req).await
-}
-
-#[derive(Deserialize)]
-struct AddonBody {
-    installed: bool,
-}
-
-/// Installs or removes an add-on, for the host and admins.
-async fn set_addon(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(body): Json<AddonBody>,
-) -> ApiResult<Json<Value>> {
-    if !addons::known(&id) {
-        return Err(ApiError::not_found());
-    }
-    Ok(Json(
-        json!({ "addons": addons::set(&state.db, &id, body.installed)? }),
-    ))
 }
 
 /// What first-run setup has saved so far, so the panel can resume where it was left.
@@ -339,7 +312,6 @@ async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
         "authenticated": me.is_some(),
         "me": me,
         "catalog": permissions::GROUPS,
-        "addons": addons::installed(db)?,
         "setup": {
             "password": password,
             "account": password,

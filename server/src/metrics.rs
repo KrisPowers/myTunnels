@@ -167,7 +167,9 @@ pub async fn serve_host() -> anyhow::Result<()> {
         .await
         .with_context(|| format!("cannot listen on {addr}"))?;
     tracing::info!("this computer's figures on http://{addr}/metrics");
-    let app = Router::new().route("/metrics", get(|| async { Json(view()) }));
+    let app = Router::new()
+        .route("/metrics", get(|| async { Json(view()) }))
+        .merge(crate::apps::host_routes());
     axum::serve(listener, app).await?;
     Ok(())
 }

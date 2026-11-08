@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { NeedsApp } from "./Apps";
 import { ago, api, message, repos, type Build, type Deploy, type DeployEdit, type Updates } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
@@ -193,6 +194,7 @@ export function AddContainer({ kind, onClose, onAdded }: { kind: Kind; onClose: 
   return (
     <Dialog title={TITLES[kind]} onClose={onClose}>
       <form onSubmit={submit}>
+        {kind !== "image" && <NeedsApp app="git" what="A container from a repository" />}
         {kind === "image" ? (
           <TextField label="Image" mono autoFocus autoComplete="off" placeholder="nginx:1.27" value={image}
             onChange={(v) => {

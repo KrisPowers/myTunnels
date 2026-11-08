@@ -197,6 +197,14 @@ pub const GROUPS: &[Group] = &[
         ],
     },
     Group {
+        label: "Apps",
+        permissions: &[p(
+            "apps.install",
+            "Install apps on the host",
+            "From Apps, through the host's package manager",
+        )],
+    },
+    Group {
         label: "Settings",
         permissions: &[p(
             "settings.manage",
@@ -283,7 +291,9 @@ pub fn needed(method: &Method, path: &str) -> Need {
     match at(0) {
         // Share links and the duplicate finder check each space's own
         // permission, and share links whose link it is.
-        "account" | "status" | "device" | "shares" | "duplicates" => Need::SignedIn,
+        "account" | "status" | "device" | "shares" | "duplicates" | "needs" => Need::SignedIn,
+        "apps" if read => Need::SignedIn,
+        "apps" => any(&["apps.install"]),
         "oauth" if read => Need::SignedIn,
         "oauth" => any(&["oauth.manage"]),
         "twofactor" => any(&["twofactor.manage"]),

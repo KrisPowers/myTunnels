@@ -161,7 +161,7 @@ Podman works too, through its Docker-compatible API: mount Podman's socket in pl
 
 ## Git and Storage
 
-**Storage** is a page of its own in the sidebar. **Git** is an add-on, under **Add-ons**.
+**Storage** and **Git** are pages of their own in the sidebar.
 
 ### Git
 
@@ -259,13 +259,27 @@ set is kept unless you pick another, and the others can be deleted one set at a 
 Each tab takes only its own kinds of file. Storage is in the dashboard alone, so publish the
 dashboard through a tunnel to reach it from anywhere.
 
-## Add-ons
+## Apps
 
-**Add-ons** are apps beside myTunnels' own pages. **Apps**, in the sidebar for the host and
-admins, is their catalog: a tile each, with **Install**, then **Open** and a menu to remove it.
-Each one installed has a page under **Add-ons** in the sidebar.
-**Git** comes installed; **Device Controller** does not. Removing one takes its page away and
-refuses its calls; what it kept stays, for when it is installed again.
+**Apps** is a catalog of the software a homelab or engineering machine usually needs, a tile
+each by kind: Docker, kubectl, minikube and Helm; cloudflared, Cloudflare WARP and Wrangler;
+Git and the GitHub CLI; Rust, Go, Python, Java and .NET; Node.js, fnm, Bun and Deno;
+Terraform and WireGuard. **Install** offers two places:
+
+- **On the host**, in one click, through its package manager: winget on Windows, Homebrew on
+  macOS, apt on Linux (with `sudo` that needs no password). It takes the **Install apps on the
+  host** permission, and Windows may ask to allow some installers.
+- **On this device**, the command for the visitor's own machine and a link to the makers'
+  download.
+
+When myTunnels runs inside Docker, installs reach the host through `server host` on it (see
+the Dashboard). It pairs with the first myTunnels to ask and installs only for that one; to
+pair again, remove the `paired` file in its data folder (`%LOCALAPPDATA%\myTunnels` on
+Windows, `~/.local/share/myTunnels` elsewhere).
+
+Features that need an app where myTunnels runs keep working without it and say which to
+install: Containers need Docker, tunnels need cloudflared, and Git and containers from a
+repository need Git.
 
 ### Device Controller
 
