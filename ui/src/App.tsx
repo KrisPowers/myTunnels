@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode } from "react";
-import { ADDONS, AddonsDialog } from "./Addons";
+import { ADDONS, AppsPage } from "./Addons";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type Group, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { GitPage } from "./Git";
 import { NewMenu } from "./Builds";
@@ -70,7 +70,6 @@ function Root() {
 function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Group[]; installed: string[]; onSignOut: () => void }) {
   const [place, setPlace] = useState(readHash);
   const [addons, setAddons] = useState(installed);
-  const [adding, setAdding] = useState(false);
   const has = (id: string) => addons.includes(id);
   const can = useCan();
   const [routes, setRoutes] = useState<Route[] | null>(null);
@@ -181,6 +180,7 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
     ["containers", "Containers", "deployed_code", "#/", can("containers.view") || can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("media.view") || can("drive.view")],
     ["security", "Security & Roles", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
+    ["apps", "Apps", "apps", "#/apps", me.admin],
   ];
   const extras: [string, string, IconName, string, boolean][] = ADDONS.map((a) => [a.view, a.name, a.icon, `#/${a.view}`, has(a.id) && can(a.can)]);
   const home = [...pages, ...extras].find((p) => p[4])?.[3] ?? "#/settings/appearance";
@@ -230,20 +230,16 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
           ) : (
             <>
               {pages.map(item)}
-              {(extras.some((p) => p[4]) || me.admin) && (
-                <NavGroup id="addons" label="Add-ons" action={me.admin && (
-                  <button type="button" className="icon-btn small" aria-label="Add-ons" title="Add-ons" onClick={() => setAdding(true)}><Icon name="extension" size={18} /></button>
-                )}>{extras.map(item)}</NavGroup>
-              )}
+              {extras.some((p) => p[4]) && <NavGroup id="addons" label="Add-ons">{extras.map(item)}</NavGroup>}
             </>
           )}
         </nav>
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
-        {adding && <AddonsDialog installed={addons} onChange={setAddons} onClose={() => setAdding(false)} />}
 
         <main className="page" key={view + id}>
           {view === "git" && has("git") && <GitPage id={id} page={page} more={place.more} users={users ?? []} onChanged={load} />}
           {view === "dashboard" && <DashboardPage />}
+          {view === "apps" && me.admin && <AppsPage installed={addons} onChange={setAddons} />}
           {view === "controller" && has("controller") && <ControllerPage />}
           {view === "storage" && <StoragePage tab={id} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} status={status}
@@ -264,7 +260,7 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
 
 // NavGroup is a category of pages under its name, which folds it away; the
 // fold is remembered in this browser.
-function NavGroup({ id, label, action, children }: { id: string; label: string; action?: ReactNode; children: ReactNode }) {
+function NavGroup({ id, label, children }: { id: string; label: string; children: ReactNode }) {
   const key = `nav.folded.${id}`;
   const [folded, setFolded] = useState(() => {
     try {
@@ -283,13 +279,10 @@ function NavGroup({ id, label, action, children }: { id: string; label: string; 
   };
   return (
     <div className="nav-group">
-      <div className="nav-group-head">
-        <button type="button" className="nav-group-fold" aria-expanded={!folded} onClick={toggle}>
-          <span>{label}</span>
-          <Icon name="expand_more" size={18} className={folded ? "folded" : undefined} />
-        </button>
-        {action}
-      </div>
+      <button type="button" className="nav-group-head" aria-expanded={!folded} onClick={toggle}>
+        <span>{label}</span>
+        <Icon name="expand_more" size={18} className={folded ? "folded" : undefined} />
+      </button>
       {!folded && children}
     </div>
   );

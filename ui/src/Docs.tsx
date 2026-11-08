@@ -103,7 +103,7 @@ const CONTENT: Record<string, ReactNode> = {
   addons: (
     <>
       <Doc title="What they are">
-        <p><b>Add-ons</b> are apps beside myTunnels' own pages, each with a page under Add-ons in the sidebar. The host and admins install and remove them with the button beside that heading. <b>Git</b> comes installed; <b>Device Controller</b> does not.</p>
+        <p><b>Add-ons</b> are apps beside myTunnels' own pages. <b>Apps</b>, in the sidebar for the host and admins, is their catalog: a tile each, with <b>Install</b>, then <b>Open</b> and a menu to remove it. Each one installed has a page under Add-ons in the sidebar. <b>Git</b> comes installed; <b>Device Controller</b> does not.</p>
         <p>Removing one takes its page away and refuses its calls; what it kept stays, for when it is installed again. Each has permissions of its own for other accounts.</p>
       </Doc>
     </>
