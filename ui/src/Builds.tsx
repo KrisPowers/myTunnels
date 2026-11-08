@@ -5,7 +5,7 @@ import { Icon, type IconName } from "./Icon";
 import { imageId } from "./Images";
 import { useCan } from "./me";
 import { go } from "./route";
-import { Callout, Card, Dialog, MoreMenu, Row, TextField, useNotify, ValueRow } from "./ui";
+import { Callout, Card, Dialog, MoreMenu, Row, TextField, useNotify, ValueRow, type MenuAction } from "./ui";
 
 // A repository on another server is picked with this in place of a name.
 const ADDRESS = " address";
@@ -26,7 +26,7 @@ export const EVERY: Option<number>[] = [
 
 const REASONS: Record<Build["reason"], string> = { first: "First build", push: "New commit", timer: "Timer", manual: "Update" };
 
-export const sourceOf = (d: Pick<Deploy, "repo" | "url">) => d.url ? d.url.replace(/^https:\/\//, "").replace(/\.git$/, "") : d.repo;
+export const sourceOf = (d: Pick<Deploy, "repo" | "url" | "image">) => d.image || (d.url ? d.url.replace(/^https:\/\//, "").replace(/\.git$/, "") : d.repo);
 
 // Whether a build is still to finish.
 export const waiting = (b: Build | null | undefined) => !!b && (b.status === "queued" || b.status === "building");
@@ -51,20 +51,20 @@ interface Source { repo: string; url: string; token: string; branch: string }
 
 // SourceFields picks where a container's code comes from: a repository on
 // this host's Git or an https address with an optional token, then one of its
-// branches, looked up as the source changes.
-function SourceFields({ value, onChange, deploy, tokenSet }: { value: Source; onChange: (patch: Partial<Source>) => void; deploy?: string; tokenSet?: boolean }) {
+// branches, looked up as the source changes. `kind` keeps it to one of them.
+function SourceFields({ value, onChange, deploy, tokenSet, kind }: { value: Source; onChange: (patch: Partial<Source>) => void; deploy?: string; tokenSet?: boolean; kind?: "git" | "url" }) {
   const can = useCan();
   const [local, setLocal] = useState<string[] | null>(null);
   const [branches, setBranches] = useState<string[] | null>(null);
   const [problem, setProblem] = useState("");
-  const remote = value.repo === "";
+  const remote = kind === "url" || (kind !== "git" && value.repo === "");
 
   useEffect(() => {
     if (!can("code.view")) return setLocal([]);
     repos.list().then((r) => {
       const names = r.repos.filter((x) => !x.empty).map((x) => x.name);
       setLocal(names);
-      if (!value.repo && !value.url && names.length) onChange({ repo: names[0] });
+      if (!value.repo && !value.url && names.length && kind !== "url") onChange({ repo: names[0] });
     }).catch(() => setLocal([]));
     // Once, for the repositories there are.
   }, []);
@@ -92,20 +92,26 @@ function SourceFields({ value, onChange, deploy, tokenSet }: { value: Source; on
 
   const sources: Option<string>[] = [
     ...(local ?? []).map((name) => ({ value: name, label: name, icon: "git" as IconName })),
-    { value: ADDRESS, label: "Another address", hint: "GitHub or any https address", icon: "public" },
+    ...(kind === "git" ? [] : [{ value: ADDRESS, label: "Another address", hint: "GitHub or any https address", icon: "public" as IconName }]),
   ];
   return (
     <>
-      <div className="tf static">
-        <div className="tf-box">
-          <Dropdown label="Repository" value={remote ? ADDRESS : repo} options={sources}
-            onChange={(v) => onChange(v === ADDRESS ? { repo: "" } : { repo: v, url: "", token: "" })} />
-          <span className="tf-label">Repository</span>
+      {kind !== "url" && (
+        <div className="tf static">
+          <div className="tf-box">
+            {kind === "git" && local && !local.length ? (
+              <span className="dropdown placeholder">No repositories with commits on this host yet</span>
+            ) : (
+              <Dropdown label="Repository" value={remote ? ADDRESS : repo} options={sources}
+                onChange={(v) => onChange(v === ADDRESS ? { repo: "" } : { repo: v, url: "", token: "" })} />
+            )}
+            <span className="tf-label">Repository</span>
+          </div>
         </div>
-      </div>
+      )}
       {remote && (
         <>
-          <TextField label="Address" mono autoComplete="off" placeholder="https://github.com/you/app.git" value={url} onChange={(v) => onChange({ url: v.trim() })} />
+          <TextField label="Address" mono autoFocus={kind === "url"} autoComplete="off" placeholder="https://github.com/you/app.git" value={url} onChange={(v) => onChange({ url: v.trim() })} />
           <TextField label="Token" type="password" autoComplete="new-password" value={token} onChange={(v) => onChange({ token: v.trim() })}
             hint={tokenSet && !token ? "Set. Leave empty to keep it." : "For a private repository."} />
         </>
@@ -125,26 +131,47 @@ function SourceFields({ value, onChange, deploy, tokenSet }: { value: Source; on
   );
 }
 
-// AddContainer makes a container from a repository: its name, where its code
-// is and which branch, and how it updates. Its first build starts at once.
-export function AddContainer({ onClose, onAdded }: { onClose: () => void; onAdded: (d: Deploy) => Promise<void> }) {
+// Where a new container comes from: a repository on this host's Git, one at
+// an https address such as GitHub, or a Docker image.
+export type Kind = "git" | "url" | "image";
+
+const TITLES: Record<Kind, string> = {
+  git: "Container from Git",
+  url: "Container from GitHub",
+  image: "Container from an image",
+};
+
+// The ways an image updates: pulled again on a timer, or by hand.
+export const updatesFor = (image: boolean): Option<Updates>[] => image
+  ? [
+    { value: "timer", label: "On a timer", hint: "Pulls the image again every so often, and runs it when it changed" },
+    { value: "manual", label: "Only when I press Update" },
+  ]
+  : UPDATES;
+
+// AddContainer makes a container: its name, where it comes from and how it
+// updates. Its first build, or pull, starts at once.
+export function AddContainer({ kind, onClose, onAdded }: { kind: Kind; onClose: () => void; onAdded: (d: Deploy) => Promise<void> }) {
   const [name, setName] = useState("");
   const [named, setNamed] = useState(false);
   const [source, setSource] = useState<Source>({ repo: "", url: "", token: "", branch: "" });
-  const [updates, setUpdates] = useState<Updates>("push");
+  const [image, setImage] = useState("");
+  const [updates, setUpdates] = useState<Updates>(kind === "image" ? "manual" : "push");
   const [every, setEvery] = useState(86_400);
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
 
+  const guess = (from: string) => {
+    if (named) return;
+    const last = from.replace(/\.git$/, "").replace(/[:@].*$/, "").split("/").pop() || "";
+    setName(last.toLowerCase().replace(/[^a-z0-9_.-]/g, "-").replace(/^[^a-z0-9]+/, "").slice(0, 63));
+  };
   const change = (patch: Partial<Source>) => {
     const next = { ...source, ...patch };
     setSource(next);
-    if (!named) {
-      const guess = next.repo || next.url.replace(/\.git$/, "").split("/").pop() || "";
-      setName(guess.toLowerCase().replace(/[^a-z0-9_.-]/g, "-").replace(/^[^a-z0-9]+/, "").slice(0, 63));
-    }
+    guess(next.repo || next.url);
   };
-  const ready = !!name && !!source.branch && (!!source.repo || !!source.url);
+  const ready = !!name && (kind === "image" ? !!image : !!source.branch && (!!source.repo || !!source.url));
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -152,10 +179,10 @@ export function AddContainer({ onClose, onAdded }: { onClose: () => void; onAdde
     setBusy(true);
     try {
       const d = await api.addDeploy({
-        name, branch: source.branch, updates, every,
-        ...(source.repo ? { repo: source.repo } : { url: source.url, token: source.token || undefined }),
+        name, updates, every,
+        ...(kind === "image" ? { image } : kind === "git" ? { repo: source.repo, branch: source.branch } : { url: source.url, branch: source.branch, token: source.token || undefined }),
       });
-      notify(`Added ${d.name}; its first build has started`);
+      notify(`Added ${d.name}`);
       await onAdded(d);
     } catch (err) {
       notify(message(err), "bad");
@@ -164,17 +191,23 @@ export function AddContainer({ onClose, onAdded }: { onClose: () => void; onAdde
   };
 
   return (
-    <Dialog title="Add a container" onClose={onClose}>
+    <Dialog title={TITLES[kind]} onClose={onClose}>
       <form onSubmit={submit}>
-        <TextField label="Name" autoFocus autoComplete="off" value={name}
+        {kind === "image" ? (
+          <TextField label="Image" mono autoFocus autoComplete="off" placeholder="nginx:1.27" value={image}
+            onChange={(v) => {
+              setImage(v.trim());
+              guess(v.trim());
+            }} />
+        ) : <SourceFields kind={kind} value={source} onChange={change} />}
+        <TextField label="Name" autoComplete="off" value={name}
           onChange={(v) => {
             setNamed(true);
             setName(v.toLowerCase().replace(/[^a-z0-9_.-]/g, "").slice(0, 63));
           }} />
-        <SourceFields value={source} onChange={change} />
         <div className="tf static">
           <div className="tf-box">
-            <Dropdown label="Update" value={updates} options={UPDATES} onChange={setUpdates} />
+            <Dropdown label="Update" value={updates} options={updatesFor(kind === "image")} onChange={setUpdates} />
             <span className="tf-label">Update</span>
           </div>
         </div>
@@ -192,6 +225,31 @@ export function AddContainer({ onClose, onAdded }: { onClose: () => void; onAdde
         </div>
       </form>
     </Dialog>
+  );
+}
+
+// NewMenu is the plus that adds anything to Containers: a tunnel to any port,
+// or a container from Git, from GitHub or from an image.
+export function NewMenu() {
+  const can = useCan();
+  const [adding, setAdding] = useState<Kind | "">("");
+  const actions: MenuAction[] = [
+    ...(can("tunnels.create") ? [{ label: "Tunnel", hint: "A port on this computer or another", icon: "public" as IconName, onClick: () => go("#/new") }] : []),
+    ...(can("containers.deploy") ? [
+      { label: "Container from Git", hint: "Built from a repository on this host", icon: "git" as IconName, onClick: () => setAdding("git") },
+      { label: "Container from GitHub", hint: "Built from any https repository", icon: "code" as IconName, onClick: () => setAdding("url") },
+      { label: "Container from an image", hint: "Runs a Docker image, such as nginx", icon: "layers" as IconName, onClick: () => setAdding("image") },
+    ] : []),
+  ];
+  if (!actions.length) return null;
+  return (
+    <>
+      <MoreMenu label="New" icon="add" actions={actions} />
+      {adding && <AddContainer kind={adding} onClose={() => setAdding("")} onAdded={async (d) => {
+        setAdding("");
+        go(`#/containers/${encodeURIComponent(d.name)}/images`);
+      }} />}
+    </>
   );
 }
 
@@ -397,14 +455,20 @@ export function DeploySettings({ d, onChanged }: { d: Deploy; onChanged: () => P
   return (
     <>
       <Card title="Source">
-        <Row title="Repository" sub={<><span className="mono">{sourceOf(d)}</span>, branch <span className="mono">{d.branch}</span></>}>
-          <button type="button" className="icon-btn" aria-label="Change the repository" title="Change the repository" onClick={() => setEditing("source")}><Icon name="edit" size={20} /></button>
-        </Row>
-        <ValueRow title="Dockerfile" value={d.dockerfile} empty="Found on its own" onSave={(v) => save({ dockerfile: v })} />
+        {d.image ? (
+          <ValueRow title="Image" value={d.image} onSave={(v) => save({ image: v })} />
+        ) : (
+          <>
+            <Row title="Repository" sub={<><span className="mono">{sourceOf(d)}</span>, branch <span className="mono">{d.branch}</span></>}>
+              <button type="button" className="icon-btn" aria-label="Change the repository" title="Change the repository" onClick={() => setEditing("source")}><Icon name="edit" size={20} /></button>
+            </Row>
+            <ValueRow title="Dockerfile" value={d.dockerfile} empty="Found on its own" onSave={(v) => save({ dockerfile: v })} />
+          </>
+        )}
       </Card>
       <Card title="Updates">
         <Row title="Update" sub={d.updates === "manual" ? undefined : `Last looked ${ago(d.checked_at)}`}>
-          <Dropdown label="Update" value={d.updates} options={UPDATES} onChange={(updates) => quietly({ updates })} />
+          <Dropdown label="Update" value={d.updates} options={updatesFor(!!d.image)} onChange={(updates) => quietly({ updates })} />
         </Row>
         {d.updates === "timer" && (
           <Row title="Every">

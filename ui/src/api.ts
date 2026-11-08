@@ -233,6 +233,8 @@ export interface Deploy {
   repo: string;
   url: string;
   branch: string;
+  // A Docker image it runs, in place of a repository.
+  image: string;
   // Empty when the Dockerfile is found on its own.
   dockerfile: string;
   // 0 for the port its image exposes.
@@ -252,6 +254,7 @@ export interface Deploy {
 }
 
 export interface DeployEdit {
+  image?: string;
   repo?: string;
   url?: string;
   token?: string;
@@ -563,7 +566,7 @@ export const api = {
   removeImage: (id: string) => call(`/images/${encodeURIComponent(id)}`, "DELETE"),
   deploys: () => call<Deploy[]>("/deploys"),
   deploy: (id: string) => call<Deploy>(`/deploys/${id}`),
-  addDeploy: (body: { name: string; repo?: string; url?: string; token?: string; branch?: string; updates?: Updates; every?: number }) => call<Deploy>("/deploys", "POST", body),
+  addDeploy: (body: { name: string; repo?: string; url?: string; image?: string; token?: string; branch?: string; updates?: Updates; every?: number }) => call<Deploy>("/deploys", "POST", body),
   probeSource: (body: { repo?: string; url?: string; token?: string; deploy?: string }) => call<{ branches: string[]; default: string }>("/deploys/probe", "POST", body),
   editDeploy: (id: string, edit: DeployEdit) => call<Deploy>(`/deploys/${id}`, "PATCH", edit),
   removeDeploy: (id: string) => call(`/deploys/${id}`, "DELETE"),
