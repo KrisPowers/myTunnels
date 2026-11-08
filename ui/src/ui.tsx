@@ -356,7 +356,7 @@ export function LogTable({ entries, who = "Who" }: { entries: LogEntry[]; who?: 
 
 // usePopover places a panel over the page under its button, so no card or scroll
 // area cuts it off. A click outside, Escape, scrolling the page or resizing closes it.
-function usePopover(width: number) {
+export function usePopover(width: number) {
   const [open, setOpen] = useState(false);
   const [at, setAt] = useState({ top: 0, left: 0 });
   const anchor = useRef<HTMLDivElement>(null);

@@ -1300,7 +1300,14 @@ a.tn-row:hover { background: var(--hover); text-decoration: none; }
 .app-tile { position: relative; cursor: default; }
 .app-tile > .menu-wrap { position: absolute; top: 6px; right: 6px; }
 .app-tile .muted { font-size: 12.5px; }
-.app-tile .btn { margin-top: 4px; }
+.app-tile .split { display: inline-flex; margin-top: 4px; }
+.app-tile .split .btn { margin-top: 0; }
+.split > .btn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split .split-more { padding: 0 6px; border-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.split .split-more.primary { border-left: 1px solid color-mix(in srgb, var(--on-accent) 30%, transparent); }
+.versions .menu-item { justify-content: space-between; gap: 12px; }
+.versions .menu-item small { color: var(--text-3); font-size: 12px; }
+.versions .menu-item:disabled { cursor: default; background: transparent; }
 
 /* ---- Device Controller: a row per fan, its mark spinning as fast as it turns ---- */
 .fan-row {
