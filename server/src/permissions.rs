@@ -158,6 +158,14 @@ pub const GROUPS: &[Group] = &[
         ],
     },
     Group {
+        label: "Device Controller",
+        permissions: &[p(
+            "hardware.control",
+            "Control the host's hardware",
+            "Set its fan speeds by hand or hand them back to the firmware",
+        )],
+    },
+    Group {
         label: "Photos and videos",
         permissions: &[
             p("media.view", "View photos and videos", "And download them"),
@@ -286,6 +294,7 @@ pub fn needed(method: &Method, path: &str) -> Need {
         "settings" | "cloudflare" => any(&["settings.manage"]),
         "zones" => any(&["tunnels.create", "tunnels.edit"]),
         "metrics" => any(&["metrics.view", "containers.view"]),
+        "hardware" => any(&["hardware.control"]),
         "containers" | "images" | "deploys" if read => any(&["containers.view"]),
         "deploys" if *method == Method::DELETE => any(&["containers.remove"]),
         "deploys" => any(&["containers.deploy"]),
