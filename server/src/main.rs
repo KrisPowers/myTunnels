@@ -15,6 +15,7 @@ mod gate;
 mod guard;
 mod hardware;
 mod images;
+mod limits;
 mod mail;
 mod metrics;
 mod netinfo;
@@ -55,6 +56,10 @@ async fn main() -> Result<()> {
     if std::env::args().nth(1).as_deref() == Some("hardware") {
         return hardware::serve().await;
     }
+    // This computer's own figures, for a Dashboard that runs inside Docker Desktop.
+    if std::env::args().nth(1).as_deref() == Some("host") {
+        return metrics::serve_host().await;
+    }
 
     let mut config = Config::from_env();
     config.default_upstream_host = netinfo::detect_upstream(&config.default_upstream_host).await;
@@ -79,6 +84,7 @@ async fn main() -> Result<()> {
     metrics::spawn();
     convert::spawn(state.clone());
     deploy::spawn(state.clone());
+    limits::spawn(state.clone());
     tokio::spawn(prune_events(state.clone()));
 
     let admin = axum::serve(

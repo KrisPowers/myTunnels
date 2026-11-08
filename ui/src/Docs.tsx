@@ -63,7 +63,7 @@ const CONTENT: Record<string, ReactNode> = {
   dashboard: (
     <>
       <Doc title="What it shows">
-        <p><b>Dashboard</b> reads the host every two seconds and draws the last five minutes: CPU overall and per logical processor, memory, network traffic and the processor's temperature. Under them are each core's usage, clock and temperature, every container, every disk and every temperature sensor. Point at a chart to read any moment of it.</p>
+        <p><b>Dashboard</b> reads the host every two seconds and draws the last five minutes: CPU overall and per logical processor, memory, network traffic and the processor's temperature. Under them are each core's usage, clock and temperature, every container, every disk and every temperature sensor. Point at a chart to read any moment of it. Under Docker Desktop these are the figures of the machine Docker runs, unless <span className="mono">server host</span> runs on the computer itself.</p>
       </Doc>
       <Doc title="Where the figures come from">
         <p>Processors, memory, disks and temperatures are the host's own, even from inside the container. Network traffic is what passes through myTunnels. Containers come from the Docker API, through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers and nothing else.</p>
@@ -79,7 +79,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Containers</b> is one catalog: every container, and every tunnel to a port elsewhere, a row each with what it is in a tile tinted by its state, its name over where it comes from, its address, and its CPU and memory while it runs. Compose projects with more than one container fold under their name. Search, or pick <b>All</b> or <b>Running</b>; it refreshes on its own. The plus, here and in the header, adds a <b>Tunnel</b> or a <b>Container from Git</b>, <b>from GitHub</b> or <b>from an image</b>.</p>
       </Doc>
       <Doc title="One container">
-        <p>A container and its tunnel are one page. Its heading holds its state, image and address, <b>Open</b>, the one button its state calls for (start, stop or resume) and a menu for the rest. Under it: <b>Overview</b> (its CPU, memory, network and disk while it runs, then what it runs, its state, ports, networks and mounts), <b>Tunnel</b>, <b>Images</b> and <b>Logs</b>.</p>
+        <p>A container and its tunnel are one page. Its heading holds its state, image and address, <b>Open</b>, the one button its state calls for (start, stop or resume) and a menu for the rest. Under it: <b>Overview</b> (its CPU, memory, network and disk while it runs, then what it runs, its state, ports, networks and mounts), <b>Tunnel</b>, <b>Images</b>, <b>Logs</b> and <b>Resources</b>: its CPU limit and priority, memory limit, reserved memory and swap, how many processes it may run and when it restarts. A change applies at once and is given back when the container is made again; the Dashboard shows each container against its limits.</p>
       </Doc>
       <Doc title="Its tunnel">
         <p><b>Tunnel</b> lists the container's addresses in the middle, each with its state, where it goes and who may open it, and the picked one's activity under them. Its controls sit at the side: Open, its live switch, a menu to change the address or remove it, and its access control. The plus publishes an address: type the subdomain, pick the domain, choose who may open it and press <b>Publish</b>; the port is the container's own, asked only when it has more than one.</p>

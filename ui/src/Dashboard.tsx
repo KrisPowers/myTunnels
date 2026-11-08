@@ -334,8 +334,8 @@ function Containers({ list, keep, hostMemory }: { list: ContainerStats[]; keep: 
                 </td>
                 <td>{running && (
                   <span className="cpu-cell">
-                    <Spark values={c.history} max={Math.max(100, ...c.history)} keep={keep} times={[]} every={0} color={BLUE} />
-                    <span className="num">{pct(c.cpu)}</span>
+                    <Spark values={c.history} max={Math.max(c.cpu_limit ? c.cpu_limit * 100 : 100, ...c.history)} keep={keep} times={[]} every={0} color={BLUE} />
+                    <span className="num">{pct(c.cpu)}{c.cpu_limit > 0 && <small> of {pct(c.cpu_limit * 100)}</small>}</span>
                   </span>
                 )}</td>
                 <td>{running && <Meter value={c.memory} max={limit} label={bytes(c.memory)} />}</td>

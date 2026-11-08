@@ -6,6 +6,7 @@ import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { ContainerImages, ImageView, useImageRemoval } from "./Images";
 import { useCan } from "./me";
+import { Resources } from "./Resources";
 import { go } from "./route";
 import { AccessChips, reachOf, target, TunnelComposer, TunnelsView, tunnelsOf } from "./Tunnels";
 import { Callout, Copy, Dialog, MoreMenu, SubNav, Switch, useNotify, type MenuAction } from "./ui";
@@ -387,6 +388,7 @@ const TABS: [string, string, IconName][] = [
   ["tunnel", "Tunnel", "public"],
   ["images", "Images", "layers"],
   ["logs", "Logs", "terminal"],
+  ["resources", "Resources", "tune"],
   ["settings", "Settings", "settings"],
 ];
 
@@ -428,7 +430,7 @@ function ContainerPage({ name, tab, more, routes, users, providers, onChanged }:
   const head = c ?? listed.get(name) ?? (d ? pending(d) : undefined);
   const made = !!head?.id;
   const tabs = TABS.filter(([k]) => (k !== "tunnel" || can("tunnels.view"))
-    && (made || !["overview", "logs"].includes(k))
+    && (made || !["overview", "logs", "resources"].includes(k))
     && (k !== "settings" || (!!d && can("containers.deploy"))));
   const current = tabs.some(([k]) => k === tab) ? tab : tabs[0][0];
   if (!head) {
@@ -507,6 +509,7 @@ function ContainerPage({ name, tab, more, routes, users, providers, onChanged }:
           : d === null ? <ContainerImages c={head} base={`${base}/images`} /> : <div className="repo-loading"><span className="spinner" /></div>)}
         {current === "settings" && d && <DeploySettings d={d} onChanged={load} />}
         {current === "logs" && <Logs id={head.id} />}
+        {current === "resources" && <Resources id={head.id} editable={manage} />}
       </div>
     </>
   );
