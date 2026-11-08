@@ -1236,6 +1236,7 @@ a.result.thread-row:hover .scan-target { color: var(--accent); }
 .ct-name-text small { overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .ct-name-text .chip { text-transform: none; }
 .ct-menu { width: 1%; text-align: right; }
+.ct-row .ct-menu { display: grid; place-items: center; flex: none; width: 34px; }
 .ct-fold {
   display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent;
   color: var(--text); font: inherit; cursor: pointer;
