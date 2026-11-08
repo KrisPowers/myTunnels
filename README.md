@@ -64,7 +64,7 @@ minutes drawn as charts:
 On a Linux host, processors, memory and temperatures are the host's own. Docker Desktop
 runs containers in a virtual machine, so from inside one they are that machine's. To show
 the computer's own, run `server host` on it (from `server/`, `cargo run --release -- host`):
-it answers on `127.0.0.1:7093` alone, and the Dashboard reads it through `HOST_URL` in
+it answers on `127.0.0.1:7094` alone, and the Dashboard reads it through `HOST_URL` in
 `compose.yaml`, falling back to its own figures while it is not running. Network traffic is
 what passes through myTunnels, or the computer's while `server host` runs. Containers come from the Docker API through the
 `docker` service in `compose.yaml`, which allows containers and nothing else.
