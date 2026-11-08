@@ -536,6 +536,11 @@ fn start_admin_session(state: &AppState) -> ApiResult<Response> {
 /// Opens a panel session for `subject`, the admin or an account, tied to the
 /// password it signed in with.
 fn start_session(state: &AppState, subject: &str, tag: &str) -> ApiResult<Response> {
+    if let Some(mut user) = state.db.user(subject)? {
+        user.last_login = Some(now());
+        state.db.save_user(&user)?;
+        state.reload()?;
+    }
     let sid = state.open_session(&state.admin_sessions, subject, tag, "", ADMIN_TTL, false);
     Ok((
         [(
