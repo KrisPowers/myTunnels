@@ -37,12 +37,16 @@ export function Dropdown<T extends string | number>({ label, value, options, onC
     const tall = Math.min(options.length * 56 + 16, 360);
     const up = r.bottom + tall + 8 > innerHeight && r.top > tall + 8;
     setAt({ left: r.left, top: up ? r.top - tall - 4 : r.bottom + 4, width: Math.max(r.width, 220), up });
-    const shut = () => setOpen(false);
+    // The page scrolling moves the field away; the list scrolling is the list.
+    const shut = (e: Event) => {
+      if (!list.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const resized = () => setOpen(false);
     addEventListener("scroll", shut, true);
-    addEventListener("resize", shut);
+    addEventListener("resize", resized);
     return () => {
       removeEventListener("scroll", shut, true);
-      removeEventListener("resize", shut);
+      removeEventListener("resize", resized);
     };
   }, [open, options.length]);
 
@@ -121,10 +125,13 @@ export function MultiDropdown<T extends string>({ label, values, options, allLab
     if (!open || !field.current) return;
     const r = field.current.getBoundingClientRect();
     setAt({ left: r.left, top: r.bottom + 4, width: Math.max(r.width, 220) });
-    addEventListener("scroll", close, true);
+    const away = (e: Event) => {
+      if (!list.current?.contains(e.target as Node)) close();
+    };
+    addEventListener("scroll", away, true);
     addEventListener("resize", close);
     return () => {
-      removeEventListener("scroll", close, true);
+      removeEventListener("scroll", away, true);
       removeEventListener("resize", close);
     };
   }, [open, close]);
