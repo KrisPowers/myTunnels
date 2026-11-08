@@ -364,7 +364,6 @@ export function usePopover(width: number) {
   const panel = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
   useDismiss(open, close, anchor, panel);
-  usePlace(open, anchor, panel);
   useLayoutEffect(() => {
     if (!open || !anchor.current) return;
     const r = anchor.current.getBoundingClientRect();
@@ -379,6 +378,7 @@ export function usePopover(width: number) {
       removeEventListener("resize", close);
     };
   }, [open, close, width]);
+  usePlace(open, anchor, panel, at.left);
   return { open, setOpen, close, anchor, panel, style: { left: at.left, width } };
 }
 

@@ -1,16 +1,19 @@
 import { useEffect, useLayoutEffect, type RefObject } from "react";
 
-// usePlace keeps an open popup, such as a menu or a list, under its anchor,
-// or over it when there is more room above, and no taller than the room on
-// that side. It measures the popup as it opens and again whenever what is in
-// it changes, so a list that fills in or grows as it scrolls stays on screen.
-// It owns the popup's `top` and `max-height`, and marks it `up` when above.
-export function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: RefObject<HTMLElement | null>) {
+// usePlace keeps an open popup, such as a menu or a list, inside the window:
+// under its anchor, or over it when there is more room above, no taller than
+// the room on that side, and moved in from either edge. It measures the popup
+// as it opens, again whenever what is in it changes, so a list that fills in
+// or grows as it scrolls stays on screen, and again when `left`, where its
+// owner puts it, changes. It owns the popup's `top` and `max-height`, moves its
+// `left` only to keep it in, and marks it `up` when above.
+export function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: RefObject<HTMLElement | null>, left: number) {
   useLayoutEffect(() => {
     const el = panel.current;
     const at = anchor.current;
     if (!open || !el || !at) return;
-    // The tallest its stylesheet lets it be, read before this sets its own.
+    // The tallest its stylesheet lets it be, read without what this set before.
+    el.style.maxHeight = "";
     const cap = parseFloat(getComputedStyle(el).maxHeight) || Infinity;
     const place = () => {
       const r = at.getBoundingClientRect();
@@ -25,12 +28,17 @@ export function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, p
       el.style.maxHeight = `${height}px`;
       el.style.top = `${up ? r.top - gap - height : r.bottom + gap}px`;
       el.classList.toggle("up", up);
+      // Past the right edge, it lines up with its anchor's right edge instead,
+      // and never starts off the left.
+      const box = el.getBoundingClientRect();
+      if (box.right > innerWidth - edge) el.style.left = `${Math.max(edge, Math.min(r.right, innerWidth - edge) - box.width)}px`;
+      else if (box.left < edge) el.style.left = `${edge}px`;
     };
     place();
     const changes = new MutationObserver(place);
     changes.observe(el, { childList: true, subtree: true, characterData: true });
     return () => changes.disconnect();
-  }, [open, anchor, panel]);
+  }, [open, anchor, panel, left]);
 }
 
 // useDismiss closes a popup, such as a menu, on a click outside every one of

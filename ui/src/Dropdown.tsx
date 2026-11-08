@@ -28,7 +28,6 @@ export function Dropdown<T extends string | number>({ label, value, options, onC
   const list = useRef<HTMLUListElement>(null);
   const close = useCallback(() => setOpen(false), []);
   useDismiss(open, close, field, list);
-  usePlace(open, field, list);
   const current = options.find((o) => o.value === value) ?? options[0];
 
   // The list lines up with the field; how high is `usePlace`'s.
@@ -48,6 +47,7 @@ export function Dropdown<T extends string | number>({ label, value, options, onC
       removeEventListener("resize", resized);
     };
   }, [open, options.length]);
+  usePlace(open, field, list, at.left);
 
   const pick = (v: T) => {
     onChange(v);
@@ -119,7 +119,6 @@ export function MultiDropdown<T extends string>({ label, values, options, allLab
   const list = useRef<HTMLUListElement>(null);
   const close = useCallback(() => setOpen(false), []);
   useDismiss(open, close, field, list);
-  usePlace(open, field, list);
 
   useLayoutEffect(() => {
     if (!open || !field.current) return;
@@ -135,6 +134,8 @@ export function MultiDropdown<T extends string>({ label, values, options, allLab
       removeEventListener("resize", close);
     };
   }, [open, close]);
+
+  usePlace(open, field, list, at.left);
 
   const picked = options.filter((o) => values.includes(o.value));
   const shown = picked.length === 0 || picked.length === options.length ? allLabel : picked.map((o) => o.label).join(", ");
