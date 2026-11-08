@@ -6,7 +6,6 @@ export const DOCS: [string, string, IconName][] = [
   ["start", "Getting started", "info"],
   ["dashboard", "Dashboard", "dashboard"],
   ["containers", "Containers", "deployed_code"],
-  ["git", "Git", "code"],
   ["storage", "Storage", "cloud"],
   ["publish", "Publishing", "public"],
   ["access", "Access Control", "shield"],
@@ -14,6 +13,9 @@ export const DOCS: [string, string, IconName][] = [
   ["users", "Users", "group"],
   ["oauth", "Third-Party OAuth", "key"],
   ["twofactor", "Two-Factor Auth", "lock"],
+  ["addons", "Add-ons", "extension"],
+  ["git", "Git", "code"],
+  ["controller", "Device Controller", "mode_fan"],
   ["trouble", "When something is off", "help"],
 ];
 
@@ -95,6 +97,27 @@ const CONTENT: Record<string, ReactNode> = {
       </Doc>
       <Doc title="What Docker allows">
         <p>myTunnels reaches Docker through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers, building images from a container's repository, listing and removing images, and the engine's info, and nothing else, so volumes and networks cannot be changed from here.</p>
+      </Doc>
+    </>
+  ),
+  addons: (
+    <>
+      <Doc title="What they are">
+        <p><b>Add-ons</b> are apps beside myTunnels' own pages, each with a page under Add-ons in the sidebar. The host and admins install and remove them with the button beside that heading. <b>Git</b> comes installed; <b>Device Controller</b> does not.</p>
+        <p>Removing one takes its page away and refuses its calls; what it kept stays, for when it is installed again. Each has permissions of its own for other accounts.</p>
+      </Doc>
+    </>
+  ),
+  controller: (
+    <>
+      <Doc title="Fans">
+        <p><b>Device Controller</b> lists every fan the host's chips report, each spinning as fast as it turns, with its speed in RPM. Drag a fan's slider to set its speed by hand; switch <b>Auto</b> on to hand it back to the firmware. A fan its chip only reads shows its speed and nothing to set.</p>
+      </Doc>
+      <Doc title="Where it reaches">
+        <p>Fans are the kernel's hwmon files under <code>/sys/class/hwmon</code>. Setting them takes root, so the <code>hardware</code> service in <code>compose.yaml</code> does it: the same program, with the host's <code>/sys</code> mounted, every capability dropped, answering the gateway alone.</p>
+      </Doc>
+      <Doc title="No fans">
+        <p>A Linux host shows the fans its chips report. Docker Desktop runs containers in a virtual machine, which has none.</p>
       </Doc>
     </>
   ),
@@ -191,7 +214,7 @@ const CONTENT: Record<string, ReactNode> = {
   oauth: (
     <>
       <Doc title="Other ways to sign in">
-        <p>Tunnels with Sign-in on can also offer <b>Continue with</b> GitHub, Google, GitLab, Discord, Slack or Codeberg; a self-hosted Authentik, Authelia, Keycloak, Pocket ID, Zitadel, Kanidm, Gitea or Forgejo; Auth0 or Okta; or any other OpenID Connect provider. Self-hosted and tenant providers also take their issuer URL. Each is set up once under <b>Advanced, Third-Party OAuth</b>: register an app with the provider and paste its client ID and secret back. Then each tunnel switches on the ones it offers, under Access Control.</p>
+        <p>Tunnels with Sign-in on can also offer <b>Continue with</b> GitHub, Google, GitLab, Discord, Slack or Codeberg; a self-hosted Authentik, Authelia, Keycloak, Pocket ID, Zitadel, Kanidm, Gitea or Forgejo; Auth0 or Okta; or any other OpenID Connect provider. Self-hosted and tenant providers also take their issuer URL. Each is set up once under <b>Security &amp; Roles, Third-Party OAuth</b>: register an app with the provider and paste its client ID and secret back. Then each tunnel switches on the ones it offers, under Access Control.</p>
       </Doc>
       <Doc title="Who it lets in">
         <p>The provider vouches for an email. The account in Users with that email signs in, held to the same rules as signing in with its password: it must be on, may open the tunnel, and be on a device linked to it.</p>
@@ -207,7 +230,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>With Two-Factor Auth, signing in takes a code sent by email as well as the password. The code is six digits, works once, and lasts ten minutes; five wrong tries and it is gone, and signing in starts again.</p>
       </Doc>
       <Doc title="SMTP">
-        <p>Codes are sent with SMTP credentials you enter under <b>Advanced, Two-Factor Auth</b>: host, port, security, username, password and from address, from Gmail (with an app password), Outlook or any other provider. Saving signs in with them to check them, and <b>Send a test</b> emails the host account.</p>
+        <p>Codes are sent with SMTP credentials you enter under <b>Security &amp; Roles, Two-Factor Auth</b>: host, port, security, username, password and from address, from Gmail (with an app password), Outlook or any other provider. Saving signs in with them to check them, and <b>Send a test</b> emails the host account.</p>
       </Doc>
       <Doc title="Where codes are asked">
         <p><b>Email codes</b> is one switch for every sign-in: the dashboard's and every tunnel with Sign-in on, each code sent to the account's email (the host account's for the host). Turning it on sends a test email first, so credentials that do not deliver cannot lock you out, and codes stop on their own if SMTP is removed. This covers sign-ins through a third-party provider as well.</p>
