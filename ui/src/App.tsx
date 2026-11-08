@@ -13,7 +13,7 @@ import { Icon, type IconName } from "./Icon";
 
 import { MeContext, useCan } from "./me";
 import { go, readHash } from "./route";
-import { SETTINGS, Settings } from "./Settings";
+import { Preferences, SETTINGS, Settings } from "./Settings";
 import { Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
 import { StoragePage } from "./Storage";
@@ -183,7 +183,7 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
     ["apps", "Apps", "apps", "#/apps", me.admin],
   ];
   const extras: [string, string, IconName, string, boolean][] = ADDONS.map((a) => [a.view, a.name, a.icon, `#/${a.view}`, has(a.id) && can(a.can)]);
-  const home = [...pages, ...extras].find((p) => p[4])?.[3] ?? "#/settings/appearance";
+  const home = [...pages, ...extras].find((p) => p[4])?.[3] ?? "#/preferences";
   // An add-on's page is open only while it is installed.
   const away = ADDONS.some((a) => view === a.view && !has(a.id));
   useEffect(() => {
@@ -213,9 +213,7 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
           <a className={"icon-btn" + (view === "docs" ? " on" : "")} href="#/docs" aria-label="Help" title="Help"><Icon name="help" /></a>
           <MoreMenu label="Settings" icon="settings" actions={[
             { label: "Settings", icon: "settings", onClick: () => go("#/settings") },
-            { label: "Preferences", icon: "brightness_auto", onClick: () => go("#/settings/appearance") },
-            { label: "Account", icon: "person", onClick: () => go("#/settings/account") },
-            { label: "About", icon: "info", onClick: () => go("#/settings/about") },
+            { label: "Preferences", icon: "brightness_auto", onClick: () => go("#/preferences") },
             { label: "Sign out", icon: "logout", onClick: onSignOut },
           ]} />
         </div>
@@ -255,6 +253,7 @@ function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Gro
           {user && <UserPage user={user} page={page} routes={apps ?? []} devices={devices ?? []} catalog={catalog} me={me} onChanged={load} />}
           {view === "security" && <SecurityPage tab={id} users={users} devices={devices} routes={apps ?? []} onChanged={load} />}
           {view === "settings" && <Settings sections={settings} section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
+          {view === "preferences" && <Preferences />}
           {view === "docs" && <Docs section={id} />}
         </main>
       </div>
