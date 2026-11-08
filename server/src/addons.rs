@@ -57,3 +57,18 @@ fn parse(value: &str) -> Vec<String> {
         .map(str::to_owned)
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn calls_of_a_removed_add_on_are_named() {
+        let git = parse("git");
+        assert_eq!(missing(&git, "hardware"), Some("Device Controller"));
+        assert_eq!(missing(&git, "code"), None);
+        assert_eq!(missing(&git, "routes"), None);
+        assert_eq!(missing(&parse(""), "code"), Some("Git"));
+        assert_eq!(parse("git, controller,other"), ["git", "controller"]);
+    }
+}

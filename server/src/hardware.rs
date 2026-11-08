@@ -283,3 +283,91 @@ async fn forward(req: reqwest::RequestBuilder) -> ApiResult<Json<Value>> {
     }
     Ok(Json(body))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chip(root: &FsPath, n: u32, files: &[(&str, &str)]) {
+        let dir = root.join(format!("hwmon{n}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, value) in files {
+            std::fs::write(dir.join(name), value).unwrap();
+        }
+    }
+
+    #[test]
+    fn fans_are_read_set_and_handed_back() {
+        let root = std::env::temp_dir().join(format!("hwmon-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        chip(
+            &root,
+            0,
+            &[("name", "k10temp\n"), ("temp1_input", "41000\n")],
+        );
+        chip(
+            &root,
+            2,
+            &[
+                ("name", "nct6798\n"),
+                ("fan1_input", "1200\n"),
+                ("fan1_label", "CPU\n"),
+                ("pwm1", "128\n"),
+                ("pwm1_enable", "5\n"),
+                ("fan2_input", "800\n"),
+            ],
+        );
+        let found = fans(&root);
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].id, "hwmon2-1");
+        assert_eq!(found[0].label, "CPU");
+        assert_eq!(
+            (found[0].rpm, found[0].speed, found[0].mode),
+            (Some(1200), Some(50), "auto")
+        );
+        assert_eq!((found[1].label.as_str(), found[1].mode), ("Fan 2", "none"));
+
+        let fan = set(
+            &root,
+            "hwmon2-1",
+            &Setting {
+                auto: false,
+                speed: 100,
+            },
+        )
+        .unwrap();
+        assert_eq!((fan.speed, fan.mode), (Some(100), "manual"));
+        let fan = set(
+            &root,
+            "hwmon2-1",
+            &Setting {
+                auto: true,
+                speed: 0,
+            },
+        )
+        .unwrap();
+        assert_eq!(fan.mode, "auto");
+        assert_eq!(read(&root.join("hwmon2/pwm1_enable")).unwrap(), "5");
+
+        assert!(set(
+            &root,
+            "hwmon2-2",
+            &Setting {
+                auto: false,
+                speed: 10
+            }
+        )
+        .is_err());
+        assert!(set(
+            &root,
+            "../x-1",
+            &Setting {
+                auto: true,
+                speed: 0
+            }
+        )
+        .is_err());
+        assert_eq!(parse_id("hwmon1/../2-1"), None);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+}
