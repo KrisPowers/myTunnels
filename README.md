@@ -111,12 +111,12 @@ pause, kill and delete. Under it:
 
 ### From a repository or an image
 
-**Container from Git** and **Container from GitHub**, under the plus, make a container from
-code: pick a repository on this host's **Git**, or give any https address (GitHub and the like,
-with a token for a private one), then its branch, its name and how it updates:
+**Container from GitHub**, under the plus, makes a container from code: give any https address
+(GitHub and the like, with a token for a private one), then its branch, its name and how it
+updates:
 
-- **When the branch changes**: each new commit is built as it arrives. A repository here is
-  looked at every 30 seconds, one at another address every minute.
+- **When the branch changes**: each new commit is built as it arrives; the address is looked
+  at every minute.
 - **On a timer**: every hour to every week, the latest commit is built when there is one.
 - **Only when I press Update**.
 
@@ -159,49 +159,7 @@ networks are refused, and only the gateway may connect to it.
 Podman works too, through its Docker-compatible API: mount Podman's socket in place of
 `/var/run/docker.sock` in the `docker` service.
 
-## Git and Storage
-
-**Storage** and **Git** are pages of their own in the sidebar.
-
-### Git
-
-**Git** keeps git repositories on this host, in `/data/repos`, for your codebases. The catalog
-lists them pinned first, then by their latest change, each with its top language, a chart of
-its commits over the last six months, when it last changed, and **Pin** to keep it at the top
-for you. **New repository** makes an empty one, its first branch `main`.
-
-A repository has four tabs:
-
-- **Code**: its files on any branch or tag, picked from the branch menu, with the commit that
-  last changed the folder, how many commits there are, and its README. **History** lists the
-  commits by day with their IDs; open one for its changes. **Branches** shows how far each is
-  ahead of and behind the default branch, and makes, deletes and opens pull requests for them.
-- **Pull Requests**: ask to merge one branch into another, with its commits and changes shown
-  first, then talk it over and **Merge**, which makes a merge commit when the branches do not
-  conflict.
-- **Issues**: bugs and work to do, with comments, closed and reopened as they go.
-- **Settings**: the default branch, **Home network only**, and deleting the repository.
-
-Git signs in with a token. Under **Tokens**, each person makes their own, and the host and admins (or an
-account allowed to manage everyone's tokens) make them for others; a token is shown once, and
-only its hash is kept. When git asks, give any username and the token as the password:
-
-```sh
-git clone https://git.example.com/myapp.git       # through the tunnel
-git clone http://localhost:7070/git/myapp.git     # on this computer
-```
-
-On this computer, the panel takes git at `/git/` straight away. For any other device, **Publish an
-address** gives Git a subdomain, `git` to start with. That address is for git alone: a browser
-opening it finds nothing, and repositories are browsed here on the dashboard. Git signs in with
-its token, held to the account's Git permissions (**View repositories** to clone, **Push and merge** to
-push). A repository's **Home network only** switch, on its page, lets git reach it only from
-this host's network or a trusted one.
-
-Cloudflare refuses a single request over 100 MB, so the first push of a very large repository
-goes from this computer, or in parts. Git needs `git`, which the image includes.
-
-### Storage
+## Storage
 
 **Storage** is a home cloud for your files, not tied to any folder you pick: everything uploaded is
 kept by myTunnels under `/data`. It has two tabs.
@@ -282,18 +240,8 @@ pair again, remove the `paired` file in its data folder (`%LOCALAPPDATA%\myTunne
 Windows, `~/.local/share/myTunnels` elsewhere).
 
 Features that need an app where myTunnels runs keep working without it and say which to
-install: Containers need Docker, tunnels need cloudflared, and Git and containers from a
-repository need Git.
-
-### Device Controller
-
-**Device Controller** lists every fan the host's chips report, each spinning as fast as it
-turns, with its speed in RPM. Drag a fan's slider to set its speed by hand, or switch **Auto**
-on to hand it back to the firmware. Fans are the kernel's hwmon files under
-`/sys/class/hwmon`; setting them takes root, so the `hardware` service in `compose.yaml` does
-it: the same program as `server hardware`, with the host's `/sys` mounted, every capability
-dropped, answering the gateway alone. Docker Desktop runs containers in a virtual machine,
-which has no fans to show.
+install: Containers need Docker, tunnels need cloudflared, and containers from a repository
+need Git.
 
 ## Accounts and permissions
 
@@ -305,8 +253,8 @@ Account**, and it cannot be suspended or removed. Open any other to set it up:
 
 - **Permissions**, a card per feature: **Sign in to the dashboard**, then what it may do there,
   such as viewing containers or starting and stopping them, publishing, changing or removing
-  tunnels, naming devices, managing accounts, viewing, pushing to, creating and deleting
-  repositories in Git, opening issues and pull requests, uploading and deleting in Storage, and the settings pages.
+  tunnels, naming devices, managing accounts, installing apps on the host, uploading and
+  deleting in Storage, and the settings pages.
 - **Profile**: its details; **Security**, with its password, status, **Device lock** and the
   devices it signs in from; and **Tunnels**, the tunnels it may open, added with **+** and
   removed with each one's **x**. **Suspend** in the menu stops it signing in anywhere until
@@ -405,7 +353,6 @@ environment variables:
 | `SECRET_KEY_FILE` | `/keys/secret.key` | Key that seals secrets in the database, made on first start |
 | `SECRET_KEY` | none | The same key as 64 hex digits, in place of the file |
 | `DOCKER_HOST` | `tcp://docker:2375` in `compose.yaml` | Docker API the Dashboard reads containers from (`unix://`, `npipe://` or `tcp://`) |
-| `HARDWARE_URL` | `http://hardware:7090` in `compose.yaml` | Device Controller's `hardware` service |
 | `RUST_LOG` | `info` | Log level |
 
 `compose.yaml` maps `host.docker.internal` to the Docker host, so a port published by any

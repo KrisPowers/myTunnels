@@ -106,29 +106,6 @@ CREATE TABLE IF NOT EXISTS user_routes (
     route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
     PRIMARY KEY (user_id, route_id)
 );
-CREATE TABLE IF NOT EXISTS git_threads (
-    repo TEXT NOT NULL,
-    number INTEGER NOT NULL,
-    kind TEXT NOT NULL,
-    title TEXT NOT NULL,
-    body TEXT NOT NULL,
-    state TEXT NOT NULL,
-    author TEXT NOT NULL,
-    base TEXT,
-    head TEXT,
-    merged_commit TEXT,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    PRIMARY KEY (repo, number)
-);
-CREATE TABLE IF NOT EXISTS git_comments (
-    id TEXT PRIMARY KEY,
-    repo TEXT NOT NULL,
-    number INTEGER NOT NULL,
-    author TEXT NOT NULL,
-    body TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-);
 CREATE TABLE IF NOT EXISTS shares (
     id TEXT PRIMARY KEY,
     token_hash TEXT NOT NULL UNIQUE,
@@ -190,14 +167,6 @@ CREATE TABLE IF NOT EXISTS builds (
 CREATE TABLE IF NOT EXISTS limits (
     name TEXT PRIMARY KEY,
     value TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS git_tokens (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    owner TEXT NOT NULL,
-    hash TEXT NOT NULL UNIQUE,
-    created_at INTEGER NOT NULL,
-    last_used INTEGER
 );
 ";
 
@@ -338,48 +307,6 @@ pub struct SignIn {
     pub country: Option<String>,
     pub at: i64,
     pub outcome: String,
-}
-
-/// An issue or a pull request in a repository, numbered together as they are
-/// opened. A pull request asks to merge `head` into `base`.
-#[derive(Clone, Serialize)]
-pub struct Thread {
-    pub repo: String,
-    pub number: i64,
-    /// "issue" or "pull".
-    pub kind: String,
-    pub title: String,
-    pub body: String,
-    /// "open", "closed", or "merged" for a pull request merged here.
-    pub state: String,
-    /// "admin", or the account that opened it.
-    pub author: String,
-    pub base: Option<String>,
-    pub head: Option<String>,
-    pub merged_commit: Option<String>,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
-
-#[derive(Clone, Serialize)]
-pub struct Comment {
-    pub id: String,
-    pub author: String,
-    pub body: String,
-    pub created_at: i64,
-}
-
-/// A key git signs in with, as the password: `owner` is "admin" or an account.
-/// Only its hash is kept.
-#[derive(Clone, Serialize)]
-pub struct Token {
-    pub id: String,
-    pub name: String,
-    pub owner: String,
-    #[serde(skip)]
-    pub hash: String,
-    pub created_at: i64,
-    pub last_used: Option<i64>,
 }
 
 /// A browser met at a tunnel, known by the key it holds.
@@ -1391,169 +1318,6 @@ impl Db {
     pub fn delete_user(&self, id: &str) -> Result<()> {
         let conn = self.conn();
         conn.execute("DELETE FROM users WHERE id = ?1", [id])?;
-        conn.execute("DELETE FROM git_tokens WHERE owner = ?1", [id])?;
-        Ok(())
-    }
-
-    /// A repository's issues or pull requests, the newest first, with how many
-    /// comments each has.
-    pub fn threads(&self, repo: &str, kind: &str) -> Result<Vec<(Thread, i64)>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(&format!(
-            "SELECT {THREAD_COLS},
-                 (SELECT COUNT(*) FROM git_comments c WHERE c.repo = t.repo AND c.number = t.number)
-             FROM git_threads t WHERE repo = ?1 AND kind = ?2 ORDER BY number DESC"
-        ))?;
-        let threads = stmt
-            .query_map(params![repo, kind], |r| Ok((thread_row(r)?, r.get(12)?)))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(threads)
-    }
-
-    pub fn thread(&self, repo: &str, number: i64) -> Result<Option<Thread>> {
-        let thread = self
-            .conn()
-            .query_row(
-                &format!("SELECT {THREAD_COLS} FROM git_threads t WHERE repo = ?1 AND number = ?2"),
-                params![repo, number],
-                thread_row,
-            )
-            .optional()?;
-        Ok(thread)
-    }
-
-    /// Saves a new issue or pull request under the next number; returns it.
-    pub fn insert_thread(&self, t: &Thread) -> Result<i64> {
-        let mut conn = self.conn();
-        let tx = conn.transaction()?;
-        let number: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(number), 0) + 1 FROM git_threads WHERE repo = ?1",
-            [&t.repo],
-            |r| r.get(0),
-        )?;
-        tx.execute(
-            &format!(
-                "INSERT INTO git_threads ({THREAD_COLS})
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
-            ),
-            params![
-                t.repo,
-                number,
-                t.kind,
-                t.title,
-                t.body,
-                t.state,
-                t.author,
-                t.base,
-                t.head,
-                t.merged_commit,
-                t.created_at,
-                t.updated_at,
-            ],
-        )?;
-        tx.commit()?;
-        Ok(number)
-    }
-
-    pub fn update_thread(&self, t: &Thread) -> Result<()> {
-        self.conn().execute(
-            "UPDATE git_threads SET title = ?3, body = ?4, state = ?5, merged_commit = ?6,
-                 updated_at = ?7
-             WHERE repo = ?1 AND number = ?2",
-            params![
-                t.repo,
-                t.number,
-                t.title,
-                t.body,
-                t.state,
-                t.merged_commit,
-                t.updated_at,
-            ],
-        )?;
-        Ok(())
-    }
-
-    pub fn comments(&self, repo: &str, number: i64) -> Result<Vec<Comment>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT id, author, body, created_at FROM git_comments
-             WHERE repo = ?1 AND number = ?2 ORDER BY created_at, id",
-        )?;
-        let comments = stmt
-            .query_map(params![repo, number], |r| {
-                Ok(Comment {
-                    id: r.get(0)?,
-                    author: r.get(1)?,
-                    body: r.get(2)?,
-                    created_at: r.get(3)?,
-                })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(comments)
-    }
-
-    pub fn insert_comment(&self, repo: &str, number: i64, c: &Comment) -> Result<()> {
-        self.conn().execute(
-            "INSERT INTO git_comments (id, repo, number, author, body, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![c.id, repo, number, c.author, c.body, c.created_at],
-        )?;
-        Ok(())
-    }
-
-    /// Forgets a removed repository's issues, pull requests and comments.
-    pub fn delete_repo_threads(&self, repo: &str) -> Result<()> {
-        let conn = self.conn();
-        conn.execute("DELETE FROM git_threads WHERE repo = ?1", [repo])?;
-        conn.execute("DELETE FROM git_comments WHERE repo = ?1", [repo])?;
-        Ok(())
-    }
-
-    pub fn tokens(&self) -> Result<Vec<Token>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT id, name, owner, hash, created_at, last_used FROM git_tokens
-             ORDER BY created_at, id",
-        )?;
-        let tokens = stmt
-            .query_map([], token_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(tokens)
-    }
-
-    pub fn token_by_hash(&self, hash: &str) -> Result<Option<Token>> {
-        let token = self
-            .conn()
-            .query_row(
-                "SELECT id, name, owner, hash, created_at, last_used FROM git_tokens
-                 WHERE hash = ?1",
-                [hash],
-                token_row,
-            )
-            .optional()?;
-        Ok(token)
-    }
-
-    pub fn insert_token(&self, t: &Token) -> Result<()> {
-        self.conn().execute(
-            "INSERT INTO git_tokens (id, name, owner, hash, created_at, last_used)
-             VALUES (?1, ?2, ?3, ?4, ?5, NULL)",
-            params![t.id, t.name, t.owner, t.hash, t.created_at],
-        )?;
-        Ok(())
-    }
-
-    pub fn touch_token(&self, id: &str, at: i64) -> Result<()> {
-        self.conn().execute(
-            "UPDATE git_tokens SET last_used = ?2 WHERE id = ?1",
-            params![id, at],
-        )?;
-        Ok(())
-    }
-
-    pub fn delete_token(&self, id: &str) -> Result<()> {
-        self.conn()
-            .execute("DELETE FROM git_tokens WHERE id = ?1", [id])?;
         Ok(())
     }
 
@@ -1761,37 +1525,6 @@ impl Db {
         )?;
         Ok(())
     }
-}
-
-const THREAD_COLS: &str = "repo, number, kind, title, body, state, author, base, head, \
-     merged_commit, created_at, updated_at";
-
-fn thread_row(r: &rusqlite::Row) -> rusqlite::Result<Thread> {
-    Ok(Thread {
-        repo: r.get(0)?,
-        number: r.get(1)?,
-        kind: r.get(2)?,
-        title: r.get(3)?,
-        body: r.get(4)?,
-        state: r.get(5)?,
-        author: r.get(6)?,
-        base: r.get(7)?,
-        head: r.get(8)?,
-        merged_commit: r.get(9)?,
-        created_at: r.get(10)?,
-        updated_at: r.get(11)?,
-    })
-}
-
-fn token_row(r: &rusqlite::Row) -> rusqlite::Result<Token> {
-    Ok(Token {
-        id: r.get(0)?,
-        name: r.get(1)?,
-        owner: r.get(2)?,
-        hash: r.get(3)?,
-        created_at: r.get(4)?,
-        last_used: r.get(5)?,
-    })
 }
 
 const DEPLOY_COLS: &str = "id, name, repo, url, branch, dockerfile, port, keep, updates, every, \

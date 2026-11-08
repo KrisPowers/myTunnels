@@ -22,7 +22,7 @@ use tower::ServiceExt;
 use crate::db::{Device, Event, Route, SignIn, User};
 use crate::state::{AppState, Hop, Outcome, Snapshot, DAY};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
-use crate::{code, codes, guard, passkey, pow, secret, share, totp};
+use crate::{codes, guard, passkey, pow, secret, share, totp};
 use crate::{oauth, proxy};
 
 /// Host-only cookies: the `__Host-` prefix makes browsers refuse them with a domain.
@@ -208,14 +208,9 @@ async fn serve(
         // A tunnel switched off answers as if it did not exist.
         return StatusCode::NOT_FOUND.into_response();
     }
-    // Code's address is for git alone, which signs in with a token; anything
-    // else there finds nothing.
+    // Git's old address finds nothing until it is removed.
     if route.target_scheme == "code" {
-        if !code::is_git(&req) {
-            return StatusCode::NOT_FOUND.into_response();
-        }
-        let path = req.uri().path().to_owned();
-        return code::serve(state, ip, &path, req).await;
+        return StatusCode::NOT_FOUND.into_response();
     }
     // Share links open at the dashboard's address for anyone holding one, past
     // the tunnel's access rules; each link is its own key.

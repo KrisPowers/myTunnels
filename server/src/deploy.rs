@@ -23,7 +23,6 @@ use serde_json::{json, Value};
 use tokio::io::AsyncReadExt;
 use tokio::sync::{Mutex as AsyncMutex, Notify};
 
-use crate::code::{self, Level, Viewer};
 use crate::docker::{self, Endpoint};
 use crate::permissions::Caller;
 use crate::state::AppState;
@@ -194,6 +193,72 @@ fn volume_of(name: &str, folder: &str) -> String {
 
 // ---- git ----
 
+/// A container whose repository was on this host's own Git, which is gone.
+const GONE: &str = "Its repository was on this host's Git, which is gone; give its address instead";
+
+/// A branch named in a request, nothing git could take for an option or a range.
+fn checked_ref(r: &str) -> ApiResult<&str> {
+    let ok = (1..=200).contains(&r.len())
+        && !r.starts_with(['-', '/', '.'])
+        && !r.contains("..")
+        && !r.contains("//")
+        && r.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._/-".contains(&b));
+    if ok {
+        Ok(r)
+    } else {
+        Err(ApiError::bad("No such branch or commit"))
+    }
+}
+
+/// Runs git on a repository and gives back what it printed; a failure comes
+/// back with git's reason.
+async fn git(dir: &Path, args: &[&str]) -> ApiResult<Vec<u8>> {
+    git_with(dir, args, &[]).await
+}
+
+async fn git_with(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> ApiResult<Vec<u8>> {
+    let out = tokio::process::Command::new("git")
+        .arg("--git-dir")
+        .arg(dir)
+        .args(args)
+        .envs(safe_env())
+        .envs(env.iter().copied())
+        .stdin(Stdio::null())
+        .output()
+        .await
+        .map_err(|e| {
+            ApiError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("git is not installed: {e}"),
+            )
+        })?;
+    if out.status.success() {
+        Ok(out.stdout)
+    } else {
+        let why = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+        Err(ApiError::bad(if why.is_empty() {
+            "git refused".into()
+        } else {
+            why
+        }))
+    }
+}
+
+/// The copies belong to this process whoever made the folders, so git's
+/// check on who owns them is waived.
+fn safe_env() -> [(&'static str, &'static str); 3] {
+    [
+        ("GIT_CONFIG_COUNT", "1"),
+        ("GIT_CONFIG_KEY_0", "safe.directory"),
+        ("GIT_CONFIG_VALUE_0", "*"),
+    ]
+}
+
+fn text(bytes: Vec<u8>) -> String {
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 /// Git's settings for an address that needs a token: it is sent as the
 /// password, and git never stops to ask for one.
 fn auth_env(token: Option<&str>) -> Vec<(String, String)> {
@@ -215,7 +280,7 @@ fn auth_env(token: Option<&str>) -> Vec<(String, String)> {
 async fn git_auth(dir: &Path, args: &[&str], token: Option<&str>) -> ApiResult<Vec<u8>> {
     let env = auth_env(token);
     let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    code::git_with(dir, args, &env).await
+    git_with(dir, args, &env).await
 }
 
 /// What `git ls-remote` says of `url`, run outside any repository.
@@ -233,7 +298,7 @@ async fn ls_remote(
             .arg(url)
             .args(refs)
             .current_dir(&state.config.data_dir)
-            .envs(code::safe_env())
+            .envs(safe_env())
             .envs(auth_env(token))
             .stdin(Stdio::null())
             .output(),
@@ -247,7 +312,7 @@ async fn ls_remote(
         )
     })?;
     if !out.status.success() {
-        let why = code::text(out.stderr);
+        let why = text(out.stderr);
         let why = why
             .trim()
             .lines()
@@ -256,7 +321,7 @@ async fn ls_remote(
             .to_owned();
         return Err(ApiError::bad(format!("Cannot reach the repository: {why}")));
     }
-    Ok(code::text(out.stdout))
+    Ok(text(out.stdout))
 }
 
 /// A repository's branches and its default, from `ls-remote --symref` output.
@@ -278,27 +343,6 @@ fn branches_of_remote(listing: &str) -> (Vec<String>, String) {
     (branches, default)
 }
 
-async fn branches_of_local(dir: &Path) -> ApiResult<(Vec<String>, String)> {
-    let listing = code::text(
-        code::git(
-            dir,
-            &["for-each-ref", "--format=%(refname:short)", "refs/heads"],
-        )
-        .await?,
-    );
-    let default = code::git(dir, &["symbolic-ref", "--short", "HEAD"])
-        .await
-        .map(code::text)
-        .unwrap_or_default();
-    let mut branches: Vec<String> = listing.lines().map(str::to_owned).collect();
-    branches.sort();
-    Ok((branches, default.trim().to_owned()))
-}
-
-fn local_dir(state: &AppState, repo: &str) -> PathBuf {
-    code::root(state).join(format!("{repo}.git"))
-}
-
 fn mirror_dir(state: &AppState, id: &str) -> PathBuf {
     state
         .config
@@ -309,15 +353,10 @@ fn mirror_dir(state: &AppState, id: &str) -> PathBuf {
 
 /// The commit a deploy's branch is at now.
 async fn head_of(state: &AppState, d: &Deploy) -> ApiResult<String> {
-    let branch = code::checked_ref(&d.branch)?;
+    let branch = checked_ref(&d.branch)?;
     let full = format!("refs/heads/{branch}");
     if d.url.is_empty() {
-        let out = code::git(
-            &local_dir(state, &d.repo),
-            &["rev-parse", "--verify", &full],
-        )
-        .await?;
-        return Ok(code::text(out).trim().to_owned());
+        return Err(ApiError::bad(GONE));
     }
     let token = token_of(state, &d.id);
     let listing = ls_remote(state, &d.url, token.as_deref(), &[&full]).await?;
@@ -331,24 +370,19 @@ async fn head_of(state: &AppState, d: &Deploy) -> ApiResult<String> {
         .ok_or_else(|| ApiError::bad(format!("There is no branch {branch}")))
 }
 
-/// The repository to build from: Git's own folder, or a copy of the one at
-/// the address, brought up to date with the branch.
+/// The repository to build from: a copy of the one at the address, brought
+/// up to date with the branch.
 async fn source(state: &AppState, d: &Deploy) -> Result<PathBuf, String> {
-    let branch = code::checked_ref(&d.branch).map_err(|e| e.1)?;
+    let branch = checked_ref(&d.branch).map_err(|e| e.1)?;
     if d.url.is_empty() {
-        let dir = local_dir(state, &d.repo);
-        return if dir.is_dir() {
-            Ok(dir)
-        } else {
-            Err(format!("The repository {} is gone", d.repo))
-        };
+        return Err(GONE.into());
     }
     let dir = mirror_dir(state, &d.id);
     if !dir.is_dir() {
         tokio::fs::create_dir_all(&dir)
             .await
             .map_err(|e| e.to_string())?;
-        code::git(&dir, &["init", "--bare", "--quiet"])
+        git(&dir, &["init", "--bare", "--quiet"])
             .await
             .map_err(|e| e.1)?;
     }
@@ -366,10 +400,10 @@ async fn source(state: &AppState, d: &Deploy) -> Result<PathBuf, String> {
 
 /// Where the Dockerfile is: the one asked for, or the one nearest the top.
 async fn dockerfile_in(dir: &Path, commit: &str, wanted: &str) -> Result<String, String> {
-    let listing = code::git(dir, &["ls-tree", "-r", "--name-only", commit])
+    let listing = git(dir, &["ls-tree", "-r", "--name-only", commit])
         .await
         .map_err(|e| e.1)?;
-    let files = code::text(listing);
+    let files = text(listing);
     if !wanted.is_empty() {
         return if files.lines().any(|f| f == wanted) {
             Ok(wanted.to_owned())
@@ -587,7 +621,7 @@ async fn build_image(
             .arg("--git-dir")
             .arg(dir)
             .args(["archive", "--format=tar", &tree])
-            .envs(code::safe_env())
+            .envs(safe_env())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -751,26 +785,24 @@ async fn build_and_run(state: &AppState, d: &Deploy, b: &mut Build) -> Result<()
         .then(|| format!("{}^{{commit}}", b.commit))
         .filter(|_| b.commit.bytes().all(|c| c.is_ascii_hexdigit()));
     let found = match wanted {
-        Some(spec) => code::git(&dir, &["rev-parse", "--verify", &spec])
-            .await
-            .ok(),
+        Some(spec) => git(&dir, &["rev-parse", "--verify", &spec]).await.ok(),
         None => None,
     };
     let commit = match found {
-        Some(sha) => code::text(sha),
+        Some(sha) => text(sha),
         None => {
             let full = format!("refs/heads/{}^{{commit}}", d.branch);
-            code::text(
-                code::git(&dir, &["rev-parse", "--verify", &full])
+            text(
+                git(&dir, &["rev-parse", "--verify", &full])
                     .await
                     .map_err(|_| format!("There is no branch {}", d.branch))?,
             )
         }
     };
     b.commit = commit.trim().to_owned();
-    b.message = code::git(&dir, &["log", "-1", "--format=%s", &b.commit])
+    b.message = git(&dir, &["log", "-1", "--format=%s", &b.commit])
         .await
-        .map(|m| code::text(m).trim().to_owned())
+        .map(|m| text(m).trim().to_owned())
         .unwrap_or_default();
     let _ = state.db.save_build(b);
     let dockerfile = dockerfile_in(&dir, &b.commit, &d.dockerfile).await?;
@@ -1116,58 +1148,43 @@ pub async fn get(
 #[derive(Deserialize)]
 pub struct SourceBody {
     #[serde(default)]
-    repo: String,
-    #[serde(default)]
     url: String,
     token: Option<String>,
     /// A container already linked, whose token is used when none is given.
     deploy: Option<String>,
 }
 
-/// The branches of a repository here or at an address, and its default.
+/// The branches of the repository at an address, and its default.
 async fn branches(
     state: &AppState,
-    caller: &Caller,
-    repo: &str,
     url: &str,
     token: Option<&str>,
 ) -> ApiResult<(Vec<String>, String)> {
-    if !url.is_empty() {
-        if !valid_url(url) {
-            return Err(ApiError::bad("The address must start with https://"));
-        }
-        let listing = ls_remote(state, url, token, &["HEAD", "refs/heads/*"]).await?;
-        return Ok(branches_of_remote(&listing));
+    if url.is_empty() {
+        return Err(ApiError::bad("Give the repository's address"));
     }
-    let dir = code::need(state, &Viewer::of(caller), repo, Level::Read)?;
-    branches_of_local(&dir).await
+    if !valid_url(url) {
+        return Err(ApiError::bad("The address must start with https://"));
+    }
+    let listing = ls_remote(state, url, token, &["HEAD", "refs/heads/*"]).await?;
+    Ok(branches_of_remote(&listing))
 }
 
 pub async fn probe(
     State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
     Json(body): Json<SourceBody>,
 ) -> ApiResult<Json<Value>> {
     let token = match body.token.filter(|t| !t.is_empty()) {
         Some(t) => Some(t),
         None => body.deploy.as_deref().and_then(|id| token_of(&state, id)),
     };
-    let (list, default) = branches(
-        &state,
-        &caller,
-        body.repo.trim(),
-        body.url.trim(),
-        token.as_deref(),
-    )
-    .await?;
+    let (list, default) = branches(&state, body.url.trim(), token.as_deref()).await?;
     Ok(Json(json!({ "branches": list, "default": default })))
 }
 
 #[derive(Deserialize)]
 pub struct NewDeploy {
     name: String,
-    #[serde(default)]
-    repo: String,
     #[serde(default)]
     url: String,
     #[serde(default)]
@@ -1210,8 +1227,7 @@ pub async fn create(
             "There is already a container called {name}"
         )));
     }
-    let (repo, url, image) = (
-        body.repo.trim().to_owned(),
+    let (url, image) = (
         body.url.trim().trim_end_matches('/').to_owned(),
         body.image.trim().to_owned(),
     );
@@ -1224,12 +1240,10 @@ pub async fn create(
         }
         String::new()
     } else {
-        if repo.is_empty() == url.is_empty() {
-            return Err(ApiError::bad(
-                "Pick a repository on this host, give an address or an image",
-            ));
+        if url.is_empty() {
+            return Err(ApiError::bad("Give a repository's address or an image"));
         }
-        let (list, default) = branches(&state, &caller, &repo, &url, token.as_deref()).await?;
+        let (list, default) = branches(&state, &url, token.as_deref()).await?;
         let branch = body.branch.filter(|b| !b.is_empty()).unwrap_or(default);
         if !list.contains(&branch) {
             return Err(ApiError::bad(if list.is_empty() {
@@ -1251,11 +1265,7 @@ pub async fn create(
     let d = Deploy {
         id: random_hex(8),
         name,
-        repo: if url.is_empty() && image.is_empty() {
-            repo
-        } else {
-            String::new()
-        },
+        repo: String::new(),
         url: if image.is_empty() { url } else { String::new() },
         branch,
         image,
@@ -1279,7 +1289,6 @@ pub async fn create(
 #[derive(Deserialize)]
 pub struct DeployEdit {
     image: Option<String>,
-    repo: Option<String>,
     url: Option<String>,
     token: Option<String>,
     branch: Option<String>,
@@ -1313,25 +1322,18 @@ pub async fn edit(
     if !d.image.is_empty() && body.updates.as_deref() == Some("push") {
         return Err(ApiError::bad("An image updates on a timer or by hand"));
     }
-    if d.image.is_empty()
-        && (body.repo.is_some()
-            || body.url.is_some()
-            || body.token.is_some()
-            || body.branch.is_some())
-    {
-        let repo = body.repo.map(|r| r.trim().to_owned());
-        let url = body.url.map(|u| u.trim().trim_end_matches('/').to_owned());
-        let (repo, url) = match (repo, url) {
-            (Some(r), _) if !r.is_empty() => (r, String::new()),
-            (_, Some(u)) if !u.is_empty() => (String::new(), u),
-            _ => (d.repo.clone(), d.url.clone()),
-        };
+    if d.image.is_empty() && (body.url.is_some() || body.token.is_some() || body.branch.is_some()) {
+        let url = body
+            .url
+            .map(|u| u.trim().trim_end_matches('/').to_owned())
+            .filter(|u| !u.is_empty())
+            .unwrap_or_else(|| d.url.clone());
         let token = match body.token.as_deref().map(str::trim) {
             Some("") => None,
             Some(t) => Some(t.to_owned()),
             None => token_of(&state, &d.id).filter(|_| !url.is_empty()),
         };
-        let (list, default) = branches(&state, &caller, &repo, &url, token.as_deref()).await?;
+        let (list, default) = branches(&state, &url, token.as_deref()).await?;
         let branch = body.branch.unwrap_or_else(|| {
             if list.contains(&d.branch) {
                 d.branch.clone()
@@ -1349,7 +1351,7 @@ pub async fn edit(
             Some(t) if !url.is_empty() => state.db.set_setting(&token_key(&d.id), t)?,
             _ => state.db.delete_setting(&token_key(&d.id))?,
         }
-        (d.repo, d.url, d.branch) = (repo, url, branch);
+        (d.repo, d.url, d.branch) = (String::new(), url, branch);
     }
     if let Some(file) = body.dockerfile {
         let file = file.trim().trim_start_matches("./").to_owned();

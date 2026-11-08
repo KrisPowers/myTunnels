@@ -22,8 +22,7 @@ use crate::permissions::{self, Caller};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
 use crate::{
-    code, codes, containers, convert, gate, hardware, metrics, passkey, pow, secret, share,
-    storage, threads, totp, tunnel,
+    codes, containers, convert, gate, metrics, passkey, pow, secret, share, storage, totp, tunnel,
 };
 
 const ADMIN_COOKIE: &str = "admin_session";
@@ -105,28 +104,6 @@ pub fn router(state: AppState) -> Router {
         .route("/flags", get(list_flags))
         .route("/flags/{id}", delete(clear_flag))
         .route("/devices/{id}/activity", get(device_activity))
-        .route("/code", get(code_overview))
-        .route("/code/repos", get(list_repos).post(create_repo))
-        .route("/code/repos/{name}", delete(remove_repo).patch(edit_repo))
-        .route("/code/repos/{name}/{op}", get(read_repo))
-        .route("/code/repos/{name}/pin", put(pin_repo))
-        .route("/code/repos/{name}/branch", post(branch_repo))
-        .route("/code/repos/{name}/threads", post(open_thread))
-        .route("/code/repos/{name}/threads/{kind}", get(list_threads))
-        .route(
-            "/code/repos/{name}/thread/{number}",
-            get(get_thread).patch(edit_thread),
-        )
-        .route(
-            "/code/repos/{name}/thread/{number}/comments",
-            post(comment_thread),
-        )
-        .route(
-            "/code/repos/{name}/thread/{number}/merge",
-            post(merge_thread),
-        )
-        .route("/code/tokens", post(add_token))
-        .route("/code/tokens/{id}", delete(remove_token))
         .route("/media/fs/{op}", any(media_fs))
         .route("/drive/fs/{op}", any(drive_fs))
         .route("/convert", get(convert::list).post(convert::start))
@@ -134,8 +111,6 @@ pub fn router(state: AppState) -> Router {
         .route("/apps", get(crate::apps::list))
         .route("/apps/{id}/{action}", post(crate::apps::install))
         .route("/needs", get(crate::apps::needs))
-        .route("/hardware/fans", get(hardware::list_fans))
-        .route("/hardware/fans/{id}", put(hardware::set_fan))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             require_session,
@@ -155,8 +130,6 @@ pub fn router(state: AppState) -> Router {
     let spa = ServeDir::new(ui).fallback(ServeFile::new(ui.join("index.html")));
     Router::new()
         .nest("/api", api)
-        // Git on the LAN, signing in with a token as at the Code address.
-        .route("/git/{*path}", any(lan_git))
         .fallback_service(spa)
         .layer(middleware::from_fn(harden))
         .with_state(state)
@@ -1236,7 +1209,7 @@ fn valid_label(label: &str) -> bool {
 }
 
 fn check_target(host: Option<String>, scheme: &str, mode: &str) -> ApiResult<Option<String>> {
-    if !matches!(scheme, "http" | "https" | "code" | "dashboard") {
+    if !matches!(scheme, "http" | "https" | "dashboard") {
         return Err(ApiError::bad("Scheme must be http or https"));
     }
     if mode != "all" && mode != "any" {
@@ -1248,9 +1221,9 @@ fn check_target(host: Option<String>, scheme: &str, mode: &str) -> ApiResult<Opt
     }
 }
 
-/// Targets myTunnels serves itself, with no port: Code and the dashboard.
+/// Targets myTunnels serves itself, with no port: the dashboard.
 fn served_here(scheme: &str) -> bool {
-    matches!(scheme, "code" | "dashboard")
+    scheme == "dashboard"
 }
 
 /// Refuses a tunnel aimed at one of myTunnels' own ports on this machine.
@@ -1372,13 +1345,9 @@ async fn create_route(
             "Subdomain: lowercase letters, digits and '-', up to 63 characters",
         ));
     }
-    // Code is served by the gateway itself, at one address; the dashboard by
-    // the gateway too, with no port.
+    // The dashboard is served by the gateway itself, with no port.
     if body.port == 0 && !served_here(&body.target_scheme) {
         return Err(ApiError::bad("Port must be between 1 and 65535"));
-    }
-    if body.target_scheme == "code" && code::route(&state).is_some() {
-        return Err(ApiError::conflict("Git already has an address"));
     }
     let target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
     check_not_self(&state, target_host.as_deref(), body.port)?;
@@ -1487,10 +1456,6 @@ async fn update_route(
     Json(body): Json<RouteEdit>,
 ) -> ApiResult<Json<Route>> {
     let mut route = state.db.route(&id)?.ok_or_else(ApiError::not_found)?;
-    // A tunnel stays an app or Code; only where an app runs can change.
-    if (route.target_scheme == "code") != (body.target_scheme == "code") {
-        return Err(ApiError::bad("Git and apps are published separately"));
-    }
     if body.port == 0 && !served_here(&body.target_scheme) {
         return Err(ApiError::bad("Port must be between 1 and 65535"));
     }
@@ -1543,32 +1508,27 @@ async fn move_route(
         .map(Json)
 }
 
-/// Code's address is `git.<domain>`: one that started as File System's
-/// `storage.` or as `code.` moves there once, unless it is taken. Cloudflare
-/// must answer first, so it is tried a few times while the server starts.
-pub async fn rename_code_address(state: AppState) {
-    const DONE: &str = "code_address_git";
+/// Git was served at an address of its own; with Git gone, that address and
+/// its DNS record go. Cloudflare must answer first, so it is tried a few times
+/// while the server starts.
+pub async fn remove_git_address(state: AppState) {
     for _ in 0..10 {
-        if state.db.setting(DONE).ok().flatten().is_some() {
+        let found: Vec<String> = state
+            .snapshot()
+            .routes
+            .values()
+            .filter(|r| r.target_scheme == "code")
+            .map(|r| r.id.clone())
+            .collect();
+        if found.is_empty() {
             return;
         }
-        let Some(route) =
-            code::route(&state).filter(|r| r.subdomain == "storage" || r.subdomain == "code")
-        else {
-            let _ = state.db.set_setting(DONE, "1");
-            return;
-        };
-        match move_address(&state, &route.id, "git", &route.zone_id).await {
-            Ok(_) => {
-                let _ = state.db.set_setting(DONE, "1");
-                return;
+        if state.cloudflare().is_ok() {
+            for id in found {
+                if let Err(ApiError(_, why)) = delete_route(State(state.clone()), Path(id)).await {
+                    tracing::warn!("cannot remove Git's address yet: {why}");
+                }
             }
-            Err(ApiError(StatusCode::CONFLICT, why)) => {
-                tracing::info!("Git keeps {}: {why}", route.hostname);
-                let _ = state.db.set_setting(DONE, "1");
-                return;
-            }
-            Err(ApiError(_, why)) => tracing::warn!("cannot move Code's address yet: {why}"),
         }
         tokio::time::sleep(Duration::from_secs(30)).await;
     }
@@ -1671,158 +1631,6 @@ async fn delete_route(
     }
     tracing::info!("removed {}", route.hostname);
     Ok(Json(json!({ "ok": true })))
-}
-
-// Code
-
-async fn code_overview(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-) -> ApiResult<Json<Value>> {
-    code::overview(&state, &caller).await
-}
-
-async fn list_repos(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-) -> ApiResult<Json<Value>> {
-    code::list(&state, &code::Viewer::of(&caller)).await
-}
-
-async fn create_repo(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Json(body): Json<code::NewRepo>,
-) -> ApiResult<Json<Value>> {
-    code::create(&state, &code::Viewer::of(&caller), body).await
-}
-
-async fn remove_repo(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Path(name): Path<String>,
-) -> ApiResult<Json<Value>> {
-    code::remove(&state, &code::Viewer::of(&caller), &name).await
-}
-
-async fn edit_repo(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Path(name): Path<String>,
-    Json(body): Json<code::RepoEdit>,
-) -> ApiResult<Json<Value>> {
-    code::edit(&state, &code::Viewer::of(&caller), &name, body).await
-}
-
-#[derive(Deserialize)]
-struct PinBody {
-    pinned: bool,
-}
-
-async fn pin_repo(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Path(name): Path<String>,
-    Json(body): Json<PinBody>,
-) -> ApiResult<Json<Value>> {
-    code::pin(&state, &code::Viewer::of(&caller), &name, body.pinned).await
-}
-
-async fn branch_repo(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Path(name): Path<String>,
-    Json(body): Json<code::BranchAction>,
-) -> ApiResult<Response> {
-    code::branch(&state, &code::Viewer::of(&caller), &name, body).await
-}
-
-async fn list_threads(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Path((name, kind)): Path<(String, String)>,
-) -> ApiResult<Json<Value>> {
-    threads::list(&state, &code::Viewer::of(&caller), &name, &kind).await
-}
-
-async fn open_thread(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Path(name): Path<String>,
-    Json(body): Json<threads::NewThread>,
-) -> ApiResult<Json<Value>> {
-    threads::open(&state, &caller, &name, body).await
-}
-
-async fn get_thread(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Path((name, number)): Path<(String, i64)>,
-) -> ApiResult<Json<Value>> {
-    threads::get(&state, &code::Viewer::of(&caller), &name, number).await
-}
-
-async fn edit_thread(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Path((name, number)): Path<(String, i64)>,
-    Json(body): Json<threads::ThreadEdit>,
-) -> ApiResult<Json<Value>> {
-    threads::edit(&state, &caller, &name, number, body).await
-}
-
-async fn comment_thread(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Path((name, number)): Path<(String, i64)>,
-    Json(body): Json<threads::NewComment>,
-) -> ApiResult<Json<Value>> {
-    threads::comment(&state, &caller, &name, number, body).await
-}
-
-async fn merge_thread(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Path((name, number)): Path<(String, i64)>,
-) -> ApiResult<Json<Value>> {
-    threads::merge(&state, &caller, &name, number).await
-}
-
-async fn read_repo(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Path((name, op)): Path<(String, String)>,
-    req: Request,
-) -> Response {
-    code::read(&state, &code::Viewer::of(&caller), &name, &op, req).await
-}
-
-async fn add_token(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Json(body): Json<code::NewToken>,
-) -> ApiResult<Json<Value>> {
-    code::add_token(&state, &caller, body).await
-}
-
-async fn remove_token(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Path(id): Path<String>,
-) -> ApiResult<Json<Value>> {
-    code::delete_token(&state, &caller, &id).await
-}
-
-async fn lan_git(
-    State(state): State<AppState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    Path(path): Path<String>,
-    req: Request,
-) -> Response {
-    if !code::is_git(&req) {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    code::serve(&state, Some(peer.ip()), &format!("/{path}"), req).await
 }
 
 async fn media_fs(

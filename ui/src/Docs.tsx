@@ -14,8 +14,6 @@ export const DOCS: [string, string, IconName][] = [
   ["oauth", "Third-Party OAuth", "key"],
   ["twofactor", "Two-Factor Auth", "lock"],
   ["apps", "Apps", "apps"],
-  ["git", "Git", "code"],
-  ["controller", "Device Controller", "mode_fan"],
   ["trouble", "When something is off", "help"],
 ];
 
@@ -76,7 +74,7 @@ const CONTENT: Record<string, ReactNode> = {
   containers: (
     <>
       <Doc title="What it shows">
-        <p><b>Containers</b> is one catalog: every container, and every tunnel to a port elsewhere, a row each with what it is in a tile tinted by its state, its name over where it comes from, its address, and its CPU and memory while it runs. Compose projects with more than one container fold under their name. Search, or pick <b>All</b> or <b>Running</b>; it refreshes on its own. The plus, here and in the header, adds a <b>Tunnel</b> or a <b>Container from Git</b>, <b>from GitHub</b> or <b>from an image</b>.</p>
+        <p><b>Containers</b> is one catalog: every container, and every tunnel to a port elsewhere, a row each with what it is in a tile tinted by its state, its name over where it comes from, its address, and its CPU and memory while it runs. Compose projects with more than one container fold under their name. Search, or pick <b>All</b> or <b>Running</b>; it refreshes on its own. The plus, here and in the header, adds a <b>Tunnel</b> or a <b>Container from GitHub</b> or <b>from an image</b>.</p>
       </Doc>
       <Doc title="One container">
         <p>A container and its tunnel are one page. Its heading holds its state, image and address, <b>Open</b>, the one button its state calls for (start, stop or resume) and a menu for the rest. Under it: <b>Overview</b> (its CPU, memory, network and disk while it runs, then what it runs, its state, ports, networks and mounts), <b>Tunnel</b>, <b>Images</b>, <b>Logs</b> and <b>Resources</b>: its CPU limit and priority, memory limit, reserved memory and swap, how many processes it may run and its <b>Auto-start</b>. Set to unless stopped by hand or always, it comes back on its own after a crash or a restart of the machine, once Docker runs again. A change applies at once and is given back when the container is made again; the Dashboard shows each container against its limits.</p>
@@ -85,7 +83,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Tunnel</b> lists the container's addresses in the middle, each with its state, where it goes and who may open it, and the picked one's activity under them. Its controls sit at the side: Open, its live switch, a menu to change the address or remove it, and its access control. The plus publishes an address: type the subdomain, pick the domain, choose who may open it and press <b>Publish</b>; the port is the container's own, asked only when it has more than one.</p>
       </Doc>
       <Doc title="From a repository">
-        <p><b>Container from Git</b> and <b>from GitHub</b> make a container from code: pick a repository on this host's <b>Git</b> or give any https address (GitHub and the like, with a token for a private one), then its branch, its name and how it updates: <b>When the branch changes</b>, <b>On a timer</b> (every hour to every week), or <b>Only when I press Update</b>. <b>Update</b>, in its heading, builds the latest commit at any time.</p>
+        <p><b>Container from GitHub</b> makes a container from code: give any https address (GitHub and the like, with a token for a private one), then its branch, its name and how it updates: <b>When the branch changes</b>, <b>On a timer</b> (every hour to every week), or <b>Only when I press Update</b>. <b>Update</b>, in its heading, builds the latest commit at any time.</p>
         <p>A build takes the repository's Dockerfile, builds it into an image named after the container and the build's number, and makes the container again from it. One that will not start is undone on the spot and the build before keeps running. Its <b>Images</b> page lists its builds and what each printed; <b>Run this build</b> goes back to any of the latest ten. Its <b>Settings</b> page holds the repository, branch and Dockerfile, how it updates, its port, its environment and the folders kept from one build to the next.</p>
         <p><b>Container from an image</b> runs a Docker image, such as <code>nginx:1.27</code>. Its updates pull the image again, on a timer or with <b>Update</b>, and run it when it changed; each pull is listed like a build, so going back works the same way.</p>
       </Doc>
@@ -110,33 +108,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>When myTunnels runs in Docker, the host is reached through <span className="mono">server host</span> running on it. It pairs with the first myTunnels to ask and installs only for that one; to pair again, remove the <span className="mono">paired</span> file it names.</p>
       </Doc>
       <Doc title="What features need">
-        <p>Containers need Docker, tunnels need cloudflared, and Git and containers from a repository need Git, where myTunnels runs. Without one, the feature stays and says which app to install.</p>
-      </Doc>
-    </>
-  ),
-  controller: (
-    <>
-      <Doc title="Fans">
-        <p><b>Device Controller</b> lists every fan the host's chips report, each spinning as fast as it turns, with its speed in RPM. Drag a fan's slider to set its speed by hand; switch <b>Auto</b> on to hand it back to the firmware. A fan its chip only reads shows its speed and nothing to set.</p>
-      </Doc>
-      <Doc title="Where it reaches">
-        <p>Fans are the kernel's hwmon files under <code>/sys/class/hwmon</code>. Setting them takes root, so the <code>hardware</code> service in <code>compose.yaml</code> does it: the same program, with the host's <code>/sys</code> mounted, every capability dropped, answering the gateway alone.</p>
-      </Doc>
-      <Doc title="No fans">
-        <p>A Linux host shows the fans its chips report. Docker Desktop runs containers in a virtual machine, which has none.</p>
-      </Doc>
-    </>
-  ),
-  git: (
-    <>
-      <Doc title="Repositories">
-        <p><b>Git</b> keeps git repositories on this host for your codebases. The catalog shows each one's top language, its commits over the last six months and when it last changed; <b>Pin</b> keeps one at the top for you. A repository has <b>Code</b> (files on any branch, history, branches), <b>Pull Requests</b> (ask to merge one branch into another, talk it over, merge), <b>Issues</b> and <b>Settings</b>.</p>
-      </Doc>
-      <Doc title="Signing git in">
-        <p>Git signs in with a token from <b>Tokens</b>, each person's own, shown once. When git asks, give any username and the token as the password. On this network git reaches Git at <code>/git/</code> on this dashboard's address; <b>Publish an address</b> to reach it from anywhere. That address is for git alone; a browser opening it finds nothing.</p>
-      </Doc>
-      <Doc title="Who may open what">
-        <p>Who may view, push to, create or delete repositories is each account's Git permissions, under Security &amp; Roles, Users; git's token is held to them. A repository's <b>Home network only</b> switch, on its page, lets git reach it only from this host's network or a trusted one. A single push over 100 MB is refused by Cloudflare, so push a very large repository over this network the first time.</p>
+        <p>Containers need Docker, tunnels need cloudflared, and containers from a repository need Git, where myTunnels runs. Without one, the feature stays and says which app to install.</p>
       </Doc>
     </>
   ),
@@ -209,7 +181,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>On an account's <b>Profile</b>, <b>Tunnels</b> holds the tunnels it may open, and <b>Security</b> the devices it signs in from. Every device an account signs in from is added there, and a sign-in from one new to an account that already has others shows under <b>New devices</b> on the Dashboard until it is dismissed. With <b>Device lock</b> on, the account signs in only from those devices; with none yet, the first one to sign in becomes its own. One sign-in covers every tunnel on the same domain that the account may open. Suspending an account, or removing it, ends its sessions at once.</p>
       </Doc>
       <Doc title="Permissions">
-        <p>On an account's <b>Permissions</b>, a card per feature says what it may do. <b>Sign in to the dashboard</b> lets it in here with its own password; then it sees only the pages and actions the rest allow, such as viewing containers, naming devices, or creating repositories. <b>Admin</b> holds them all, including making others admins; the host account made at setup always does. Anyone who manages accounts can give only permissions they hold, and cannot change their own.</p>
+        <p>On an account's <b>Permissions</b>, a card per feature says what it may do. <b>Sign in to the dashboard</b> lets it in here with its own password; then it sees only the pages and actions the rest allow, such as viewing containers, naming devices, or installing apps. <b>Admin</b> holds them all, including making others admins; the host account made at setup always does. Anyone who manages accounts can give only permissions they hold, and cannot change their own.</p>
       </Doc>
     </>
   ),

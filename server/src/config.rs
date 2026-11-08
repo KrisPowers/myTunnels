@@ -14,8 +14,6 @@ pub struct Config {
     /// Host that tunnel ports point at unless a tunnel names its own.
     pub default_upstream_host: String,
     pub cloudflared_bin: String,
-    /// Device Controller's service, which reads and sets the host's fans.
-    pub hardware_url: String,
 }
 
 impl Config {
@@ -36,7 +34,6 @@ impl Config {
             ui_dir: var("UI_DIR", "../ui/dist").into(),
             default_upstream_host: var("UPSTREAM_HOST", "127.0.0.1"),
             cloudflared_bin: var("CLOUDFLARED_BIN", "cloudflared"),
-            hardware_url: var("HARDWARE_URL", "http://127.0.0.1:7090"),
         }
     }
 }
