@@ -121,7 +121,11 @@ function deviceLabel(d: Device) {
   return `${d.name || shortId(d.id)}${where ? `, ${where}` : ""}`;
 }
 
-export function NewUser({ devices, onAdded }: { devices: Device[]; onAdded: () => Promise<void> }) {
+// What a storage-only account holds: the dashboard, for Storage and nothing else.
+const STORAGE_ONLY = ["dashboard", "media.view", "media.upload", "media.delete", "drive.view", "drive.edit", "drive.delete"];
+
+export function NewUser({ devices, routes, onAdded }: { devices: Device[]; routes: Route[]; onAdded: () => Promise<void> }) {
+  const [access, setAccess] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [device, setDevice] = useState("");
@@ -138,6 +142,9 @@ export function NewUser({ devices, onAdded }: { devices: Device[]; onAdded: () =
     setBusy(true);
     try {
       const user = await api.addUser({ username, email, password, device_id: device });
+      if (access === "storage") {
+        await api.editUser(user.id, { permissions: STORAGE_ONLY, route_ids: routes.filter((r) => r.target_scheme === "dashboard").map((r) => r.id) });
+      }
       await onAdded();
       notify(`Added ${user.username}`);
       go(`#/users/${user.id}`);
@@ -173,6 +180,13 @@ export function NewUser({ devices, onAdded }: { devices: Device[]; onAdded: () =
                 <span className="tf-label">Device</span>
               </div>
               <div className="tf-hint">The only device they can sign in from. More can be linked later.</div>
+            </div>
+            <div className="tf static span">
+              <div className="tf-box">
+                <Dropdown label="Access" value={access} onChange={setAccess}
+                  options={[{ value: "", label: "Pick later" }, { value: "storage", label: "Storage only", hint: "Their own photos, videos and files" }]} />
+                <span className="tf-label">Access</span>
+              </div>
             </div>
             <PasswordField label="Password" value={password} onChange={setPassword} hint="Generate one, or type at least 10 characters with upper and lower case, a number and a symbol." />
           </div>
