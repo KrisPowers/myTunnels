@@ -17,7 +17,6 @@ services:
       - ./disk:/host:ro
     environment:
       DOCKER_HOST: tcp://docker:2375
-      HARDWARE_URL: http://hardware:7090
       # This computer's own figures for the Dashboard, from `server host`
       # running on it; without it, they are those of the machine Docker runs.
       HOST_URL: http://host.docker.internal:7092
@@ -25,29 +24,6 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       - docker
-      - hardware
-
-  # Device Controller's reach into the host's fans: the same program, as
-  # `server hardware`, reading and setting the kernel's hwmon files under the
-  # host's /sys. Root only to write those files; every capability is dropped,
-  # nothing else is mounted, and only the gateway may connect.
-  hardware:
-    build: .
-    restart: unless-stopped
-    init: true
-    entrypoint: ["/usr/local/bin/server", "hardware"]
-    user: "0:0"
-    read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges
-    environment:
-      HARDWARE_ADDR: 0.0.0.0:7090
-      HARDWARE_ALLOW: gateway
-      HWMON_DIR: /host/sys/class/hwmon
-    volumes:
-      - /sys:/host/sys
 
   # The Dashboard and Containers pages' view of Docker. Only the calls the
   # panel makes are allowed, by method and path: listing, inspecting, logs and

@@ -1,15 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { NeedsApp } from "./Apps";
-import { ago, api, message, repos, type Build, type Deploy, type DeployEdit, type Updates } from "./api";
+import { ago, api, message, type Build, type Deploy, type DeployEdit, type Updates } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { imageId } from "./Images";
 import { useCan } from "./me";
 import { go } from "./route";
 import { Callout, Card, Dialog, MoreMenu, Row, TextField, useNotify, ValueRow, type MenuAction } from "./ui";
-
-// A repository on another server is picked with this in place of a name.
-const ADDRESS = " address";
 
 export const UPDATES: Option<Updates>[] = [
   { value: "push", label: "When the branch changes", hint: "Builds each new commit as it arrives" },
@@ -48,81 +45,45 @@ function took(b: Build) {
   return s < 60 ? `${Math.round(s)} s` : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`;
 }
 
-interface Source { repo: string; url: string; token: string; branch: string }
+interface Source { url: string; token: string; branch: string }
 
-// SourceFields picks where a container's code comes from: a repository on
-// this host's Git or an https address with an optional token, then one of its
-// branches, looked up as the source changes. `kind` keeps it to one of them.
-function SourceFields({ value, onChange, deploy, tokenSet, kind }: { value: Source; onChange: (patch: Partial<Source>) => void; deploy?: string; tokenSet?: boolean; kind?: "git" | "url" }) {
-  const can = useCan();
-  const [local, setLocal] = useState<string[] | null>(null);
+// SourceFields picks where a container's code comes from: an https address
+// with an optional token, then one of its branches, looked up as the address
+// changes.
+function SourceFields({ value, onChange, deploy, tokenSet, autoFocus }: { value: Source; onChange: (patch: Partial<Source>) => void; deploy?: string; tokenSet?: boolean; autoFocus?: boolean }) {
   const [branches, setBranches] = useState<string[] | null>(null);
   const [problem, setProblem] = useState("");
-  const remote = kind === "url" || (kind !== "git" && value.repo === "");
-
-  useEffect(() => {
-    if (!can("code.view")) return setLocal([]);
-    repos.list().then((r) => {
-      const names = r.repos.filter((x) => !x.empty).map((x) => x.name);
-      setLocal(names);
-      if (!value.repo && !value.url && names.length && kind !== "url") onChange({ repo: names[0] });
-    }).catch(() => setLocal([]));
-    // Once, for the repositories there are.
-  }, []);
-
-  const { repo, url, token } = value;
+  const { url, token } = value;
   useEffect(() => {
     setBranches(null);
     setProblem("");
-    if (remote && !/^https:\/\/\S+\/\S+/.test(url)) return;
-    if (!remote && !repo) return;
+    if (!/^https:\/\/\S+\/\S+/.test(url)) return;
     let alive = true;
     const t = setTimeout(() => {
-      api.probeSource(remote ? { url, token, deploy } : { repo }).then((p) => {
+      api.probeSource({ url, token, deploy }).then((p) => {
         if (!alive) return;
         setBranches(p.branches);
         if (!p.branches.includes(value.branch)) onChange({ branch: p.default || p.branches[0] || "" });
       }, (e) => alive && setProblem(message(e)));
-    }, remote ? 600 : 0);
+    }, 600);
     return () => {
       alive = false;
       clearTimeout(t);
     };
     // The branch is picked from what this finds, not the other way round.
-  }, [remote, repo, url, token, deploy]);
+  }, [url, token, deploy]);
 
-  const sources: Option<string>[] = [
-    ...(local ?? []).map((name) => ({ value: name, label: name, icon: "git" as IconName })),
-    ...(kind === "git" ? [] : [{ value: ADDRESS, label: "Another address", hint: "GitHub or any https address", icon: "public" as IconName }]),
-  ];
   return (
     <>
-      {kind !== "url" && (
-        <div className="tf static">
-          <div className="tf-box">
-            {kind === "git" && local && !local.length ? (
-              <span className="dropdown placeholder">No repositories with commits on this host yet</span>
-            ) : (
-              <Dropdown label="Repository" value={remote ? ADDRESS : repo} options={sources}
-                onChange={(v) => onChange(v === ADDRESS ? { repo: "" } : { repo: v, url: "", token: "" })} />
-            )}
-            <span className="tf-label">Repository</span>
-          </div>
-        </div>
-      )}
-      {remote && (
-        <>
-          <TextField label="Address" mono autoFocus={kind === "url"} autoComplete="off" placeholder="https://github.com/you/app.git" value={url} onChange={(v) => onChange({ url: v.trim() })} />
-          <TextField label="Token" type="password" autoComplete="new-password" value={token} onChange={(v) => onChange({ token: v.trim() })}
-            hint={tokenSet && !token ? "Set. Leave empty to keep it." : "For a private repository."} />
-        </>
-      )}
+      <TextField label="Address" mono autoFocus={autoFocus} autoComplete="off" placeholder="https://github.com/you/app.git" value={url} onChange={(v) => onChange({ url: v.trim() })} />
+      <TextField label="Token" type="password" autoComplete="new-password" value={token} onChange={(v) => onChange({ token: v.trim() })}
+        hint={tokenSet && !token ? "Set. Leave empty to keep it." : "For a private repository."} />
       <div className="tf static">
         <div className="tf-box">
           {branches && branches.length > 0 ? (
             <Dropdown label="Branch" value={value.branch} options={branches.map((b) => ({ value: b, label: b }))} onChange={(branch) => onChange({ branch })} />
           ) : (
-            <span className="dropdown placeholder">{problem ? "No branches" : branches ? "No branches yet" : (remote ? url : repo) ? "Looking up branches" : "Pick a repository"}</span>
+            <span className="dropdown placeholder">{problem ? "No branches" : branches ? "No branches yet" : url ? "Looking up branches" : "Give the address"}</span>
           )}
           <span className="tf-label">Branch</span>
         </div>
@@ -132,12 +93,11 @@ function SourceFields({ value, onChange, deploy, tokenSet, kind }: { value: Sour
   );
 }
 
-// Where a new container comes from: a repository on this host's Git, one at
-// an https address such as GitHub, or a Docker image.
-export type Kind = "git" | "url" | "image";
+// Where a new container comes from: a repository at an https address such as
+// GitHub, or a Docker image.
+export type Kind = "url" | "image";
 
 const TITLES: Record<Kind, string> = {
-  git: "Container from Git",
   url: "Container from GitHub",
   image: "Container from an image",
 };
@@ -155,7 +115,7 @@ export const updatesFor = (image: boolean): Option<Updates>[] => image
 export function AddContainer({ kind, onClose, onAdded }: { kind: Kind; onClose: () => void; onAdded: (d: Deploy) => Promise<void> }) {
   const [name, setName] = useState("");
   const [named, setNamed] = useState(false);
-  const [source, setSource] = useState<Source>({ repo: "", url: "", token: "", branch: "" });
+  const [source, setSource] = useState<Source>({ url: "", token: "", branch: "" });
   const [image, setImage] = useState("");
   const [updates, setUpdates] = useState<Updates>(kind === "image" ? "manual" : "push");
   const [every, setEvery] = useState(86_400);
@@ -170,9 +130,9 @@ export function AddContainer({ kind, onClose, onAdded }: { kind: Kind; onClose: 
   const change = (patch: Partial<Source>) => {
     const next = { ...source, ...patch };
     setSource(next);
-    guess(next.repo || next.url);
+    guess(next.url);
   };
-  const ready = !!name && (kind === "image" ? !!image : !!source.branch && (!!source.repo || !!source.url));
+  const ready = !!name && (kind === "image" ? !!image : !!source.branch && !!source.url);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -181,7 +141,7 @@ export function AddContainer({ kind, onClose, onAdded }: { kind: Kind; onClose: 
     try {
       const d = await api.addDeploy({
         name, updates, every,
-        ...(kind === "image" ? { image } : kind === "git" ? { repo: source.repo, branch: source.branch } : { url: source.url, branch: source.branch, token: source.token || undefined }),
+        ...(kind === "image" ? { image } : { url: source.url, branch: source.branch, token: source.token || undefined }),
       });
       notify(`Added ${d.name}`);
       await onAdded(d);
@@ -201,7 +161,7 @@ export function AddContainer({ kind, onClose, onAdded }: { kind: Kind; onClose: 
               setImage(v.trim());
               guess(v.trim());
             }} />
-        ) : <SourceFields kind={kind} value={source} onChange={change} />}
+        ) : <SourceFields autoFocus value={source} onChange={change} />}
         <TextField label="Name" autoComplete="off" value={name}
           onChange={(v) => {
             setNamed(true);
@@ -231,14 +191,13 @@ export function AddContainer({ kind, onClose, onAdded }: { kind: Kind; onClose: 
 }
 
 // NewMenu is the plus that adds anything to Containers: a tunnel to any port,
-// or a container from Git, from GitHub or from an image.
+// or a container from GitHub or from an image.
 export function NewMenu() {
   const can = useCan();
   const [adding, setAdding] = useState<Kind | "">("");
   const actions: MenuAction[] = [
     ...(can("tunnels.create") ? [{ label: "Tunnel", hint: "A port on this computer or another", icon: "public" as IconName, onClick: () => go("#/new") }] : []),
     ...(can("containers.deploy") ? [
-      { label: "Container from Git", hint: "Built from a repository on this host", icon: "git" as IconName, onClick: () => setAdding("git") },
       { label: "Container from GitHub", hint: "Built from any https repository", icon: "code" as IconName, onClick: () => setAdding("url") },
       { label: "Container from an image", hint: "Runs a Docker image, such as nginx", icon: "layers" as IconName, onClick: () => setAdding("image") },
     ] : []),
@@ -414,14 +373,14 @@ function ListDialog({ title, label, placeholder, value, onSave, onClose }: {
 
 // SourceDialog changes where a container's code comes from and its branch.
 function SourceDialog({ d, onSave, onClose }: { d: Deploy; onSave: (edit: DeployEdit) => Promise<void>; onClose: () => void }) {
-  const [source, setSource] = useState<Source>({ repo: d.repo, url: d.url, token: "", branch: d.branch });
+  const [source, setSource] = useState<Source>({ url: d.url, token: "", branch: d.branch });
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
   const save = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     try {
-      await onSave(source.repo ? { repo: source.repo, branch: source.branch } : { url: source.url, branch: source.branch, ...(source.token ? { token: source.token } : {}) });
+      await onSave({ url: source.url, branch: source.branch, ...(source.token ? { token: source.token } : {}) });
       onClose();
     } catch (err) {
       notify(message(err), "bad");

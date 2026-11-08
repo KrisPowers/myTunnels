@@ -234,8 +234,8 @@ export interface Build {
 
 export type Updates = "push" | "timer" | "manual";
 
-// A container built from a repository on this host's Git (`repo`) or at an
-// https address (`url`), one of its branches, and how it updates.
+// A container built from a repository at an https address (`url`), one of
+// its branches, and how it updates; `repo` is one that was on this host's Git.
 export interface Deploy {
   id: string;
   name: string;
@@ -264,7 +264,6 @@ export interface Deploy {
 
 export interface DeployEdit {
   image?: string;
-  repo?: string;
   url?: string;
   token?: string;
   branch?: string;
@@ -346,68 +345,6 @@ export interface Limits {
 
 // Its resources, with the most this machine can give.
 export interface Resources { limits: Limits; cpus: number; memory: number }
-
-// Git: repositories kept on this host, browsed here and used with git over
-// HTTPS signing in with a token.
-export interface Repo {
-  name: string;
-  branch: string;
-  updated: number | null;
-  empty: boolean;
-  write: boolean;
-  // Git reaches it only from the home network.
-  home_only: boolean;
-  // Pinned to the top of the catalog, for the person signed in.
-  pinned: boolean;
-  // The language most of its code is in.
-  language: string | null;
-  // Commits in each of the last weeks, the oldest first.
-  activity: number[];
-}
-
-export interface GitToken { id: string; name: string; owner: string; created_at: number; last_used: number | null }
-
-export interface CodeState { route: Route | null; tokens: GitToken[] }
-
-export interface Refs { default: string; branches: { name: string; updated: number }[]; tags: { name: string; updated: number }[]; home_only: boolean }
-
-export interface TreeEntry { name: string; kind: "dir" | "file" | "module"; size: number | null }
-
-export interface LastCommit { id: string; author: string; at: number; subject: string }
-
-export interface TreeView { path: string; entries: TreeEntry[]; last: LastCommit | null; count: number }
-
-export interface BlobView { size: number; binary: boolean; too_big: boolean; text: string | null }
-
-export interface CommitLine { id: string; author: string; email: string; at: number; subject: string }
-
-export interface CommitView { id: string; parents: string[]; author: string; email: string; at: number; message: string; patch: string; truncated: boolean }
-
-export interface Branch { name: string; id: string; updated: number; author: string; subject: string; default: boolean; ahead: number; behind: number }
-
-// What one branch would bring into another.
-export interface Compare { commits: CommitLine[]; patch: string; truncated: boolean; mergeable: boolean; error?: string }
-
-// An issue or a pull request, numbered together per repository.
-export interface Thread {
-  number: number;
-  kind: "issue" | "pull";
-  title: string;
-  body: string;
-  state: "open" | "closed" | "merged";
-  author: string;
-  base: string | null;
-  head: string | null;
-  merged_commit: string | null;
-  created_at: number;
-  updated_at: number;
-  comments: number;
-}
-
-export interface ThreadView extends Thread {
-  thread: { id: string; author: string; body: string; created_at: number }[];
-  changes?: Compare;
-}
 
 export interface FileEntry { name: string; dir: boolean; size: number; modified: number }
 
@@ -522,17 +459,6 @@ export interface Group { label: string; permissions: Permission[] }
 // `host`: the account made at setup. `admin`: the host, or an account with the Admin role.
 export interface Me { id: string; host: boolean; admin: boolean; name: string; permissions: string[] }
 
-// One of the host's fans, from Device Controller. `speed` is its duty in
-// percent where it can be set; `mode` is who sets it.
-export interface Fan {
-  id: string;
-  chip: string;
-  label: string;
-  rpm: number | null;
-  speed: number | null;
-  mode: "auto" | "manual" | "full" | "none";
-}
-
 // Apps: the catalog, and what the host has of it.
 export type Os = "windows" | "macos" | "linux";
 
@@ -566,6 +492,8 @@ export interface Apps {
   // Null while `server host` is not answering.
   host: { os: Os; manager: string | null; apps: Record<string, HostApp> } | null;
   remote: boolean;
+  // `server host` answers, but is too old to say what it has.
+  outdated: boolean;
 }
 
 // What features need where myTunnels runs, and whether it is there.
@@ -632,8 +560,6 @@ export const api = {
   apps: () => call<Apps>("/apps"),
   appAction: (id: string, action: AppAction) => call(`/apps/${id}/${action}`, "POST"),
   needs: () => call<Needs>("/needs"),
-  fans: () => call<Fan[]>("/hardware/fans"),
-  setFan: (id: string, auto: boolean, speed: number) => call<Fan>(`/hardware/fans/${id}`, "PUT", { auto, speed }),
   containers: () => call<Container[]>("/containers"),
   container: (id: string) => call<ContainerDetail>(`/containers/${encodeURIComponent(id)}`),
   containerLogs: (id: string, tail: number) => call<{ lines: string[] }>(`/containers/${encodeURIComponent(id)}/logs?tail=${tail}`),
@@ -646,8 +572,8 @@ export const api = {
   removeImage: (id: string) => call(`/images/${encodeURIComponent(id)}`, "DELETE"),
   deploys: () => call<Deploy[]>("/deploys"),
   deploy: (id: string) => call<Deploy>(`/deploys/${id}`),
-  addDeploy: (body: { name: string; repo?: string; url?: string; image?: string; token?: string; branch?: string; updates?: Updates; every?: number }) => call<Deploy>("/deploys", "POST", body),
-  probeSource: (body: { repo?: string; url?: string; token?: string; deploy?: string }) => call<{ branches: string[]; default: string }>("/deploys/probe", "POST", body),
+  addDeploy: (body: { name: string; url?: string; image?: string; token?: string; branch?: string; updates?: Updates; every?: number }) => call<Deploy>("/deploys", "POST", body),
+  probeSource: (body: { url?: string; token?: string; deploy?: string }) => call<{ branches: string[]; default: string }>("/deploys/probe", "POST", body),
   editDeploy: (id: string, edit: DeployEdit) => call<Deploy>(`/deploys/${id}`, "PATCH", edit),
   removeDeploy: (id: string) => call(`/deploys/${id}`, "DELETE"),
   buildNow: (id: string) => call<Deploy>(`/deploys/${id}/build`, "POST"),
@@ -688,47 +614,10 @@ export const api = {
   flags: () => call<Flag[]>("/flags"),
   clearFlag: (id: number) => call(`/flags/${id}`, "DELETE"),
 
-  code: () => call<CodeState>("/code"),
-  createRepo: (name: string) => call<{ repos: Repo[] }>("/code/repos", "POST", { name }),
-  removeRepo: (name: string) => call<{ repos: Repo[] }>(`/code/repos/${encodeURIComponent(name)}`, "DELETE"),
-  editRepo: (name: string, patch: { home_only?: boolean; default_branch?: string }) => call<{ repos: Repo[] }>(`/code/repos/${encodeURIComponent(name)}`, "PATCH", patch),
-  pinRepo: (name: string, pinned: boolean) => call<{ pinned: boolean }>(`/code/repos/${encodeURIComponent(name)}/pin`, "PUT", { pinned }),
-  branch: (name: string, body: { action: "create" | "delete"; name: string; from?: string }) =>
-    call<{ default: string; branches: Branch[] }>(`/code/repos/${encodeURIComponent(name)}/branch`, "POST", body),
-  openThread: (name: string, body: { kind: "issue" | "pull"; title: string; body: string; base?: string; head?: string }) =>
-    call<Thread>(`/code/repos/${encodeURIComponent(name)}/threads`, "POST", body),
-  editThread: (name: string, number: number, patch: { title?: string; body?: string; state?: "open" | "closed" }) =>
-    call<ThreadView>(`/code/repos/${encodeURIComponent(name)}/thread/${number}`, "PATCH", patch),
-  comment: (name: string, number: number, body: string) => call<ThreadView>(`/code/repos/${encodeURIComponent(name)}/thread/${number}/comments`, "POST", { body }),
-  merge: (name: string, number: number) => call<ThreadView>(`/code/repos/${encodeURIComponent(name)}/thread/${number}/merge`, "POST"),
-  addToken: (name: string, owner: string) => call<CodeState & { secret: string }>("/code/tokens", "POST", { name, owner }),
-  removeToken: (id: string) => call<CodeState>(`/code/tokens/${id}`, "DELETE"),
-
   convert: () => call<ConvertState>("/convert"),
   startConvert: (body: { space: Space; paths: string[]; to: string; size: number; quality: Quality }) => call<{ queued: number }>("/convert", "POST", body),
   removeConvert: (id: string) => call(`/convert/${id}`, "DELETE"),
 };
-
-// Reading repositories.
-const repoPath = (name: string, op: string, q: Record<string, string | number | undefined>) => {
-  const params = Object.entries(q).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join("&");
-  return `/code/repos/${encodeURIComponent(name)}/${op}${params ? "?" + params : ""}`;
-};
-
-export const repos = {
-  list: () => call<{ repos: Repo[]; user: string | null }>("/code/repos"),
-  refs: (name: string) => call<Refs>(repoPath(name, "refs", {})),
-  tree: (name: string, ref: string, path: string) => call<TreeView>(repoPath(name, "tree", { ref, path })),
-  blob: (name: string, ref: string, path: string) => call<BlobView>(repoPath(name, "blob", { ref, path })),
-  log: (name: string, ref: string, skip: number) => call<{ commits: CommitLine[]; more: boolean }>(repoPath(name, "log", { ref, skip })),
-  commit: (name: string, id: string) => call<CommitView>(repoPath(name, "commit", { ref: id })),
-  branches: (name: string) => call<{ default: string; branches: Branch[] }>(repoPath(name, "branches", {})),
-  compare: (name: string, base: string, head: string) => call<Compare>(repoPath(name, "compare", { base, ref: head })),
-  threads: (name: string, kind: "issues" | "pulls") => call<{ threads: Thread[] }>(repoPath(name, `threads/${kind}`, {})),
-  thread: (name: string, number: number) => call<ThreadView>(repoPath(name, `thread/${number}`, {})),
-};
-
-export const rawUrl = (name: string, ref: string, path: string) => "/api" + repoPath(name, "blob", { ref, path, raw: "true" });
 
 // The files in a collection.
 export const filesIn = (space: Space) => ({

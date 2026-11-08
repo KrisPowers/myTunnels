@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent } from "react";
 import { AppsPage, NeedsContext } from "./Apps";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type Flag, type Group, type Needs, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
-import { GitPage } from "./Git";
 import { NewMenu } from "./Builds";
 import { ContainersPage } from "./Containers";
-import { ControllerPage } from "./Controller";
 
 import { DashboardPage } from "./Dashboard";
 import { DevicePage } from "./Devices";
@@ -162,7 +160,6 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   }, []);
 
   const { view, id, page } = place;
-  // Git's address is a tunnel kept on its own page.
   const apps = routes?.filter((r) => r.target_scheme !== "code") ?? null;
   const route = view === "tunnels" && id ? apps?.find((r) => r.id === id) : undefined;
   const device = view === "devices" && id ? devices?.find((d) => d.id === id) : undefined;
@@ -170,7 +167,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
   // A tunnel, device or account that is gone goes back to its list.
   useEffect(() => {
-    if (view === "tunnels" && id && routes && !route) go(routes.some((r) => r.id === id) ? "#/git" : "#/");
+    if (view === "tunnels" && id && routes && !route) go("#/");
     if (view === "devices" && id && devices && !device) go("#/devices");
     if (view === "users" && id && id !== "new" && users && !user) go("#/users");
   }, [view, id, routes, devices, users, route, device, user]);
@@ -180,8 +177,6 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
     ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
     ["containers", "Containers", "deployed_code", "#/", can("containers.view") || can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("media.view") || can("drive.view")],
-    ["git", "Git", "git", "#/git", can("code.view")],
-    ["controller", "Device Controller", "mode_fan", "#/controller", can("hardware.control")],
     ["security", "Security & Roles", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
     ["apps", "Apps", "apps", "#/apps", true],
   ];
@@ -236,10 +231,8 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
 
         <main className="page" key={view + id}>
-          {view === "git" && can("code.view") && <GitPage id={id} page={page} more={place.more} users={users ?? []} onChanged={load} />}
           {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
           {view === "apps" && <AppsPage open={id} />}
-          {view === "controller" && can("hardware.control") && <ControllerPage />}
           {view === "storage" && <StoragePage tab={id} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} status={status}
             users={users ?? []} providers={providers} onChanged={load} />}

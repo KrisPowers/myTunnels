@@ -2,7 +2,6 @@ mod admin;
 mod apps;
 mod archive;
 mod cloudflare;
-mod code;
 mod codes;
 mod config;
 mod containers;
@@ -13,7 +12,6 @@ mod docker;
 mod dupes;
 mod gate;
 mod guard;
-mod hardware;
 mod images;
 mod limits;
 mod mail;
@@ -28,7 +26,6 @@ mod secret;
 mod share;
 mod state;
 mod storage;
-mod threads;
 mod tls;
 mod token;
 mod totp;
@@ -52,10 +49,6 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    // Device Controller's service runs from the same program.
-    if std::env::args().nth(1).as_deref() == Some("hardware") {
-        return hardware::serve().await;
-    }
     // This computer's own figures, for a Dashboard that runs inside Docker Desktop.
     if std::env::args().nth(1).as_deref() == Some("host") {
         return metrics::serve_host().await;
@@ -79,7 +72,7 @@ async fn main() -> Result<()> {
     tracing::info!("gateway on {}", state.config.gate_service);
 
     tunnel::spawn(state.clone());
-    tokio::spawn(admin::rename_code_address(state.clone()));
+    tokio::spawn(admin::remove_git_address(state.clone()));
     netinfo::spawn(state.clone());
     metrics::spawn();
     convert::spawn(state.clone());

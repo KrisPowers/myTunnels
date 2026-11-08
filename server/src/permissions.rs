@@ -123,45 +123,6 @@ pub const GROUPS: &[Group] = &[
         ],
     },
     Group {
-        label: "Git",
-        permissions: &[
-            p(
-                "code.view",
-                "View repositories",
-                "Browse them, their issues and pull requests, and clone with a token of their own",
-            ),
-            p(
-                "code.discuss",
-                "Open issues and pull requests",
-                "Comment on them, close and reopen them",
-            ),
-            p(
-                "code.push",
-                "Push and merge",
-                "Push with git, merge pull requests, make and delete branches",
-            ),
-            p(
-                "code.create",
-                "Create repositories",
-                "And change their settings",
-            ),
-            p("code.delete", "Delete repositories", ""),
-            p(
-                "code.tokens",
-                "Manage everyone's tokens",
-                "Their own they can always make and remove",
-            ),
-        ],
-    },
-    Group {
-        label: "Device Controller",
-        permissions: &[p(
-            "hardware.control",
-            "Control the host's hardware",
-            "Set its fan speeds by hand or hand them back to the firmware",
-        )],
-    },
-    Group {
         label: "Photos and videos",
         permissions: &[
             p("media.view", "View photos and videos", "And download them"),
@@ -300,7 +261,6 @@ pub fn needed(method: &Method, path: &str) -> Need {
         "settings" | "cloudflare" => any(&["settings.manage"]),
         "zones" => any(&["tunnels.create", "tunnels.edit"]),
         "metrics" => any(&["metrics.view", "containers.view"]),
-        "hardware" => any(&["hardware.control"]),
         "containers" | "images" | "deploys" if read => any(&["containers.view"]),
         "deploys" if *method == Method::DELETE => any(&["containers.remove"]),
         "deploys" => any(&["containers.deploy"]),
@@ -320,13 +280,6 @@ pub fn needed(method: &Method, path: &str) -> Need {
         "users" => any(&["users.manage"]),
         "flags" if read => any(&["users.view"]),
         "flags" => any(&["users.manage"]),
-        "code" if at(1) == "tokens" => any(&["code.view", "code.tokens"]),
-        "code" if at(3) == "pin" => any(&["code.view"]),
-        "code" if at(3) == "branch" || at(5) == "merge" => any(&["code.push"]),
-        "code" if read => any(&["code.view"]),
-        "code" if at(3) == "threads" || at(3) == "thread" => any(&["code.discuss"]),
-        "code" if *method == Method::DELETE => any(&["code.delete"]),
-        "code" => any(&["code.create"]),
         "media" => files("media", read, at(2)),
         "drive" => files("drive", read, at(2)),
         // Each job is held to the collection it reads and writes, in `convert`.
@@ -375,9 +328,9 @@ mod tests {
 
     #[test]
     fn calls_need_their_feature() {
-        let viewer = account(&["dashboard", "code.view", "media.view"]);
-        assert!(needed(&Method::GET, "/code/repos").met(&viewer));
-        assert!(!needed(&Method::POST, "/code/repos").met(&viewer));
+        let viewer = account(&["dashboard", "media.view"]);
+        assert!(needed(&Method::GET, "/apps").met(&viewer));
+        assert!(!needed(&Method::POST, "/apps/git/install").met(&viewer));
         assert!(needed(&Method::GET, "/media/fs/list").met(&viewer));
         assert!(!needed(&Method::PUT, "/media/fs/upload").met(&viewer));
         assert!(!needed(&Method::POST, "/media/fs/delete").met(&viewer));
@@ -385,10 +338,6 @@ mod tests {
         assert!(!needed(&Method::GET, "/settings").met(&viewer));
         assert!(needed(&Method::GET, "/status").met(&viewer));
         assert!(needed(&Method::DELETE, "/routes/r1").met(&Caller::Host));
-        assert!(needed(&Method::PUT, "/code/repos/app/pin").met(&viewer));
-        assert!(!needed(&Method::POST, "/code/repos/app/threads").met(&viewer));
-        assert!(!needed(&Method::POST, "/code/repos/app/thread/3/merge").met(&viewer));
-        assert!(needed(&Method::GET, "/code/repos/app/threads/issues").met(&viewer));
         assert!(needed(&Method::GET, "/convert").met(&viewer));
         assert!(!needed(&Method::POST, "/convert").met(&viewer));
         let deployer = account(&["dashboard", "containers.view", "containers.deploy"]);
@@ -400,7 +349,7 @@ mod tests {
 
     #[test]
     fn every_key_is_known() {
-        assert!(known("code.push"));
+        assert!(known("apps.install"));
         assert!(known("dashboard"));
         assert!(!known("everything"));
     }
