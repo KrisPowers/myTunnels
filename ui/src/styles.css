@@ -1305,6 +1305,8 @@ a.tn-row:hover { background: var(--hover); text-decoration: none; }
 .split > .btn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .split .split-more { padding: 0 6px; border-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .split .split-more.primary { border-left: 1px solid color-mix(in srgb, var(--on-accent) 30%, transparent); }
+/* A disabled half keeps its border, so the two halves stay one control. */
+.split .btn:disabled { opacity: 1; color: var(--text-3); }
 .versions .menu-item { justify-content: space-between; gap: 12px; }
 .versions .menu-item small { color: var(--text-3); font-size: 12px; }
 .versions .menu-item:disabled { cursor: default; background: transparent; }
