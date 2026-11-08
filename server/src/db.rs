@@ -292,8 +292,8 @@ pub const HOST: &str = "host";
 /// have always been kept.
 pub const HOST_ID: &str = "admin";
 
-/// Something that happened at a tunnel's door: a sign-in or password attempt, a
-/// visitor turned away, a device asking for approval.
+/// Something that happened at a tunnel's door: a page opened, a sign-in or
+/// password attempt, a visitor turned away, a device asking for approval.
 #[derive(Clone, Serialize)]
 pub struct Event {
     pub route_id: String,
