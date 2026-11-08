@@ -846,6 +846,21 @@ mod tests {
     }
 
     #[test]
+    fn each_account_has_its_own_folder() {
+        let data = Path::new("data");
+        assert_eq!(
+            base(data, Space::Media, HOST_ID).unwrap(),
+            data.join("media")
+        );
+        assert_eq!(
+            base(data, Space::Drive, "a1b2c3").unwrap(),
+            data.join("people").join("a1b2c3").join("drive")
+        );
+        assert!(base(data, Space::Media, "../a1").is_err());
+        assert!(base(data, Space::Media, "").is_err());
+    }
+
+    #[test]
     fn collections_keep_their_own_kinds() {
         assert!(Space::Media.takes("IMG_0001.HEIC").is_ok());
         assert!(Space::Media.takes("clip.mp4").is_ok());
