@@ -69,15 +69,19 @@ does and Docker Desktop does not.
 
 ## Containers
 
-**Containers** is where containers and tunnels meet. It says how many containers run, their CPU
-and memory together, and how many tunnels are live, then a row per container: its state, name
-over its image, published ports (each a link to open), the tunnels that reach it, CPU, memory
-and how long it has run. Its menu holds logs, its tunnel, start or stop, restart, kill and
-delete. Compose projects with more than one container fold under their name, with start, stop
-and restart for all of them. Search by name, image or ID, or show only running ones. Tunnels to
-anything else, such as another machine or the dashboard, are listed beneath as **Other
-tunnels**. The plus at the top adds a container from a repository or a tunnel to any port, and
-the menu beside it deletes every image no container uses.
+**Containers** is one catalog of everything published here: every container, and every tunnel to
+a port elsewhere, such as another machine or the dashboard, which is a container of another
+kind. It says how many containers run, their CPU and memory together, and how many tunnels are
+live, then a row each: what it is (a container Docker runs, one built from Git, one run from an
+image, or a tunnel) in a tile tinted by its state, its name over where it comes from, its
+address, and its CPU and memory while it runs. Each row has one menu: logs, its tunnel, start or
+stop, restart, kill and delete. Compose projects with more than one container fold under their
+name, with start, stop and restart for all of them. Search, or pick **All** or **Running**; the
+catalog refreshes on its own.
+
+The plus at the top, here and in the header, adds anything: a **Tunnel** to any port, or a
+**Container from Git**, **from GitHub** or **from an image**. The menu beside it deletes every
+image no container uses.
 
 A container and its tunnel are one page. Its heading holds its state, image and address,
 **Open**, the one button its state calls for (start, stop or resume), and a menu for restart,
@@ -95,11 +99,11 @@ pause, kill and delete. Under it:
   environment, labels and layers. One no container uses can be deleted.
 - **Logs**: followed as it runs, searchable, with or without times.
 
-### From a repository
+### From a repository or an image
 
-**Container from a repository**, under the plus at the top of Containers, makes a container from code: name it, pick a repository on this host's
-**Git** or give any https address (GitHub and the like, with a token for a private one), pick
-its branch and how it updates:
+**Container from Git** and **Container from GitHub**, under the plus, make a container from
+code: pick a repository on this host's **Git**, or give any https address (GitHub and the like,
+with a token for a private one), then its branch, its name and how it updates:
 
 - **When the branch changes**: each new commit is built as it arrives. A repository here is
   looked at every 30 seconds, one at another address every minute.
@@ -122,6 +126,10 @@ it runs: its port (the one its image exposes, unless given), its environment, an
 kept from one build to the next. The folders its image declares are always kept, each in a
 volume named after the container and the folder (`web_data` for `/data`). Changing how it runs
 makes the running build again with it. Tokens and the environment are sealed in the database.
+
+**Container from an image** runs a Docker image, such as `nginx:1.27`. Its updates pull the image
+again, **On a timer** or when **Update** is pressed, and run it when it changed; each pull is a
+build of its own, so going back works the same way.
 
 A container made here joins myTunnels' own network and publishes no port, so only its tunnel
 reaches it. Deleting it takes away its container, its images and its copy of the repository;
@@ -243,8 +251,10 @@ dashboard through a tunnel to reach it from anywhere.
 
 ## Accounts and permissions
 
-**Users**, under **Security & Roles** in the sidebar, holds the accounts people sign in with. Open one to
-set it up:
+**Users**, under **Security & Roles** in the sidebar, holds the accounts people sign in with,
+yours among them: the account made at setup, with its email, username and password, holds the
+**Host** and **Admin** roles. Only the host changes the host account, under **Settings,
+Account**, and it cannot be suspended or removed. Open any other to set it up:
 
 - **Permissions**, a card per feature: **Sign in to the dashboard**, then what it may do there,
   such as viewing containers or starting and stopping them, publishing, changing or removing
@@ -257,8 +267,8 @@ set it up:
 An account with **Sign in to the dashboard** signs in there with its email or username and its
 own password (and an emailed code, when the dashboard asks for one), and sees only the pages
 and actions its permissions allow; the server checks every call the same way. **Admin** is a role
-any account can be given: it holds every permission, including making others admins. The host
-account, made at setup, always holds them all. Anyone who manages accounts can give or take only permissions they hold
+any account can be given: it holds every permission, including making others admins. **Host**
+is the role of the account made at setup, which holds Admin too. Anyone who manages accounts can give or take only permissions they hold
 themselves, cannot change their own, and cannot change an account that can do more than they
 can.
 
