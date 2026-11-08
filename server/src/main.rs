@@ -1,3 +1,4 @@
+mod addons;
 mod admin;
 mod archive;
 mod cloudflare;
@@ -12,6 +13,7 @@ mod docker;
 mod dupes;
 mod gate;
 mod guard;
+mod hardware;
 mod images;
 mod mail;
 mod metrics;
@@ -48,6 +50,11 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
+
+    // Device Controller's service runs from the same program.
+    if std::env::args().nth(1).as_deref() == Some("hardware") {
+        return hardware::serve().await;
+    }
 
     let mut config = Config::from_env();
     config.default_upstream_host = netinfo::detect_upstream(&config.default_upstream_host).await;

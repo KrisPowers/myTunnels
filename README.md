@@ -151,7 +151,7 @@ Podman works too, through its Docker-compatible API: mount Podman's socket in pl
 
 ## Git and Storage
 
-**Storage** and **Git** are pages of their own in the sidebar.
+**Storage** is a page of its own in the sidebar. **Git** is an add-on, under **Add-ons**.
 
 ### Git
 
@@ -249,9 +249,27 @@ set is kept unless you pick another, and the others can be deleted one set at a 
 Each tab takes only its own kinds of file. Storage is in the dashboard alone, so publish the
 dashboard through a tunnel to reach it from anywhere.
 
+## Add-ons
+
+**Add-ons** are apps beside myTunnels' own pages, each with a page under **Add-ons** in the
+sidebar. The host and admins install and remove them with the button beside that heading.
+**Git** comes installed; **Device Controller** does not. Removing one takes its page away and
+refuses its calls; what it kept stays, for when it is installed again.
+
+### Device Controller
+
+**Device Controller** lists every fan the host's chips report, each spinning as fast as it
+turns, with its speed in RPM. Drag a fan's slider to set its speed by hand, or switch **Auto**
+on to hand it back to the firmware. Fans are the kernel's hwmon files under
+`/sys/class/hwmon`; setting them takes root, so the `hardware` service in `compose.yaml` does
+it: the same program as `server hardware`, with the host's `/sys` mounted, every capability
+dropped, answering the gateway alone. Docker Desktop runs containers in a virtual machine,
+which has no fans to show.
+
 ## Accounts and permissions
 
-**Users**, under **Security & Roles** in the sidebar, holds the accounts people sign in with,
+**Users**, a tab of **Security & Roles** in the sidebar beside **Devices**, **Two-Factor Auth**
+and **Third-Party OAuth**, holds the accounts people sign in with,
 yours among them: the account made at setup, with its email, username and password, holds the
 **Host** and **Admin** roles. Only the host changes the host account, under **Settings,
 Account**, and it cannot be suspended or removed. Open any other to set it up:
@@ -290,7 +308,7 @@ own login still applies; the gateway is an extra layer in front of it.
 2. The gateway shows a page with a short device ID. The browser is assigned a 256 character
    letter and number key, kept only in a cookie that page scripts cannot read, so the app
    behind the tunnel never sees it.
-3. The device appears under **Devices** with what the browser reported (platform, GPU, CPU
+3. The device appears under **Security & Roles, Devices** with what the browser reported (platform, GPU, CPU
    threads, memory, screen, time zone, languages, user agent) and where it connected from
    (IP address and country).
 4. Approve it for every tunnel or for selected ones. The waiting page opens the app on its
@@ -311,7 +329,7 @@ review, which stops a copied key from working on another machine.
 Tunnels with sign-in on can also offer **Continue with** GitHub, Google, GitLab, Discord,
 Slack or Codeberg; a self-hosted Authentik, Authelia, Keycloak, Pocket ID, Zitadel, Kanidm,
 Gitea or Forgejo; Auth0 or Okta; or any other OpenID Connect provider. Set each up
-once under **Advanced, Third-Party OAuth** the way Cloudflare was set up: **Open GitHub** (or
+once under **Security & Roles, Third-Party OAuth** the way Cloudflare was set up: **Open GitHub** (or
 the provider's console), register an app, then paste its client ID and secret back. Each
 tunnel then switches on the providers it offers, under **Access Control**.
 
@@ -324,7 +342,7 @@ every tunnel on it.
 
 ## Two-factor sign-in
 
-Under **Advanced, Two-Factor Auth**, enter SMTP credentials from any provider, Gmail (with an app
+Under **Security & Roles, Two-Factor Auth**, enter SMTP credentials from any provider, Gmail (with an app
 password), Outlook or your own: host, port, STARTTLS or TLS, username, password and from
 address. Saving checks them, and **Send a test** emails the host account. Then a six digit code,
 good once for ten minutes, is asked for after the password once **Email codes** is on. One
@@ -358,6 +376,7 @@ environment variables:
 | `SECRET_KEY_FILE` | `/keys/secret.key` | Key that seals secrets in the database, made on first start |
 | `SECRET_KEY` | none | The same key as 64 hex digits, in place of the file |
 | `DOCKER_HOST` | `tcp://docker:2375` in `compose.yaml` | Docker API the Dashboard reads containers from (`unix://`, `npipe://` or `tcp://`) |
+| `HARDWARE_URL` | `http://hardware:7090` in `compose.yaml` | Device Controller's `hardware` service |
 | `RUST_LOG` | `info` | Log level |
 
 `compose.yaml` maps `host.docker.internal` to the Docker host, so a port published by any

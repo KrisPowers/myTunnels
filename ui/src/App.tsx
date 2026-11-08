@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode } from "react";
+import { ADDONS, AddonsDialog } from "./Addons";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type Group, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { GitPage } from "./Git";
 import { NewMenu } from "./Builds";
 import { ContainersPage } from "./Containers";
+import { ControllerPage } from "./Controller";
 
 import { DashboardPage } from "./Dashboard";
-import { DevicePage, Devices } from "./Devices";
+import { DevicePage } from "./Devices";
 
 import { Icon, type IconName } from "./Icon";
 
@@ -16,8 +18,8 @@ import { Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
 import { StoragePage } from "./Storage";
 import { NewTunnel, target, TunnelPage } from "./Tunnels";
-import { NewUser, UserPage, Users } from "./Users";
-import { AdvancedSecurity } from "./Security";
+import { NewUser, UserPage } from "./Users";
+import { SecurityPage } from "./Security";
 import { Callout, Notices, Tooltips } from "./ui";
 
 export function App() {
@@ -54,7 +56,7 @@ function Root() {
   if (!auth.authenticated || !auth.setup.done || !auth.me) return <Setup auth={auth} onChange={load} />;
   return (
     <MeContext.Provider value={auth.me}>
-      <Dashboard me={auth.me} catalog={auth.catalog} onSignOut={async () => {
+      <Dashboard me={auth.me} catalog={auth.catalog} installed={auth.addons} onSignOut={async () => {
         await api.logout().catch(() => {});
         await load();
       }} />
@@ -63,10 +65,13 @@ function Root() {
 }
 
 // Dashboard is the frame every page sits in, after Google's apps: a header with
-// the name, the search bar, help and settings; a sidebar with New on top and the
-// pages under it; and the page.
-function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSignOut: () => void }) {
+// the name, the search bar, help and settings; a sidebar with the pages, then
+// the add-ons installed; and the page.
+function Dashboard({ me, catalog, installed, onSignOut }: { me: Me; catalog: Group[]; installed: string[]; onSignOut: () => void }) {
   const [place, setPlace] = useState(readHash);
+  const [addons, setAddons] = useState(installed);
+  const [adding, setAdding] = useState(false);
+  const has = (id: string) => addons.includes(id);
   const can = useCan();
   const [routes, setRoutes] = useState<Route[] | null>(null);
   const [devices, setDevices] = useState<Device[] | null>(null);
@@ -175,22 +180,22 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
     ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
     ["containers", "Containers", "deployed_code", "#/", can("containers.view") || can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("media.view") || can("drive.view")],
-    ["git", "Git", "git", "#/git", can("code.view")],
+    ["security", "Security & Roles", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
   ];
-  const admin: [string, string, IconName, string, boolean][] = [
-    ["users", "Users", "group", "#/users", can("users.view")],
-    ["devices", "Devices", "devices", "#/devices", can("devices.view")],
-    ["security", "Advanced", "shield", "#/security", can("oauth.manage") || can("twofactor.manage")],
-  ];
-  const home = [...pages, ...admin].find((p) => p[4])?.[3] ?? "#/settings/appearance";
+  const extras: [string, string, IconName, string, boolean][] = ADDONS.map((a) => [a.view, a.name, a.icon, `#/${a.view}`, has(a.id) && can(a.can)]);
+  const home = [...pages, ...extras].find((p) => p[4])?.[3] ?? "#/settings/appearance";
+  // An add-on's page is open only while it is installed.
+  const away = ADDONS.some((a) => view === a.view && !has(a.id));
   useEffect(() => {
     if (view === "containers" && !id && !can("containers.view") && !can("tunnels.view") && home !== "#/") go(home);
+    if (away) go(home);
   });
   const settings = SETTINGS.filter(([k]) => can("settings.manage") || !["cloudflare", "network", "connector"].includes(k));
   const sections = view === "settings" ? settings : view === "docs" ? DOCS : null;
   const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
-    <NavItem key={key} to={to} icon={icon} label={label} on={view === key || (key === "containers" && (view === "new" || view === "tunnels"))}
-      count={key === "devices" ? pending || undefined : undefined} rail={rail} />
+    <NavItem key={key} to={to} icon={icon} label={label}
+      on={view === key || (key === "containers" && (view === "new" || view === "tunnels")) || (key === "security" && (view === "users" || view === "devices"))}
+      count={key === "security" ? pending || undefined : undefined} rail={rail} />
   );
 
   return (
@@ -225,26 +230,30 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           ) : (
             <>
               {pages.map(item)}
-              {admin.some((p) => p[4]) && <NavGroup id="admin" label="Security & Roles">{admin.map(item)}</NavGroup>}
+              {(extras.some((p) => p[4]) || me.admin) && (
+                <NavGroup id="addons" label="Add-ons" action={me.admin && (
+                  <button type="button" className="icon-btn small" aria-label="Add-ons" title="Add-ons" onClick={() => setAdding(true)}><Icon name="extension" size={18} /></button>
+                )}>{extras.map(item)}</NavGroup>
+              )}
             </>
           )}
         </nav>
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
+        {adding && <AddonsDialog installed={addons} onChange={setAddons} onClose={() => setAdding(false)} />}
 
         <main className="page" key={view + id}>
-          {view === "git" && <GitPage id={id} page={page} more={place.more} users={users ?? []} onChanged={load} />}
+          {view === "git" && has("git") && <GitPage id={id} page={page} more={place.more} users={users ?? []} onChanged={load} />}
           {view === "dashboard" && <DashboardPage />}
+          {view === "controller" && has("controller") && <ControllerPage />}
           {view === "storage" && <StoragePage tab={id} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} status={status}
             devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
           {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} port={id} />}
           {route && <TunnelPage route={route} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
-          {view === "devices" && !id && <Devices devices={devices} routes={apps ?? []} onChanged={load} />}
           {device && <DevicePage device={device} routes={apps ?? []} users={users ?? []} onChanged={load} />}
-          {view === "users" && !id && <Users users={users} routes={apps ?? []} />}
           {view === "users" && id === "new" && <NewUser devices={devices ?? []} onAdded={load} />}
           {user && <UserPage user={user} page={page} routes={apps ?? []} devices={devices ?? []} catalog={catalog} me={me} onChanged={load} />}
-          {view === "security" && <AdvancedSecurity tab={id} />}
+          {view === "security" && <SecurityPage tab={id} users={users} devices={devices} routes={apps ?? []} onChanged={load} />}
           {view === "settings" && <Settings sections={settings} section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
           {view === "docs" && <Docs section={id} />}
         </main>
@@ -255,7 +264,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
 // NavGroup is a category of pages under its name, which folds it away; the
 // fold is remembered in this browser.
-function NavGroup({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+function NavGroup({ id, label, action, children }: { id: string; label: string; action?: ReactNode; children: ReactNode }) {
   const key = `nav.folded.${id}`;
   const [folded, setFolded] = useState(() => {
     try {
@@ -274,10 +283,13 @@ function NavGroup({ id, label, children }: { id: string; label: string; children
   };
   return (
     <div className="nav-group">
-      <button type="button" className="nav-group-head" aria-expanded={!folded} onClick={toggle}>
-        <span>{label}</span>
-        <Icon name="expand_more" size={18} className={folded ? "folded" : undefined} />
-      </button>
+      <div className="nav-group-head">
+        <button type="button" className="nav-group-fold" aria-expanded={!folded} onClick={toggle}>
+          <span>{label}</span>
+          <Icon name="expand_more" size={18} className={folded ? "folded" : undefined} />
+        </button>
+        {action}
+      </div>
       {!folded && children}
     </div>
   );

@@ -624,6 +624,9 @@ a.result:hover { background: var(--hover); }
   }
   .app.rail .nav-label, .app.rail .nav-count, .app.rail .nav-group-head span, .app.rail .nav-back span { display: initial; }
   .app.rail .nav-item, .app.rail .nav-back { justify-content: flex-start; padding: 0 14px 0 18px; }
+  .app.rail .nav-group-fold { justify-content: flex-start; padding: 0 6px 0 0; }
+  .app.rail .nav-group-head { padding: 0 6px 0 18px; }
+  .app.rail .nav-group-head .icon-btn { display: inline-grid; }
   .sidebar.open { transform: none; }
   .scrim { display: block; position: fixed; inset: var(--head) 0 0; z-index: 35; background: rgba(0, 0, 0, .5); animation: fade .2s both; }
   .page { padding: 16px 14px 40px; }
@@ -1302,16 +1305,47 @@ a.tn-row:hover { background: var(--hover); text-decoration: none; }
 
 .nav-group { display: block; }
 /* A category of pages in the sidebar: a small capitalised heading row that
-   folds its pages away. */
+   folds its pages away, with its own action at the right. */
 .nav-group-head {
-  display: flex; align-items: center; gap: 8px; width: 100%; height: 34px; padding: 0 12px 0 18px; border: 0;
+  display: flex; align-items: center; gap: 4px; width: 100%; height: 34px; padding: 0 6px 0 18px;
   border-bottom: 1px solid var(--line); background: var(--card-2); color: var(--text-3);
-  font: 700 11px var(--font); letter-spacing: .07em; text-transform: uppercase; text-align: left; cursor: pointer;
+}
+.nav-group-fold {
+  display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; height: 100%; padding: 0 6px 0 0; border: 0;
+  background: none; color: inherit; font: 700 11px var(--font); letter-spacing: .07em; text-transform: uppercase; text-align: left; cursor: pointer;
 }
 .nav-group-head span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nav-group-head:hover { color: var(--text); }
-.nav-group-head .icon { transition: transform .2s var(--ease); }
-.nav-group-head .icon.folded { transform: rotate(-90deg); }
+.nav-group-fold:hover { color: var(--text); }
+.nav-group-fold .icon { transition: transform .2s var(--ease); }
+.nav-group-fold .icon.folded { transform: rotate(-90deg); }
+.app.rail .nav-group-fold { justify-content: center; padding: 0; }
+.app.rail .nav-group-head .icon-btn { display: none; }
+
+/* An add-on's name with its mark, in the Add-ons dialog. */
+.addon-name { display: inline-flex; align-items: center; gap: 10px; }
+.addon-name .icon { color: var(--text-2); }
+
+/* ---- Device Controller: a row per fan, its mark spinning as fast as it turns ---- */
+.fan-row {
+  display: grid; grid-template-columns: 28px minmax(120px, 1fr) 110px minmax(160px, 280px) auto; align-items: center; gap: 16px;
+  min-height: 56px; padding: 0 18px;
+}
+.results li.fan-row + li.fan-row { box-shadow: inset 0 1px 0 var(--line); }
+.fan-spin { display: grid; place-items: center; color: var(--text-3); }
+.fan-spin.on { color: var(--accent); }
+.fan-spin.on .icon { animation: spin var(--spin, 1s) linear infinite; }
+.fan-rpm { color: var(--text-2); white-space: nowrap; }
+.fan-rpm b { color: var(--text); }
+.fan-speed { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.fan-speed input { flex: 1; min-width: 0; accent-color: var(--accent); cursor: pointer; }
+.fan-speed .mono { width: 40px; text-align: right; color: var(--text-2); }
+.fan-auto { display: inline-flex; align-items: center; gap: 10px; color: var(--text-2); }
+.fan-fixed { grid-column: span 2; }
+@media (prefers-reduced-motion: reduce) { .fan-spin.on .icon { animation: none; } }
+@media (max-width: 700px) {
+  .fan-row { grid-template-columns: 28px minmax(0, 1fr) auto; padding: 10px 14px; row-gap: 8px; }
+  .fan-speed { grid-column: 1 / -2; }
+}
 
 /* ---- Media: photos and videos, a grid by month and a viewer ---- */
 /* Media and Drive fill the window, so a right-click anywhere on them is theirs. */
