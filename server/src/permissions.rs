@@ -161,8 +161,8 @@ pub const GROUPS: &[Group] = &[
         label: "Apps",
         permissions: &[p(
             "apps.install",
-            "Install apps on the host",
-            "From Apps, through the host's package manager",
+            "Install apps",
+            "From Apps, through the package manager",
         )],
     },
     Group {

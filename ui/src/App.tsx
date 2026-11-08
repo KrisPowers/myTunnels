@@ -232,7 +232,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
         <main className="page" key={view + id}>
           {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
-          {view === "apps" && <AppsPage open={id} />}
+          {view === "apps" && <AppsPage />}
           {view === "storage" && <StoragePage tab={id} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} status={status}
             users={users ?? []} providers={providers} onChanged={load} />}

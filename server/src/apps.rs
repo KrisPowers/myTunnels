@@ -1,8 +1,7 @@
 //! Apps: the software a homelab or engineering machine usually needs, in one
-//! catalog, each installed with one click on the host or shown for the
-//! visitor's own device. Installs on the host run through its package manager
-//! (winget, Homebrew or apt). When myTunnels runs inside Docker, the host is
-//! reached through `server host`, which pairs with the first myTunnels to ask
+//! catalog, each installed with one click on the machine myTunnels runs on,
+//! through its package manager (winget, Homebrew or apt). When myTunnels runs
+//! inside Docker, that machine is reached through `server host`, which pairs with the first myTunnels to ask
 //! and from then on installs only for it.
 //!
 //! Some features need an app where myTunnels runs: Containers need Docker,
@@ -37,7 +36,8 @@ pub struct App {
     pub about: &'static str,
     /// Its mark in the panel.
     pub logo: &'static str,
-    /// Where its makers offer it.
+    /// Where its makers offer it, named when its package manager does not.
+    #[serde(skip)]
     pub url: &'static str,
     /// Another app it is installed with, such as Node.js for npm packages.
     pub needs: Option<&'static str>,
@@ -112,19 +112,6 @@ impl App {
     const fn version(mut self, args: &'static [&'static str]) -> Self {
         self.version = args;
         self
-    }
-
-    /// How to install it on each kind of machine, as typed there.
-    fn commands(&self) -> Value {
-        if let Some(pkg) = self.npm {
-            let line = format!("npm install -g {pkg}");
-            return json!({ "windows": line, "macos": line, "linux": line });
-        }
-        json!({
-            "windows": self.winget.map(|w| format!("winget install --id {w} -e")),
-            "macos": self.brew.map(|b| format!("brew install {b}")),
-            "linux": self.apt.map(|a| format!("sudo apt install {a}")),
-        })
     }
 }
 
@@ -825,16 +812,8 @@ pub async fn list(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         }
         None => Some(local_status().await),
     };
-    let catalog: Vec<Value> = CATALOG
-        .iter()
-        .map(|a| {
-            let mut v = json!(a);
-            v["commands"] = a.commands();
-            v
-        })
-        .collect();
     Ok(Json(json!({
-        "catalog": catalog,
+        "catalog": CATALOG,
         "host": host,
         "remote": host_url().is_some(),
         "outdated": outdated,
@@ -958,16 +937,5 @@ mod tests {
         assert_eq!(expand("%HOME%/bin", var), "/home/kim/bin");
         assert_eq!(expand("%NONE%x", var), "x");
         assert_eq!(expand("plain", var), "plain");
-    }
-
-    #[test]
-    fn commands_are_given_per_machine() {
-        let c = find("docker").unwrap().commands();
-        assert_eq!(c["windows"], "winget install --id Docker.DockerDesktop -e");
-        assert_eq!(c["macos"], "brew install --cask docker");
-        assert_eq!(
-            find("wrangler").unwrap().commands()["linux"],
-            "npm install -g wrangler"
-        );
     }
 }
