@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useDismiss } from "./dismiss";
+import { useDismiss, usePlace } from "./dismiss";
 import { message } from "./api";
 import { Icon, type IconName } from "./Icon";
 
@@ -354,19 +354,21 @@ export function LogTable({ entries, who = "Who" }: { entries: LogEntry[]; who?: 
   );
 }
 
-// usePopover places a panel over the page under its button, so no card or scroll
-// area cuts it off. A click outside, Escape, scrolling the page or resizing closes it.
+// usePopover places a panel over the page by its button, under it or over it,
+// whichever has room, so no card or scroll area cuts it off. A click outside,
+// Escape, scrolling the page or resizing closes it.
 export function usePopover(width: number) {
   const [open, setOpen] = useState(false);
-  const [at, setAt] = useState({ top: 0, left: 0 });
+  const [at, setAt] = useState({ left: 0 });
   const anchor = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
   useDismiss(open, close, anchor, panel);
+  usePlace(open, anchor, panel);
   useLayoutEffect(() => {
     if (!open || !anchor.current) return;
     const r = anchor.current.getBoundingClientRect();
-    setAt({ top: r.bottom + 4, left: Math.max(8, Math.min(r.right - width, innerWidth - width - 8)) });
+    setAt({ left: Math.max(8, Math.min(r.right - width, innerWidth - width - 8)) });
     const away = (e: Event) => {
       if (!panel.current?.contains(e.target as Node)) close();
     };
@@ -377,7 +379,7 @@ export function usePopover(width: number) {
       removeEventListener("resize", close);
     };
   }, [open, close, width]);
-  return { open, setOpen, close, anchor, panel, style: { top: at.top, left: at.left, width } };
+  return { open, setOpen, close, anchor, panel, style: { left: at.left, width } };
 }
 
 export interface PickItem {

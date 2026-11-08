@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { useDismiss } from "./dismiss";
+import { useDismiss, usePlace } from "./dismiss";
 import { Icon, type IconName } from "./Icon";
 
 export interface Option<T> {
@@ -23,20 +23,19 @@ export function Dropdown<T extends string | number>({ label, value, options, onC
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const [at, setAt] = useState({ left: 0, top: 0, width: 0, up: false });
+  const [at, setAt] = useState({ left: 0, width: 0 });
   const field = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLUListElement>(null);
   const close = useCallback(() => setOpen(false), []);
   useDismiss(open, close, field, list);
+  usePlace(open, field, list);
   const current = options.find((o) => o.value === value) ?? options[0];
 
-  // Place the list under the field, or over it when there's no room below.
+  // The list lines up with the field; how high is `usePlace`'s.
   useLayoutEffect(() => {
     if (!open || !field.current) return;
     const r = field.current.getBoundingClientRect();
-    const tall = Math.min(options.length * 56 + 16, 360);
-    const up = r.bottom + tall + 8 > innerHeight && r.top > tall + 8;
-    setAt({ left: r.left, top: up ? r.top - tall - 4 : r.bottom + 4, width: Math.max(r.width, 220), up });
+    setAt({ left: r.left, width: Math.max(r.width, 220) });
     // The page scrolling moves the field away; the list scrolling is the list.
     const shut = (e: Event) => {
       if (!list.current?.contains(e.target as Node)) setOpen(false);
@@ -84,8 +83,8 @@ export function Dropdown<T extends string | number>({ label, value, options, onC
         <svg className="dropdown-caret" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z" /></svg>
       </button>
       {open && createPortal(
-        <ul ref={list} className={"dropdown-list" + (at.up ? " up" : "")} role="listbox" aria-label={label}
-          style={{ left: at.left, top: at.top, minWidth: at.width }}>
+        <ul ref={list} className="dropdown-list" role="listbox" aria-label={label}
+          style={{ left: at.left, minWidth: at.width }}>
           {options.map((o, i) => (
             <li key={String(o.value)} role="option" aria-selected={o.value === value}
               className={"dropdown-option" + (i === active ? " active" : "")}
@@ -115,16 +114,17 @@ export function MultiDropdown<T extends string>({ label, values, options, allLab
   onChange: (values: T[]) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [at, setAt] = useState({ left: 0, top: 0, width: 0 });
+  const [at, setAt] = useState({ left: 0, width: 0 });
   const field = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLUListElement>(null);
   const close = useCallback(() => setOpen(false), []);
   useDismiss(open, close, field, list);
+  usePlace(open, field, list);
 
   useLayoutEffect(() => {
     if (!open || !field.current) return;
     const r = field.current.getBoundingClientRect();
-    setAt({ left: r.left, top: r.bottom + 4, width: Math.max(r.width, 220) });
+    setAt({ left: r.left, width: Math.max(r.width, 220) });
     const away = (e: Event) => {
       if (!list.current?.contains(e.target as Node)) close();
     };
@@ -149,7 +149,7 @@ export function MultiDropdown<T extends string>({ label, values, options, allLab
       </button>
       {open && createPortal(
         <ul ref={list} className="dropdown-list multi" role="listbox" aria-multiselectable="true" aria-label={label}
-          style={{ left: at.left, top: at.top, minWidth: at.width }}>
+          style={{ left: at.left, minWidth: at.width }}>
           {options.map((o) => (
             <li key={o.value} role="option" aria-selected={values.includes(o.value)} className="dropdown-option"
               onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(o.value)}>
