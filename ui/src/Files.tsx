@@ -108,7 +108,8 @@ export function ContextMenu({ at, items, onClose }: { at: Menu; items: MenuItem[
   useDismiss(true, onClose, panel);
   useLayoutEffect(() => {
     const r = panel.current?.getBoundingClientRect();
-    if (r) setPos({ left: Math.min(at.x, innerWidth - r.width - 8), top: Math.min(at.y, innerHeight - r.height - 8) });
+    // Above the pointer when it would run off the bottom, as other menus do.
+    if (r) setPos({ left: Math.min(at.x, innerWidth - r.width - 8), top: at.y + r.height > innerHeight - 8 ? Math.max(8, at.y - r.height) : at.y });
     // The wheel, not scrolling: focusing the explorer on the click that opened
     // the menu can scroll the page, which would close it at once.
     const wheel = (e: WheelEvent) => {
