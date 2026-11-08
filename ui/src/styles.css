@@ -1314,7 +1314,9 @@ a.tn-row:hover { background: var(--hover); text-decoration: none; }
 .split .btn:disabled { opacity: 1; color: var(--text-3); background: transparent; }
 .split.primary, .split.primary:hover { border-color: var(--accent); }
 .split.primary .split-more, .split.primary:hover .split-more { border-left-color: color-mix(in srgb, var(--on-accent) 35%, transparent); }
-.app-tile .split { margin-top: 4px; }
+/* Its own height, not the row's: a tile with a one-line description is
+   stretched to its neighbours' height, which would stretch the outline too. */
+.app-tile .split { align-self: center; margin-top: 4px; }
 .app-tile .split .btn { margin-top: 0; }
 .versions .menu-item { justify-content: space-between; gap: 12px; }
 .versions .menu-item small { color: var(--text-3); font-size: 12px; }
