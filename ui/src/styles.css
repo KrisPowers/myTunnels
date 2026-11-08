@@ -1301,13 +1301,21 @@ a.tn-row:hover { background: var(--hover); text-decoration: none; }
 .app-tile { position: relative; cursor: default; }
 .app-tile > .menu-wrap { position: absolute; top: 6px; right: 6px; }
 .app-tile .muted { font-size: 12.5px; }
-.app-tile .split { display: inline-flex; margin-top: 4px; }
+/* A split button: one outline and one divider, owned by the pair, so both
+   change together; hovering a half only shades that half. */
+.split {
+  display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--radius); overflow: hidden;
+  transition: border-color .12s;
+}
+.split:hover { border-color: var(--text-3); }
+.split .btn { height: 32px; border: 0; border-radius: 0; }
+.split .split-more { padding: 0 6px; border-left: 1px solid var(--line-strong); transition: background .12s, border-color .12s; }
+.split:hover .split-more { border-left-color: var(--text-3); }
+.split .btn:disabled { opacity: 1; color: var(--text-3); background: transparent; }
+.split.primary, .split.primary:hover { border-color: var(--accent); }
+.split.primary .split-more, .split.primary:hover .split-more { border-left-color: color-mix(in srgb, var(--on-accent) 35%, transparent); }
+.app-tile .split { margin-top: 4px; }
 .app-tile .split .btn { margin-top: 0; }
-.split > .btn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.split .split-more { padding: 0 6px; border-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
-.split .split-more.primary { border-left: 1px solid color-mix(in srgb, var(--on-accent) 30%, transparent); }
-/* A disabled half keeps its border, so the two halves stay one control. */
-.split .btn:disabled { opacity: 1; color: var(--text-3); }
 .versions .menu-item { justify-content: space-between; gap: 12px; }
 .versions .menu-item small { color: var(--text-3); font-size: 12px; }
 .versions .menu-item:disabled { cursor: default; background: transparent; }

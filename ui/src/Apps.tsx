@@ -129,6 +129,9 @@ function Tile({ app, state, onAct }: { app: AppItem; state?: HostApp; onAct: (ac
   const can = useCan();
   const job = state?.job;
   const why = blocked(app, state, can("apps.install"));
+  const stopped = !!why || !!job?.running;
+  // Install is the tile's main action only while it can be pressed.
+  const main = !state?.installed && !stopped;
   const menu: MenuAction[] = [
     { label: "Update", icon: "refresh" as IconName, onClick: () => onAct("update") },
     { label: "Uninstall", icon: "delete" as IconName, danger: true, confirm: `Uninstall ${app.name}`, onClick: () => onAct("uninstall") },
@@ -142,16 +145,16 @@ function Tile({ app, state, onAct }: { app: AppItem; state?: HostApp; onAct: (ac
       {job?.running ? <span className="chip warn"><span className="spinner small" />{DOING[job.action]}</span>
         : job?.failed ? <span className="chip bad" title={job.log}>{DONE[job.action]} failed</span>
         : null}
-      <div className="split">
+      <div className={"split" + (main ? " primary" : "")}>
         {state?.installed
           ? <button type="button" className="btn" disabled title={state.version ?? undefined}><Icon name="check" size={18} />Installed</button>
           : (
-            <button type="button" className="btn primary" disabled={!!why || job?.running} title={why || undefined} onClick={() => onAct("install")}>
+            <button type="button" className={"btn" + (main ? " primary" : "")} disabled={stopped} title={why || undefined} onClick={() => onAct("install")}>
               <Icon name="download" size={18} />Install
             </button>
           )}
-        <Versions app={app} installed={state?.installed ? state.version : null} primary={!state?.installed}
-          disabled={!!why || !!job?.running} onPick={(v) => onAct("install", v)} />
+        <Versions app={app} installed={state?.installed ? state.version : null} primary={main}
+          disabled={stopped} onPick={(v) => onAct("install", v)} />
       </div>
     </div>
   );
