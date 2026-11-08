@@ -132,7 +132,7 @@ export function NewUser({ devices, routes, onAdded }: { devices: Device[]; route
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
-  const ready = username.trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && device !== "" && strength(password).ok;
+  const ready = username.trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && strength(password).ok;
   // Devices seen most recently first.
   const choices = [...devices].sort((a, b) => b.last_seen - a.last_seen);
 
@@ -160,7 +160,7 @@ export function NewUser({ devices, routes, onAdded }: { devices: Device[]; route
         <a className="icon-btn" href="#/users" aria-label="All users" title="All users"><Icon name="arrow_back" /></a>
         <div className="page-head-main">
           <h1>New user</h1>
-          <div className="page-sub">They sign in with their email and password, from the device picked here. Add tunnels once the account exists.</div>
+          <div className="page-sub">They sign in with their email and password, from one device. Add tunnels once the account exists.</div>
         </div>
       </div>
       <div className="page-body stack">
@@ -171,12 +171,8 @@ export function NewUser({ devices, routes, onAdded }: { devices: Device[]; route
             <TextField label="Email" type="email" autoComplete="off" value={email} onChange={setEmail} hint="What they sign in with" />
             <div className="tf static span">
               <div className="tf-box">
-                {choices.length ? (
-                  <Dropdown label="Device" value={device} onChange={setDevice}
-                    options={[{ value: "", label: "Pick their device" }, ...choices.map((d) => ({ value: d.id, label: deviceLabel(d), hint: `Seen ${ago(d.last_seen)}` }))]} />
-                ) : (
-                  <span className="dropdown placeholder">No devices yet. Open a tunnel on their device first.</span>
-                )}
+                <Dropdown label="Device" value={device} onChange={setDevice}
+                  options={[{ value: "", label: "First to sign in" }, ...choices.map((d) => ({ value: d.id, label: deviceLabel(d), hint: `Seen ${ago(d.last_seen)}` }))]} />
                 <span className="tf-label">Device</span>
               </div>
               <div className="tf-hint">The only device they can sign in from. More can be linked later.</div>

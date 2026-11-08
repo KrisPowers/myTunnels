@@ -204,7 +204,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>Users, under Security &amp; Roles, holds the accounts people sign in with, yours among them: the account made at setup holds the <b>Host</b> and <b>Admin</b> roles, and only it changes itself, under Settings, Account. Each has a username, an email (either signs in), and a password held to the same rule as every password here.</p>
       </Doc>
       <Doc title="What an account opens">
-        <p>On an account's <b>Profile</b>, <b>Tunnels</b> holds the tunnels it may open, and <b>Security</b> the devices it signs in from. One sign-in covers every tunnel on the same domain that the account may open. Suspending an account, or removing it, ends its sessions at once.</p>
+        <p>On an account's <b>Profile</b>, <b>Tunnels</b> holds the tunnels it may open, and <b>Security</b> the devices it signs in from. An account made without a device takes the first one that signs in to it. One sign-in covers every tunnel on the same domain that the account may open. Suspending an account, or removing it, ends its sessions at once.</p>
       </Doc>
       <Doc title="Permissions">
         <p>On an account's <b>Permissions</b>, a card per feature says what it may do. <b>Sign in to the dashboard</b> lets it in here with its own password; then it sees only the pages and actions the rest allow, such as viewing containers, approving devices, or creating repositories. <b>Admin</b> holds them all, including making others admins; the host account made at setup always does. Anyone who manages accounts can give only permissions they hold, and cannot change their own.</p>
