@@ -122,7 +122,7 @@ export function Callout({ tone, icon, children }: { tone?: "bad" | "warn" | "ok"
 // Dialog is a panel over the whole page, the page dimmed behind it, so nothing
 // on the page moves. Escape, the close button or a click outside closes it.
 // Menus opened inside it sit above it.
-export function Dialog({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
+export function Dialog({ title, onClose, children, wide }: { title: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const id = useId();
   useEffect(() => {
     const esc = (e: KeyboardEvent) => {
@@ -139,7 +139,7 @@ export function Dialog({ title, onClose, children }: { title: ReactNode; onClose
   }, [onClose]);
   return createPortal(
     <div className="dialog-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby={id}>
+      <div className={"dialog" + (wide ? " wide" : "")} role="dialog" aria-modal="true" aria-labelledby={id}>
         <div className="dialog-head">
           <h2 id={id}>{title}</h2>
           <button type="button" className="icon-btn" aria-label="Close" title="Close" onClick={onClose}><Icon name="close" /></button>
@@ -468,8 +468,9 @@ export interface MenuAction {
   confirm?: string;
 }
 
-// MoreMenu is the three dots that hold a page's less frequent actions.
-export function MoreMenu({ label, actions }: { label: string; actions: MenuAction[] }) {
+// MoreMenu is the three dots that hold a page's less frequent actions, or
+// another icon, such as a plus for what can be added.
+export function MoreMenu({ label, actions, icon = "more_vert" }: { label: string; actions: MenuAction[]; icon?: IconName }) {
   const pop = usePopover(240);
   const [armed, setArmed] = useState("");
   return (
@@ -479,7 +480,7 @@ export function MoreMenu({ label, actions }: { label: string; actions: MenuActio
           setArmed("");
           pop.setOpen((o) => !o);
         }}>
-        <Icon name="more_vert" />
+        <Icon name={icon} />
       </button>
       {pop.open && createPortal(
         <div ref={pop.panel} className="menu pop-menu" style={pop.style} role="menu">

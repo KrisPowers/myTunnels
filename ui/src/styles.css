@@ -1239,11 +1239,26 @@ a.result.thread-row:hover .scan-target { color: var(--accent); }
 .page-head h1 .small-chip { margin-left: 10px; vertical-align: middle; }
 .ct-address { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-weight: 600; }
 .ct-address .dot { width: 8px; height: 8px; }
-.ct-picker { display: flex; }
-.ct-picker .seg-tabs button { display: inline-flex; align-items: center; }
-.tunnel-address { border-top: 0; }
-.tunnel-address .setting-title a { display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
-.tunnel-address .setting-title a:hover { color: var(--accent); }
+/* A tunnel page: the tunnels in the middle, the picked one's controls at the side. */
+.tn-layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+.tn-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 12px 18px; color: var(--text); }
+a.tn-row:hover { background: var(--hover); text-decoration: none; }
+.tn-row.on { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--accent); }
+.tn-name { display: grid; min-width: 0; }
+.tn-name b { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.tn-name small { overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.tn-side .setting { flex-wrap: wrap; gap: 8px 16px; padding: 10px 16px; }
+.tn-side .card-head { padding: 12px 16px; }
+.tn-controls { gap: 8px; }
+.tn-controls .card-titles { flex: 1; min-width: 0; }
+.tn-controls h2 { display: block; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.dialog.wide { width: min(860px, 100%); }
+.dialog .composer { padding: 4px 0 0; border: 0; background: none; }
+@media (max-width: 1100px) {
+  .tn-layout { grid-template-columns: minmax(0, 1fr); }
+  .tn-row { grid-template-columns: 10px minmax(0, 1fr); }
+  .tn-row .access { grid-column: 2; }
+}
 .img-table td { height: 58px; }
 .img-table tr.stopped td { color: var(--text-3); }
 .img-table .chip { text-transform: none; }

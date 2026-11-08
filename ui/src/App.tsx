@@ -237,7 +237,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} status={status}
             devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
           {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} port={id} />}
-          {route && <TunnelPage route={route} page={page} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
+          {route && <TunnelPage route={route} devices={devices ?? []} users={users ?? []} providers={providers} onChanged={load} />}
           {view === "devices" && !id && <Devices devices={devices} routes={apps ?? []} onChanged={load} />}
           {device && <DevicePage device={device} routes={apps ?? []} users={users ?? []} onChanged={load} />}
           {view === "users" && !id && <Users users={users} routes={apps ?? []} />}

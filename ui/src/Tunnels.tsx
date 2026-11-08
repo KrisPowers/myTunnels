@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, editOf, LEVELS, list, message, redirectUrl, shortId, strength, type Access, type Device, type OAuthProvider, type PolicyMode, type Port, type Route, type RouteEdit, type TunnelEvent, type User, type Zone } from "./api";
 import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
@@ -558,9 +558,9 @@ function TunnelDevices({ route, edit, quietly, devices, onChanged }: {
   );
 }
 
-// TunnelPanel is a container's tunnel on the container's own page: its address
-// with its switch and menu, then who may open it, its devices and what happened.
-export function TunnelPanel({ route, devices, users, providers, onChanged, onRemoved }: {
+// TunnelControls are one tunnel's controls, at the side of its page: its
+// switch, Open and menu, who may open it, and its devices.
+function TunnelControls({ route, devices, users, providers, onChanged, onRemoved }: {
   route: Route;
   devices: Device[];
   users: User[];
@@ -573,39 +573,86 @@ export function TunnelPanel({ route, devices, users, providers, onChanged, onRem
   return (
     <>
       <section className="card">
-        <div className="setting tunnel-address">
-          <span className={"dot " + (edit.enabled ? "ok" : "")} role="img" aria-label={edit.enabled ? "Live" : "Off"} />
-          <div className="setting-text">
-            <div className="setting-title"><a href={`https://${route.hostname}`} target="_blank" rel="noreferrer">{route.hostname}<Icon name="open_in_new" size={14} /></a></div>
-            <div className="setting-sub">{edit.enabled ? "Live" : "Off"}, to <span className="mono">{target(route)}</span></div>
+        <div className="card-head tn-controls">
+          <div className="card-titles">
+            <h2>{route.hostname}</h2>
+            <p>{edit.enabled ? "Live" : "Off"}</p>
           </div>
+          <a className="icon-btn" href={`https://${route.hostname}`} target="_blank" rel="noreferrer" aria-label="Open" title="Open"><Icon name="open_in_new" /></a>
           {can("tunnels.edit") && <Switch label={edit.enabled ? "Live, switch off" : "Off, switch live"} on={edit.enabled} onChange={(v) => quietly({ enabled: v })} />}
           <TunnelMenu route={route} edit={edit} save={save} onChanged={onChanged} onRemoved={onRemoved} />
         </div>
       </section>
       <TunnelAccess route={route} edit={edit} save={save} quietly={quietly} users={users} providers={providers} />
       {edit.require_device && <TunnelDevices route={route} edit={edit} quietly={quietly} devices={devices} onChanged={onChanged} />}
-      <section>
-        <h2 className="section-title">Activity</h2>
-        <TunnelLogs route={route} users={users} />
-      </section>
     </>
   );
 }
 
-const TUNNEL_PAGES: [string, string, IconName][] = [
-  ["access", "Access Control", "shield"],
-  ["devices", "Devices", "devices"],
-  ["activity", "Activity", "history"],
-];
+// TunnelsView is the tunnels in the middle, a row each with its state, address,
+// where it goes and who may open it, and the picked one's activity under them;
+// that one's controls sit at the side. `base` links each row to pick it.
+export function TunnelsView({ routes, pick, base, add, devices, users, providers, onChanged, onRemoved }: {
+  routes: Route[];
+  pick: string;
+  base?: string;
+  // What adds another, beside the list's title.
+  add?: ReactNode;
+  devices: Device[];
+  users: User[];
+  providers: OAuthProvider[];
+  onChanged: () => Promise<void>;
+  onRemoved: () => void;
+}) {
+  const route = routes.find((r) => r.id === pick) ?? routes[0];
+  if (!route) return null;
+  return (
+    <div className="tn-layout">
+      <div className="tn-main stack">
+        <section className="card">
+          <div className="card-head">
+            <div className="card-titles"><h2>{routes.length === 1 ? "Address" : "Addresses"}</h2></div>
+            {add}
+          </div>
+          <ul className="results">
+            {routes.map((r) => {
+              const body = (
+                <>
+                  <span className={"dot " + (r.enabled ? "ok" : "")} role="img" aria-label={r.enabled ? "Live" : "Off"} title={r.enabled ? "Live" : "Off"} />
+                  <span className="tn-name">
+                    <b>{r.hostname}</b>
+                    <small className="mono">to {target(r)}</small>
+                  </span>
+                  <AccessChips route={r} />
+                </>
+              );
+              return (
+                <li key={r.id}>
+                  {base ? (
+                    <a className={"result tn-row" + (r.id === route.id ? " on" : "")} href={`${base}/${r.id}`} aria-current={r.id === route.id ? "true" : undefined}>{body}</a>
+                  ) : <div className="result tn-row">{body}</div>}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+        <section>
+          <h2 className="section-title">Activity</h2>
+          <TunnelLogs route={route} users={users} />
+        </section>
+      </div>
+      <aside className="tn-side stack" key={route.id} aria-label={`Controls for ${route.hostname}`}>
+        <TunnelControls route={route} devices={devices} users={users} providers={providers} onChanged={onChanged} onRemoved={onRemoved} />
+      </aside>
+    </div>
+  );
+}
 
-// TunnelPage is a tunnel to anything but a container: its address and target
-// in the heading, with its switch, Open and one menu, then its sub-pages. A
-// tunnel that reaches a container opens on the container's page.
-export function TunnelPage({ route, page, devices, users, providers, onChanged }: { route: Route; page: string; devices: Device[]; users: User[]; providers: OAuthProvider[]; onChanged: () => Promise<void> }) {
+// TunnelPage is a tunnel to anything but a container, laid out as a
+// container's tunnels are. A tunnel that reaches a container opens on the
+// container's page.
+export function TunnelPage({ route, devices, users, providers, onChanged }: { route: Route; devices: Device[]; users: User[]; providers: OAuthProvider[]; onChanged: () => Promise<void> }) {
   const can = useCan();
-  const { edit, save, quietly } = useTunnel(route, onChanged);
-  const current = TUNNEL_PAGES.some(([k]) => k === page) ? page : "access";
   const containers = can("containers.view");
 
   useEffect(() => {
@@ -622,22 +669,14 @@ export function TunnelPage({ route, page, devices, users, providers, onChanged }
         <div className="page-head-main">
           <h1>{route.hostname}</h1>
           <div className="page-sub">
-            <span className={"chip " + (edit.enabled ? "ok" : "")}>{edit.enabled ? "Live" : "Off"}</span>
+            <span className={"chip " + (route.enabled ? "ok" : "")}>{route.enabled ? "Live" : "Off"}</span>
             <span>to <span className="mono">{target(route)}</span></span>
           </div>
         </div>
-        <div className="page-actions">
-          {can("tunnels.edit") && <Switch label={edit.enabled ? "Live, switch off" : "Off, switch live"} on={edit.enabled} onChange={(v) => quietly({ enabled: v })} />}
-          <a className="btn" href={`https://${route.hostname}`} target="_blank" rel="noreferrer"><Icon name="open_in_new" size={18} />Open</a>
-          <TunnelMenu route={route} edit={edit} save={save} onChanged={onChanged} onRemoved={() => go("#/")} />
-        </div>
       </div>
-      <SubNav back="#/" backLabel="Containers" base={`#/tunnels/${route.id}`} items={TUNNEL_PAGES} current={current} />
-
-      <div className="page-body stack plain" key={current}>
-        {current === "access" && <TunnelAccess route={route} edit={edit} save={save} quietly={quietly} users={users} providers={providers} />}
-        {current === "devices" && <TunnelDevices route={route} edit={edit} quietly={quietly} devices={devices} onChanged={onChanged} />}
-        {current === "activity" && <TunnelLogs route={route} users={users} />}
+      <SubNav back="#/" backLabel="Containers" base={`#/tunnels/${route.id}`} items={[]} current="" />
+      <div className="page-body">
+        <TunnelsView routes={[route]} pick={route.id} devices={devices} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go("#/")} />
       </div>
     </>
   );

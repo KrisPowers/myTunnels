@@ -43,9 +43,9 @@ step at a time, each saved as soon as it is done, so it can be left and resumed:
    most setups.
 4. **Ready.** A summary, the connector coming online, and the theme.
 
-Then, on **Containers**, open a container and its **Tunnel** page: type the subdomain, pick the
-domain, choose who can open it and press **Publish**. **New tunnel** publishes any other port the
-same way.
+Then, on **Containers**, open a container, and on its **Tunnel** page press the plus: type the
+subdomain, pick the domain, choose who can open it and press **Publish**. The plus at the top of
+Containers publishes any other port the same way.
 
 To manage myTunnels from anywhere, publish the dashboard itself: under **Local app**, set
 **Runs on** to **This dashboard**, with no port. It takes the same access rules as any
@@ -76,28 +76,28 @@ and how long it has run. Its menu holds logs, its tunnel, start or stop, restart
 delete. Compose projects with more than one container fold under their name, with start, stop
 and restart for all of them. Search by name, image or ID, or show only running ones. Tunnels to
 anything else, such as another machine or the dashboard, are listed beneath as **Other
-tunnels**, and **New tunnel** publishes any port. The menu at the top deletes every image no
-container uses.
+tunnels**. The plus at the top adds a container from a repository or a tunnel to any port, and
+the menu beside it deletes every image no container uses.
 
 A container and its tunnel are one page. Its heading holds its state, image and address,
 **Open**, the one button its state calls for (start, stop or resume), and a menu for restart,
 pause, kill and delete. Under it:
 
-- **Overview**: what it runs, its state and restarts, its ports, networks and mounts.
-- **Tunnel**: its address. With none, type the subdomain, pick the domain, choose who can open
-  it and press **Publish**; the port is the container's own, asked only when it has more than
-  one. Once published, the same page switches it live or off, holds its access control, its
-  approved devices and what happened at its door, and its menu changes the address or removes
-  it. The plus adds another address.
+- **Overview**: its CPU over time, memory, network and disk while it runs, then what it runs,
+  its state and restarts, its ports, networks and mounts.
+- **Tunnel**: its addresses in the middle, each with its state, where it goes and who can open
+  it, and the picked one's activity under them. Its controls sit at the side: Open, its live
+  switch, a menu to change the address or remove it, its access control and approved devices.
+  The plus publishes an address: type the subdomain, pick the domain, choose who can open it
+  and press **Publish**; the port is the container's own, asked only when it has more than one.
 - **Images**: the image it runs and the others of the same name, such as earlier versions, with
   their size and age. Open one for its entrypoint, command, working folder, user, exposed ports,
   environment, labels and layers. One no container uses can be deleted.
-- **Logs** (followed as it runs, searchable, with or without times) and **Stats** (CPU over
-  time, memory, network and disk).
+- **Logs**: followed as it runs, searchable, with or without times.
 
 ### From a repository
 
-**Add container** makes a container from code: name it, pick a repository on this host's
+**Container from a repository**, under the plus at the top of Containers, makes a container from code: name it, pick a repository on this host's
 **Git** or give any https address (GitHub and the like, with a token for a private one), pick
 its branch and how it updates:
 
