@@ -498,10 +498,23 @@ export interface Group { label: string; permissions: Permission[] }
 // `host`: the account made at setup. `admin`: the host, or an account with the Admin role.
 export interface Me { id: string; host: boolean; admin: boolean; name: string; permissions: string[] }
 
+// One of the host's fans, from Device Controller. `speed` is its duty in
+// percent where it can be set; `mode` is who sets it.
+export interface Fan {
+  id: string;
+  chip: string;
+  label: string;
+  rpm: number | null;
+  speed: number | null;
+  mode: "auto" | "manual" | "full" | "none";
+}
+
 export interface Auth {
   authenticated: boolean;
   me: Me | null;
   catalog: Group[];
+  // The add-ons installed, by id.
+  addons: string[];
   setup: { password: boolean; account: boolean; token: boolean; cloudflare: boolean; done: boolean };
 }
 
@@ -556,6 +569,9 @@ export const api = {
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),
   metrics: () => call<Metrics>("/metrics"),
+  setAddon: (id: string, installed: boolean) => call<{ addons: string[] }>(`/addons/${id}`, "PUT", { installed }),
+  fans: () => call<Fan[]>("/hardware/fans"),
+  setFan: (id: string, auto: boolean, speed: number) => call<Fan>(`/hardware/fans/${id}`, "PUT", { auto, speed }),
   containers: () => call<Container[]>("/containers"),
   container: (id: string) => call<ContainerDetail>(`/containers/${encodeURIComponent(id)}`),
   containerLogs: (id: string, tail: number) => call<{ lines: string[] }>(`/containers/${encodeURIComponent(id)}/logs?tail=${tail}`),
