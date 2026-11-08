@@ -27,7 +27,7 @@ const EVERY: Duration = Duration::from_secs(2);
 /// Samples kept: five minutes at one every two seconds.
 const KEEP: usize = 150;
 /// Where `server host` answers by default: this computer alone.
-const HOST_ADDR: &str = "127.0.0.1:7093";
+const HOST_ADDR: &str = "127.0.0.1:7094";
 /// The machine's figures older than this are not shown.
 const FRESH: Duration = Duration::from_secs(10);
 
@@ -159,7 +159,7 @@ pub fn spawn() {
 }
 
 /// `server host`: samples this computer, without containers, and serves it at
-/// `HOST_ADDR` (127.0.0.1:7093 unless set) for the Dashboard to read.
+/// `HOST_ADDR` (127.0.0.1:7094 unless set) for the Dashboard to read.
 pub async fn serve_host() -> anyhow::Result<()> {
     let addr = std::env::var("HOST_ADDR").unwrap_or_else(|_| HOST_ADDR.into());
     tokio::spawn(run(false));
