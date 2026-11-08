@@ -251,8 +251,9 @@ dashboard through a tunnel to reach it from anywhere.
 
 ## Add-ons
 
-**Add-ons** are apps beside myTunnels' own pages, each with a page under **Add-ons** in the
-sidebar. The host and admins install and remove them with the button beside that heading.
+**Add-ons** are apps beside myTunnels' own pages. **Apps**, in the sidebar for the host and
+admins, is their catalog: a tile each, with **Install**, then **Open** and a menu to remove it.
+Each one installed has a page under **Add-ons** in the sidebar.
 **Git** comes installed; **Device Controller** does not. Removing one takes its page away and
 refuses its calls; what it kept stays, for when it is installed again.
 
