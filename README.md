@@ -103,7 +103,9 @@ pause, kill and delete. Under it:
   environment, labels and layers. One no container uses can be deleted.
 - **Logs**: followed as it runs, searchable, with or without times.
 - **Resources**: its CPU limit and priority, its memory limit, reserved memory and swap, how
-  many processes it may run, and when it restarts. Each change applies at once, without a
+  many processes it may run, and its **Auto-start**: off, when it fails, unless stopped by
+  hand, or always. The last two bring it back after a crash or a restart of the machine,
+  as soon as Docker is running again. Each change applies at once, without a
   restart, and is kept by the container's name, so it is given back when the container is
   made again by Compose or a new build. The Dashboard shows each container against its limits.
 
@@ -416,6 +418,16 @@ Nothing here needs setting up; all of it is on from the first start.
   cannot act through a signed-in browser. It sends a strict Content Security Policy
   and refuses to be framed.
 - Tunnels get HSTS, and the gateway's own cookies never reach the apps behind it.
+
+## After a crash or a restart
+
+Everything comes back on its own once Docker is running: myTunnels' own services restart
+with Docker, the tunnel reconnects, every container with **Auto-start** set to unless
+stopped by hand or always starts again, and each container's resources are given back.
+Containers made from a repository or an image start that way by default. On Windows and
+macOS, Docker Desktop runs only once someone signs in, so switch on **Start Docker Desktop
+when you sign in** in its settings; `server host`, for the Dashboard's figures, needs the
+same, from the Startup folder or a scheduled task.
 
 ## Notes
 

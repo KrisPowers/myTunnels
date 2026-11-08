@@ -392,6 +392,8 @@ const TABS: [string, string, IconName][] = [
   ["settings", "Settings", "settings"],
 ];
 
+const AUTO_START: Record<string, string> = { "on-failure": "When it fails", "unless-stopped": "Unless stopped by hand", always: "Always" };
+
 // ContainerPage is one container and its tunnel together: its name, state and
 // address in the heading, with Open, the one button its state calls for, and a
 // menu for the rest; then its sub-pages.
@@ -686,7 +688,7 @@ function Overview({ c }: { c: ContainerDetail }) {
           <h2>State</h2>
           <Fact label="Created">{when(c.created)}</Fact>
           <Fact label={live(c) ? "Started" : "Ended"}>{live(c) ? when(c.started) : `${when(c.finished)}, exit code ${c.exit_code}`}</Fact>
-          <Fact label="Restart policy">{c.restart_policy || "no"}</Fact>
+          <Fact label="Auto-start">{AUTO_START[c.restart_policy] ?? "Off"}</Fact>
           <Fact label="Restarts">{c.restarts}</Fact>
           {c.health && <Fact label="Health">{c.health}</Fact>}
         </section>

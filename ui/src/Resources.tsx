@@ -69,11 +69,11 @@ export function Resources({ id, editable }: { id: string; editable: boolean }) {
           (v) => save({ swap: v }))}
       </Card>
       <Card title="Stability">
-        {pick("Restart", l.restart, [
-          { value: "no", label: "Never" },
-          { value: "on-failure", label: "When it fails" },
-          { value: "unless-stopped", label: "Unless stopped" },
-          { value: "always", label: "Always" },
+        {pick("Auto-start", l.restart, [
+          { value: "no", label: "Off" },
+          { value: "on-failure", label: "When it fails", hint: "When it exits with an error" },
+          { value: "unless-stopped", label: "Unless stopped by hand", hint: "Comes back after a crash or restart of the machine" },
+          { value: "always", label: "Always", hint: "Comes back after a crash or restart, even if stopped by hand" },
         ], (v) => save({ restart: v }))}
         {l.restart === "on-failure" && pick("Tries", l.retries, and(RETRIES.map((n) => ({ value: n, label: n ? String(n) : "No end" })), l.retries, String),
           (v) => save({ retries: v }))}
