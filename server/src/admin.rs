@@ -132,7 +132,7 @@ pub fn router(state: AppState) -> Router {
         .route("/convert", get(convert::list).post(convert::start))
         .route("/convert/{id}", delete(convert::remove))
         .route("/apps", get(crate::apps::list))
-        .route("/apps/{id}/install", post(crate::apps::install))
+        .route("/apps/{id}/{action}", post(crate::apps::install))
         .route("/needs", get(crate::apps::needs))
         .route("/hardware/fans", get(hardware::list_fans))
         .route("/hardware/fans/{id}", put(hardware::set_fan))

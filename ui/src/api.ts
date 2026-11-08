@@ -545,16 +545,20 @@ export interface AppItem {
   url: string;
   // Another app it is installed with.
   needs: string | null;
+  // A feature of myTunnels needs it where myTunnels runs.
+  used: boolean;
   // How to install it, as typed on each kind of machine; null where not carried.
   commands: Record<Os, string | null>;
 }
+
+export type AppAction = "install" | "update" | "uninstall";
 
 export interface HostApp {
   installed: boolean;
   version: string | null;
   // Whether the host can install it.
   can: boolean;
-  job?: { running: boolean; failed: boolean; log: string };
+  job?: { action: AppAction; running: boolean; failed: boolean; log: string };
 }
 
 export interface Apps {
@@ -626,7 +630,7 @@ export const api = {
   status: () => call<Status>("/status"),
   metrics: () => call<Metrics>("/metrics"),
   apps: () => call<Apps>("/apps"),
-  installApp: (id: string) => call(`/apps/${id}/install`, "POST"),
+  appAction: (id: string, action: AppAction) => call(`/apps/${id}/${action}`, "POST"),
   needs: () => call<Needs>("/needs"),
   fans: () => call<Fan[]>("/hardware/fans"),
   setFan: (id: string, auto: boolean, speed: number) => call<Fan>(`/hardware/fans/${id}`, "PUT", { auto, speed }),

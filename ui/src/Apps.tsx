@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { api, message, type AppItem, type Apps, type HostApp, type Needs, type Os } from "./api";
+import { api, message, type AppAction, type AppItem, type Apps, type HostApp, type Needs, type Os } from "./api";
 import { AppLogo } from "./AppLogo";
-import { Icon } from "./Icon";
+import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
 import { go } from "./route";
-import { Callout, Copy, Dialog, useNotify } from "./ui";
+import { Callout, Copy, Dialog, MoreMenu, useNotify, type MenuAction } from "./ui";
 
 // What features need where myTunnels runs, from the shell.
 export const NeedsContext = createContext<Needs | null>(null);
@@ -34,11 +34,20 @@ function deviceOs(): Os {
   return "linux";
 }
 
+// What the catalog can be narrowed to: everything, what the host has, what
+// myTunnels itself needs, or one kind.
+type Filter = "all" | "installed" | "used" | string;
+
+const DOING: Record<AppAction, string> = { install: "Installing", update: "Updating", uninstall: "Removing" };
+const DONE: Record<AppAction, string> = { install: "Install", update: "Update", uninstall: "Uninstall" };
+
 // AppsPage is the catalog of apps a homelab or engineering machine usually
-// needs, a tile each by kind, each installed on the host or on this device.
+// needs, a tile each, each installed on the host or on this device.
 export function AppsPage({ open }: { open: string }) {
   const [apps, setApps] = useState<Apps | null>(null);
   const [problem, setProblem] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+  const notify = useNotify();
   const load = useCallback(async () => {
     try {
       setApps(await api.apps());
@@ -54,17 +63,34 @@ export function AppsPage({ open }: { open: string }) {
     return () => clearInterval(t);
   }, [load, running]);
 
+  const act = async (app: AppItem, action: AppAction) => {
+    try {
+      await api.appAction(app.id, action);
+      notify(`${DOING[action]} ${app.name} on the host`);
+      await load();
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+  };
+
   const host = apps?.host;
-  const installed = Object.values(host?.apps ?? {}).filter((a) => a.installed).length;
-  const groups = [...new Set(apps?.catalog.map((a) => a.group))];
-  const picked = apps?.catalog.find((a) => a.id === open);
+  const catalog = apps?.catalog ?? [];
+  const has = (a: AppItem) => !!host?.apps[a.id]?.installed;
+  const filters: [Filter, string, (a: AppItem) => boolean][] = [
+    ["all", "All", () => true],
+    ["installed", "Installed", has],
+    ["used", "Used by myTunnels", (a) => a.used],
+    ...[...new Set(catalog.map((a) => a.group))].map((g): [Filter, string, (a: AppItem) => boolean] => [g, g, (a) => a.group === g]),
+  ];
+  const pass = (filters.find(([k]) => k === filter) ?? filters[0])[2];
+  const picked = catalog.find((a) => a.id === open);
 
   return (
     <>
       <div className="page-head">
         <div className="page-head-main">
           <h1>Apps</h1>
-          {apps && host && <div className="page-sub"><span><b>{installed}</b> of {apps.catalog.length} on the host</span></div>}
+          {apps && host && <div className="page-sub"><span><b>{catalog.filter(has).length}</b> of {catalog.length} on the host</span></div>}
         </div>
       </div>
       <div className="page-body stack">
@@ -73,16 +99,20 @@ export function AppsPage({ open }: { open: string }) {
           <Callout tone="warn" icon="warning">The host is not answering, so apps cannot be installed there. Run <span className="mono">server host</span> on it.</Callout>
         )}
         {!apps && !problem && <div className="repo-loading"><span className="spinner" /></div>}
-        {groups.map((g) => (
-          <section key={g}>
-            <h2 className="section-title">{g}</h2>
-            <div className="provider-grid">
-              {apps!.catalog.filter((a) => a.group === g).map((a) => (
-                <Tile key={a.id} app={a} state={host?.apps[a.id]} />
+        {apps && (
+          <>
+            <div className="filters" role="tablist">
+              {filters.map(([key, label, test]) => (
+                <button key={key} type="button" role="tab" className="filter" aria-selected={filter === key} onClick={() => setFilter(key)}>
+                  {label}<span>{catalog.filter(test).length}</span>
+                </button>
               ))}
             </div>
-          </section>
-        ))}
+            <div className="provider-grid">
+              {catalog.filter(pass).map((a) => <Tile key={a.id} app={a} state={host?.apps[a.id]} onAct={(action) => act(a, action)} />)}
+            </div>
+          </>
+        )}
       </div>
       {apps && picked && (
         <InstallDialog app={picked} apps={apps} onInstalled={load} onClose={() => go("#/apps")} />
@@ -91,17 +121,32 @@ export function AppsPage({ open }: { open: string }) {
   );
 }
 
-function Tile({ app, state }: { app: AppItem; state?: HostApp }) {
+// Tile is one app: its mark, name and what it is, and Install, or Installed
+// with its menu for the rest.
+function Tile({ app, state, onAct }: { app: AppItem; state?: HostApp; onAct: (action: AppAction) => void }) {
+  const can = useCan();
+  const job = state?.job;
+  const manage = can("apps.install") && !!state?.can && !job?.running;
+  const menu: MenuAction[] = [
+    ...(manage ? [
+      { label: "Update", icon: "refresh" as IconName, onClick: () => onAct("update") },
+      { label: "Uninstall", icon: "delete" as IconName, danger: true, confirm: `Uninstall ${app.name}`, onClick: () => onAct("uninstall") },
+    ] : []),
+    { label: "On this device", icon: "devices", onClick: () => go(`#/apps/${app.id}`) },
+    { label: "Download", icon: "open_in_new", onClick: () => window.open(app.url, "_blank", "noreferrer") },
+  ];
   return (
     <div className="provider-tile app-tile">
+      {state?.installed && <MoreMenu label={`${app.name} options`} actions={menu} />}
       <AppLogo id={app.logo} />
       <b>{app.name}</b>
       <span className="muted">{app.about}</span>
-      {state?.job?.running ? <span className="chip warn"><span className="spinner small" />Installing on the host</span>
-        : state?.installed ? <span className="chip ok" title={state.version ?? undefined}>On the host</span>
-        : state?.job?.failed ? <span className="chip bad">Install failed</span>
+      {job?.running ? <span className="chip warn"><span className="spinner small" />{DOING[job.action]} on the host</span>
+        : job?.failed ? <span className="chip bad" title={job.log}>{DONE[job.action]} failed</span>
         : null}
-      <a className={"btn" + (state?.installed ? "" : " primary")} href={`#/apps/${app.id}`}><Icon name="download" size={18} />Install</a>
+      {state?.installed
+        ? <button type="button" className="btn" disabled title={state.version ?? undefined}><Icon name="check" size={18} />Installed</button>
+        : <a className="btn primary" href={`#/apps/${app.id}`}><Icon name="download" size={18} />Install</a>}
     </div>
   );
 }
@@ -120,7 +165,7 @@ function InstallDialog({ app, apps, onInstalled, onClose }: { app: AppItem; apps
   const install = async () => {
     setBusy(true);
     try {
-      await api.installApp(app.id);
+      await api.appAction(app.id, "install");
       notify(`Installing ${app.name} on the host`);
       await onInstalled();
     } catch (e) {
