@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { ago, api, message, shortId, type Device, type DeviceStatus, type Route, type SignIn, type User } from "./api";
 import { Icon } from "./Icon";
 import { go } from "./route";
@@ -37,9 +37,9 @@ function useApprove(routes: Route[], onChanged: () => Promise<void>) {
   };
 }
 
-// Devices is every browser met so far, those approved and requests: a tab of
-// Security & Roles, whose tabs come as `nav`.
-export function Devices({ nav, devices, routes, onChanged }: { nav: ReactNode; devices: Device[] | null; routes: Route[]; onChanged: () => Promise<void> }) {
+// Devices is every browser met so far, those approved and requests: the body
+// of Security & Roles' Devices tab.
+export function Devices({ devices, routes, onChanged }: { devices: Device[] | null; routes: Route[]; onChanged: () => Promise<void> }) {
   const all = devices ?? [];
   const count = (tab: Tab) => all.filter((d) => inTab(tab, d)).length;
   const [tab, setTab] = useState<Tab>(all.some((d) => d.status === "pending") ? "requests" : "approved");
@@ -48,16 +48,6 @@ export function Devices({ nav, devices, routes, onChanged }: { nav: ReactNode; d
 
   return (
     <>
-      <div className="page-head">
-        <div className="page-head-main">
-          <h1>Security &amp; Roles</h1>
-          <div className="page-sub">
-            <span><b>{count("approved")}</b> approved</span>
-            <span><b>{count("requests")}</b> requests</span>
-          </div>
-        </div>
-      </div>
-      {nav}
       <div className="page-body">
         <div className="filters" role="tablist">
           {TABS.map(([key, label]) => (

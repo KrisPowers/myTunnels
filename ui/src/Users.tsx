@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { ago, api, LEVELS, list, message, shortId, strength, type Device, type Group, type Me, type Route, type SignIn, type User } from "./api";
 import { Icon, type IconName } from "./Icon";
 import { go } from "./route";
@@ -25,27 +25,11 @@ function state(u: User): [string, string] {
 }
 
 // Users are the accounts people sign in with, by email, at tunnels that ask
-// for one: a tab of Security & Roles, whose tabs come as `nav`.
-export function Users({ nav, users, routes }: { nav: ReactNode; users: User[] | null; routes: Route[] }) {
-  const asking = routes.filter((r) => r.require_login).length;
-  const held = users?.filter((u) => u.note).length ?? 0;
+// for one: the body of Security & Roles' Users tab.
+export function Users({ users }: { users: User[] | null }) {
   const can = useCan();
   return (
     <>
-      <div className="page-head">
-        <div className="page-head-main">
-          <h1>Security &amp; Roles</h1>
-          <div className="page-sub">
-            <span><b>{users?.length ?? 0}</b> accounts</span>
-            {held > 0 && <span className="chip bad">{held} held for review</span>}
-            <span>{asking ? `${asking} tunnel${asking === 1 ? "" : "s"} ask for sign-in` : "No tunnel asks for sign-in yet"}</span>
-          </div>
-        </div>
-        <div className="page-actions">
-          {can("users.manage") && <a className="btn primary" href="#/users/new"><Icon name="add" size={18} />New user</a>}
-        </div>
-      </div>
-      {nav}
       <div className="page-body stack">
         {users && users.length === 0 && (
           <div className="card welcome">
