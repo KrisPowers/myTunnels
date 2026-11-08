@@ -7,8 +7,8 @@ import { Icon, type IconName } from "./Icon";
 import { ContainerImages, ImageView, useImageRemoval } from "./Images";
 import { useCan } from "./me";
 import { go } from "./route";
-import { AccessChips, reachOf, target, TunnelComposer, TunnelPanel, tunnelsOf } from "./Tunnels";
-import { Callout, Copy, MoreMenu, SubNav, Switch, useNotify, type MenuAction } from "./ui";
+import { AccessChips, reachOf, target, TunnelComposer, TunnelsView, tunnelsOf } from "./Tunnels";
+import { Callout, Copy, Dialog, MoreMenu, SubNav, Switch, useNotify, type MenuAction } from "./ui";
 
 type Act = ContainerAction | "remove";
 
@@ -199,6 +199,10 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
   const running = (list ?? []).filter(live);
   const cpu = running.reduce((n, c) => n + (stats[shortId(c.id)]?.cpu ?? 0), 0);
   const memory = running.reduce((n, c) => n + (stats[shortId(c.id)]?.memory ?? 0), 0);
+  const newMenu: MenuAction[] = [
+    ...(can("containers.deploy") ? [{ label: "Container from a repository", icon: "deployed_code" as IconName, onClick: () => setAdding(true) }] : []),
+    ...(can("tunnels.create") ? [{ label: "Tunnel to a port", icon: "public" as IconName, onClick: () => go("#/new") }] : []),
+  ];
   const pageMenu: MenuAction[] = can("containers.remove") && unused.length > 0
     ? [{ label: `Delete unused images, ${bytes(spare)}`, icon: "layers", danger: true, onClick: () => cleanup.remove(unused), confirm: `Delete ${unused.length} for good` }]
     : [];
@@ -226,8 +230,7 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
             ))}
           </div>
           <button type="button" className="icon-btn" aria-label="Refresh" title="Refresh" onClick={load}><Icon name="refresh" /></button>
-          {can("tunnels.create") && <a className="btn" href="#/new"><Icon name="public" size={18} />New tunnel</a>}
-          {can("containers.deploy") && <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="add" size={18} />Add container</button>}
+          {newMenu.length > 0 && <MoreMenu label="New" icon="add" actions={newMenu} />}
           {cleanup.busy ? <span className="spinner small" /> : pageMenu.length > 0 && <MoreMenu label="More" actions={pageMenu} />}
         </div>
       </div>
@@ -243,8 +246,7 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
         <div className="card welcome">
           <Icon name="deployed_code" size={40} />
           <h2>No containers</h2>
-          <p className="muted">Add one from a repository, or containers Docker runs here show up on their own.</p>
-          {can("containers.deploy") && <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="add" size={18} />Add container</button>}
+          <p className="muted">Add one from a repository with the plus, or containers Docker runs here show up on their own.</p>
         </div>
       ) : (
         <div className="card">
@@ -280,8 +282,7 @@ function ContainerList({ routes, status }: { routes: Route[] | null; status: Sta
             <div className="card welcome">
               <Icon name="public" size={40} />
               <h2>Nothing published yet</h2>
-              <p className="muted">Open a container to give it an address, or publish any port on one of your domains, and choose who can open it.</p>
-              {can("tunnels.create") && <a className="btn primary" href="#/new"><Icon name="add" size={18} />New tunnel</a>}
+              <p className="muted">Open a container to give it an address, or publish any port with the plus, and choose who can open it.</p>
             </div>
           ) : (
             <div className="card">
@@ -429,7 +430,6 @@ const TABS: [string, string, IconName][] = [
   ["tunnel", "Tunnel", "public"],
   ["images", "Images", "layers"],
   ["logs", "Logs", "terminal"],
-  ["stats", "Stats", "dashboard"],
   ["settings", "Settings", "settings"],
 ];
 
@@ -471,7 +471,7 @@ function ContainerPage({ name, tab, more, routes, devices, users, providers, onC
   const head = c ?? listed.get(name) ?? (d ? pending(d) : undefined);
   const made = !!head?.id;
   const tabs = TABS.filter(([k]) => (k !== "tunnel" || can("tunnels.view"))
-    && (made || !["overview", "logs", "stats"].includes(k))
+    && (made || !["overview", "logs"].includes(k))
     && (k !== "settings" || (!!d && can("containers.deploy"))));
   const current = tabs.some(([k]) => k === tab) ? tab : tabs[0][0];
   if (!head) {
@@ -550,14 +550,13 @@ function ContainerPage({ name, tab, more, routes, devices, users, providers, onC
           : d === null ? <ContainerImages c={head} base={`${base}/images`} /> : <div className="repo-loading"><span className="spinner" /></div>)}
         {current === "settings" && d && <DeploySettings d={d} onChanged={load} />}
         {current === "logs" && <Logs id={head.id} />}
-        {current === "stats" && <Stats id={head.id} running={on} />}
       </div>
     </>
   );
 }
 
-// ContainerTunnel is the container's address: publishing one when it has none,
-// otherwise the tunnel itself. With several, a row of them picks which.
+// ContainerTunnel is the container's addresses in the middle, the picked
+// one's controls at the side. A new address is published from a dialog.
 function ContainerTunnel({ c, pick, base, routes, devices, users, providers, onChanged }: {
   c: Container | ContainerDetail;
   pick: string;
@@ -569,39 +568,37 @@ function ContainerTunnel({ c, pick, base, routes, devices, users, providers, onC
   onChanged: () => Promise<void>;
 }) {
   const can = useCan();
-  const adding = pick === "new" || routes.length === 0;
-  const route = adding ? undefined : routes.find((r) => r.id === pick) ?? routes[0];
-  const picker = (routes.length > 1 || (routes.length > 0 && can("tunnels.create"))) && (
-    <div className="ct-picker">
-      <div className="seg-tabs" role="tablist" aria-label="Addresses">
-        {routes.map((r) => (
-          <button key={r.id} type="button" role="tab" aria-selected={route?.id === r.id} className={route?.id === r.id ? "on" : ""} onClick={() => go(`${base}/${r.id}`)}>{r.hostname}</button>
-        ))}
-        {can("tunnels.create") && (
-          <button type="button" role="tab" aria-selected={adding} className={adding ? "on" : ""} aria-label="Another address" title="Another address" onClick={() => go(`${base}/new`)}><Icon name="add" size={18} /></button>
-        )}
-      </div>
-    </div>
+  const [adding, setAdding] = useState(false);
+  const creates = can("tunnels.create");
+  const dialog = adding && (
+    <Dialog title="Publish an address" wide onClose={() => setAdding(false)}>
+      <TunnelComposer users={users} providers={providers} sub={routes.length ? "" : c.name} container={{ name: c.name, reach: reachOf(c) }}
+        onPublished={async (r) => {
+          await onChanged();
+          setAdding(false);
+          go(`${base}/${r.id}`);
+        }} />
+    </Dialog>
   );
-  if (adding) {
-    if (!can("tunnels.create")) {
-      return <div className="card welcome"><Icon name="public" size={40} /><h2>No address</h2><p className="muted">Nothing reaches this container through a tunnel.</p></div>;
-    }
+  const add = creates && <button type="button" className="icon-btn" aria-label="Publish an address" title="Publish an address" onClick={() => setAdding(true)}><Icon name="add" /></button>;
+  if (!routes.length) {
     return (
       <>
-        {picker}
-        <TunnelComposer users={users} providers={providers} sub={routes.length ? "" : c.name} container={{ name: c.name, reach: reachOf(c) }}
-          onPublished={async (r) => {
-            await onChanged();
-            go(`${base}/${r.id}`);
-          }} />
+        <section className="card">
+          <div className="card-head">
+            <div className="card-titles"><h2>Address</h2></div>
+            {add}
+          </div>
+          <p className="empty-note card-pad">Nothing reaches this container through a tunnel yet.</p>
+        </section>
+        {dialog}
       </>
     );
   }
   return (
     <>
-      {picker}
-      {route && <TunnelPanel key={route.id} route={route} devices={devices} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go(base)} />}
+      <TunnelsView routes={routes} pick={pick} base={base} devices={devices} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go(base)} add={add} />
+      {dialog}
     </>
   );
 }
@@ -710,11 +707,13 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   return <div className="kv"><span className="kv-label">{label}</span><span className="kv-value">{children}</span></div>;
 }
 
-// Overview is how the container is set up: what it runs and how it restarts,
-// its ports and networks, and what it has mounted.
+// Overview is the container on one page: its usage while it runs, then how it
+// is set up, what it runs and how it restarts, its ports and networks, and
+// what it has mounted.
 function Overview({ c }: { c: ContainerDetail }) {
   return (
     <>
+      {live(c) && <Stats id={c.id} />}
       <div className="ct-inspect">
         <section className="card ct-panel">
           <h2>Details</h2>
@@ -785,9 +784,8 @@ function Overview({ c }: { c: ContainerDetail }) {
 }
 
 // Stats is the container's usage, sampled with the host's.
-function Stats({ id, running }: { id: string; running: boolean }) {
+function Stats({ id }: { id: string }) {
   const m = useMetrics();
-  if (!running) return <div className="card welcome"><Icon name="dashboard" size={40} /><h2>Not running</h2><p className="muted">Usage shows while the container runs.</p></div>;
   const s = m?.docker.containers.find((x) => shortId(x.id) === shortId(id));
   if (!m || !s) return <div className="repo-loading"><span className="spinner" /></div>;
   const every = m.every;
