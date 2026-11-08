@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 use std::path::{Path as FsPath, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -618,45 +619,64 @@ struct Job {
 }
 
 static JOBS: LazyLock<Mutex<HashMap<String, Job>>> = LazyLock::new(Mutex::default);
-/// What was found installed, kept briefly, since looking runs every app.
+/// What was last found installed, and when. It is answered with at once and
+/// looked at again in the background once it is older than `FOUND_FOR`.
 static FOUND: LazyLock<Mutex<Option<(Instant, Value)>>> = LazyLock::new(Mutex::default);
 const FOUND_FOR: Duration = Duration::from_secs(30);
+/// Set while a background look is running, so only one runs.
+static LOOKING: AtomicBool = AtomicBool::new(false);
 
-/// This machine: which apps it has, and which it is installing.
-pub async fn local_status() -> Value {
-    let cached = lock(&FOUND)
-        .as_ref()
-        .filter(|(at, _)| at.elapsed() < FOUND_FOR)
-        .map(|(_, v)| v.clone());
-    let mut status = match cached {
-        Some(v) => v,
-        None => {
-            let dirs = search_dirs();
-            let m = manager(&dirs);
-            let mut apps = serde_json::Map::new();
-            for a in CATALOG {
-                let mut version = None;
-                for bin in a.bins {
-                    if let Some(path) = which(bin, &dirs) {
-                        version = version_of(&path, a.version).await;
-                        if version.is_some() {
-                            break;
-                        }
-                    }
+/// Asks every app its version, all at once, and keeps what it finds.
+async fn detect() -> Value {
+    let dirs = search_dirs();
+    let m = manager(&dirs);
+    let mut asking = tokio::task::JoinSet::new();
+    for (i, a) in CATALOG.iter().enumerate() {
+        let paths: Vec<PathBuf> = a.bins.iter().filter_map(|b| which(b, &dirs)).collect();
+        asking.spawn(async move {
+            for path in paths {
+                if let Some(v) = version_of(&path, a.version).await {
+                    return (i, Some(v));
                 }
-                apps.insert(
-                    a.id.into(),
-                    json!({
-                        "installed": version.is_some(),
-                        "version": version,
-                        "can": install_command(a, m, &dirs, Action::Install, None).is_some(),
-                    }),
-                );
             }
-            let v = json!({ "os": os(), "manager": manager_name(m), "apps": apps });
-            *lock(&FOUND) = Some((Instant::now(), v.clone()));
+            (i, None)
+        });
+    }
+    let mut found = vec![None; CATALOG.len()];
+    while let Some(Ok((i, v))) = asking.join_next().await {
+        found[i] = v;
+    }
+    let mut apps = serde_json::Map::new();
+    for (a, version) in CATALOG.iter().zip(found) {
+        apps.insert(
+            a.id.into(),
+            json!({
+                "installed": version.is_some(),
+                "version": version,
+                "can": install_command(a, m, &dirs, Action::Install, None).is_some(),
+            }),
+        );
+    }
+    let v = json!({ "os": os(), "manager": manager_name(m), "apps": apps });
+    *lock(&FOUND) = Some((Instant::now(), v.clone()));
+    v
+}
+
+/// This machine: which apps it has, and which it is installing. What was last
+/// found is answered with straight away; only the very first look is waited on.
+pub async fn local_status() -> Value {
+    let kept = lock(&FOUND).clone();
+    let mut status = match kept {
+        Some((at, v)) => {
+            if at.elapsed() >= FOUND_FOR && !LOOKING.swap(true, Ordering::Relaxed) {
+                tokio::spawn(async {
+                    detect().await;
+                    LOOKING.store(false, Ordering::Relaxed);
+                });
+            }
             v
         }
+        None => detect().await,
     };
     for (id, job) in lock(&JOBS).iter() {
         status["apps"][id]["job"] = json!(job);
@@ -721,8 +741,8 @@ pub fn local_install(id: &str, action: Action, version: Option<&str>) -> Result<
         if done.failed {
             tracing::warn!("installing {id} failed: {}", done.log);
         }
+        detect().await;
         lock(&JOBS).insert(id, done);
-        *lock(&FOUND) = None;
     });
     Ok(())
 }
