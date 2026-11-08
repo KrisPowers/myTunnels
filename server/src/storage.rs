@@ -284,19 +284,64 @@ async fn list(store: &Store, at: At) -> ApiResult<Response> {
     .into_response())
 }
 
-/// The free and total bytes of the disk a folder is on.
+/// Where the host's own drive is mounted, empty and read-only, in the container.
+const HOST_DISK: &str = "/host";
+
+/// The free and total bytes there is room for in a folder. Under Docker
+/// Desktop the data volume sits on a virtual disk that claims far more room
+/// than the drive holding it, so that drive's own room bounds it.
 fn space(dir: &Path) -> Option<Value> {
-    let dir = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_owned());
+    let (mut free, mut total) = disk(dir)?;
+    if virtual_disk() {
+        if let Some((f, t)) = disk(Path::new(HOST_DISK)) {
+            free = free.min(f);
+            total = total.min(t);
+        }
+    }
+    Some(json!({ "free": free, "total": total }))
+}
+
+/// Whether this runs in Docker Desktop's virtual machine, on Windows or macOS.
+fn virtual_disk() -> bool {
+    std::fs::read_to_string("/proc/sys/kernel/osrelease").is_ok_and(|r| {
+        let r = r.to_ascii_lowercase();
+        r.contains("microsoft") || r.contains("linuxkit")
+    })
+}
+
+/// The bytes free to use and in all on the filesystem a path is on.
+#[cfg(unix)]
+// The fields are 64 bits on Linux but not on every system.
+#[allow(clippy::unnecessary_cast)]
+fn disk(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut stat = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+    // SAFETY: `path` is a valid C string and `stat` is written in full on success.
+    if unsafe { libc::statvfs(path.as_ptr(), stat.as_mut_ptr()) } != 0 {
+        return None;
+    }
+    // SAFETY: statvfs returned 0, so it filled `stat`.
+    let stat = unsafe { stat.assume_init() };
+    let unit = stat.f_frsize as u64;
+    Some((stat.f_bavail as u64 * unit, stat.f_blocks as u64 * unit))
+}
+
+/// The bytes free to use and in all on the disk a path is on.
+#[cfg(not(unix))]
+fn disk(path: &Path) -> Option<(u64, u64)> {
+    let path = std::fs::canonicalize(path).ok()?;
     let disks = sysinfo::Disks::new_with_refreshed_list();
     disks
         .list()
         .iter()
         .filter(|d| {
             let mount = d.mount_point();
-            dir.starts_with(mount) || std::fs::canonicalize(mount).is_ok_and(|m| dir.starts_with(m))
+            path.starts_with(mount)
+                || std::fs::canonicalize(mount).is_ok_and(|m| path.starts_with(m))
         })
         .max_by_key(|d| d.mount_point().as_os_str().len())
-        .map(|d| json!({ "free": d.available_space(), "total": d.total_space() }))
+        .map(|d| (d.available_space(), d.total_space()))
 }
 
 #[derive(Deserialize)]

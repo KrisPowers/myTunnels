@@ -38,6 +38,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # Dev builds keep line numbers for panics and nothing more, so each save
 # compiles and links quickly.
 [profile.dev]

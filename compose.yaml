@@ -12,6 +12,9 @@ services:
       # The key that seals secrets in the database, kept apart from it so a
       # copy of the data volume does not carry them.
       - keys:/keys
+      # An empty folder on the host's drive, read-only, so Storage shows that
+      # drive's free space rather than Docker Desktop's virtual disk's.
+      - ./disk:/host:ro
     environment:
       DOCKER_HOST: tcp://docker:2375
       HARDWARE_URL: http://hardware:7090
