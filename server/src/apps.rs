@@ -132,6 +132,18 @@ pub const CATALOG: &[App] = &[
     .brew("--cask docker")
     .apt("docker.io"),
     app(
+        "podman",
+        "Podman",
+        "Containers",
+        "Runs containers without a daemon",
+        "podman",
+        "https://podman.io/docs/installation",
+        &["podman"],
+    )
+    .winget("RedHat.Podman")
+    .brew("podman")
+    .apt("podman"),
+    app(
         "kubectl",
         "kubectl",
         "Containers",
@@ -156,6 +168,30 @@ pub const CATALOG: &[App] = &[
     .brew("minikube")
     .version(&["version", "--short"]),
     app(
+        "kind",
+        "kind",
+        "Containers",
+        "Kubernetes clusters in Docker containers",
+        "kubernetes",
+        "https://kind.sigs.k8s.io/docs/user/quick-start/",
+        &["kind"],
+    )
+    .winget("Kubernetes.kind")
+    .brew("kind")
+    .version(&["version"]),
+    app(
+        "k9s",
+        "k9s",
+        "Containers",
+        "A terminal view of a Kubernetes cluster",
+        "kubernetes",
+        "https://k9scli.io/topics/install/",
+        &["k9s"],
+    )
+    .winget("Derailed.k9s")
+    .brew("k9s")
+    .version(&["version", "--short"]),
+    app(
         "helm",
         "Helm",
         "Containers",
@@ -167,6 +203,18 @@ pub const CATALOG: &[App] = &[
     .winget("Helm.Helm")
     .brew("helm")
     .version(&["version", "--short"]),
+    app(
+        "argocd",
+        "Argo CD",
+        "Containers",
+        "GitOps deploys to Kubernetes, from the command line",
+        "argo",
+        "https://argo-cd.readthedocs.io/en/stable/cli_installation/",
+        &["argocd"],
+    )
+    .winget("argoproj.argocd")
+    .brew("argocd")
+    .version(&["version", "--client", "--short"]),
     app(
         "cloudflared",
         "cloudflared",
@@ -201,6 +249,109 @@ pub const CATALOG: &[App] = &[
     )
     .npm("wrangler"),
     app(
+        "gcloud",
+        "Google Cloud CLI",
+        "Cloud",
+        "Google Cloud from the command line",
+        "googlecloud",
+        "https://cloud.google.com/sdk/docs/install",
+        &["gcloud"],
+    )
+    .winget("Google.CloudSDK")
+    .brew("--cask google-cloud-sdk"),
+    app(
+        "doctl",
+        "doctl",
+        "Cloud",
+        "DigitalOcean from the command line",
+        "digitalocean",
+        "https://docs.digitalocean.com/reference/doctl/how-to/install/",
+        &["doctl"],
+    )
+    .winget("DigitalOcean.Doctl")
+    .brew("doctl")
+    .version(&["version"]),
+    app(
+        "vercel",
+        "Vercel CLI",
+        "Cloud",
+        "Deploys sites and apps to Vercel",
+        "vercel",
+        "https://vercel.com/docs/cli",
+        &["vercel"],
+    )
+    .npm("vercel"),
+    app(
+        "netlify",
+        "Netlify CLI",
+        "Cloud",
+        "Deploys sites to Netlify",
+        "netlify",
+        "https://docs.netlify.com/cli/get-started/",
+        &["netlify"],
+    )
+    .npm("netlify-cli"),
+    app(
+        "tailscale",
+        "Tailscale",
+        "Networking",
+        "A private network between your devices, on WireGuard",
+        "tailscale",
+        "https://tailscale.com/download",
+        &["tailscale"],
+    )
+    .winget("Tailscale.Tailscale")
+    .brew("tailscale")
+    .version(&["version"]),
+    app(
+        "ngrok",
+        "ngrok",
+        "Networking",
+        "Puts a local port on a public address",
+        "ngrok",
+        "https://ngrok.com/download",
+        &["ngrok"],
+    )
+    .winget("Ngrok.Ngrok")
+    .brew("--cask ngrok"),
+    app(
+        "wireguard",
+        "WireGuard",
+        "Networking",
+        "A fast, simple VPN",
+        "wireguard",
+        "https://www.wireguard.com/install/",
+        &["wg"],
+    )
+    .winget("WireGuard.WireGuard")
+    .brew("wireguard-tools")
+    .apt("wireguard"),
+    app(
+        "caddy",
+        "Caddy",
+        "Networking",
+        "A web server that sets up HTTPS on its own",
+        "caddy",
+        "https://caddyserver.com/docs/install",
+        &["caddy"],
+    )
+    .winget("CaddyServer.Caddy")
+    .brew("caddy")
+    .apt("caddy")
+    .version(&["version"]),
+    app(
+        "nginx",
+        "nginx",
+        "Networking",
+        "A web server and reverse proxy",
+        "nginx",
+        "https://nginx.org/en/download.html",
+        &["nginx"],
+    )
+    .brew("nginx")
+    .apt("nginx")
+    .version(&["-v"]),
+    app(
         "git",
         "Git",
         "Source control",
@@ -214,6 +365,18 @@ pub const CATALOG: &[App] = &[
     .brew("git")
     .apt("git"),
     app(
+        "gitlfs",
+        "Git LFS",
+        "Source control",
+        "Large files in Git repositories",
+        "gitlfs",
+        "https://git-lfs.com/",
+        &["git-lfs"],
+    )
+    .winget("GitHub.GitLFS")
+    .brew("git-lfs")
+    .apt("git-lfs"),
+    app(
         "gh",
         "GitHub CLI",
         "Source control",
@@ -225,6 +388,17 @@ pub const CATALOG: &[App] = &[
     .winget("GitHub.cli")
     .brew("gh")
     .apt("gh"),
+    app(
+        "glab",
+        "GitLab CLI",
+        "Source control",
+        "GitLab from the command line",
+        "gitlab",
+        "https://gitlab.com/gitlab-org/cli",
+        &["glab"],
+    )
+    .winget("GLab.GLab")
+    .brew("glab"),
     app(
         "rust",
         "Rust",
@@ -285,6 +459,54 @@ pub const CATALOG: &[App] = &[
     .winget("Microsoft.DotNet.SDK.10")
     .brew("--cask dotnet-sdk"),
     app(
+        "php",
+        "PHP",
+        "Languages",
+        "PHP's command line",
+        "php",
+        "https://www.php.net/downloads",
+        &["php"],
+    )
+    .winget("PHP.PHP.8.4")
+    .brew("php")
+    .apt("php-cli"),
+    app(
+        "ruby",
+        "Ruby",
+        "Languages",
+        "Ruby and its gems",
+        "ruby",
+        "https://www.ruby-lang.org/en/downloads/",
+        &["ruby"],
+    )
+    .winget("RubyInstallerTeam.Ruby.3.4")
+    .brew("ruby")
+    .apt("ruby"),
+    app(
+        "zig",
+        "Zig",
+        "Languages",
+        "The Zig toolchain, a C compiler as well",
+        "zig",
+        "https://ziglang.org/download/",
+        &["zig"],
+    )
+    .winget("zig.zig")
+    .brew("zig")
+    .version(&["version"]),
+    app(
+        "cmake",
+        "CMake",
+        "Languages",
+        "Builds C and C++ projects",
+        "cmake",
+        "https://cmake.org/download/",
+        &["cmake"],
+    )
+    .winget("Kitware.CMake")
+    .brew("cmake")
+    .apt("cmake"),
+    app(
         "nodejs",
         "Node.js",
         "Runtimes",
@@ -330,6 +552,49 @@ pub const CATALOG: &[App] = &[
     .winget("DenoLand.Deno")
     .brew("deno"),
     app(
+        "pnpm",
+        "pnpm",
+        "Runtimes",
+        "A fast npm that saves disk space",
+        "pnpm",
+        "https://pnpm.io/installation",
+        &["pnpm"],
+    )
+    .winget("pnpm.pnpm")
+    .brew("pnpm"),
+    app(
+        "yarn",
+        "Yarn",
+        "Runtimes",
+        "A package manager for JavaScript",
+        "yarn",
+        "https://yarnpkg.com/getting-started/install",
+        &["yarn"],
+    )
+    .npm("yarn"),
+    app(
+        "uv",
+        "uv",
+        "Runtimes",
+        "Python's packages and projects, fast",
+        "uv",
+        "https://docs.astral.sh/uv/getting-started/installation/",
+        &["uv"],
+    )
+    .winget("astral-sh.uv")
+    .brew("uv"),
+    app(
+        "ollama",
+        "Ollama",
+        "Runtimes",
+        "Runs AI models on this machine",
+        "ollama",
+        "https://ollama.com/download",
+        &["ollama"],
+    )
+    .winget("Ollama.Ollama")
+    .brew("ollama"),
+    app(
         "terraform",
         "Terraform",
         "Infrastructure",
@@ -342,17 +607,155 @@ pub const CATALOG: &[App] = &[
     .brew("hashicorp/tap/terraform")
     .version(&["version"]),
     app(
-        "wireguard",
-        "WireGuard",
+        "opentofu",
+        "OpenTofu",
         "Infrastructure",
-        "A fast, simple VPN",
-        "wireguard",
-        "https://www.wireguard.com/install/",
-        &["wg"],
+        "Open-source infrastructure as code",
+        "opentofu",
+        "https://opentofu.org/docs/intro/install/",
+        &["tofu"],
     )
-    .winget("WireGuard.WireGuard")
-    .brew("wireguard-tools")
-    .apt("wireguard"),
+    .winget("OpenTofu.Tofu")
+    .brew("opentofu")
+    .version(&["version"]),
+    app(
+        "pulumi",
+        "Pulumi",
+        "Infrastructure",
+        "Infrastructure as code in everyday languages",
+        "pulumi",
+        "https://www.pulumi.com/docs/iac/download-install/",
+        &["pulumi"],
+    )
+    .winget("Pulumi.Pulumi")
+    .brew("pulumi/tap/pulumi")
+    .version(&["version"]),
+    app(
+        "ansible",
+        "Ansible",
+        "Infrastructure",
+        "Sets up machines over SSH",
+        "ansible",
+        "https://docs.ansible.com/ansible/latest/installation_guide/",
+        &["ansible"],
+    )
+    .brew("ansible")
+    .apt("ansible"),
+    app(
+        "packer",
+        "Packer",
+        "Infrastructure",
+        "Builds machine images",
+        "packer",
+        "https://developer.hashicorp.com/packer/install",
+        &["packer"],
+    )
+    .winget("Hashicorp.Packer")
+    .brew("hashicorp/tap/packer"),
+    app(
+        "vagrant",
+        "Vagrant",
+        "Infrastructure",
+        "Virtual machines for development",
+        "vagrant",
+        "https://developer.hashicorp.com/vagrant/install",
+        &["vagrant"],
+    )
+    .winget("Hashicorp.Vagrant")
+    .brew("--cask hashicorp/tap/hashicorp-vagrant"),
+    app(
+        "vault",
+        "Vault",
+        "Security",
+        "Keeps secrets and keys",
+        "vault",
+        "https://developer.hashicorp.com/vault/install",
+        &["vault"],
+    )
+    .winget("Hashicorp.Vault")
+    .brew("hashicorp/tap/vault"),
+    app(
+        "bitwarden",
+        "Bitwarden CLI",
+        "Security",
+        "Your Bitwarden vault from the command line",
+        "bitwarden",
+        "https://bitwarden.com/help/cli/",
+        &["bw"],
+    )
+    .winget("Bitwarden.CLI")
+    .brew("bitwarden-cli"),
+    app(
+        "1password",
+        "1Password CLI",
+        "Security",
+        "1Password from the command line",
+        "1password",
+        "https://developer.1password.com/docs/cli/get-started/",
+        &["op"],
+    )
+    .winget("AgileBits.1Password.CLI")
+    .brew("--cask 1password-cli"),
+    app(
+        "rclone",
+        "rclone",
+        "Files and media",
+        "Syncs files with cloud storage",
+        "rclone",
+        "https://rclone.org/downloads/",
+        &["rclone"],
+    )
+    .winget("Rclone.Rclone")
+    .brew("rclone")
+    .apt("rclone"),
+    app(
+        "syncthing",
+        "Syncthing",
+        "Files and media",
+        "Keeps folders in sync between devices",
+        "syncthing",
+        "https://syncthing.net/downloads/",
+        &["syncthing"],
+    )
+    .winget("Syncthing.Syncthing")
+    .brew("syncthing")
+    .apt("syncthing"),
+    app(
+        "ffmpeg",
+        "FFmpeg",
+        "Files and media",
+        "Converts and records audio and video",
+        "ffmpeg",
+        "https://ffmpeg.org/download.html",
+        &["ffmpeg"],
+    )
+    .winget("Gyan.FFmpeg")
+    .brew("ffmpeg")
+    .apt("ffmpeg")
+    .version(&["-version"]),
+    app(
+        "neovim",
+        "Neovim",
+        "Editors",
+        "A modal text editor",
+        "neovim",
+        "https://neovim.io/",
+        &["nvim"],
+    )
+    .winget("Neovim.Neovim")
+    .brew("neovim")
+    .apt("neovim"),
+    app(
+        "vscodium",
+        "VSCodium",
+        "Editors",
+        "VS Code without Microsoft's telemetry",
+        "vscodium",
+        "https://vscodium.com/",
+        &["codium"],
+    )
+    .winget("VSCodium.VSCodium")
+    .brew("--cask vscodium"),
 ];
 
 fn find(id: &str) -> Option<&'static App> {
