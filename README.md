@@ -221,9 +221,12 @@ dashboard through a tunnel to reach it from anywhere.
 
 **Apps** is a catalog of the software a homelab or engineering machine usually needs, a tile
 each, narrowed by a search and by kind and status (installed, not installed, used by myTunnels):
-Docker, kubectl, minikube and Helm; cloudflared, Cloudflare WARP and Wrangler;
-Git and the GitHub CLI; Rust, Go, Python, Java and .NET; Node.js, fnm, Bun and Deno;
-Terraform and WireGuard.
+Docker, Podman, kubectl, minikube, kind, k9s, Helm and Argo CD; cloudflared, Cloudflare
+WARP and Wrangler; the Google Cloud, DigitalOcean, Vercel and Netlify CLIs; Tailscale, ngrok,
+WireGuard, Caddy and nginx; Git, Git LFS and the GitHub and GitLab CLIs; Rust, Go, Python,
+Java, .NET, PHP, Ruby, Zig and CMake; Node.js, fnm, Bun, Deno, pnpm, Yarn, uv and Ollama;
+Terraform, OpenTofu, Pulumi, Ansible, Packer and Vagrant; Vault and the Bitwarden and
+1Password CLIs; rclone, Syncthing and FFmpeg; Neovim and VSCodium.
 
 **Install** installs one in one click on the machine myTunnels runs on, through its package
 manager: winget on Windows, Homebrew on macOS, apt on Linux (with `sudo` that needs no
