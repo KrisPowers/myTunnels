@@ -3,3 +3,6 @@
 
 # Scripts copied into the image run on Linux, so their line endings stay LF.
 server/cutout text eol=lf
+
+# Run on Linux and macOS, so its line endings stay LF.
+scripts/install.sh text eol=lf
