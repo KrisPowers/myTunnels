@@ -1287,14 +1287,7 @@ fn warm_versions() {
 
 /// Where `server host` keeps the hash of the key it was paired with.
 fn paired_file() -> PathBuf {
-    let base = if cfg!(windows) {
-        std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
-    } else {
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share"))
-    };
-    base.unwrap_or_else(std::env::temp_dir)
-        .join("myTunnels")
-        .join("paired")
+    crate::config::home().join("paired")
 }
 
 /// The calls `server host` answers besides its figures.

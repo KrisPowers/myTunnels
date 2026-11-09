@@ -10,23 +10,60 @@ to know the tunnel's password, to sign in with an account, or any mix of those.
 
 ```text
 browser ──https──> Cloudflare edge ──tunnel──> cloudflared ──> gateway ──> 127.0.0.1:8080
-                                                 (inside this container)     (your app)
+                                                   (run by myTunnels)          (your app)
 ```
 
-- One container runs the admin panel, the gateway, and a supervised `cloudflared` connector.
+- One program runs the admin panel, the gateway, and a supervised `cloudflared` connector.
 - The tunnel is created and configured through the Cloudflare API. Adding a tunnel in the
   panel creates the proxied DNS record and the ingress rule. Removing it deletes both.
 - `cloudflared` sends every published hostname to the gateway. The gateway looks up the
   tunnel by hostname, applies its access rules, then forwards the request (WebSockets
   included) to the local port.
-- The gateway only listens on the container's loopback interface, so nothing reaches it
-  except through Cloudflare.
+- The gateway only listens on the loopback interface, so nothing reaches it except through
+  Cloudflare.
 
 ## Quick start
 
-```sh
-docker compose up -d --build
+Install it, with nothing else needed first. cloudflared comes with it.
+
+Windows, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/KrisPowers/myTunnels/main/scripts/install.ps1 | iex
 ```
+
+macOS or Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/KrisPowers/myTunnels/main/scripts/install.sh | sh
+```
+
+Homebrew:
+
+```sh
+brew tap krispowers/mytunnels https://github.com/KrisPowers/myTunnels
+brew install mytunnels
+```
+
+Then start it, once:
+
+```sh
+mytunnels start
+```
+
+From then on it starts with the computer and comes back on its own whenever it stops. Running
+an install again updates it, and starts the new version when the old one was running.
+
+| Command | Does |
+| --- | --- |
+| `mytunnels start` | Runs it now and every time the computer starts |
+| `mytunnels stop` | Stops it, and it no longer starts with the computer |
+| `mytunnels status` | Says whether it is running, and where |
+
+On Linux it is a systemd user service that runs from boot; on macOS a launchd agent and on
+Windows a program run at sign-in, each started again within seconds if it stops. Its data
+is in `%LOCALAPPDATA%\myTunnels` on Windows and `~/.local/share/myTunnels` elsewhere. To run
+it in Docker instead, see [Running in Docker](#running-in-docker).
 
 On the computer running it, open `http://localhost:7070`. The panel answers there alone:
 every other device, at home or away, reaches myTunnels through a tunnel, so no port is opened
@@ -61,7 +98,9 @@ minutes drawn as charts:
 - **Disks**, how full each one is, and every **temperature sensor** the host exposes.
 - **Containers**, each one's CPU, memory, network and disk traffic, and its state.
 
-On a Linux host, processors, memory and temperatures are the host's own. Docker Desktop
+Installed, every figure is the computer's own, and containers come from Docker when it is
+installed. The rest of this paragraph is about running in Docker. On a Linux host,
+processors, memory and temperatures are the host's own. Docker Desktop
 runs containers in a virtual machine, so from inside one they are that machine's. To show
 the computer's own, run `server host` on it (from `server/`, `cargo run --release -- host`):
 it answers on `127.0.0.1:7094` alone, and the Dashboard reads it through `HOST_URL` in
@@ -242,8 +281,9 @@ pair again, remove the `paired` file in its data folder (`%LOCALAPPDATA%\myTunne
 Windows, `~/.local/share/myTunnels` elsewhere).
 
 Features that need an app where myTunnels runs keep working without it and say which to
-install: Containers need Docker, tunnels need cloudflared, and containers from a repository
-need Git.
+install: Containers need Docker, tunnels need cloudflared (which an install brings),
+containers from a repository need Git, and an install's Convert needs FFmpeg, ImageMagick,
+libheif, Ghostscript and unar, which the Docker image carries.
 
 ## Accounts and permissions
 
@@ -343,19 +383,23 @@ then appears on the sign-in pages, still held to the account's apps and linked d
 
 ## Configuration
 
-Settings made in the panel are stored in `/data/gateway.db`. The container reads these
-environment variables:
+Settings made in the panel are stored in `gateway.db` in the data folder. myTunnels reads
+these environment variables, none of which an install needs:
 
-| Variable | Default in the image | Meaning |
-| --- | --- | --- |
-| `ADMIN_ADDR` | `0.0.0.0:7070` | Admin panel address in the container; `compose.yaml` publishes it on `127.0.0.1` only |
-| `GATE_ADDR` | `127.0.0.1:7080` | Gateway address, reached only by cloudflared |
-| `UPSTREAM_HOST` | `host.docker.internal` | Default host for tunnel ports, changeable in Settings |
-| `DATA_DIR` | `/data` | Database location |
-| `SECRET_KEY_FILE` | `/keys/secret.key` | Key that seals secrets in the database, made on first start |
-| `SECRET_KEY` | none | The same key as 64 hex digits, in place of the file |
-| `DOCKER_HOST` | `tcp://docker:2375` in `compose.yaml` | Docker API the Dashboard reads containers from (`unix://`, `npipe://` or `tcp://`) |
-| `RUST_LOG` | `info` | Log level |
+| Variable | Installed | In the Docker image | Meaning |
+| --- | --- | --- | --- |
+| `ADMIN_ADDR` | `127.0.0.1:7070` | `0.0.0.0:7070` | Admin panel address; `compose.yaml` publishes it on `127.0.0.1` only |
+| `GATE_ADDR` | `127.0.0.1:7080` | `127.0.0.1:7080` | Gateway address, reached only by cloudflared |
+| `UPSTREAM_HOST` | `127.0.0.1` | `host.docker.internal` | Default host for tunnel ports, changeable in Settings |
+| `DATA_DIR` | `data` in its folder | `/data` | Database location |
+| `SECRET_KEY_FILE` | `keys/secret.key` in its folder | `/keys/secret.key` | Key that seals secrets in the database, made on first start |
+| `SECRET_KEY` | none | none | The same key as 64 hex digits, in place of the file |
+| `DOCKER_HOST` | Docker's own socket | `tcp://docker:2375` in `compose.yaml` | Docker API the Dashboard reads containers from (`unix://`, `npipe://` or `tcp://`) |
+| `RUST_LOG` | `info` | `info` | Log level |
+
+Its folder is `%LOCALAPPDATA%\myTunnels` on Windows and `~/.local/share/myTunnels` elsewhere,
+which also holds `log.txt` where launchd or Windows runs it; on Linux the log is
+`journalctl --user -u mytunnels`.
 
 `compose.yaml` maps `host.docker.internal` to the Docker host, so a port published by any
 container (or any program) on the host works as a target. A tunnel can also point at
@@ -388,13 +432,25 @@ Nothing here needs setting up; all of it is on from the first start.
 
 ## After a crash or a restart
 
-Everything comes back on its own once Docker is running: myTunnels' own services restart
-with Docker, the tunnel reconnects, every container with **Auto-start** set to unless
+After `mytunnels start`, myTunnels comes back on its own: within seconds of a crash, and with
+the computer, from boot on Linux and at sign-in on macOS and Windows. The tunnel reconnects
+with it. In Docker, its services restart with Docker.
+
+Containers come back once Docker is running: every container with **Auto-start** set to unless
 stopped by hand or always starts again, and each container's resources are given back.
 Containers made from a repository or an image start that way by default. On Windows and
 macOS, Docker Desktop runs only once someone signs in, so switch on **Start Docker Desktop
-when you sign in** in its settings; `server host`, for the Dashboard's figures, needs the
-same, from the Startup folder or a scheduled task.
+when you sign in** in its settings; `server host`, for the Dashboard's figures in Docker, needs
+the same, from the Startup folder or a scheduled task.
+
+## Running in Docker
+
+```sh
+docker compose up -d --build
+```
+
+The image carries every tool Convert uses. Its data stays in the `data` and `keys` volumes,
+apart from an install's.
 
 ## Notes
 
@@ -404,8 +460,8 @@ same, from the Startup folder or a scheduled task.
 - The same network check compares public addresses. Behind carrier grade NAT, other
   customers of your ISP can share your public IPv4 address, so prefer sign-in there.
 - The Cloudflare and tunnel tokens, SMTP and OAuth credentials and the session signing key
-  are sealed in the database with a key kept in the separate `keys` volume, so a copy of the
-  data volume alone does not give them away. Keep both volumes; without the key, those
+  are sealed in the database with a key kept apart from it, in the `keys` folder (or volume),
+  so a copy of the data alone does not give them away. Keep both; without the key, those
   secrets must be entered again.
 
 ## Development
@@ -423,8 +479,8 @@ The whole app on `http://localhost:7070`, live as you save, with no image build:
 - cloudflared runs under the server as it does in the container, so tunnels work too. It is
   used from `PATH`, or fetched once.
 
-Dev data lives in `server/data`, apart from the container's volume. Stop the container
-first, since both use port 7070.
+Dev data lives in `server/data`, apart from an install's and the container's. Stop either
+first (`mytunnels stop`), since they all use port 7070.
 
 ## License
 

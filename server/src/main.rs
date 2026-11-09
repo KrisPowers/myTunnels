@@ -23,6 +23,7 @@ mod permissions;
 mod pow;
 mod proxy;
 mod secret;
+mod service;
 mod share;
 mod state;
 mod storage;
@@ -33,6 +34,7 @@ mod tunnel;
 mod util;
 mod vault;
 
+use std::io::IsTerminal;
 use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
@@ -47,11 +49,14 @@ use crate::state::AppState;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with_ansi(std::io::stdout().is_terminal())
         .init();
 
-    // This computer's own figures, for a Dashboard that runs inside Docker Desktop.
-    if std::env::args().nth(1).as_deref() == Some("host") {
-        return metrics::serve_host().await;
+    match std::env::args().nth(1).as_deref() {
+        // This computer's own figures, for a Dashboard that runs inside Docker Desktop.
+        Some("host") => return metrics::serve_host().await,
+        Some(name @ ("start" | "stop" | "status" | "run")) => return service::command(name),
+        _ => {}
     }
 
     let mut config = Config::from_env();

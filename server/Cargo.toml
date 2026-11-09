@@ -41,6 +41,9 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
+
 # Dev builds keep line numbers for panics and nothing more, so each save
 # compiles and links quickly.
 [profile.dev]
