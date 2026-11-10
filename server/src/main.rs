@@ -31,6 +31,7 @@ mod tls;
 mod token;
 mod totp;
 mod tunnel;
+mod update;
 mod util;
 mod vault;
 

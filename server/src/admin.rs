@@ -52,6 +52,10 @@ pub fn router(state: AppState) -> Router {
         .route("/cloudflare/accounts", post(cloudflare_accounts))
         .route("/zones", get(zones))
         .route("/status", get(status))
+        .route(
+            "/update",
+            get(crate::update::check).post(crate::update::install),
+        )
         .route("/metrics", get(metrics))
         .route("/containers", get(list_containers))
         .route("/images", get(crate::images::list))
