@@ -321,9 +321,13 @@ function Board({ board, snap }: { board: HwPart | undefined; snap: HwSnapshot })
   const temps = board.readings.filter((r) => r.unit === "°C");
   return (
     <Section icon="developer_board" title="Board" health={board.health} sub={board.name} className="hw-full">
-      {temps.map((r) => (
-        <div key={r.label} className="hw-row"><span>{r.label}</span><Meter share={r.value / 100} health={r.health} /><b className={r.health}>{Math.round(r.value)}°C</b></div>
-      ))}
+      {temps.length > 0 && (
+        <div className="hw-temps">
+          {temps.map((r) => (
+            <div key={r.label} className="hw-row"><span>{r.label}</span><Meter share={r.value / 100} health={r.health} /><b className={r.health}>{Math.round(r.value)}°C</b></div>
+          ))}
+        </div>
+      )}
       {snap.events.length > 0 && (
         <ul className="hw-events">
           {snap.events.slice(0, 4).map((e, i) => (
