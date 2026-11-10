@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ago, api, bytes, message, shortId, type ContainerStats, type Device, type Flag, type Hardware, type Health, type HwPart, type HwSnapshot, type Metrics, type User } from "./api";
-import { Chart, Meter, Spark } from "./charts";
+import { ago, api, bytes, message, shortId, type Device, type Flag, type Hardware, type Health, type HwPart, type HwSnapshot, type Metrics, type User } from "./api";
+import { Chart, Meter } from "./charts";
 import { Icon } from "./Icon";
 import { useCan, useMe } from "./me";
 import { Dialog, useNotify } from "./ui";
@@ -17,8 +17,8 @@ const fact = (p: HwPart | undefined, key: string) => p?.facts.find(([k]) => k ==
 const dot = (h?: Health) => "dot" + (h === "ok" || failing(h) ? " " + h : "");
 
 // DashboardPage is the host the way UniFi shows a console: a column of its
-// facts on the left, under a chip for each part, and on the right a chart of
-// the last five minutes over its storage, containers and log. Advanced adds
+// facts on the left, under each part by its health, and on the right a chart
+// of the last five minutes over its storage and log. Advanced adds
 // the sensors (temperatures, fans, voltages, drive wear), turned on once by
 // the host or an admin, since on Windows they need administrator rights.
 export function DashboardPage({ flags, users, devices, onChanged }: { flags: Flag[]; users: User[]; devices: Device[]; onChanged: () => Promise<void> }) {
@@ -121,7 +121,6 @@ export function DashboardPage({ flags, users, devices, onChanged }: { flags: Fla
             {flags.length > 0 && <NewDevices flags={flags} users={users} devices={devices} onChanged={onChanged} />}
             <Trend m={m} cpu={snap?.parts.find((p) => p.kind === "cpu")} advanced={advanced} />
             <Storage m={m} drives={snap?.parts.filter((p) => p.kind === "drive") ?? []} advanced={advanced} />
-            <Containers m={m} />
             <Log snap={snap} />
           </div>
         </div>
@@ -161,7 +160,6 @@ function Side({ m, snap, advanced, admin, onForget }: { m: Metrics; snap: HwSnap
   const attention = [...parts, ...(snap?.notes ?? [])].filter((p) => failing(p.health));
   const status: Health = attention.some((p) => p.health === "bad") ? "bad" : attention.length ? "warn" : "ok";
   const temp = reading(cpu, "Temperature");
-  const list = m.docker.containers.filter((c) => c.state === "running");
   return (
     <aside className="dash-side">
       <h2 className="side-name">{m.host.name ?? "This host"}</h2>
@@ -189,7 +187,6 @@ function Side({ m, snap, advanced, admin, onForget }: { m: Metrics; snap: HwSnap
         advanced && reading(cpu, "Power") && ["Power (CPU)", `${Math.round(reading(cpu, "Power")!.value)} W`],
         ["System Uptime", duration(m.uptime)],
         m.load && ["Load", m.load.map((n) => n.toFixed(2)).join("  ")],
-        ["Docker", m.host.docker],
       ]} />
       {gpus.map((g) => {
         const t = reading(g, "Temperature");
@@ -214,17 +211,11 @@ function Side({ m, snap, advanced, admin, onForget }: { m: Metrics; snap: HwSnap
           ...(board?.readings ?? []).filter((r) => r.unit === "°C").map((r): Fact => [r.label, degrees(r.value), failing(r.health) ? r.health : undefined]),
         ]} />
       )}
-      <Rows items={[
-        ["Containers", m.docker.reachable ? `${list.length} running of ${m.docker.containers.length}` : "Docker is not reachable", m.docker.reachable ? undefined : "warn"],
-        m.docker.reachable && list.length > 0 && ["CPU (containers)", pct(list.reduce((n, c) => n + c.cpu, 0))],
-        m.docker.reachable && list.length > 0 && ["Memory (containers)", bytes(list.reduce((n, c) => n + c.memory, 0))],
-      ]} />
-      <a className="side-btn" href="#/containers">Manage Containers</a>
     </aside>
   );
 }
 
-// Bays is a chip for each part, lit by its health, as UniFi shows a
+// Bays is each part by a dot lit by its health, as UniFi shows a
 // console's drive bays: every memory slot, each drive and graphics card.
 function Bays({ parts }: { parts: HwPart[] }) {
   const memory = parts.filter((p) => p.kind === "memory").sort((a, b) => a.place.localeCompare(b.place));
@@ -397,40 +388,6 @@ function Storage({ m, drives, advanced }: { m: Metrics; drives: HwPart[]; advanc
         </div>
       )}
     </Section>
-  );
-}
-
-function Containers({ m }: { m: Metrics }) {
-  const list = m.docker.containers;
-  if (!m.docker.reachable || !list.length) return null;
-  return (
-    <Section title="Containers">
-      <div className="table-wrap">
-        <table className="table containers">
-          <thead><tr><th className="grow">Container</th><th>CPU</th><th>Memory</th><th>Network</th><th>Status</th></tr></thead>
-          <tbody>{list.map((c) => <ContainerRow key={c.id} c={c} keep={m.keep} hostMemory={m.memory_total} />)}</tbody>
-        </table>
-      </div>
-    </Section>
-  );
-}
-
-function ContainerRow({ c, keep, hostMemory }: { c: ContainerStats; keep: number; hostMemory: number }) {
-  const on = c.state === "running";
-  const limit = c.memory_limit && c.memory_limit < hostMemory * 4 ? c.memory_limit : hostMemory;
-  return (
-    <tr className={on ? "" : "stopped"}>
-      <td className="name-cell"><span className="name-line"><span className={"dot " + (on ? "ok" : "")} />{c.name}</span><small>{c.image}</small></td>
-      <td>{on && (
-        <span className="cpu-cell">
-          <Spark values={c.history} max={Math.max(c.cpu_limit ? c.cpu_limit * 100 : 100, ...c.history)} keep={keep} times={[]} every={0} color={BLUE} />
-          <span className="num">{pct(c.cpu)}</span>
-        </span>
-      )}</td>
-      <td>{on && <Meter value={c.memory} max={limit} label={`${bytes(c.memory)} / ${bytes(limit)}`} />}</td>
-      <td className="num">{on && <>↓ {rate(c.rx)}<br />↑ {rate(c.tx)}</>}</td>
-      <td className="muted">{c.status}</td>
-    </tr>
   );
 }
 

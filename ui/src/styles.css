@@ -1454,30 +1454,23 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
    on the right ---- */
 .dash { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); animation: rise .2s var(--ease) both; }
 .dash-side { display: flex; flex-direction: column; gap: 18px; min-width: 0; padding: 24px; border-right: 1px solid var(--line); }
-.side-name { overflow: hidden; font-size: 18px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.side-name { font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
 .btn.lit { background: var(--accent-bg); color: var(--on-accent-bg); }
 
-/* A chip per part, as a console's drive bays. An empty slot is "vacant",
-   never "empty", which is the page-wide padded empty state. */
-.bays { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
-.bay {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; height: 34px; padding: 0 10px;
-  border: 1px solid var(--line-strong); border-radius: var(--radius); font-size: 13px; font-weight: 500; white-space: nowrap;
-}
-.bay.vacant { border-style: dashed; color: var(--text-3); }
+/* Each part by its dot, as a console's drive bays. An empty slot is
+   "vacant", never "empty", which is the page-wide padded empty state. */
+.bays { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 10px 12px; }
+.bay { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.bay.vacant { color: var(--text-3); }
 .side-notes { display: grid; gap: 6px; }
 .side-notes p { margin: 0; font-size: 12.5px; line-height: 1.45; }
 
 /* Label on the left, value on the right, a rule between groups. */
-.side-rows { display: grid; margin: 0; padding-top: 14px; border-top: 1px solid var(--line); }
-.side-rows > div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; min-height: 38px; padding: 8px 0; font-size: 14.5px; }
+.side-rows { display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; padding-top: 14px; border-top: 1px solid var(--line); }
+/* A long value wraps under itself on the right, never past the column. */
+.side-rows > div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; min-width: 0; min-height: 38px; padding: 8px 0; font-size: 14.5px; }
 .side-rows dt { flex-shrink: 0; color: var(--text-2); }
-.side-rows dd { min-width: 0; margin: 0; overflow: hidden; text-align: right; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
-.side-btn {
-  display: grid; place-items: center; height: 44px; border: 1px solid var(--accent); border-radius: var(--radius);
-  color: var(--accent); font-size: 14px; font-weight: 500;
-}
-.side-btn:hover { background: var(--accent-bg); text-decoration: none; }
+.side-rows dd { min-width: 0; margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 
 /* The main column: each section a heading with its links, then its body. */
 .dash-main { display: flex; flex-direction: column; min-width: 0; }
@@ -1500,6 +1493,9 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .chart-vgrid { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--line); pointer-events: none; }
 .chart-axis.ticks { position: relative; display: block; height: 22px; padding-top: 0; font-size: 12px; }
 .chart-axis.ticks span { position: absolute; top: 6px; transform: translateX(-50%); white-space: nowrap; }
+/* The marks nearest the edges sit inside the chart, not past it. */
+.chart-axis.ticks span.start { transform: none; }
+.chart-axis.ticks span.end { transform: translateX(-100%); }
 
 /* A thin bar per thread or core. */
 .strip { display: grid; gap: 6px; }
@@ -1525,9 +1521,9 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 
 /* The System log. */
 .events { margin: 0; padding: 0; list-style: none; }
-.events li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 38px; }
+.events li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 38px; padding: 8px 0; }
 .events li + li { border-top: 1px solid var(--line); }
-.events-text { overflow: hidden; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+.events-text { min-width: 0; font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
 .events time { color: var(--text-3); font-size: 12.5px; white-space: nowrap; }
 
 /* The sensor task's setup: its step and percent, a bar filling along the foot. */

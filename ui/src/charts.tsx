@@ -69,7 +69,13 @@ export function Chart({ lines, max, format, times, keep, every, ticks }: Span & 
   if (ticks && every && end) {
     for (let t = Math.ceil((end - (keep - 2) * every) / 60) * 60; t <= end; t += 60) marks.push(t);
   }
-  const at = (t: number) => left(keep - 1 - (end - t) / every);
+  const slotOf = (t: number) => keep - 1 - (end - t) / every;
+  const at = (t: number) => left(slotOf(t));
+  // A mark within a tenth of an edge leans inward, so its time is not cut off.
+  const lean = (t: number) => {
+    const f = (slotOf(t) - 1) / (keep - 2);
+    return f < 0.1 ? "start" : f > 0.9 ? "end" : undefined;
+  };
 
   return (
     <div className="chart">
@@ -116,7 +122,7 @@ export function Chart({ lines, max, format, times, keep, every, ticks }: Span & 
       </div>
       {ticks ? (
         <div className="chart-axis ticks">
-          {marks.map((t) => <span key={t} style={{ left: at(t) }}>{clock(t, true)}</span>)}
+          {marks.map((t) => <span key={t} className={lean(t)} style={{ left: at(t) }}>{clock(t, true)}</span>)}
         </div>
       ) : (
         <div className="chart-axis">
