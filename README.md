@@ -112,7 +112,6 @@ shows what any account can read from the system:
   in red until it is marked as taken out; one running below its rated speed turns yellow.
 - **Graphics**: NVIDIA cards' temperature, load, fan, power and video memory through
   `nvidia-smi`, other cards by their state.
-- **System log** on Windows: the last 30 days of crashes, hardware errors and power losses.
 - **Volumes**, how full each one is, and the **drives** with their health.
 
 **Advanced**, a button the host or an admin confirms once, adds the sensors: the processor's temperature over time and per core, every
