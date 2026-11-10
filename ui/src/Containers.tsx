@@ -493,7 +493,7 @@ function ContainerPage({ name, tab, more, routes, users, providers, onChanged }:
               {updating || building ? <span className="spinner small" /> : <Icon name="autorenew" size={18} />}{building ? "Updating" : "Update"}
             </button>
           )}
-          {manage && made && (on ? <button type="button" className="btn" disabled={working} onClick={() => act("stop")}><Icon name="stop" size={18} />Stop</button>
+          {manage && made && (on ? <button type="button" className="btn primary danger-fill" disabled={working} onClick={() => act("stop")}><Icon name="stop" size={18} />Stop</button>
             : head.state === "paused" ? <button type="button" className="btn primary" disabled={working} onClick={() => act("unpause")}><Icon name="play_arrow" size={18} />Resume</button>
             : <button type="button" className="btn primary" disabled={working} onClick={() => act("start")}><Icon name="play_arrow" size={18} />Start</button>)}
           {menu.length > 0 && <MoreMenu label={`Actions for ${head.name}`} actions={menu} />}

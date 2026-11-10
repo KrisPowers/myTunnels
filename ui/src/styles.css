@@ -1025,7 +1025,7 @@ a.result:hover { background: var(--hover); }
 .ex-uploads small { color: var(--text-3); font-size: 12px; white-space: nowrap; }
 
 .btn.primary.danger-fill { border-color: var(--bad); background: var(--bad); color: var(--on-bad); }
-.btn.primary.danger-fill:hover { background: color-mix(in srgb, var(--bad) 88%, var(--text)); }
+.btn.primary.danger-fill:hover { background: color-mix(in srgb, var(--bad) 86%, #000000); }
 
 
 /* People with access to Code, each with the repositories they may open. */
