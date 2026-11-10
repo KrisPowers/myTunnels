@@ -71,7 +71,7 @@ export function InstallPill() {
     } catch {
       return;
     }
-    const names = new Map(apps.catalog.map((a) => [a.id, a.name]));
+    const names = new Map(apps.catalog.map((a) => [a.id, a.name] as const));
     const now: Running[] = [];
     const ended: Running[] = [];
     for (const [id, state] of Object.entries(apps.host?.apps ?? {})) {
