@@ -280,18 +280,25 @@ function Trend({ m, cpu, advanced }: { m: Metrics; cpu: HwPart | undefined; adva
   const temps = coreTemps.length ? coreTemps : m.cores.map((c) => c.temp).filter((t): t is number => t !== null);
   const peak = Math.max(...h.map((s) => Math.max(s.rx, s.tx)));
   return (
-    <Section title={`${open} (Last 5 Minutes)`}
+    // The title stays put, so the links beside it never shift; the chart and
+    // its figure fade in on each pick, and the threads' room is kept on every
+    // tab, so nothing under the chart jumps.
+    <Section title="Last 5 Minutes"
       tabs={<nav className="sec-tabs">{tabs.map((t) => <button key={t} type="button" className={t === open ? "on" : ""} onClick={() => setTab(t)}>{t}</button>)}</nav>}
-      now={open === "CPU" ? pct(last.cpu)
+      now={<span key={open} className="trend-in">{open === "CPU" ? pct(last.cpu)
         : open === "Memory" ? `${bytes(last.memory)} of ${bytes(m.memory_total)}`
         : open === "Network" ? <Legend items={[[`In ${rate(last.rx)}`, BLUE], [`Out ${rate(last.tx)}`, ORANGE]]} />
-        : last.temp !== null && degrees(last.temp)}>
-      {open === "CPU" && <Chart {...span} max={100} format={pct} lines={[{ label: "CPU", color: BLUE, values: h.map((s) => s.cpu) }]} />}
-      {open === "Memory" && <Chart {...span} max={100} format={pct} lines={[{ label: "In use", color: VIOLET, values: h.map((s) => (s.memory / total) * 100) }]} />}
-      {open === "Network" && <Chart {...span} max={nice(peak)} format={rate} lines={[{ label: "In", color: BLUE, values: h.map((s) => s.rx) }, { label: "Out", color: ORANGE, values: h.map((s) => s.tx) }]} />}
-      {open === "Temperature" && <Chart {...span} max={Math.max(100, nice(Math.max(...h.map((s) => s.temp ?? 0))))} format={degrees} lines={[{ label: "Processor", color: ORANGE, values: h.map((s) => s.temp) }]} />}
-      {open === "CPU" && <Strip label="Each thread" values={m.cores.map((c) => c.usage)} max={100} unit="%" />}
-      {open === "CPU" && advanced && <Strip heat label="Each core, °C" values={temps} max={100} unit="°C" />}
+        : last.temp !== null && degrees(last.temp)}</span>}>
+      <div key={open} className="trend-in">
+        {open === "CPU" && <Chart {...span} max={100} format={pct} lines={[{ label: "CPU", color: BLUE, values: h.map((s) => s.cpu) }]} />}
+        {open === "Memory" && <Chart {...span} max={100} format={pct} lines={[{ label: "In use", color: VIOLET, values: h.map((s) => (s.memory / total) * 100) }]} />}
+        {open === "Network" && <Chart {...span} max={nice(peak)} format={rate} lines={[{ label: "In", color: BLUE, values: h.map((s) => s.rx) }, { label: "Out", color: ORANGE, values: h.map((s) => s.tx) }]} />}
+        {open === "Temperature" && <Chart {...span} max={Math.max(100, nice(Math.max(...h.map((s) => s.temp ?? 0))))} format={degrees} lines={[{ label: "Processor", color: ORANGE, values: h.map((s) => s.temp) }]} />}
+      </div>
+      <div className={"trend-extra" + (open === "CPU" ? "" : " off")} aria-hidden={open !== "CPU"}>
+        <Strip label="Each thread" values={m.cores.map((c) => c.usage)} max={100} unit="%" />
+        {advanced && <Strip heat label="Each core, °C" values={temps} max={100} unit="°C" />}
+      </div>
     </Section>
   );
 }
