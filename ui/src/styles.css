@@ -59,15 +59,6 @@
   --s1: light-dark(#006fff, #4797ff);
   --s2: light-dark(#8a4dff, #a67cff);
   --s3: light-dark(#e07b00, #f5a524);
-  /* The Hardware page's drawing: the board, its slots and parts. */
-  --pcb: light-dark(#e6ece8, #16201b);
-  --pcb-edge: light-dark(#c6d1ca, #2a3a31);
-  --silk: light-dark(#7f9186, #5c7166);
-  --slot: light-dark(#d5ddd8, #0f1613);
-  --part: light-dark(#ffffff, #1f2226);
-  --die: light-dark(#e3e6ea, #2b2f35);
-  --stick: light-dark(#1f6f45, #1d4d34);
-  --chip: light-dark(#1b2a22, #0e1511);
   --bone: var(--card-2);
   --bone-shine: var(--card);
   --shadow: 0 1px 2px light-dark(rgba(20, 24, 31, .08), rgba(0, 0, 0, .4)), 0 12px 32px light-dark(rgba(20, 24, 31, .14), rgba(0, 0, 0, .5));
@@ -1492,8 +1483,8 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .cv-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .cv-bar-row .ex-pick .dropdown { min-width: 130px; }
 
-/* ---- Hardware: the computer drawn as its board, each part outlined in its
-   health, and the picked part's readings beside it ---- */
+/* ---- Hardware: a photo of the board with this computer's own parts in
+   place, each lit in its health, and the picked part's readings beside it ---- */
 .hw-intro > .icon { color: var(--accent); }
 .hw-intro p { max-width: 640px; }
 .hw-intro .bullets { gap: 4px; padding: 0; list-style: none; }
@@ -1502,49 +1493,82 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .hw-setup > :not(.hw-setup-bar) { position: relative; }
 .hw-setup-bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--accent); transition: width .4s var(--ease); }
 
-.hw-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
-.hw-stage { padding: 16px; border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); }
-.hw-board { display: block; width: 100%; height: auto; }
+.hw-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
+.hw-stage {
+  display: grid; justify-items: center; gap: 22px; padding: 28px 24px 24px; border-radius: var(--card-round);
+  background: radial-gradient(ellipse at 50% 35%, light-dark(#eef1f4, #22252b) 0%, light-dark(#dfe3e8, #121316) 75%);
+}
 
-/* The drawing. */
-.hw-pcb { fill: var(--pcb); stroke: var(--pcb-edge); stroke-width: 1.5; }
-.hw-hole { fill: var(--card); stroke: var(--pcb-edge); stroke-width: 1.5; }
-.hw-silk { fill: var(--silk); font: 600 11px var(--font); letter-spacing: .08em; text-transform: uppercase; }
-.hw-comp { fill: var(--part); stroke: var(--line-strong); stroke-width: 2; transition: stroke .2s, stroke-width .15s; }
-.hw-die { fill: var(--die); }
-.hw-dimm-slot, .hw-pcie, .hw-port { fill: var(--slot); stroke: var(--pcb-edge); stroke-width: 1; }
-.hw-stick { fill: var(--stick); }
-.hw-chip { fill: var(--chip); }
-.hw-pin { fill: var(--pcb-edge); }
-.hw-fan-ring { fill: none; stroke: var(--line-strong); stroke-width: 2; }
-.hw-fan-hub { fill: var(--line-strong); }
-.hw-wire { fill: none; stroke: var(--line-strong); stroke-width: 2; stroke-dasharray: 1 5; stroke-linecap: round; }
-.hw-label { fill: var(--text-2); font: 600 12px var(--font); letter-spacing: .04em; }
-.hw-value { fill: var(--text); font: 600 22px var(--font); font-variant-numeric: tabular-nums; }
-.hw-value.small { font-size: 15px; }
-.hw-small { fill: var(--text-3); font: 500 11px var(--font); }
-.hw-stick-size { fill: var(--text); font: 600 12px var(--font); }
-.hw-board text, .hw-chip, .hw-pin, .hw-fan-hub, .hw-fan-ring { pointer-events: none; }
-.hw-off { opacity: .55; }
-/* Health: a green, yellow or red outline, the failing ones glowing. */
-.hw-hit { cursor: pointer; outline: none; }
-.hw-hit.ok .hw-comp { stroke: var(--ok); }
-.hw-hit.warn .hw-comp { stroke: var(--warn); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--warn) 55%, transparent)); }
-.hw-hit.bad .hw-comp { stroke: var(--bad); filter: drop-shadow(0 0 8px color-mix(in srgb, var(--bad) 60%, transparent)); animation: hw-alert 1.6s ease-in-out infinite; }
-.hw-hit:hover .hw-comp { stroke-width: 3; }
-.hw-hit.picked .hw-comp { stroke-width: 3.5; }
-.hw-hit:focus-visible .hw-comp { stroke: var(--accent); }
-@keyframes hw-alert { 50% { stroke-opacity: .4; } }
+/* The board, and what sits on it, placed by share of the photo's size. */
+.hw-rig { position: relative; width: min(100%, 620px); aspect-ratio: 1032 / 1272; }
+.hw-rig-board {
+  position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 10px; cursor: pointer; user-select: none;
+  box-shadow: 0 2px 4px rgb(0 0 0 / .35), 0 24px 60px rgb(0 0 0 / .45);
+}
+.hw-rig.warn .hw-rig-board { box-shadow: 0 0 0 2px var(--warn), 0 24px 60px rgb(0 0 0 / .45); }
+.hw-rig.bad .hw-rig-board { box-shadow: 0 0 0 2px var(--bad), 0 24px 60px rgb(0 0 0 / .45); }
+.hw-spot { --tone: var(--line-strong); position: absolute; padding: 0; border: 0; background: none; cursor: pointer; }
+.hw-spot:disabled { cursor: default; }
+.hw-spot.ok { --tone: var(--ok); }
+.hw-spot.warn { --tone: var(--warn); }
+.hw-spot.bad { --tone: var(--bad); }
+.hw-spot > img {
+  display: block; width: 100%; height: 100%; user-select: none;
+  filter: drop-shadow(0 0 1.5px var(--tone)) drop-shadow(0 0 1.5px var(--tone)) drop-shadow(0 0 14px color-mix(in srgb, var(--tone) 55%, transparent));
+  transition: filter .2s, transform .15s var(--ease);
+}
+.hw-spot:hover > img, .hw-spot.picked > img {
+  filter: drop-shadow(0 0 2px var(--tone)) drop-shadow(0 0 2px var(--tone)) drop-shadow(0 0 22px color-mix(in srgb, var(--tone) 75%, transparent));
+}
+.hw-spot.bad > img { animation: hw-alert 1.4s ease-in-out infinite; }
+@keyframes hw-alert { 50% { filter: drop-shadow(0 0 1px var(--tone)) drop-shadow(0 0 4px color-mix(in srgb, var(--tone) 40%, transparent)); } }
+.hw-spot > img { border-radius: 2px; }
+.hw-gpu > img { object-fit: contain; border-radius: 0; }
+/* An empty slot shows only where the pointer is; one that lost its stick, in red. */
+.hw-slot.bare { border-radius: 3px; }
+.hw-slot.bare.bad { box-shadow: 0 0 0 2px var(--bad), 0 0 16px color-mix(in srgb, var(--bad) 60%, transparent); }
+.hw-connector { border-radius: 4px; box-shadow: 0 0 0 2px var(--tone); opacity: .9; }
+.hw-connector.unknown, .hw-connector.empty { box-shadow: none; }
+.hw-spot:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* The label over each part. */
+.hw-tag {
+  position: absolute; left: 50%; bottom: 100%; display: inline-flex; align-items: center; gap: 7px; margin-bottom: 8px; padding: 5px 11px;
+  border-radius: 999px; background: rgb(14 15 18 / .82); color: #f4f5f6; font: 600 12px var(--font); white-space: nowrap;
+  transform: translateX(-50%); backdrop-filter: blur(8px); box-shadow: 0 4px 14px rgb(0 0 0 / .35); pointer-events: none;
+}
+.hw-slot .hw-tag { bottom: auto; top: 100%; margin: 8px 0 0; padding: 3px 8px; font-size: 11px; }
+.hw-gpu .hw-tag { left: 4%; bottom: auto; top: 6%; transform: none; margin: 0; }
 
-/* Beside the drawing: the picked part, every part, and the log. */
+/* What is wired to the board: a photo tile each. */
+.hw-attached { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; width: 100%; }
+.hw-item {
+  display: flex; align-items: center; gap: 12px; min-width: 0; padding: 8px 14px 8px 8px; border: 1px solid var(--line);
+  border-radius: 14px; background: var(--card); color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+.hw-item:hover { border-color: var(--line-strong); }
+.hw-item.picked { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.hw-item.warn { border-color: var(--warn); }
+.hw-item.bad { border-color: var(--bad); box-shadow: 0 0 14px color-mix(in srgb, var(--bad) 40%, transparent); }
+.hw-item-photo { display: grid; place-items: center; width: 64px; height: 48px; flex-shrink: 0; }
+.hw-item-photo img { max-width: 100%; max-height: 100%; border-radius: 4px; }
+.hw-item-text { display: grid; gap: 2px; min-width: 0; }
+.hw-item-text b { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.hw-item-text small { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* Beside the photo: the picked part, every part, and the log. */
 .hw-side { display: grid; gap: 16px; padding: 18px; border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); }
 .hw-side-block + .hw-side-block { padding-top: 16px; border-top: 1px solid var(--line); }
 .hw-side h3 { margin: 0 0 8px; color: var(--text-3); font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 .hw-details { display: grid; gap: 12px; }
-.hw-details-head { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
-.hw-details-head .dot { margin-top: 7px; }
+.hw-details-head { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .hw-details-head b { display: block; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
-.hw-details-head small { color: var(--text-3); font-size: 12px; }
+.hw-details-head small { display: inline-flex; align-items: center; gap: 6px; color: var(--text-3); font-size: 12px; }
+.hw-details-photo {
+  display: grid; place-items: center; width: 84px; height: 64px; flex-shrink: 0; padding: 6px; border-radius: 10px;
+  background: radial-gradient(circle at 50% 40%, light-dark(#f3f5f7, #2a2d33), light-dark(#e2e6ea, #17181b));
+}
+.hw-details-photo img { max-width: 100%; max-height: 100%; border-radius: 3px; }
 .hw-reason { margin: 0; color: var(--text-3); font-size: 12.5px; line-height: 1.45; }
 .hw-reason.warn { color: var(--warn); }
 .hw-reason.bad { color: var(--bad); }
@@ -1574,4 +1598,10 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .hw-events li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 30px; }
 .hw-event-text { overflow: hidden; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
 .hw-events time { color: var(--text-3); font-size: 12px; white-space: nowrap; }
+.hw-credits-link { justify-self: start; padding: 0; border: 0; background: none; color: var(--text-3); font: inherit; font-size: 12px; cursor: pointer; }
+.hw-credits-link:hover { color: var(--text); }
+.hw-credits { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.hw-credits li { display: grid; gap: 2px; }
+.hw-credits span { color: var(--text-3); font-size: 12.5px; }
 @media (max-width: 1100px) { .hw-layout { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { .hw-spot.bad > img { animation: none; } }
