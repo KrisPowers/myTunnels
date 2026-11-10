@@ -249,7 +249,7 @@ async fn run(engine: bool) {
             swap: system.used_swap(),
             rx: (rx as f64 / elapsed) as u64,
             tx: (tx as f64 / elapsed) as u64,
-            temp: cpu_temp(&sensors, &cores),
+            temp: cpu_temp(&sensors, &cores).or_else(crate::hardware::cpu_temp),
         };
 
         let containers = if engine {

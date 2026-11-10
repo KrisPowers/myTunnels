@@ -6,7 +6,6 @@ import { ContainersPage } from "./Containers";
 
 import { DashboardPage } from "./Dashboard";
 import { DevicePage } from "./Devices";
-import { HardwarePage } from "./Hardware";
 
 import { Icon, type IconName } from "./Icon";
 
@@ -73,7 +72,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [users, setUsers] = useState<User[] | null>(null);
   const [flags, setFlags] = useState<Flag[]>([]);
-  // Parts failing or needing attention, for the count beside Hardware.
+  // Parts failing or needing attention, counted beside Dashboard.
   const [faults, setFaults] = useState(0);
   const [needs, setNeeds] = useState<Needs | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
@@ -186,7 +185,6 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
     ["containers", "Containers", "deployed_code", "#/", can("containers.view") || can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("media.view") || can("drive.view")],
     ["apps", "Apps", "apps", "#/apps", true],
-    ["hardware", "Hardware", "memory", "#/hardware", can("metrics.view")],
     ["security", "Security", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
   ];
   const home = pages.find((p) => p[4])?.[3] ?? "#/settings/preferences";
@@ -198,7 +196,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
     <NavItem key={key} to={to} icon={icon} label={label}
       on={view === key || (key === "containers" && (view === "new" || view === "tunnels")) || (key === "security" && (view === "users" || view === "devices"))}
-      count={key === "dashboard" ? flags.length || undefined : key === "hardware" ? faults || undefined : undefined} rail={rail} />
+      count={key === "dashboard" ? flags.length + faults || undefined : undefined} rail={rail} />
   );
 
   return (
@@ -236,9 +234,8 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
         </nav>
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
 
-        <main className="page" key={view + id}>
-          {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
-          {view === "hardware" && <HardwarePage />}
+        <main className="page" key={view === "dashboard" ? view : view + id}>
+          {view === "dashboard" && <DashboardPage tab={id} flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
           {view === "apps" && <AppsPage />}
           {view === "storage" && <StoragePage tab={id} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} status={status}

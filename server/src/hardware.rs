@@ -1,6 +1,6 @@
-//! The Hardware page: every part of this computer, what it reads and whether
-//! it is healthy, kept current every few seconds, with an email to the host
-//! and admins when a part starts failing and again when it recovers.
+//! Every part of this computer, what it reads and whether it is healthy, kept
+//! current every few seconds for the Dashboard, with an email to the host and
+//! admins when a part starts failing and again when it recovers.
 //!
 //! What any account may read comes straight from the system. On Windows that
 //! is `hardware/inventory.ps1` (the memory slots and sticks, drives,
@@ -9,8 +9,8 @@
 //! (hwmon, EDAC and the block devices) and `nvidia-smi`.
 //!
 //! Temperatures, fan speeds, voltages and drive wear on Windows need
-//! administrator rights. Turning the page on there runs `mytunnels hardware
-//! on` through Windows' admin prompt: it installs the PawnIO driver and
+//! administrator rights, for the Dashboard's Advanced view. Turning it on
+//! there runs `mytunnels hardware on` through Windows' admin prompt: it installs the PawnIO driver and
 //! LibreHardwareMonitor's library in Program Files and a task that runs
 //! `hardware/sensors.ps1` as SYSTEM, which writes `sensors.json` for this
 //! module to read. `mytunnels hardware off` removes the task and the files.
@@ -146,7 +146,8 @@ pub struct Snapshot {
     at: i64,
     /// windows, linux or macos.
     platform: &'static str,
-    /// Windows' sensor task: "none" where none is needed, else "missing",
+    /// Windows' sensor task: "none" where none is needed, "off" until
+    /// Advanced is turned on, else "missing",
     /// "waiting" (for the admin prompt), "installing" (setup under way),
     /// "starting" (set up, no reading yet), "running" or "stale" (stopped
     /// reading). Once set up, it is never set up again.
@@ -181,7 +182,7 @@ fn enabled(db: &Db) -> bool {
 
 // ---- the API ----
 
-/// The page: whether it is on, and what was last read.
+/// What was last read, and whether Advanced's sensor task is turned on.
 pub async fn view(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let snapshot = CURRENT
         .read()
@@ -194,7 +195,7 @@ pub async fn view(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     })))
 }
 
-/// Turns the page on. On Windows this asks for administrator rights on this
+/// Turns Advanced on. On Windows this asks for administrator rights on this
 /// computer's screen, to put the sensor task in place.
 pub async fn enable(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     if PLATFORM == "macos" {
@@ -214,10 +215,9 @@ pub async fn enable(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     view(State(state)).await
 }
 
-/// Turns the page off, removing the sensor task on Windows through the admin prompt.
+/// Turns Advanced off, removing the sensor task on Windows through the admin prompt.
 pub async fn disable(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     state.db.set_setting("hardware", "off")?;
-    *CURRENT.write().unwrap_or_else(PoisonError::into_inner) = None;
     #[cfg(windows)]
     if windows::installed() {
         windows::elevate("off")?;
@@ -253,9 +253,6 @@ async fn run(state: AppState) {
     let mut every = tokio::time::interval(Duration::from_secs(5));
     loop {
         every.tick().await;
-        if !enabled(&state.db) {
-            continue;
-        }
         let snapshot = collect(&state.db, &mut sources).await;
         alerts.check(&state, &snapshot);
         *CURRENT.write().unwrap_or_else(PoisonError::into_inner) = Some(snapshot);
@@ -279,7 +276,7 @@ async fn collect(db: &Db, sources: &mut Sources) -> Snapshot {
     };
     let gpus = nvidia().await;
     #[cfg(windows)]
-    windows::collect(db, sources, &mut snap, &gpus).await;
+    windows::collect(db, sources, &mut snap, &gpus, enabled(db)).await;
     #[cfg(target_os = "linux")]
     linux::collect(db, &mut snap, &gpus);
     #[cfg(not(any(windows, target_os = "linux")))]
@@ -288,6 +285,15 @@ async fn collect(db: &Db, sources: &mut Sources) -> Snapshot {
     let _ = sources;
     snap.parts.sort_by_key(|p| order(p.kind));
     snap
+}
+
+/// The processor's temperature as last read, for the Dashboard's chart where
+/// the system's own sensors report none, as on Windows.
+pub fn cpu_temp() -> Option<f32> {
+    let current = CURRENT.read().unwrap_or_else(PoisonError::into_inner);
+    let cpu = current.as_ref()?.parts.iter().find(|p| p.kind == "cpu")?;
+    let t = cpu.readings.iter().find(|r| r.label == "Temperature")?;
+    Some(t.value as f32)
 }
 
 fn order(kind: &str) -> usize {
@@ -795,7 +801,7 @@ async fn tell(db: &Db, news: &[(Part, Health)]) -> Result<()> {
             &smtp,
             &address,
             &subject,
-            &format!("{body}\n\nSee Hardware in myTunnels for more."),
+            &format!("{body}\n\nSee the Dashboard in myTunnels for more."),
         )
         .await?;
     }
@@ -900,7 +906,14 @@ mod windows {
         )?)
     }
 
-    pub async fn collect(db: &Db, sources: &mut Sources, snap: &mut Snapshot, gpus: &[Gpu]) {
+    /// What any account may read, and with `advanced` the sensor task's readings.
+    pub async fn collect(
+        db: &Db,
+        sources: &mut Sources,
+        snap: &mut Snapshot,
+        gpus: &[Gpu],
+        advanced: bool,
+    ) {
         let stale = sources
             .inventory
             .as_ref()
@@ -916,7 +929,12 @@ mod windows {
             .as_ref()
             .map(|(_, v)| v.clone())
             .unwrap_or(Value::Null);
-        let sensors = read_sensors(db, snap);
+        let sensors = if advanced {
+            read_sensors(db, snap)
+        } else {
+            snap.helper = "off";
+            None
+        };
         let hw: Vec<&Value> = sensors
             .as_ref()
             .and_then(|s| s["hardware"].as_array())
