@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useState, type UIEvent } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type UIEvent } from "react";
 import { createPortal } from "react-dom";
-import { api, message, type AppAction, type AppItem, type Apps, type HostApp, type Needs } from "./api";
+import { api, message, type AppAction, type AppItem, type AppJob, type Apps, type HostApp, type InstallStage, type Needs } from "./api";
 import { AppLogo } from "./AppLogo";
 import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
@@ -36,6 +36,95 @@ const STATUS: Option<Status>[] = [
 
 const DOING: Record<AppAction, string> = { install: "Installing", update: "Updating", uninstall: "Removing" };
 const DONE: Record<AppAction, string> = { install: "Install", update: "Update", uninstall: "Uninstall" };
+const DID: Record<AppAction, string> = { install: "Installed", update: "Updated", uninstall: "Removed" };
+
+// Said when an install starts, with the app's id, so the pill looks at once.
+const JOB_STARTED = "app-job-started";
+
+// The steps an install goes through, in order; removing one skips the download.
+const STAGES: InstallStage[] = ["preparing", "downloading", "installing", "checking"];
+const STAGE: Record<InstallStage, string> = { preparing: "Preparing", downloading: "Downloading", installing: "Installing", checking: "Checking" };
+
+type Running = { id: string; name: string; job: AppJob };
+
+// What the pill says of a job: the step it is on, or how it ended.
+function said(job: AppJob) {
+  if (!job.running) return job.failed ? `${DONE[job.action]} failed` : DID[job.action];
+  if (!job.stage) return DOING[job.action];
+  const step = job.stage === "installing" && job.action === "uninstall" ? "Removing" : STAGE[job.stage];
+  return job.percent != null ? `${step} ${job.percent}%` : step;
+}
+
+// InstallPill sits in the bottom right on every page while apps install,
+// update or are removed, with the step each is on, then says for a moment
+// how each ended.
+export function InstallPill() {
+  const [shown, setShown] = useState<Running[]>([]);
+  const [busy, setBusy] = useState(false);
+  // The apps last seen running, so their ending is shown.
+  const watching = useRef(new Set<string>());
+  const busyNow = useRef(false);
+  const look = useCallback(async () => {
+    let apps: Apps;
+    try {
+      apps = await api.apps();
+    } catch {
+      return;
+    }
+    const names = new Map(apps.catalog.map((a) => [a.id, a.name] as const));
+    const now: Running[] = [];
+    const ended: Running[] = [];
+    for (const [id, state] of Object.entries(apps.host?.apps ?? {})) {
+      if (!state.job) continue;
+      const item = { id, name: names.get(id) ?? id, job: state.job };
+      if (state.job.running) now.push(item);
+      else if (watching.current.has(id)) ended.push(item);
+    }
+    watching.current = new Set(now.map((r) => r.id));
+    busyNow.current = now.length > 0;
+    setBusy(busyNow.current);
+    const fresh = new Set([...now, ...ended].map((r) => r.id));
+    setShown((was) => [...now, ...was.filter((r) => !r.job.running && !fresh.has(r.id)), ...ended]);
+    for (const r of ended) setTimeout(() => setShown((s) => s.filter((x) => x !== r)), 5000);
+  }, []);
+  useEffect(() => {
+    const started = (e: Event) => {
+      const id = (e as CustomEvent<string | undefined>).detail;
+      if (id) watching.current.add(id);
+      // While busy, the next look is a second away anyway.
+      if (id || !busyNow.current) look();
+    };
+    addEventListener(JOB_STARTED, started);
+    return () => removeEventListener(JOB_STARTED, started);
+  }, [look]);
+  useEffect(() => {
+    if (!busy) return;
+    const t = setInterval(look, 1000);
+    return () => clearInterval(t);
+  }, [busy, look]);
+
+  if (!shown.length) return null;
+  return (
+    <div className="install-pills" role="status" aria-live="polite">
+      {shown.map(({ id, name, job }) => {
+        const stages = STAGES.filter((s) => job.action !== "uninstall" || s !== "downloading");
+        const at = job.stage ? stages.indexOf(job.stage) : -1;
+        return (
+          <div key={id} className={"install-pill" + (job.running ? "" : job.failed ? " bad" : " ok")} title={job.log || undefined}>
+            {job.running ? <span className="spinner" /> : <Icon name={job.failed ? "error" : "check_circle"} size={16} />}
+            <b>{name}</b>
+            <span>{said(job)}</span>
+            {job.running && at >= 0 && (
+              <span className="install-steps" aria-label={`Step ${at + 1} of ${stages.length}`}>
+                {stages.map((s, i) => <i key={s} className={i < at ? "done" : i === at ? "on" : undefined} />)}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // AppsPage is the catalog of apps a homelab or engineering machine usually
 // needs, a tile each, each installed with one click.
@@ -48,8 +137,11 @@ export function AppsPage() {
   const notify = useNotify();
   const load = useCallback(async () => {
     try {
-      setApps(await api.apps());
+      const got = await api.apps();
+      setApps(got);
       setProblem("");
+      // An install found running, from before this page opened, gets its pill.
+      if (Object.values(got.host?.apps ?? {}).some((a) => a.job?.running)) dispatchEvent(new CustomEvent(JOB_STARTED));
     } catch (e) {
       setProblem(message(e));
     }
@@ -64,6 +156,7 @@ export function AppsPage() {
   const act = async (app: AppItem, action: AppAction, version?: string) => {
     try {
       await api.appAction(app.id, action, version);
+      dispatchEvent(new CustomEvent(JOB_STARTED, { detail: app.id }));
       notify(`${DOING[action]} ${app.name}${version ? ` ${version}` : ""}`);
       await load();
     } catch (e) {

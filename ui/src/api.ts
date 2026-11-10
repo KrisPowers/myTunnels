@@ -481,7 +481,21 @@ export interface HostApp {
   version: string | null;
   // Whether the host can install it.
   can: boolean;
-  job?: { action: AppAction; running: boolean; failed: boolean; log: string };
+  job?: AppJob;
+}
+
+// How far along an install is; an older `server host` does not say.
+export type InstallStage = "preparing" | "downloading" | "installing" | "checking";
+
+export interface AppJob {
+  action: AppAction;
+  running: boolean;
+  failed: boolean;
+  // While running, the installer's latest line; after, the last of what it said.
+  log: string;
+  stage?: InstallStage;
+  // How much of the download is done, while the installer says.
+  percent?: number | null;
 }
 
 export interface Apps {

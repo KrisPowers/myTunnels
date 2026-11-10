@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent } from "react";
-import { AppsPage, NeedsContext } from "./Apps";
+import { AppsPage, InstallPill, NeedsContext } from "./Apps";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type Flag, type Group, type Needs, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { NewMenu } from "./Builds";
 import { ContainersPage } from "./Containers";
@@ -247,6 +247,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "docs" && <Docs section={id} />}
         </main>
       </div>
+      <InstallPill />
     </div>
     </NeedsContext.Provider>
   );
