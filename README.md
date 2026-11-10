@@ -101,11 +101,12 @@ tunnel, and the dashboard's own sign-in (and emailed code, when on) still applie
 ## Dashboard
 
 **Dashboard** is the host at a glance, read every two seconds, with the last five minutes
-drawn as charts: its facts in a column on the left, under a chip for each memory slot,
-drive and graphics card lit by its health, and the chart and tables on the right. It
+drawn as charts: its facts in a column on the left, under each memory slot, drive and
+graphics card by a dot lit by its health, and the chart and tables on the right. It
 shows what any account can read from the system:
 
-- The host: its platform, kernel, processor, cores, memory, board, Docker and uptime.
+- The machine: its name, platform, kernel, processor, cores, memory, board and uptime, as
+  the system itself reports them, never Docker's virtual machine.
 - **CPU** over time and per thread, **memory** over time with the sticks in the board's
   slots, and **network** traffic in and out. A stick that stops being detected stays listed
   in red until it is marked as taken out; one running below its rated speed turns yellow.
@@ -113,7 +114,6 @@ shows what any account can read from the system:
   `nvidia-smi`, other cards by their state.
 - **System log** on Windows: the last 30 days of crashes, hardware errors and power losses.
 - **Volumes**, how full each one is, and the **drives** with their health.
-- **Containers**, each one's CPU, memory, network and disk traffic, and its state.
 
 **Advanced**, a button the host or an admin confirms once, adds the sensors: the processor's temperature over time and per core, every
 temperature read, the **fans** (a fan that spun before and reads 0 has stopped), the power
@@ -130,15 +130,13 @@ library in `Program Files\myTunnels\hardware` (both downloads pinned by checksum
 When a part has been failing, or healthy again, for 15 seconds, the host and every admin
 get an email, once SMTP is set up under **Security**, **Two-Factor Auth**.
 
-Installed, every figure is the computer's own, and containers come from Docker when it is
-installed. The rest of this paragraph is about running in Docker. On a Linux host,
+Installed, every figure is the computer's own. The rest of this paragraph is about running in Docker. On a Linux host,
 processors, memory and temperatures are the host's own. Docker Desktop
 runs containers in a virtual machine, so from inside one they are that machine's. To show
 the computer's own, run `server host` on it (from `server/`, `cargo run --release -- host`):
 it answers on `127.0.0.1:7094` alone, and the Dashboard reads it through `HOST_URL` in
 `compose.yaml`, falling back to its own figures while it is not running. Network traffic is
-what passes through myTunnels, or the computer's while `server host` runs. Containers come from the Docker API through the
-`docker` service in `compose.yaml`, which allows containers and nothing else.
+what passes through myTunnels, or the computer's while `server host` runs.
 Temperatures need sensors the host exposes under `/sys/class/hwmon`, which a Linux host
 does and Docker Desktop does not.
 
@@ -178,7 +176,7 @@ pause, kill and delete. Under it:
   hand, or always. The last two bring it back after a crash or a restart of the machine,
   as soon as Docker is running again. Each change applies at once, without a
   restart, and is kept by the container's name, so it is given back when the container is
-  made again by Compose or a new build. The Dashboard shows each container against its limits.
+  made again by Compose or a new build.
 
 ### From a repository or an image
 
@@ -426,7 +424,7 @@ these environment variables, none of which an install needs:
 | `DATA_DIR` | `data` in its folder | `/data` | Database location |
 | `SECRET_KEY_FILE` | `keys/secret.key` in its folder | `/keys/secret.key` | Key that seals secrets in the database, made on first start |
 | `SECRET_KEY` | none | none | The same key as 64 hex digits, in place of the file |
-| `DOCKER_HOST` | Docker's own socket | `tcp://docker:2375` in `compose.yaml` | Docker API the Dashboard reads containers from (`unix://`, `npipe://` or `tcp://`) |
+| `DOCKER_HOST` | Docker's own socket | `tcp://docker:2375` in `compose.yaml` | Docker API the Containers page reads containers from (`unix://`, `npipe://` or `tcp://`) |
 | `RUST_LOG` | `info` | `info` | Log level |
 
 Its folder is `%LOCALAPPDATA%\myTunnels` on Windows and `~/.local/share/myTunnels` elsewhere,
