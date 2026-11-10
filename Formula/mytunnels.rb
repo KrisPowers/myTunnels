@@ -54,11 +54,11 @@ class Mytunnels < Formula
   on_linux do
     on_arm do
       url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.0/linux-arm64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+      sha256 "946fe6b1b9287c042d391265c5d3630184870ee535cb9904b4e3f3163b01cadc"
     end
     on_intel do
       url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.0/linux-x64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+      sha256 "315061853b597f36f729c4841128370f4f92e1aeb19adc371897ab09f3bf9e43"
     end
   end
 
