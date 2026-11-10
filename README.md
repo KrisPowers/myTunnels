@@ -120,6 +120,32 @@ what passes through myTunnels, or the computer's while `server host` runs. Conta
 Temperatures need sensors the host exposes under `/sys/class/hwmon`, which a Linux host
 does and Docker Desktop does not.
 
+## Hardware
+
+**Hardware** shows every part of the computer myTunnels is installed on, read every five
+seconds, each green while healthy and red when failing:
+
+- **Memory**, slot by slot: each stick's size, its share of the total, its speed and serial,
+  and the empty slots. A stick that stops being detected stays in its slot in red until it
+  is marked as taken out on purpose; one running below its rated speed turns yellow. Memory
+  with ECC on Linux also counts each stick's corrected and uncorrected errors.
+- **Processor**, **graphics** (NVIDIA through `nvidia-smi`), **drives**, **fans** (a fan that
+  spun before and reads 0 has stopped), the **power supply's** 12, 5 and 3.3 V rails (within
+  5% is healthy, past 10% is failing) and the **board's** own temperatures.
+- The last 30 days of crashes, hardware errors and power losses from Windows' System log.
+
+It is off until the host or an admin turns it on. On Windows, temperatures, fan speeds,
+voltages and drive wear need administrator rights, so turning it on asks Windows once, then
+installs the [PawnIO](https://pawnio.eu) driver, puts
+[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)'s
+library in `Program Files\myTunnels\hardware` (both downloads pinned by checksum) and adds a
+`myTunnels Hardware` task that reads the sensors as SYSTEM from startup. Turning it off
+removes the task and those files; PawnIO stays installed. On Linux it reads `/sys` and
+needs nothing more; drive wear and errors there need root and are not shown.
+
+When a part has been failing, or healthy again, for 15 seconds, the host and every admin
+get an email, once SMTP is set up under **Security**, **Two-Factor Auth**.
+
 ## Containers
 
 **Containers** is one catalog of everything published here: every container, and every tunnel to
