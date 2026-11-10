@@ -4,6 +4,11 @@ import type { Me } from "./api";
 // Who is signed in to the dashboard, for pages to show only what they may do.
 export const MeContext = createContext<Me | null>(null);
 
+// useMe is who is signed in; pages under the dashboard always have someone.
+export function useMe() {
+  return useContext(MeContext)!;
+}
+
 // useCan says whether the person signed in holds a permission; the host and admins
 // holds them all. The server checks every call the same way.
 export function useCan() {

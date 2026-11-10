@@ -6,6 +6,7 @@ import { ContainersPage } from "./Containers";
 
 import { DashboardPage } from "./Dashboard";
 import { DevicePage } from "./Devices";
+import { HardwarePage } from "./Hardware";
 
 import { Icon, type IconName } from "./Icon";
 
@@ -72,6 +73,8 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [users, setUsers] = useState<User[] | null>(null);
   const [flags, setFlags] = useState<Flag[]>([]);
+  // Parts failing or needing attention, for the count beside Hardware.
+  const [faults, setFaults] = useState(0);
   const [needs, setNeeds] = useState<Needs | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [providers, setProviders] = useState<OAuthProvider[]>([]);
@@ -96,7 +99,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   };
 
   const load = useCallback(async () => {
-    const [r, d, u, s, o, f, n] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status(), api.oauth(), api.flags(), api.needs()]);
+    const [r, d, u, s, o, f, n, h] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status(), api.oauth(), api.flags(), api.needs(), api.hardware()]);
     if (r.status === "fulfilled") setRoutes(r.value);
     if (d.status === "fulfilled") setDevices(d.value);
     if (u.status === "fulfilled") setUsers(u.value);
@@ -104,6 +107,10 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
     if (o.status === "fulfilled") setProviders(o.value.providers.filter((p) => p.configured));
     if (f.status === "fulfilled") setFlags(f.value);
     if (n.status === "fulfilled") setNeeds(n.value);
+    if (h.status === "fulfilled") {
+      const snap = h.value.snapshot;
+      setFaults(snap ? [...snap.parts, ...snap.notes].filter((p) => p.health === "warn" || p.health === "bad").length : 0);
+    }
   }, []);
 
   useEffect(() => {
@@ -176,6 +183,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   // Each page shows for those who may use it; the first of them is home.
   const pages: [string, string, IconName, string, boolean][] = [
     ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
+    ["hardware", "Hardware", "memory", "#/hardware", can("metrics.view")],
     ["containers", "Containers", "deployed_code", "#/", can("containers.view") || can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("media.view") || can("drive.view")],
     ["apps", "Apps", "apps", "#/apps", true],
@@ -190,7 +198,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
     <NavItem key={key} to={to} icon={icon} label={label}
       on={view === key || (key === "containers" && (view === "new" || view === "tunnels")) || (key === "security" && (view === "users" || view === "devices"))}
-      count={key === "dashboard" ? flags.length || undefined : undefined} rail={rail} />
+      count={key === "dashboard" ? flags.length || undefined : key === "hardware" ? faults || undefined : undefined} rail={rail} />
   );
 
   return (
@@ -230,6 +238,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
         <main className="page" key={view + id}>
           {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
+          {view === "hardware" && <HardwarePage />}
           {view === "apps" && <AppsPage />}
           {view === "storage" && <StoragePage tab={id} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} status={status}
