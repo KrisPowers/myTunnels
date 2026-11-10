@@ -74,6 +74,14 @@
         [Environment]::SetEnvironmentVariable('Path', (@($bin) + ($path -split ';' | Where-Object { $_ })) -join ';', 'User')
     }
     if (($env:Path -split ';') -notcontains $bin) { $env:Path = "$bin;$env:Path" }
+    # Terminals already open, and those opened from an editor or Windows
+    # Terminal started before now, keep the PATH they began with. WindowsApps
+    # is on every account's PATH from sign-in, so a launcher there answers to
+    # `mytunnels` in all of them.
+    $apps = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps'
+    if (Test-Path $apps) {
+        Set-Content (Join-Path $apps 'mytunnels.cmd') "@`"$exe`" %*" -Encoding ascii
+    }
 
     if ($running) {
         & $exe start
