@@ -261,6 +261,8 @@ pub fn needed(method: &Method, path: &str) -> Need {
         "settings" | "cloudflare" => any(&["settings.manage"]),
         "zones" => any(&["tunnels.create", "tunnels.edit"]),
         "metrics" => any(&["metrics.view", "containers.view"]),
+        // Seeing the parts is the Dashboard's; turning the page on or off is an admin's.
+        "hardware" if read => any(&["metrics.view"]),
         "containers" | "images" | "deploys" if read => any(&["containers.view"]),
         "deploys" if *method == Method::DELETE => any(&["containers.remove"]),
         "deploys" => any(&["containers.deploy"]),
