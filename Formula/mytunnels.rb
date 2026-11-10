@@ -37,7 +37,7 @@ end
 class Mytunnels < Formula
   desc "Publish apps at home through Cloudflare Tunnel, with an access gateway"
   homepage "https://github.com/KrisPowers/myTunnels"
-  version "0.1.20"
+  version "0.1.21"
   license "Apache-2.0"
 
   on_macos do
@@ -53,12 +53,12 @@ class Mytunnels < Formula
 
   on_linux do
     on_arm do
-      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.20/linux-arm64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "225c2f3359189b9499d2cfee9a764f38ea5de84c6f9b861f55c5a5545a8e6a0f"
+      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.21/linux-arm64.tar.gz", using: GitHubReleaseDownloadStrategy
+      sha256 "b0d64af31be6a1ff7d0815eed255264064e4ab50a781384a3d6c9e3bddeb681d"
     end
     on_intel do
-      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.20/linux-x64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "00af3ea602a715ab274bd70fd051d0734ef49c09d1217e505aed079e6c1dc54d"
+      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.21/linux-x64.tar.gz", using: GitHubReleaseDownloadStrategy
+      sha256 "51d04e1c74ed52ff865613bcac66de1cebecdf46e7806e515aa792acce3cc6da"
     end
   end
 
