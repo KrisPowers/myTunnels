@@ -179,14 +179,17 @@ function Processor({ cpu, metrics }: { cpu: HwPart | undefined; metrics: Metrics
   const usage = metrics?.cores.map((c) => c.usage) ?? [];
   return (
     <Section icon="memory" title="Processor" health={cpu.health} sub={fact(cpu, "Cores")}>
+      {/* The chip over its load on one side, its figures on the other. */}
       <div className="hw-cpu">
-        <div className="hw-cpu-art"><CpuArt part={cpu} /></div>
+        <div className="hw-cpu-side">
+          <div className="hw-cpu-art"><CpuArt part={cpu} /></div>
+          <div className="hw-cpu-gauge"><Gauge value={load} label="Load" /></div>
+        </div>
         <div className="hw-cpu-stats">
           <Stat value={t ? `${Math.round(t.value)}°C` : "—"} label="Package" health={t?.health} />
           {power && <Stat value={`${Math.round(power.value)} W`} label="Power" />}
           <Stat value={fact(cpu, "Base clock") || "—"} label="Base clock" />
         </div>
-        <div className="hw-cpu-gauge"><Gauge value={load} label="Load" /></div>
       </div>
       {coreTemps.length > 0 ? (
         <div className="hw-bars"><span className="hw-bars-title">Each core, °C</span><Bars heat values={coreTemps.map((r) => r.value)} max={100} format={(n) => `${Math.round(n)}`} /></div>
@@ -318,9 +321,12 @@ function Board({ board, snap }: { board: HwPart | undefined; snap: HwSnapshot })
   const temps = board.readings.filter((r) => r.unit === "°C");
   return (
     <Section icon="developer_board" title="Board" health={board.health} sub={board.name}>
-      {temps.map((r) => (
-        <div key={r.label} className="hw-row"><span>{r.label}</span><Meter share={r.value / 100} health={r.health} /><b className={r.health}>{Math.round(r.value)}°C</b></div>
-      ))}
+      {/* Its temperatures side by side, across the whole width. */}
+      {temps.length > 0 && (
+        <div className="hw-temps">
+          {temps.map((r) => <Stat key={r.label} value={`${Math.round(r.value)}°C`} label={r.label} health={r.health} />)}
+        </div>
+      )}
       {snap.events.length > 0 && (
         <ul className="hw-events">
           {snap.events.slice(0, 4).map((e, i) => (
