@@ -357,12 +357,10 @@ function Helper({ snap, admin, busy, onSetUp }: { snap: HwSnapshot; admin: boole
       );
     case "starting":
       return <div className="callout held"><span className="spinner small" /><span>Starting the sensor task. Its first readings arrive within a minute.{why}</span></div>;
-    case "outdated":
-      return <div className="callout warn held"><Icon name="warning" /><span>The sensor task is from an earlier release.</span>{button("Update it")}</div>;
     case "missing":
       return <div className="callout warn held"><Icon name="warning" /><span>Temperatures, fans, voltages and drive wear need the sensor task.{why}</span>{button("Set it up")}</div>;
     case "stale":
-      return <div className="callout bad held"><Icon name="error" /><span>The sensor task stopped sending readings.{why}</span>{button("Set it up again")}</div>;
+      return <div className="callout bad held"><Icon name="error" /><span>The sensor task stopped sending readings; Windows starts it again within a minute.{why}</span></div>;
     default:
       return null;
   }

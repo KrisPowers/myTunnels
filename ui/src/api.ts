@@ -159,7 +159,7 @@ export interface HwEvent { at: number; kind: string; health: Health; text: strin
 export interface HwSnapshot {
   at: number;
   platform: string;
-  helper: "none" | "missing" | "waiting" | "installing" | "starting" | "running" | "stale" | "outdated";
+  helper: "none" | "missing" | "waiting" | "installing" | "starting" | "running" | "stale";
   helper_error: string;
   helper_step: string;
   helper_percent: number | null;
