@@ -29,6 +29,7 @@
         if ($token) {
             # The latest release's archive, by its API address, which takes the token.
             $release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers @{ Authorization = "Bearer $token" } -UseBasicParsing
+            $tag = $release.tag_name
             $asset = $release.assets | Where-Object name -eq 'windows-x64.zip'
             if (-not $asset) { throw 'The latest release has no build for windows-x64' }
             # GitHub answers with its file storage's address, which refuses the
@@ -47,9 +48,12 @@
             $client.Dispose()
         }
         else {
+            $tag = (Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -UseBasicParsing).tag_name
             Invoke-WebRequest "https://github.com/$repo/releases/latest/download/windows-x64.zip" -OutFile $zip -UseBasicParsing
         }
         Expand-Archive $zip $new
+        # The release in place, which the panel compares with the latest to offer an update.
+        Set-Content (Join-Path $new 'release') $tag -NoNewline
 
         # An update stops the one running, swaps the files, then starts it again.
         $running = $false
