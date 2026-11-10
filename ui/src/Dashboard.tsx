@@ -260,7 +260,7 @@ function Board({ m, lead }: { m: Metrics; lead: ReactNode }) {
 }
 
 // Gauge is a ring filled to a share, the figure and what it is in its middle.
-function Gauge({ value, label }: { value: number; label: string }) {
+export function Gauge({ value, label }: { value: number; label: string }) {
   const r = 62;
   const c = 2 * Math.PI * r;
   const share = Math.min(Math.max(value / 100, 0), 1);
@@ -277,7 +277,7 @@ function Gauge({ value, label }: { value: number; label: string }) {
 }
 
 // Donut is shares of a whole as arcs of a ring.
-function Donut({ parts }: { parts: { value: number; color: string }[] }) {
+export function Donut({ parts }: { parts: { value: number; color: string }[] }) {
   const r = 56;
   const c = 2 * Math.PI * r;
   const total = parts.reduce((n, p) => n + p.value, 0) || 1;
@@ -298,7 +298,7 @@ function Donut({ parts }: { parts: { value: number; color: string }[] }) {
 }
 
 // Bars is a bar per value, on a scale from nothing to `max`.
-function Bars({ values, max, format, heat }: { values: number[]; max: number; format: (n: number) => string; heat?: boolean }) {
+export function Bars({ values, max, format, heat }: { values: number[]; max: number; format: (n: number) => string; heat?: boolean }) {
   return (
     <>
       <div className={"bars" + (heat ? " heat" : "")}>
@@ -505,7 +505,7 @@ const pct = (n: number) => `${n < 10 ? n.toFixed(1) : Math.round(n)}%`;
 const degrees = (n: number) => `${Math.round(n)}°C`;
 const rate = (n: number) => `${bytes(n)}/s`;
 
-function bytes(n: number) {
+export function bytes(n: number) {
   const units = ["B", "KB", "MB", "GB", "TB", "PB"];
   let i = 0;
   while (n >= 1024 && i < units.length - 1) {
