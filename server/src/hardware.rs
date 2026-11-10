@@ -147,7 +147,9 @@ pub struct Snapshot {
     /// windows, linux or macos.
     platform: &'static str,
     /// Windows' sensor task: "none" where none is needed, else "missing",
-    /// "waiting" (for the admin prompt), "running" or "stale".
+    /// "waiting" (for the admin prompt), "starting" (set up, no reading yet),
+    /// "running", "stale" (stopped reading) or "outdated" (an older script
+    /// than this release's, which setting it up again replaces).
     helper: &'static str,
     helper_error: String,
     /// Memory slots on the board, filled or not, where the system says.
@@ -198,8 +200,9 @@ pub async fn enable(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         ));
     }
     state.db.set_setting("hardware", "on")?;
+    // Set up, or set up again: when missing, out of date, or no longer reading.
     #[cfg(windows)]
-    if !windows::installed() {
+    if windows::needs_setup() {
         state
             .db
             .set_setting("hardware_setup_at", &util::now().to_string())?;
@@ -836,6 +839,24 @@ mod windows {
             .exists()
     }
 
+    /// The age of the task's last reading, if it has made one.
+    fn reading_age() -> Option<Duration> {
+        let modified = std::fs::metadata(dir().join("sensors.json"))
+            .and_then(|m| m.modified())
+            .ok()?;
+        SystemTime::now().duration_since(modified).ok()
+    }
+
+    /// Whether the script in place is this release's.
+    fn current() -> bool {
+        std::fs::read_to_string(dir().join("sensors.ps1"))
+            .is_ok_and(|s| s.replace("\r\n", "\n") == SENSORS.replace("\r\n", "\n"))
+    }
+
+    pub fn needs_setup() -> bool {
+        !installed() || !current() || reading_age().is_none_or(|a| a >= Duration::from_secs(30))
+    }
+
     /// Runs `mytunnels hardware <arg>` with administrator rights, which
     /// Windows asks for on this computer's screen.
     pub fn elevate(arg: &str) -> Result<()> {
@@ -1289,30 +1310,43 @@ mod windows {
                 snap.helper_error = line.trim_start_matches("failed:").trim().to_owned();
             }
         }
-        if !installed() {
-            let asked = db
-                .setting("hardware_setup_at")
-                .ok()
-                .flatten()
-                .and_then(|v| v.parse::<i64>().ok())
-                .unwrap_or(0);
-            snap.helper = if util::now() - asked < 180 {
+        // What stopped the task itself, written by sensors.ps1.
+        if let Ok(error) = std::fs::read_to_string(dir.join("sensors.error.txt")) {
+            if let Some((_, why)) = error.trim().split_once(' ') {
+                snap.helper_error = why.trim().to_owned();
+            }
+        }
+        let asked = db
+            .setting("hardware_setup_at")
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(0);
+        // The admin prompt, then the downloads and the task's first reading, take a while.
+        let recent = util::now() - asked < 180;
+        let age = reading_age();
+        snap.helper = if !installed() {
+            if recent {
                 "waiting"
             } else {
                 "missing"
-            };
-            return None;
-        }
-        let file = dir.join("sensors.json");
-        let age = std::fs::metadata(&file)
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| SystemTime::now().duration_since(t).ok());
-        snap.helper = if age.is_some_and(|a| a < Duration::from_secs(30)) {
-            "running"
+            }
+        } else if age.is_some_and(|a| a < Duration::from_secs(30)) {
+            if current() {
+                "running"
+            } else {
+                "outdated"
+            }
+        } else if recent {
+            if current() {
+                "starting"
+            } else {
+                "waiting"
+            }
         } else {
             "stale"
         };
+        let file = dir.join("sensors.json");
         let raw = std::fs::read_to_string(&file).ok()?;
         serde_json::from_str(raw.trim_start_matches('\u{feff}')).ok()
     }

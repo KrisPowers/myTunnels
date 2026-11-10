@@ -81,7 +81,31 @@ async fn latest(state: &AppState, token: &str) -> Result<String> {
     Ok(tag)
 }
 
-/// Whether a newer release than the one installed is out.
+/// Where the install script writes each step of an update, with how much of
+/// the download is in, for the panel to show.
+fn progress_file() -> std::path::PathBuf {
+    config::home().join("update.json")
+}
+
+/// The update's last step, while one runs: the file is fresh for ten minutes.
+fn progress() -> Value {
+    let file = progress_file();
+    let fresh = std::fs::metadata(&file)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age < Duration::from_secs(600));
+    if !fresh {
+        return Value::Null;
+    }
+    std::fs::read_to_string(file)
+        .ok()
+        .and_then(|raw| serde_json::from_str(raw.trim_start_matches('\u{feff}')).ok())
+        .unwrap_or(Value::Null)
+}
+
+/// Whether a newer release than the one installed is out, and how an update
+/// under way is going.
 pub async fn check(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let Some(current) = installed() else {
         return Ok(Json(json!({ "available": false })));
@@ -94,6 +118,7 @@ pub async fn check(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         "available": latest != current,
         "current": current,
         "latest": latest,
+        "progress": if latest != current { progress() } else { Value::Null },
     })))
 }
 
@@ -108,6 +133,7 @@ pub async fn install() -> ApiResult<StatusCode> {
     let token = token().await.ok_or_else(|| {
         ApiError::bad("Sign in to GitHub CLI on this computer (gh auth login) so myTunnels can fetch its update")
     })?;
+    let _ = std::fs::remove_file(progress_file());
     run_installer(&token)?;
     *FOUND.lock().unwrap_or_else(PoisonError::into_inner) = None;
     Ok(StatusCode::ACCEPTED)
@@ -134,6 +160,7 @@ fn run_installer(token: &str) -> Result<()> {
             &format!("Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand','{encoded}'"),
         ])
         .env("GH_TOKEN", token)
+        .env("MYTUNNELS_PROGRESS", progress_file())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -168,9 +195,11 @@ fn run_installer(token: &str) -> Result<()> {
                 "--quiet",
                 "--setenv=GH_TOKEN",
                 "--setenv=PATH",
+                "--setenv=MYTUNNELS_PROGRESS",
             ])
             .args(["sh", "-c", &script])
             .env("GH_TOKEN", token)
+            .env("MYTUNNELS_PROGRESS", progress_file())
             .stdin(Stdio::null())
             .status()
             .context("cannot start the installer")?;
@@ -183,6 +212,7 @@ fn run_installer(token: &str) -> Result<()> {
     std::process::Command::new("sh")
         .args(["-c", &script])
         .env("GH_TOKEN", token)
+        .env("MYTUNNELS_PROGRESS", progress_file())
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
         .stderr(log)

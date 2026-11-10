@@ -147,6 +147,10 @@ button.nav-item { width: 100%; border: 0; background: transparent; font: inherit
 .nav-item.update:hover { background: var(--accent-bg); color: var(--accent); }
 .nav-item.update:disabled { cursor: default; }
 .nav-item.update .spinner { width: 18px; height: 18px; margin: 3px; }
+/* An update under way: the row fills with the accent as it goes. */
+.nav-item.update.busy { overflow: hidden; background: var(--accent-bg); font-variant-numeric: tabular-nums; }
+.nav-item.update > :not(.update-bar) { position: relative; }
+.update-bar { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--accent) 22%, transparent); transition: width .4s var(--ease); }
 /* Folded to icons, the names and counts give way. */
 .app.rail .nav-label, .app.rail .nav-count { display: none; }
 .app.rail .nav-item, .app.rail .nav-back { justify-content: center; padding: 0; }
@@ -1483,14 +1487,45 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .hw-intro > .icon { color: var(--accent); }
 .hw-intro p { max-width: 640px; }
 .hw-intro .bullets { gap: 4px; padding: 0; list-style: none; }
-.card-head h2 > .icon { flex-shrink: 0; }
+.hw-summary { display: inline-flex; align-items: center; gap: 8px; }
 
-/* Memory: a tile per slot, a band of its health along the top; then a bar of
+/* Cards side by side; memory takes two columns where there is room, the
+   log the whole row. */
+.hw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; align-items: start; }
+.hw-full { grid-column: 1 / -1; }
+@media (min-width: 1100px) { .hw-wide { grid-column: span 2; } }
+.hw-head { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.hw-head > .icon { color: var(--accent); }
+.hw-head h2 { font-size: 14px; font-weight: 600; }
+.hw-head-sub { color: var(--text-3); font-size: 12px; }
+.hw-head .chip { margin-left: auto; text-transform: none; }
+
+/* A part: its name and state on one line, its readings as tiles, its facts in small type. */
+.hw-part { display: grid; gap: 10px; padding: 12px 16px 14px; }
+.hw-part + .hw-part { border-top: 1px solid var(--line); }
+.hw-part-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.hw-part-top b { min-width: 0; overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.hw-place { color: var(--text-3); font-size: 12px; white-space: nowrap; }
+.hw-reason { color: var(--text-3); font-size: 12px; line-height: 1.4; }
+.hw-reason.warn { color: var(--warn); }
+.hw-reason.bad { color: var(--bad); }
+.hw-metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.hw-metric { display: grid; gap: 1px; min-width: 0; padding: 8px 10px; border-radius: var(--radius); background: var(--card-2); }
+.hw-metric b { font-size: 16px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hw-metric span { overflow: hidden; color: var(--text-3); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.hw-metric.warn { background: var(--warn-bg); }
+.hw-metric.warn b { color: var(--warn); }
+.hw-metric.bad { background: var(--bad-bg); }
+.hw-metric.bad b { color: var(--bad); }
+.hw-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--text-3); font-size: 12px; }
+.hw-facts b { color: var(--text-2); font-weight: 500; }
+
+/* Memory: a tile per slot, a band of its health along the top, then a bar of
    how much each stick gives. */
-.hw-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; padding: 0 20px 16px; }
+.hw-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 14px 16px 12px; }
 .hw-slot {
-  position: relative; display: grid; align-content: start; gap: 4px; min-height: 150px; padding: 18px 16px 14px;
-  border: 1px solid var(--line); border-radius: var(--round); background: var(--card-2); overflow: hidden;
+  position: relative; display: grid; align-content: start; gap: 2px; min-width: 0; padding: 12px 12px 10px;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--card-2); overflow: hidden;
 }
 .hw-slot::before { content: ""; position: absolute; inset: 0 0 auto; height: 3px; background: var(--line-strong); }
 .hw-slot.ok::before { background: var(--ok); }
@@ -1499,41 +1534,21 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .hw-slot.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); background: var(--bad-bg); }
 .hw-slot.empty { border-style: dashed; background: transparent; }
 .hw-slot.empty::before { display: none; }
-.hw-slot-place { color: var(--text-3); font-size: 12px; font-weight: 500; }
-.hw-slot > b { font-size: 24px; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
-.hw-slot > b.hw-slot-empty { color: var(--text-3); font-size: 16px; font-weight: 400; }
-.hw-slot > small { color: var(--text-2); font-size: 12px; }
-.hw-slot > small.warn { color: var(--warn); }
-.hw-slot > small.bad { color: var(--bad); }
-.hw-slot-state { display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; color: var(--text-2); font-size: 12px; line-height: 1.4; }
-.hw-slot-state .dot { margin-top: 4px; }
-.hw-slot .btn { justify-self: start; margin-top: 8px; }
-.hw-share { display: flex; gap: 3px; height: 8px; margin: 0 20px 18px; border-radius: 4px; overflow: hidden; }
+.hw-slot-place { color: var(--text-3); font-size: 11.5px; }
+.hw-slot > b { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hw-slot > b.bad { color: var(--bad); }
+.hw-slot > b small { margin-left: 6px; color: var(--text-3); font-size: 12px; font-weight: 500; }
+.hw-slot-line { overflow: hidden; color: var(--text-2); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.hw-slot-empty { padding: 6px 0; color: var(--text-3); }
+.hw-slot .btn { justify-self: start; margin-top: 6px; }
+.hw-share { display: flex; gap: 3px; height: 6px; margin: 0 16px 14px; border-radius: 3px; overflow: hidden; }
 .hw-share span { min-width: 4px; background: var(--ok); }
 .hw-share span.warn { background: var(--warn); }
 .hw-share span.bad { background: var(--bad); }
 
-/* Every other kind: a row per part, its readings as pills on the right. */
-.hw-list { list-style: none; margin: 0; padding: 0; }
-.hw-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 16px; min-height: 56px; padding: 10px 20px; border-top: 1px solid var(--line); }
-.hw-name { display: grid; gap: 2px; min-width: 0; }
-.hw-name b { font-weight: 500; }
-.hw-name small { overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.hw-name small.warn { color: var(--warn); }
-.hw-name small.bad { color: var(--bad); }
-.hw-place { margin-left: 10px; color: var(--text-3); font-size: 12px; font-weight: 400; }
-.hw-when { color: var(--text-3); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.hw-readings { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.hw-reading {
-  display: inline-flex; align-items: baseline; gap: 8px; height: 26px; padding: 0 11px; border-radius: 13px;
-  background: var(--card-2); color: var(--text-2); font-size: 12px; line-height: 26px; white-space: nowrap;
-}
-.hw-reading b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
-.hw-reading.warn { background: var(--warn-bg); }
-.hw-reading.warn b { color: var(--warn); }
-.hw-reading.bad { background: var(--bad-bg); }
-.hw-reading.bad b { color: var(--bad); }
-@media (max-width: 900px) {
-  .hw-row { grid-template-columns: 8px minmax(0, 1fr); }
-  .hw-readings { grid-column: 2; justify-content: flex-start; }
-}
+/* The log: one line per event. */
+.hw-events { list-style: none; margin: 0; padding: 4px 0; }
+.hw-events li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 36px; padding: 4px 16px; }
+.hw-event-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hw-events time { color: var(--text-3); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) { .hw-grid { grid-template-columns: minmax(0, 1fr); } }

@@ -271,12 +271,23 @@ function NavItem({ to, icon, label, on, quiet, count, rail }: { to: string; icon
   );
 }
 
+// The steps of an update, what each is called, and where on the bar it starts
+// and ends: the download takes most of it.
+const STEPS: Record<string, [string, number, number]> = {
+  start: ["Starting", 0, 2],
+  download: ["Downloading", 2, 80],
+  unpack: ["Unpacking", 80, 88],
+  restart: ["Restarting", 88, 99],
+};
+
 // UpdateButton shows when a newer release than the one installed is out, and
-// installs it. The panel stops answering while the files are swapped; once it
-// answers on the new release, the page reloads.
+// installs it, saying each step and how far along it is. The panel stops
+// answering while the files are swapped; once it answers on the new release,
+// the page reloads.
 function UpdateButton({ rail }: { rail: boolean }) {
   const [latest, setLatest] = useState("");
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<{ step: string; percent: number | null }>({ step: "start", percent: null });
   const notify = useNotify();
 
   useEffect(() => {
@@ -294,6 +305,7 @@ function UpdateButton({ rail }: { rail: boolean }) {
   if (!latest) return null;
   const install = async () => {
     setBusy(true);
+    setStep({ step: "start", percent: null });
     try {
       await api.installUpdate();
     } catch (e) {
@@ -308,18 +320,25 @@ function UpdateButton({ rail }: { rail: boolean }) {
         return notify("The update did not finish. Its log is update.txt in the myTunnels folder.", "bad");
       }
       try {
-        if ((await api.update()).current === latest) {
+        const u = await api.update();
+        if (u.current === latest) {
           clearInterval(wait);
           location.reload();
+        } else if (u.progress && STEPS[u.progress.step]) {
+          setStep(u.progress);
         }
       } catch {
         // Not answering while the new release is put in place.
+        setStep({ step: "restart", percent: null });
       }
-    }, 2000);
+    }, 1000);
   };
-  const label = busy ? "Updating" : "Update Available";
+  const [name, from, to] = STEPS[step.step];
+  const overall = Math.round(from + ((to - from) * (step.percent ?? 0)) / 100);
+  const label = busy ? `${name} · ${overall}%` : "Update Available";
   return (
-    <button type="button" className="nav-item update" onClick={install} disabled={busy} title={rail ? label : undefined}>
+    <button type="button" className={"nav-item update" + (busy ? " busy" : "")} onClick={install} disabled={busy} title={rail ? label : undefined}>
+      {busy && <span className="update-bar" style={{ width: `${overall}%` }} aria-hidden />}
       {busy ? <span className="spinner" /> : <Icon name="download" />}
       <span className="nav-label">{label}</span>
     </button>

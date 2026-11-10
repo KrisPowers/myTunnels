@@ -159,7 +159,7 @@ export interface HwEvent { at: number; kind: string; health: Health; text: strin
 export interface HwSnapshot {
   at: number;
   platform: string;
-  helper: "none" | "missing" | "waiting" | "running" | "stale";
+  helper: "none" | "missing" | "waiting" | "starting" | "running" | "stale" | "outdated";
   helper_error: string;
   slots: number;
   ecc: boolean;
@@ -596,7 +596,7 @@ export const api = {
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),
   // Whether a newer release than the one installed is out, and installing it.
-  update: () => call<{ available: boolean; current?: string; latest?: string }>("/update"),
+  update: () => call<{ available: boolean; current?: string; latest?: string; progress?: { step: string; percent: number | null } | null }>("/update"),
   installUpdate: () => call("/update", "POST"),
   hardware: () => call<Hardware>("/hardware"),
   enableHardware: () => call<Hardware>("/hardware/enable", "POST"),

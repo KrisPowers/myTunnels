@@ -7,8 +7,15 @@
 # The program, cloudflared and the panel go in ~/.local/share/myTunnels/bin,
 # with `mytunnels` linked into ~/.local/bin. Nothing needs root. The release
 # is fetched signed in, with GH_TOKEN, GITHUB_TOKEN or gh's sign-in, since the
-# repository is private.
+# repository is private. When the panel runs it, MYTUNNELS_PROGRESS names a
+# file it writes each step to.
 set -eu
+
+report() {
+  if [ -n "${MYTUNNELS_PROGRESS:-}" ]; then
+    printf '{"step":"%s","percent":null,"at":%s}' "$1" "$(date +%s)" > "$MYTUNNELS_PROGRESS" 2> /dev/null || true
+  fi
+}
 
 repo=KrisPowers/myTunnels
 home="$HOME/.local/share/myTunnels"
@@ -36,6 +43,7 @@ file="$os-$arch.tar.gz"
 token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 if [ -z "$token" ] && command -v gh > /dev/null 2>&1; then token="$(gh auth token 2>/dev/null || true)"; fi
 echo "Downloading myTunnels for $os-$arch"
+report download
 if [ -n "$token" ]; then
   # The latest release's archive, by its API address, which takes the token.
   auth="Authorization: Bearer $token"
@@ -54,6 +62,7 @@ fi
 printf '%s' "$release" | grep -oE '"tag_name": *"[^"]*"' | head -n 1 | sed -E 's/.*"([^"]*)"$/\1/' > "$new/release"
 
 # An update stops the one running, swaps the files, then starts it again.
+report restart
 running=false
 if [ -x "$home/bin/mytunnels" ]; then
   if "$home/bin/mytunnels" status > /dev/null 2>&1; then running=true; fi
