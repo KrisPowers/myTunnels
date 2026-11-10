@@ -317,8 +317,9 @@ async fn run(engine: bool) {
     }
 }
 
-/// The machine, as Docker sees it when it can be asked: from inside a
-/// container its own name is only the container's.
+/// The machine myTunnels runs on, as the system itself reports it; Docker
+/// gives only its own version, since its name, system and kernel are those of
+/// the virtual machine Docker Desktop runs.
 fn host(system: &System, info: Option<&Value>) -> Value {
     let from = |key: &str| {
         info.and_then(|i| i[key].as_str())
@@ -326,9 +327,9 @@ fn host(system: &System, info: Option<&Value>) -> Value {
             .map(str::to_owned)
     };
     json!({
-        "name": from("Name").or_else(System::host_name),
-        "os": from("OperatingSystem").or_else(System::long_os_version),
-        "kernel": from("KernelVersion").or_else(System::kernel_version),
+        "name": System::host_name(),
+        "os": System::long_os_version(),
+        "kernel": System::kernel_version(),
         "arch": System::cpu_arch(),
         "cpu": system.cpus().first().map(|c| c.brand().trim().to_owned()),
         "threads": system.cpus().len(),
