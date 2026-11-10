@@ -151,7 +151,7 @@ function Memory({ snap, metrics, admin, onForget }: { snap: HwSnapshot; metrics:
         </div>
         <div className="hw-slots">
           {cells.map((p, i) => (
-            <div key={p?.id ?? i} className={"hw-slot " + (p?.health ?? "empty")} title={p?.facts.map(([k, v]) => `${k}: ${v}`).join("\n") || undefined}>
+            <div key={p?.id ?? i} className={"hw-slot " + (!p || p.health === "empty" ? "vacant" : p.health)} title={p?.facts.map(([k, v]) => `${k}: ${v}`).join("\n") || undefined}>
               <StickArt part={p} gb={p?.bytes ? gbOf(p.bytes) : ""} />
               <span className="hw-slot-name">{p?.place.replace(/^Channel([A-Z])-DIMM(\d+)$/, (_, c: string, d: string) => `${c}${Number(d) + 1}`) || `Slot ${i + 1}`}</span>
               {p?.health === "bad" && !p.bytes && admin && <button type="button" className="hw-link" onClick={() => onForget(p.place)}>Taken out</button>}
@@ -241,7 +241,7 @@ function Fans({ fans }: { fans: HwPart[] }) {
           const rpm = f.readings[0]?.value ?? 0;
           const on = f.health !== "empty";
           return (
-            <div key={f.id} className={"hw-fan " + f.health} title={f.reason || undefined}>
+            <div key={f.id} className={"hw-fan " + (on ? f.health : "vacant")} title={f.reason || undefined}>
               <FanArt rpm={rpm} connected={on} />
               <b>{on ? `${Math.round(rpm)} RPM` : "Empty"}</b>
               <span>{f.name}</span>
@@ -320,13 +320,10 @@ function Board({ board, snap }: { board: HwPart | undefined; snap: HwSnapshot })
   if (!board) return null;
   const temps = board.readings.filter((r) => r.unit === "°C");
   return (
-    <Section icon="developer_board" title="Board" health={board.health} sub={board.name}>
-      {/* Its temperatures side by side, across the whole width. */}
-      {temps.length > 0 && (
-        <div className="hw-temps">
-          {temps.map((r) => <Stat key={r.label} value={`${Math.round(r.value)}°C`} label={r.label} health={r.health} />)}
-        </div>
-      )}
+    <Section icon="developer_board" title="Board" health={board.health} sub={board.name} className="hw-full">
+      {temps.map((r) => (
+        <div key={r.label} className="hw-row"><span>{r.label}</span><Meter share={r.value / 100} health={r.health} /><b className={r.health}>{Math.round(r.value)}°C</b></div>
+      ))}
       {snap.events.length > 0 && (
         <ul className="hw-events">
           {snap.events.slice(0, 4).map((e, i) => (

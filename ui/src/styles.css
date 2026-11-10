@@ -1551,7 +1551,8 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .hw-donut-mid { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
 .hw-donut-mid b { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .hw-donut-mid span { color: var(--text-3); font-size: 11.5px; }
-/* Every slot the same box, tops in one line, so the row reads level. */
+/* Every slot the same box, tops and bottoms in one line. An empty slot is
+   "vacant", never "empty", which is the page-wide padded empty state. */
 .hw-slots { display: flex; justify-content: center; align-items: flex-start; gap: 12px; }
 .hw-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 40px; }
 .hw-slot .rd { flex-shrink: 0; width: 36px; height: 126px; }
@@ -1584,7 +1585,7 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .hw-fan .rd { width: 58px; height: 58px; }
 .hw-fan b { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .hw-fan span { max-width: 100%; overflow: hidden; color: var(--text-3); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.hw-fan.empty b { color: var(--text-3); font-weight: 500; }
+.hw-fan.vacant b { color: var(--text-3); font-weight: 500; }
 .hw-fan.bad b { color: var(--bad); }
 .hw-fan.bad .rd { filter: drop-shadow(0 0 6px var(--bad)); }
 
@@ -1614,8 +1615,8 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .hw-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .hw-chips .chip { text-transform: none; }
 
-/* Board: its temperatures side by side across the width, then its log. */
-.hw-temps { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; }
+/* Board: across the whole content width, its temperatures then its log. */
+.hw-full { grid-column: 1 / -1; }
 .hw-events { list-style: none; margin: 0; padding: 0; }
 .hw-events li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 28px; }
 .hw-event-text { overflow: hidden; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
