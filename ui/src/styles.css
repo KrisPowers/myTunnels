@@ -1449,19 +1449,22 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .cv-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .cv-bar-row .ex-pick .dropdown { min-width: 130px; }
 
-/* ---- the Dashboard, after a UniFi console: one surface, the host's facts
-   in a column on the left under a chip for each part, the chart and tables
-   on the right ---- */
-.dash { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); animation: rise .2s var(--ease) both; }
-.dash-side { display: flex; flex-direction: column; gap: 18px; min-width: 0; padding: 24px; border-right: 1px solid var(--line); }
+/* ---- the Dashboard, after a UniFi console: straight on the page's own
+   ground, no panel around it; the host's facts in a column on the left under
+   a chip for each part, the chart and tables on the right ---- */
+.dash { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); animation: rise .2s var(--ease) both; }
+.dash-side { display: flex; flex-direction: column; gap: 18px; min-width: 0; padding: 0 28px 24px 0; border-right: 1px solid var(--line); }
 .side-name { font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
 .btn.lit { background: var(--accent-bg); color: var(--on-accent-bg); }
 
-/* Each part by its dot, as a console's drive bays. An empty slot is
-   "vacant", never "empty", which is the page-wide padded empty state. */
-.bays { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 10px 12px; }
-.bay { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; font-weight: 500; white-space: nowrap; }
-.bay.vacant { color: var(--text-3); }
+/* A chip per part, as a console's drive bays. An empty slot is "vacant",
+   never "empty", which is the page-wide padded empty state. */
+.bays { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.bay {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; height: 34px; padding: 0 10px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius); font-size: 13px; font-weight: 500; white-space: nowrap;
+}
+.bay.vacant { border-style: dashed; color: var(--text-3); }
 .side-notes { display: grid; gap: 6px; }
 .side-notes p { margin: 0; font-size: 12.5px; line-height: 1.45; }
 
@@ -1474,7 +1477,8 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 
 /* The main column: each section a heading with its links, then its body. */
 .dash-main { display: flex; flex-direction: column; min-width: 0; }
-.dash-sec { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 24px; }
+.dash-sec { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 0 0 28px 28px; }
+.dash-sec + .dash-sec { padding-top: 28px; }
 .dash-sec + .dash-sec { border-top: 1px solid var(--line); }
 .sec-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 28px; }
 .sec-head h2 { font-size: 17px; font-weight: 600; }
@@ -1486,8 +1490,11 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .sec-now { margin-left: auto; color: var(--text); font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sec-now .legend { font-size: 13px; font-weight: 400; }
 .dash-sec .chart-plot { height: 280px; }
-.dash-sec > .table-wrap { margin: 0 -24px; }
-.dash-sec > .table-wrap .table th:first-child, .dash-sec > .table-wrap .table td:first-child { padding-left: 24px; }
+/* On the page's ground, what the chart masks with the panel colour takes the page's. */
+.dash .chart-grid span { background: var(--bg); }
+.dash .chart-dot { box-shadow: 0 0 0 2px var(--bg); }
+.dash-sec .table th:first-child, .dash-sec .table td:first-child { padding-left: 0; }
+.dash-sec .table th:last-child, .dash-sec .table td:last-child { padding-right: 0; }
 
 /* A minute's upright line, and its time under the chart. */
 .chart-vgrid { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--line); pointer-events: none; }
@@ -1533,5 +1540,7 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 
 @media (max-width: 1100px) {
   .dash { grid-template-columns: minmax(0, 1fr); }
-  .dash-side { border-right: 0; border-bottom: 1px solid var(--line); }
+  .dash-side { padding-right: 0; border-right: 0; border-bottom: 1px solid var(--line); }
+  .dash-sec { padding-left: 0; }
+  .dash-sec:first-child { padding-top: 28px; }
 }
