@@ -1,9 +1,11 @@
 # Installs myTunnels on Windows, or updates it:
 #
-#   irm https://raw.githubusercontent.com/KrisPowers/myTunnels/main/scripts/install.ps1 | iex
+#   irm https://api.github.com/repos/KrisPowers/myTunnels/contents/scripts/install.ps1 -Headers @{ Authorization = "Bearer $(gh auth token)"; Accept = 'application/vnd.github.raw' } | iex
 #
 # The program, cloudflared and the panel go in %LOCALAPPDATA%\myTunnels\bin,
-# which joins your PATH. Nothing needs administrator rights.
+# which joins your PATH. Nothing needs administrator rights. The release is
+# fetched signed in, with GH_TOKEN, GITHUB_TOKEN or gh's sign-in, since the
+# repository is private.
 & {
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
@@ -20,7 +22,33 @@
     try {
         # Windows on Arm runs the x64 build.
         Write-Host 'Downloading myTunnels for windows-x64'
-        Invoke-WebRequest "https://github.com/$repo/releases/latest/download/windows-x64.zip" -OutFile $zip -UseBasicParsing
+        $token = if ($env:GH_TOKEN) { $env:GH_TOKEN } elseif ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN }
+        if (-not $token -and (Get-Command gh -ErrorAction SilentlyContinue)) {
+            try { $token = gh auth token 2>$null } catch { }
+        }
+        if ($token) {
+            # The latest release's archive, by its API address, which takes the token.
+            $release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers @{ Authorization = "Bearer $token" } -UseBasicParsing
+            $asset = $release.assets | Where-Object name -eq 'windows-x64.zip'
+            if (-not $asset) { throw 'The latest release has no build for windows-x64' }
+            # GitHub answers with its file storage's address, which refuses the
+            # token, so the redirect is followed by hand, without it.
+            Add-Type -AssemblyName System.Net.Http
+            $handler = New-Object System.Net.Http.HttpClientHandler
+            $handler.AllowAutoRedirect = $false
+            $client = New-Object System.Net.Http.HttpClient($handler)
+            $ask = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Get, $asset.url)
+            $ask.Headers.Add('Authorization', "Bearer $token")
+            $ask.Headers.Add('Accept', 'application/octet-stream')
+            $ask.Headers.Add('User-Agent', 'mytunnels-install')
+            $answer = $client.SendAsync($ask).GetAwaiter().GetResult()
+            if (-not $answer.Headers.Location) { throw "GitHub would not hand out the download: $($answer.StatusCode)" }
+            Invoke-WebRequest $answer.Headers.Location.AbsoluteUri -OutFile $zip -UseBasicParsing
+            $client.Dispose()
+        }
+        else {
+            Invoke-WebRequest "https://github.com/$repo/releases/latest/download/windows-x64.zip" -OutFile $zip -UseBasicParsing
+        }
         Expand-Archive $zip $new
 
         # An update stops the one running, swaps the files, then starts it again.
