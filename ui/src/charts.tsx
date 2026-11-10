@@ -48,8 +48,9 @@ export interface Line {
 }
 
 // Chart is a line chart over the kept window, with gridlines at the top and
-// middle, and a crosshair with every line's value under the pointer.
-export function Chart({ lines, max, format, times, keep, every }: Span & { lines: Line[]; max: number; format: (n: number) => string }) {
+// middle, and a crosshair with every line's value under the pointer. With
+// `ticks`, each minute gets an upright line and its time under the chart.
+export function Chart({ lines, max, format, times, keep, every, ticks }: Span & { lines: Line[]; max: number; format: (n: number) => string; ticks?: boolean }) {
   const plot = useRef<HTMLDivElement>(null);
   const [slot, setSlot] = useState<number | null>(null);
   const shapes = lines.map((l) => geometry(keep, l.values, max));
@@ -63,6 +64,12 @@ export function Chart({ lines, max, format, times, keep, every }: Span & { lines
     setSlot(s >= offset ? Math.min(s, keep - 1) : null);
   };
   const i = slot === null ? -1 : slot - offset;
+  const end = times[times.length - 1] ?? 0;
+  const marks: number[] = [];
+  if (ticks && every && end) {
+    for (let t = Math.ceil((end - (keep - 2) * every) / 60) * 60; t <= end; t += 60) marks.push(t);
+  }
+  const at = (t: number) => left(keep - 1 - (end - t) / every);
 
   return (
     <div className="chart">
@@ -71,6 +78,7 @@ export function Chart({ lines, max, format, times, keep, every }: Span & { lines
           <div key={f} className="chart-grid" style={{ top: y(max * f) + "%" }}><span>{format(max * f)}</span></div>
         ))}
         <div className="chart-grid base" />
+        {marks.map((t) => <div key={t} className="chart-vgrid" style={{ left: at(t) }} />)}
         <svg viewBox={`1 0 ${keep - 2} 100`} preserveAspectRatio="none" aria-hidden="true">
           <g key={times[times.length - 1]} className="slide" style={{ animationDuration: every + "s" }}>
             {lines.map((l, n) => (
@@ -106,10 +114,16 @@ export function Chart({ lines, max, format, times, keep, every }: Span & { lines
           </>
         )}
       </div>
-      <div className="chart-axis">
-        <span>{Math.round((keep * every) / 60)} min ago</span>
-        <span>Now</span>
-      </div>
+      {ticks ? (
+        <div className="chart-axis ticks">
+          {marks.map((t) => <span key={t} style={{ left: at(t) }}>{clock(t, true)}</span>)}
+        </div>
+      ) : (
+        <div className="chart-axis">
+          <span>{Math.round((keep * every) / 60)} min ago</span>
+          <span>Now</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -125,6 +139,6 @@ export function Meter({ value, max, label, tone }: { value: number; max: number;
   );
 }
 
-function clock(at: number) {
-  return new Date(at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+function clock(at: number, short?: boolean) {
+  return new Date(at * 1000).toLocaleTimeString([], short ? { hour: "numeric", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
