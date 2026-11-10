@@ -1,32 +1,32 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ago, api, message, type Hardware, type Health, type HwPart, type HwSnapshot } from "./api";
-import { Icon, type IconName } from "./Icon";
+import { Icon } from "./Icon";
 import { useMe } from "./me";
 import { Callout, MoreMenu, useNotify } from "./ui";
 
-// The kinds of part after memory, in the order the page shows them.
-const KINDS: [string, string, IconName][] = [
-  ["cpu", "Processor", "memory"],
-  ["gpu", "Graphics", "monitor"],
-  ["power", "Power", "bolt"],
-  ["board", "Board", "developer_board"],
-  ["drive", "Drives", "hard_drive"],
-  ["fan", "Fans", "mode_fan"],
-];
-
 const failing = (h: Health) => h === "warn" || h === "bad";
+const rank = (h: Health) => ({ bad: 3, warn: 2, ok: 1, empty: 0, unknown: 0 })[h];
 const gb = (b: number) => `${Math.round((b / 2 ** 30) * 10) / 10} GB`;
-const figure = (value: number, unit: string) => `${Number.isInteger(value) ? value : value.toFixed(unit === "V" ? 2 : 1)}${unit ? (unit === "%" ? "%" : ` ${unit}`) : ""}`;
+const figure = (value: number, unit: string) =>
+  `${Number.isInteger(value) ? value : value.toFixed(unit === "V" ? 2 : 1)}${unit ? (unit === "%" ? "%" : ` ${unit}`) : ""}`;
+const reading = (p: HwPart | undefined, label: string) => p?.readings.find((r) => r.label === label);
+// A part's name as it fits on the drawing.
+const short = (name: string) =>
+  name.replace(/\((R|TM)\)/g, "").replace(/\s+CPU\s+@.*$/, "").replace(/^(Intel|AMD|NVIDIA)\s+/, "").replace(/^GeForce\s+/, "").replace(/\s+/g, " ").trim();
+// ChannelA-DIMM0 as A0, the way boards print it beside the slot.
+const slotName = (place: string) => place.match(/Channel([A-Z])-DIMM(\d+)/)?.slice(1).join("") ?? place.slice(0, 4);
 
-// HardwarePage is every part of this computer, green when healthy and red when
-// failing, read again every few seconds. Off until the host or an admin
-// enables it, which on Windows asks for administrator rights once.
+// HardwarePage is this computer drawn as its board: the processor, memory,
+// graphics card, chipset and power connector on it, the drives, fans and power
+// supply wired to it, each outlined in its health. Picking a part shows its
+// readings beside the drawing. Off until the host or an admin enables it.
 export function HardwarePage() {
   const me = useMe();
   const admin = me.admin || me.host;
   const notify = useNotify();
   const [hw, setHw] = useState<Hardware | null>(null);
   const [busy, setBusy] = useState(false);
+  const [picked, setPicked] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -54,7 +54,11 @@ export function HardwarePage() {
   // Until it is enabled, the Enable panel carries the page's name.
   if (!hw.enabled) return <Enable hw={hw} admin={admin} busy={busy} onEnable={() => act(api.enableHardware)} />;
   const snap = hw.snapshot;
+  const parts = snap?.parts ?? [];
   const problems = snap ? [...snap.parts, ...snap.notes].filter((p) => failing(p.health)).length : 0;
+  // The part shown beside the drawing: the one picked, else the worst, else the processor.
+  const worst = [...parts].sort((a, b) => rank(b.health) - rank(a.health))[0];
+  const shown = parts.find((p) => p.id === picked) ?? (worst && failing(worst.health) ? worst : parts.find((p) => p.kind === "cpu") ?? parts[0]);
 
   return (
     <>
@@ -84,34 +88,42 @@ export function HardwarePage() {
           {snap.notes.map((n) => (
             <Callout key={n.id} tone={n.health === "bad" ? "bad" : "warn"} icon={n.health === "bad" ? "error" : "warning"}>{n.name}</Callout>
           ))}
-          <div className="hw-grid">
-            <Memory snap={snap} admin={admin} onForget={(slot) => act(() => api.forgetSlot(slot))} />
-            {KINDS.map(([kind, title, icon]) => {
-              const parts = snap.parts.filter((p) => p.kind === kind);
-              if (!parts.length) return null;
-              return (
-                <section key={kind} className="card">
-                  <Head icon={icon} title={title} parts={parts} />
-                  {kind === "fan" ? (
-                    <div className="hw-part"><div className="hw-metrics">{parts.map((p) => <Metric key={p.id} label={p.name} value={p.readings[0]?.value ?? 0} unit="RPM" health={p.health} />)}</div></div>
-                  ) : parts.map((p) => <Part key={p.id} part={p} />)}
-                </section>
-              );
-            })}
-            {snap.events.length > 0 && (
-              <section className="card hw-full">
-                <div className="hw-head"><Icon name="history" size={18} /><h2>Last 30 days</h2></div>
-                <ul className="hw-events">
-                  {snap.events.map((e, i) => (
-                    <li key={i}>
-                      <span className={"dot " + e.health} />
-                      <span className="hw-event-text">{e.text}</span>
-                      <time>{new Date(e.at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time>
-                    </li>
-                  ))}
+          <div className="hw-layout">
+            <div className="hw-stage"><Board snap={snap} picked={shown?.id ?? ""} onPick={setPicked} /></div>
+            <aside className="hw-side">
+              {shown && <Details part={shown} total={parts.reduce((n, p) => n + (p.kind === "memory" ? p.bytes ?? 0 : 0), 0)} admin={admin} onForget={(slot) => act(() => api.forgetSlot(slot))} />}
+              <div className="hw-side-block">
+                <h3>Parts</h3>
+                <ul className="hw-parts">
+                  {parts.filter((p) => p.health !== "empty").map((p) => {
+                    const key = p.readings.find((r) => r.unit === "°C") ?? p.readings[0];
+                    return (
+                      <li key={p.id}>
+                        <button type="button" className={p.id === shown?.id ? "on" : ""} onClick={() => setPicked(p.id)}>
+                          <span className={"dot " + (p.health === "unknown" ? "" : p.health)} />
+                          <span className="hw-parts-name">{p.kind === "memory" && p.place ? `${slotName(p.place)} · ` : ""}{short(p.name)}</span>
+                          {key && <span className={"hw-parts-value " + key.health}>{figure(key.value, key.unit)}</span>}
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
-              </section>
-            )}
+              </div>
+              {snap.events.length > 0 && (
+                <div className="hw-side-block">
+                  <h3>Last 30 days</h3>
+                  <ul className="hw-events">
+                    {snap.events.map((e, i) => (
+                      <li key={i}>
+                        <span className={"dot " + e.health} />
+                        <span className="hw-event-text" title={e.text}>{e.text}</span>
+                        <time>{new Date(e.at * 1000).toLocaleDateString([], { month: "short", day: "numeric" })}</time>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </aside>
           </div>
         </div>
       )}
@@ -119,92 +131,179 @@ export function HardwarePage() {
   );
 }
 
-// Head is a card's title, with how many of its parts need attention.
-function Head({ icon, title, parts, sub }: { icon: IconName; title: string; parts: HwPart[]; sub?: string }) {
-  const bad = parts.filter((p) => p.health === "bad").length;
-  const warn = parts.filter((p) => p.health === "warn").length;
+// Hit is a part on the drawing that can be picked, by pointer or keyboard.
+function Hit({ part, picked, onPick, children }: { part: HwPart | undefined; picked: string; onPick: (id: string) => void; children: ReactNode }) {
+  if (!part) return <g className="hw-off">{children}</g>;
+  const pick = () => onPick(part.id);
   return (
-    <div className="hw-head">
-      <Icon name={icon} size={18} />
-      <h2>{title}</h2>
-      {sub && <span className="hw-head-sub">{sub}</span>}
-      {bad > 0 ? <span className="chip bad">{bad} failing</span> : warn > 0 ? <span className="chip warn">{warn} to check</span> : parts.some((p) => p.health === "ok") && <span className="chip ok">Healthy</span>}
-    </div>
+    <g className={"hw-hit " + part.health + (picked === part.id ? " picked" : "")} role="button" tabIndex={0} aria-label={`${part.name}: ${part.reason || part.health}`}
+      onClick={pick} onKeyDown={(e: KeyboardEvent) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        pick();
+      }}>
+      {children}
+    </g>
   );
 }
 
-function Metric({ label, value, unit, health }: { label: string; value: number; unit: string; health: Health }) {
+// Board draws the board and what is on it and wired to it, on a 760 by 560 grid.
+function Board({ snap, picked, onPick }: { snap: HwSnapshot; picked: string; onPick: (id: string) => void }) {
+  const of = (kind: string) => snap.parts.filter((p) => p.kind === kind);
+  const cpu = of("cpu")[0];
+  const board = of("board")[0];
+  const power = of("power")[0];
+  const gpus = of("gpu");
+  const card = gpus.find((g) => g.id.startsWith("gpu:nvidia")) ?? gpus.find((g) => !/intel/i.test(g.name));
+  const slots = of("memory").filter((p) => p.place || p.health !== "empty").sort((a, b) => a.place.localeCompare(b.place));
+  const drives = of("drive").slice(0, 4);
+  const fans = of("fan").slice(0, 6);
+  const temp = (p: HwPart | undefined) => reading(p, "Temperature");
+  const boardTemp = board?.readings.reduce<number | null>((m, r) => (r.unit === "°C" ? Math.max(m ?? 0, r.value) : m), null);
+  const rails = power?.readings.filter((r) => r.unit === "V") ?? [];
+
   return (
-    <div className={"hw-metric " + health}>
-      <b>{figure(value, unit)}</b>
-      <span>{label}</span>
-    </div>
+    <svg className="hw-board" viewBox="0 0 760 560" role="img" aria-label="This computer's board and parts">
+      {/* The board itself, with its mounting holes and name. */}
+      <rect className="hw-pcb" x="24" y="24" width="500" height="512" rx="14" />
+      {[[48, 48], [500, 48], [48, 512], [500, 512], [48, 290], [500, 290]].map(([x, y]) => <circle key={`${x}-${y}`} className="hw-hole" cx={x} cy={y} r="6" />)}
+      <text className="hw-silk" x="44" y="526">{short(board?.name ?? "")}</text>
+
+      {/* The processor in its socket. */}
+      <Hit part={cpu} picked={picked} onPick={onPick}>
+        <rect className="hw-comp" x="110" y="84" width="160" height="160" rx="10" />
+        <rect className="hw-die" x="145" y="119" width="90" height="90" rx="6" />
+        <text className="hw-label" x="190" y="108" textAnchor="middle">CPU</text>
+        <text className="hw-value" x="190" y="170" textAnchor="middle">{temp(cpu) ? figure(temp(cpu)!.value, "°C") : "—"}</text>
+        <text className="hw-small" x="190" y="232" textAnchor="middle">{short(cpu?.name ?? "").slice(0, 22)}</text>
+      </Hit>
+
+      {/* The memory slots, each stick in its own, empty ones bare. */}
+      {slots.map((p, i) => {
+        const x = 318 + i * 36;
+        const filled = !!p.bytes;
+        return (
+          <Hit key={p.id} part={p.health === "empty" ? undefined : p} picked={picked} onPick={onPick}>
+            <rect className="hw-dimm-slot" x={x} y="64" width="22" height="268" rx="3" />
+            {filled && (
+              <>
+                <rect className="hw-comp hw-stick" x={x + 2} y="72" width="18" height="252" rx="2" />
+                {Array.from({ length: 8 }, (_, c) => <rect key={c} className="hw-chip" x={x + 6} y={84 + c * 29} width="10" height="20" rx="1.5" />)}
+                <text className="hw-stick-size" transform={`rotate(-90 ${x + 11} 198)`} x={x + 11} y="202" textAnchor="middle">{gb(p.bytes!)}</text>
+              </>
+            )}
+            {!filled && p.health === "bad" && <rect className="hw-comp" x={x + 2} y="72" width="18" height="252" rx="2" strokeDasharray="5 4" />}
+            <text className="hw-small" x={x + 11} y="350" textAnchor="middle">{slotName(p.place)}</text>
+          </Hit>
+        );
+      })}
+
+      {/* The 24-pin power connector, wired to the power supply. */}
+      <path className="hw-wire" d="M502 170 C 536 170, 532 470, 560 470" />
+      <Hit part={power} picked={picked} onPick={onPick}>
+        <rect className="hw-comp" x="474" y="110" width="28" height="122" rx="4" />
+        {Array.from({ length: 24 }, (_, n) => <rect key={n} className="hw-pin" x={478 + (n % 2) * 11} y={115 + Math.floor(n / 2) * 9.6} width="8" height="6.5" rx="1" />)}
+      </Hit>
+
+      {/* The graphics card over its slot, or the bare slot without one. */}
+      <rect className="hw-pcie" x="60" y="402" width="300" height="12" rx="3" />
+      <Hit part={card} picked={picked} onPick={onPick}>
+        {card ? (
+          <>
+            <rect className="hw-comp" x="44" y="362" width="380" height="96" rx="10" />
+            {[150, 300].map((cx) => (
+              <g key={cx}>
+                <circle className="hw-fan-ring" cx={cx} cy="410" r="34" />
+                <circle className="hw-fan-hub" cx={cx} cy="410" r="9" />
+              </g>
+            ))}
+            <text className="hw-label" x="62" y="382">GPU</text>
+            <text className="hw-value" x="225" y="418" textAnchor="middle">{temp(card) ? figure(temp(card)!.value, "°C") : ""}</text>
+            <text className="hw-small" x="408" y="446" textAnchor="end">{short(card.name).slice(0, 26)}</text>
+          </>
+        ) : <text className="hw-small" x="64" y="396">No graphics card</text>}
+      </Hit>
+
+      {/* The chipset, which carries the board's own temperature. */}
+      <Hit part={board} picked={picked} onPick={onPick}>
+        <rect className="hw-comp" x="430" y="436" width="64" height="64" rx="8" />
+        <text className="hw-small" x="462" y="460" textAnchor="middle">Board</text>
+        <text className="hw-value small" x="462" y="484" textAnchor="middle">{boardTemp !== null && boardTemp !== undefined ? figure(boardTemp, "°C") : "—"}</text>
+      </Hit>
+
+      {/* SATA ports along the board's edge, each wired to its drive. */}
+      {drives.map((d, i) => {
+        const y = 272 + i * 18;
+        const top = 40 + i * 66;
+        return (
+          <g key={d.id}>
+            <rect className="hw-port" x="504" y={y} width="16" height="11" rx="2" />
+            <path className="hw-wire" d={`M520 ${y + 5} C 540 ${y + 5}, 540 ${top + 27}, 560 ${top + 27}`} />
+            <Hit part={d} picked={picked} onPick={onPick}>
+              <rect className="hw-comp" x="560" y={top} width="180" height="54" rx="8" />
+              <text className="hw-label" x="574" y={top + 22}>{d.name.slice(0, 20)}</text>
+              <text className="hw-small" x="574" y={top + 41}>{[d.facts.find(([k]) => k === "Size")?.[1], temp(d) && figure(temp(d)!.value, "°C")].filter(Boolean).join(" · ")}</text>
+            </Hit>
+          </g>
+        );
+      })}
+
+      {/* The fans, each with its speed. */}
+      {fans.map((f, i) => {
+        const cx = 580 + (i % 3) * 60;
+        const cy = 316 + Math.floor(i / 3) * 70;
+        const rpm = f.readings[0]?.value ?? 0;
+        return (
+          <Hit key={f.id} part={f} picked={picked} onPick={onPick}>
+            <circle className="hw-comp" cx={cx} cy={cy} r="22" />
+            <circle className="hw-fan-hub" cx={cx} cy={cy} r="6" />
+            <text className="hw-small" x={cx} y={cy + 38} textAnchor="middle">{Math.round(rpm)} RPM</text>
+          </Hit>
+        );
+      })}
+
+      {/* The power supply, with its rails. */}
+      <Hit part={power} picked={picked} onPick={onPick}>
+        <rect className="hw-comp" x="560" y="444" width="180" height="92" rx="10" />
+        <text className="hw-label" x="574" y="468">Power supply</text>
+        <text className="hw-small" x="574" y="490">{rails.length ? rails.slice(0, 3).map((r) => `${r.label} ${figure(r.value, "V")}`).join("  ") : "No rails reported"}</text>
+      </Hit>
+    </svg>
   );
 }
 
-// Part is one part in its card: its name and state, its readings as tiles,
-// and what it is in one line.
-function Part({ part }: { part: HwPart }) {
+// Details is the picked part: its state, its readings, and what it is.
+function Details({ part, total, admin, onForget }: { part: HwPart; total: number; admin: boolean; onForget: (slot: string) => void }) {
   return (
-    <div className="hw-part">
-      <div className="hw-part-top">
+    <div className="hw-side-block hw-details">
+      <div className="hw-details-head">
         <span className={"dot " + (part.health === "unknown" ? "" : part.health)} />
-        <b>{part.name}</b>
-        {part.place && <span className="hw-place">{part.place}</span>}
+        <div>
+          <b>{part.health === "empty" ? "Empty slot" : part.name}</b>
+          {part.place && <small>{part.place}</small>}
+        </div>
       </div>
-      {part.reason && failing(part.health) && <div className={"hw-reason " + part.health}>{part.reason}</div>}
+      {part.reason && <p className={"hw-reason " + part.health}>{part.reason}</p>}
       {part.readings.length > 0 && (
-        <div className="hw-metrics">{part.readings.map((r) => <Metric key={r.label} label={r.label} value={r.value} unit={r.unit} health={r.health} />)}</div>
-      )}
-      {part.readings.length === 0 && part.reason && !failing(part.health) && <div className="hw-reason">{part.reason}</div>}
-      {part.facts.length > 0 && (
-        <div className="hw-facts">{part.facts.map(([k, v]) => <span key={k}>{k} <b>{v}</b></span>)}</div>
-      )}
-    </div>
-  );
-}
-
-// Memory is the board's slots: each stick, its size and share of the total,
-// and its health; a slot that lost its stick in red; empty slots dashed.
-function Memory({ snap, admin, onForget }: { snap: HwSnapshot; admin: boolean; onForget: (slot: string) => void }) {
-  const slots = snap.parts.filter((p) => p.kind === "memory");
-  if (!slots.length) return null;
-  const sticks = slots.filter((p) => p.bytes);
-  const total = sticks.reduce((n, p) => n + (p.bytes ?? 0), 0);
-  const sub = [snap.slots ? `${sticks.length} of ${snap.slots} slots` : "", total ? gb(total) : "", snap.ecc ? "ECC" : "Non-ECC"].filter(Boolean).join(" · ");
-  return (
-    <section className="card hw-wide">
-      <Head icon="memory" title="Memory" parts={slots} sub={sub} />
-      <div className="hw-slots">
-        {slots.map((p) => {
-          const fact = (k: string) => p.facts.find(([key]) => key === k)?.[1] ?? "";
-          return (
-            <div key={p.id} className={"hw-slot " + p.health} title={p.facts.map(([k, v]) => `${k}: ${v}`).join("\n") || undefined}>
-              <span className="hw-slot-place">{p.place || "Slot"}</span>
-              {p.health === "empty" ? <span className="hw-slot-empty">Empty</span> : p.bytes ? (
-                <>
-                  <b>{gb(p.bytes)}<small>{total > 0 && ` ${Math.round((p.bytes / total) * 100)}%`}</small></b>
-                  <span className="hw-slot-line">{p.name.replace(/^[\d.]+ [GM]B ?/, "")}</span>
-                  <span className="hw-slot-line">{fact("Running at") || fact("Rated speed")}</span>
-                  {failing(p.health) && <span className={"hw-reason " + p.health}>{p.reason}</span>}
-                </>
-              ) : (
-                <>
-                  <b className="bad">Missing</b>
-                  <span className="hw-slot-line">{p.name}</span>
-                  {admin && <button type="button" className="btn small" onClick={() => onForget(p.place)}>Taken out on purpose</button>}
-                </>
-              )}
+        <div className="hw-metrics">
+          {part.readings.map((r) => (
+            <div key={r.label} className={"hw-metric " + r.health}>
+              <b>{figure(r.value, r.unit)}</b>
+              <span>{r.label}</span>
             </div>
-          );
-        })}
-      </div>
-      {sticks.length > 1 && (
-        <div className="hw-share" aria-hidden>
-          {sticks.map((p) => <span key={p.id} className={p.health} style={{ flex: p.bytes }} title={`${p.place}: ${gb(p.bytes ?? 0)}`} />)}
+          ))}
         </div>
       )}
-    </section>
+      {(part.facts.length > 0 || !!part.bytes) && (
+        <dl className="hw-facts">
+          {!!part.bytes && total > 0 && <div className="fact"><dt>Share</dt><dd>{gb(part.bytes)} of {gb(total)}, {Math.round((part.bytes / total) * 100)}%</dd></div>}
+          {part.facts.map(([k, v]) => <div key={k} className="fact"><dt>{k}</dt><dd>{v}</dd></div>)}
+        </dl>
+      )}
+      {part.kind === "memory" && !part.bytes && part.health === "bad" && admin && (
+        <button type="button" className="btn small" onClick={() => onForget(part.place)}>Taken out on purpose</button>
+      )}
+    </div>
   );
 }
 
@@ -240,13 +339,22 @@ function Enable({ hw, admin, busy, onEnable }: { hw: Hardware; admin: boolean; b
   );
 }
 
-// Helper is how Windows' sensor task is doing, when it is not simply running.
+// Helper is how Windows' sensor task is doing, when it is not simply running:
+// setup's step and percent while it runs, and why it stopped when it has.
 function Helper({ snap, admin, busy, onSetUp }: { snap: HwSnapshot; admin: boolean; busy: boolean; onSetUp: () => void }) {
   const button = (label: string) => admin && <button type="button" className="btn small" disabled={busy} onClick={onSetUp}>{label}</button>;
   const why = snap.helper_error && <> {snap.helper_error}</>;
   switch (snap.helper) {
     case "waiting":
-      return <div className="callout held"><span className="spinner small" /><span>Approve the Windows prompt on this computer's screen to set up the sensor task.</span></div>;
+      return <div className="callout held"><span className="spinner small" /><span>Waiting for the Windows prompt on this computer's screen to be approved.</span></div>;
+    case "installing":
+      return (
+        <div className="callout held hw-setup">
+          <span className="spinner small" />
+          <span>{snap.helper_step || "Setting up the sensor task"} · {snap.helper_percent ?? 0}%</span>
+          <span className="hw-setup-bar" style={{ width: `${snap.helper_percent ?? 0}%` }} aria-hidden />
+        </div>
+      );
     case "starting":
       return <div className="callout held"><span className="spinner small" /><span>Starting the sensor task. Its first readings arrive within a minute.{why}</span></div>;
     case "outdated":
