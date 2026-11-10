@@ -78,14 +78,14 @@ export function HardwarePage() {
         )}
       </div>
       {!snap ? <div className="empty"><span className="spinner small" /></div> : (
-        <div className="page-body stack">
-          <Helper snap={snap} admin={admin} busy={busy} onSetUp={() => act(api.enableHardware)} />
-          {snap.notes.map((n) => (
-            <Callout key={n.id} tone={n.health === "bad" ? "bad" : "warn"} icon={n.health === "bad" ? "error" : "warning"}>{n.name}</Callout>
-          ))}
-          <div className="hw-layout">
+        // The render and its panel fill the window, so nothing needs scrolling to.
+        <div className="page-body hw-layout">
             <div className="hw-stage"><Render snap={snap} picked={shown?.id ?? ""} onPick={setPicked} /></div>
             <aside className="hw-side">
+              <Helper snap={snap} admin={admin} busy={busy} onSetUp={() => act(api.enableHardware)} />
+              {snap.notes.map((n) => (
+                <Callout key={n.id} tone={n.health === "bad" ? "bad" : "warn"} icon={n.health === "bad" ? "error" : "warning"}>{n.name}</Callout>
+              ))}
               {shown && <Details part={shown} total={memory} admin={admin} onForget={(slot) => act(() => api.forgetSlot(slot))} />}
               <div className="hw-side-block">
                 <h3>Parts</h3>
@@ -108,7 +108,7 @@ export function HardwarePage() {
                 <div className="hw-side-block">
                   <h3>Last 30 days</h3>
                   <ul className="hw-events">
-                    {snap.events.map((e, i) => (
+                    {snap.events.slice(0, 4).map((e, i) => (
                       <li key={i}>
                         <span className={"dot " + e.health} />
                         <span className="hw-event-text" title={e.text}>{e.text}</span>
@@ -119,7 +119,6 @@ export function HardwarePage() {
                 </div>
               )}
             </aside>
-          </div>
         </div>
       )}
     </>

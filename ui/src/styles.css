@@ -1493,41 +1493,37 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .hw-setup > :not(.hw-setup-bar) { position: relative; }
 .hw-setup-bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--accent); transition: width .4s var(--ease); }
 
-.hw-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
-.hw-stage {
-  padding: 20px; border-radius: var(--card-round);
-  background: radial-gradient(ellipse at 40% 30%, #2a2e35 0%, #15171a 70%, #0e0f11 100%);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .05);
+/* The render and its panel fill the window below the heading, so nothing on
+   the page needs scrolling to; the render sits on the page's own ground. */
+.hw-layout {
+  display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: stretch;
+  height: calc(100vh - var(--head) - 210px); min-height: 440px;
 }
+.hw-stage { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; }
+.hw-layout .callout { margin: 0; padding: 10px 12px; font-size: 12.5px; }
 
 /* The render: drawn in millimetres, its materials in the SVG's own gradients. */
-.hr { display: block; width: 100%; height: auto; font-family: var(--font); }
+.hr { display: block; width: 100%; height: 100%; font-family: var(--font); }
 .hr-board { stroke: #3a3e44; stroke-width: .6; }
-.hr-trace { fill: none; stroke: #3b4047; stroke-width: .35; opacity: .55; }
+.hr-traces path { fill: none; stroke: #3a3f46; stroke-width: .3; opacity: .6; }
 .hr-etch { fill: #5e646c; font-size: 2.6px; font-weight: 600; letter-spacing: .12px; }
 .hr-etch.strong { fill: #4a5058; font-size: 3.4px; font-weight: 700; }
-.hr-stick-line { fill: #7d848c; opacity: .55; }
-.hr-stick-text { fill: #e8eaed; font-size: 3.2px; font-weight: 700; text-anchor: middle; letter-spacing: .2px; }
-.hr-gpu-name { fill: #f4f5f6; font-size: 4.4px; font-weight: 700; letter-spacing: .6px; text-anchor: middle; filter: drop-shadow(0 0 1.2px rgb(120 200 255 / .9)); }
-.hr-label { fill: #f2f3f5; }
-.hr-label-text { fill: #2a2d31; font-size: 4px; font-weight: 600; text-anchor: middle; }
-.hr-label-text.big { font-size: 5.2px; font-weight: 700; }
-.hr-silk { fill: #8b929a; font-size: 3.6px; font-weight: 700; letter-spacing: .8px; }
-.hr-fan-rpm { fill: #c8ccd1; font-size: 4px; font-weight: 600; text-anchor: middle; font-variant-numeric: tabular-nums; }
-.hr-blades { animation: hr-spin linear infinite; }
-@keyframes hr-spin { to { transform: rotate(360deg); } }
+.hr-choke { fill: #c8ccd1; font-size: 1.9px; font-weight: 600; text-anchor: middle; }
+.hr-gpu { fill: #f4f5f6; font-size: 4.2px; font-weight: 700; letter-spacing: .6px; text-anchor: middle; }
+.hr-sticker { fill: #2a2d31; font-size: 2.8px; font-weight: 700; text-anchor: middle; }
+.hr-silk { fill: #8b929a; font-size: 3.4px; font-weight: 700; letter-spacing: .8px; }
 /* Health: a glowing ring in the part's colour; failing parts pulse. */
 .hr-part { cursor: pointer; outline: none; }
-.hr-ring { fill: none; stroke-width: 1.1; }
-.hr-ring.ok { stroke: var(--ok); filter: drop-shadow(0 0 1.6px var(--ok)); }
-.hr-ring.warn { stroke: var(--warn); stroke-width: 1.4; filter: drop-shadow(0 0 2.6px var(--warn)); }
-.hr-ring.bad { stroke: var(--bad); stroke-width: 1.6; filter: drop-shadow(0 0 3.4px var(--bad)); animation: hr-alert 1.4s ease-in-out infinite; }
+.hr-ring { fill: none; stroke-width: .7; }
+.hr-ring.ok { stroke: var(--ok); filter: drop-shadow(0 0 1.2px var(--ok)); }
+.hr-ring.warn { stroke: var(--warn); stroke-width: .9; filter: drop-shadow(0 0 2px var(--warn)); }
+.hr-ring.bad { stroke: var(--bad); stroke-width: 1.1; filter: drop-shadow(0 0 2.8px var(--bad)); animation: hr-alert 1.4s ease-in-out infinite; }
 @keyframes hr-alert { 50% { stroke-opacity: .35; } }
-.hr-part:hover .hr-ring, .hr-part.picked .hr-ring { stroke-width: 1.8; }
+.hr-part:hover .hr-ring, .hr-part.picked .hr-ring { stroke-width: 1.3; }
 .hr-part.picked .hr-ring.ok { filter: drop-shadow(0 0 3px var(--ok)); }
 .hr-part:focus-visible .hr-ring { stroke: var(--accent); }
 .hr-tag rect { fill: rgb(12 13 15 / .86); stroke: rgb(255 255 255 / .08); stroke-width: .3; }
-.hr-tag text { fill: #f4f5f6; font-size: 3.6px; font-weight: 600; }
+.hr-tag text { fill: #f4f5f6; font-size: 3px; font-weight: 600; }
 .hr-tag-dot { fill: #7f838b; }
 .hr-tag-dot.ok { fill: var(--ok); }
 .hr-tag-dot.warn { fill: var(--warn); }
@@ -1535,7 +1531,7 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .hr text { pointer-events: none; user-select: none; }
 
 /* Beside the render: the picked part, every part, and the log. */
-.hw-side { display: grid; gap: 16px; padding: 18px; border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); }
+.hw-side { display: flex; flex-direction: column; gap: 14px; min-height: 0; padding: 18px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); }
 .hw-side-block + .hw-side-block { padding-top: 16px; border-top: 1px solid var(--line); }
 .hw-side h3 { margin: 0 0 8px; color: var(--text-3); font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 .hw-details { display: grid; gap: 12px; }
@@ -1571,5 +1567,5 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .hw-events li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 30px; }
 .hw-event-text { overflow: hidden; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
 .hw-events time { color: var(--text-3); font-size: 12px; white-space: nowrap; }
-@media (max-width: 1100px) { .hw-layout { grid-template-columns: minmax(0, 1fr); } }
-@media (prefers-reduced-motion: reduce) { .hr-ring.bad, .hr-blades { animation: none; } }
+@media (max-width: 1100px) { .hw-layout { grid-template-columns: minmax(0, 1fr); height: auto; } .hr { height: auto; } }
+@media (prefers-reduced-motion: reduce) { .hr-ring.bad { animation: none; } }
