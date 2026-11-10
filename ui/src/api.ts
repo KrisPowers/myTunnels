@@ -567,6 +567,9 @@ export const api = {
 
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),
+  // Whether a newer release than the one installed is out, and installing it.
+  update: () => call<{ available: boolean; current?: string; latest?: string }>("/update"),
+  installUpdate: () => call("/update", "POST"),
   metrics: () => call<Metrics>("/metrics"),
   apps: () => call<Apps>("/apps"),
   // An install may name a version, in place of the latest.

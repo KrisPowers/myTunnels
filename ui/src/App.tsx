@@ -18,7 +18,7 @@ import { StoragePage } from "./Storage";
 import { NewTunnel, target, TunnelPage } from "./Tunnels";
 import { NewUser, UserPage } from "./Users";
 import { SecurityPage } from "./Security";
-import { Callout, Notices, Tooltips } from "./ui";
+import { Callout, Notices, Tooltips, useNotify } from "./ui";
 
 export function App() {
   return (
@@ -75,8 +75,25 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const [needs, setNeeds] = useState<Needs | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [providers, setProviders] = useState<OAuthProvider[]>([]);
-  // On narrow windows the menu slides the sidebar over the page.
+  // On narrow windows the menu slides the sidebar over the page; on wide ones
+  // it folds the sidebar to its icons, remembered here.
   const [drawer, setDrawer] = useState(false);
+  const [rail, setRail] = useState(() => {
+    try {
+      return localStorage.getItem("nav.rail") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const menu = () => {
+    if (matchMedia("(max-width: 900px)").matches) return setDrawer(!drawer);
+    setRail(!rail);
+    try {
+      localStorage.setItem("nav.rail", rail ? "0" : "1");
+    } catch {
+      // Kept until the page closes.
+    }
+  };
 
   const load = useCallback(async () => {
     const [r, d, u, s, o, f, n] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status(), api.oauth(), api.flags(), api.needs()]);
@@ -173,15 +190,15 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
     <NavItem key={key} to={to} icon={icon} label={label}
       on={view === key || (key === "containers" && (view === "new" || view === "tunnels")) || (key === "security" && (view === "users" || view === "devices"))}
-      count={key === "dashboard" ? flags.length || undefined : undefined} />
+      count={key === "dashboard" ? flags.length || undefined : undefined} rail={rail} />
   );
 
   return (
     <NeedsContext.Provider value={needs}>
-    <div className="app">
+    <div className={"app" + (rail ? " rail" : "")}>
       <header className="header">
         <div className="header-start">
-          <button type="button" className="icon-btn menu-btn" aria-label="Menu" aria-expanded={drawer} onClick={() => setDrawer(!drawer)}>
+          <button type="button" className="icon-btn menu-btn" aria-label="Menu" aria-expanded={drawer || !rail} onClick={menu}>
             <Icon name="menu" />
           </button>
           <a className="brand" href={home}><span className="brand-mark"><Icon name="public" size={18} /></span><span className="brand-name">myTunnels</span></a>
@@ -196,17 +213,18 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
         <nav className={"sidebar" + (drawer ? " open" : "")} aria-label="Pages">
           {sections ? (
             <>
-              <a className="nav-back" href={home}><Icon name="arrow_back" /><span>Back</span></a>
+              <a className="nav-back" href={home} title={rail ? "Back" : undefined}><Icon name="arrow_back" /><span className="nav-label">Back</span></a>
               {sections.map(([key, label, icon], i) => (
-                <NavItem key={key} to={`#/${view}/${key}`} icon={icon} label={label} on={id === key || (!id && i === 0)} quiet />
+                <NavItem key={key} to={`#/${view}/${key}`} icon={icon} label={label} on={id === key || (!id && i === 0)} quiet rail={rail} />
               ))}
             </>
           ) : (
             pages.map(item)
           )}
           <span className="nav-gap" />
-          <NavItem to="#/docs" icon="help" label="Help" on={view === "docs"} />
-          <NavItem to="#/settings" icon="settings" label="Settings" on={view === "settings"} />
+          {(me.admin || me.host) && <UpdateButton rail={rail} />}
+          <NavItem to="#/docs" icon="help" label="Help" on={view === "docs"} rail={rail} />
+          <NavItem to="#/settings" icon="settings" label="Settings" on={view === "settings"} rail={rail} />
         </nav>
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
 
@@ -232,14 +250,65 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   );
 }
 
-// NavItem is a page, or a section of settings or help, in the sidebar.
-function NavItem({ to, icon, label, on, quiet, count }: { to: string; icon: IconName; label: string; on: boolean; quiet?: boolean; count?: number }) {
+// NavItem is a page, or a section of settings or help, in the sidebar; folded
+// to its icon, its name shows on hover.
+function NavItem({ to, icon, label, on, quiet, count, rail }: { to: string; icon: IconName; label: string; on: boolean; quiet?: boolean; count?: number; rail?: boolean }) {
   return (
-    <a className={"nav-item" + (quiet ? " quiet" : "") + (on ? " on" : "")} href={to} aria-current={on ? "page" : undefined}>
+    <a className={"nav-item" + (quiet ? " quiet" : "") + (on ? " on" : "")} href={to} aria-current={on ? "page" : undefined} title={rail ? label : undefined}>
       <Icon name={icon} />
       <span className="nav-label">{label}</span>
       {count !== undefined && <span className="nav-count">{count}</span>}
     </a>
+  );
+}
+
+// UpdateButton shows when a newer release than the one installed is out, and
+// installs it. The panel stops answering while the files are swapped; once it
+// answers on the new release, the page reloads.
+function UpdateButton({ rail }: { rail: boolean }) {
+  const [latest, setLatest] = useState("");
+  const [busy, setBusy] = useState(false);
+  const notify = useNotify();
+
+  useEffect(() => {
+    const check = () => api.update().then((u) => setLatest(u.available ? u.latest ?? "" : "")).catch(() => {});
+    check();
+    const t = setInterval(check, 30 * 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (!latest) return null;
+  const install = async () => {
+    setBusy(true);
+    try {
+      await api.installUpdate();
+    } catch (e) {
+      setBusy(false);
+      return notify(message(e), "bad");
+    }
+    const began = Date.now();
+    const wait = setInterval(async () => {
+      if (Date.now() - began > 5 * 60_000) {
+        clearInterval(wait);
+        setBusy(false);
+        return notify("The update did not finish. Its log is update.txt in the myTunnels folder.", "bad");
+      }
+      try {
+        if ((await api.update()).current === latest) {
+          clearInterval(wait);
+          location.reload();
+        }
+      } catch {
+        // Not answering while the new release is put in place.
+      }
+    }, 2000);
+  };
+  const label = busy ? "Updating" : "Update Available";
+  return (
+    <button type="button" className="nav-item update" onClick={install} disabled={busy} title={rail ? label : undefined}>
+      {busy ? <span className="spinner" /> : <Icon name="download" />}
+      <span className="nav-label">{label}</span>
+    </button>
   );
 }
 
