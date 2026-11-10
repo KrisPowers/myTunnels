@@ -100,13 +100,33 @@ tunnel, and the dashboard's own sign-in (and emailed code, when on) still applie
 
 ## Dashboard
 
-**Dashboard** reads out the host and its containers, every two seconds, with the last five
-minutes drawn as charts:
+**Dashboard** is the host at a glance, read every two seconds, with the last five minutes
+drawn as charts. **Overview** holds what any account can read from the system:
 
-- **CPU**, overall and per logical processor, with each core's clock and temperature.
-- **Memory**, **network** traffic and the processor's **temperature** over time.
-- **Disks**, how full each one is, and every **temperature sensor** the host exposes.
+- The host: its platform, kernel, processor, cores, memory, board, Docker and uptime.
+- **CPU** over time and per thread, **memory** over time with the sticks in the board's
+  slots, and **network** traffic in and out. A stick that stops being detected stays listed
+  in red until it is marked as taken out; one running below its rated speed turns yellow.
+- **Graphics**: NVIDIA cards' temperature, load, fan, power and video memory through
+  `nvidia-smi`, other cards by their state.
+- **System log** on Windows: the last 30 days of crashes, hardware errors and power losses.
+- **Volumes**, how full each one is, and the **drives** with their health.
 - **Containers**, each one's CPU, memory, network and disk traffic, and its state.
+
+**Advanced** adds the sensors: the processor's temperature over time and per core, every
+temperature read, the **fans** (a fan that spun before and reads 0 has stopped), the power
+supply's 12, 5 and 3.3 V rails (within 5% is healthy, past 10% is failing), and each drive's
+temperature, life left, errors and hours. On Linux these come from `/sys` and need nothing
+more; drive wear and errors there need root and are not shown. On Windows they need
+administrator rights, so **Enable** asks Windows once, then installs the
+[PawnIO](https://pawnio.eu) driver, puts
+[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)'s
+library in `Program Files\myTunnels\hardware` (both downloads pinned by checksum) and adds a
+`myTunnels Hardware` task that reads the sensors as SYSTEM from startup. **Turn off sensors**
+in the page's menu removes the task and those files; PawnIO stays installed.
+
+When a part has been failing, or healthy again, for 15 seconds, the host and every admin
+get an email, once SMTP is set up under **Security**, **Two-Factor Auth**.
 
 Installed, every figure is the computer's own, and containers come from Docker when it is
 installed. The rest of this paragraph is about running in Docker. On a Linux host,
@@ -119,36 +139,6 @@ what passes through myTunnels, or the computer's while `server host` runs. Conta
 `docker` service in `compose.yaml`, which allows containers and nothing else.
 Temperatures need sensors the host exposes under `/sys/class/hwmon`, which a Linux host
 does and Docker Desktop does not.
-
-## Hardware
-
-**Hardware** shows every part of the computer myTunnels is installed on, read every five
-seconds, each green while healthy and red when failing. The page draws the computer from
-above, to scale, from what it reads: a board of the size its name gives, its memory slots with
-each stick where it sits, the processor engraved with its name, the graphics card over its
-slot, the drives, power supply and fans beside it (the fans turning at their measured speed),
-each glowing in its health.
-
-- **Memory**, slot by slot: each stick's size, its share of the total, its speed and serial,
-  and the empty slots. A stick that stops being detected stays in its slot in red until it
-  is marked as taken out on purpose; one running below its rated speed turns yellow. Memory
-  with ECC on Linux also counts each stick's corrected and uncorrected errors.
-- **Processor**, **graphics** (NVIDIA through `nvidia-smi`), **drives**, **fans** (a fan that
-  spun before and reads 0 has stopped), the **power supply's** 12, 5 and 3.3 V rails (within
-  5% is healthy, past 10% is failing) and the **board's** own temperatures.
-- The last 30 days of crashes, hardware errors and power losses from Windows' System log.
-
-It is off until the host or an admin presses **Enable**. On Windows, temperatures, fan speeds,
-voltages and drive wear need administrator rights, so enabling it asks Windows once, then
-installs the [PawnIO](https://pawnio.eu) driver, puts
-[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)'s
-library in `Program Files\myTunnels\hardware` (both downloads pinned by checksum) and adds a
-`myTunnels Hardware` task that reads the sensors as SYSTEM from startup. Disabling it
-removes the task and those files; PawnIO stays installed. On Linux it reads `/sys` and
-needs nothing more; drive wear and errors there need root and are not shown.
-
-When a part has been failing, or healthy again, for 15 seconds, the host and every admin
-get an email, once SMTP is set up under **Security**, **Two-Factor Auth**.
 
 ## Containers
 
