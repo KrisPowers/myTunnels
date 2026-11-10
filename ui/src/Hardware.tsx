@@ -50,29 +50,31 @@ export function HardwarePage() {
   const snap = hw.snapshot;
   const problems = snap ? [...snap.parts, ...snap.notes].filter((p) => p.health === "warn" || p.health === "bad").length : 0;
 
+  // Until it is enabled, the Enable panel carries the page's name.
+  if (!hw.enabled) return <Enable hw={hw} admin={admin} busy={busy} onEnable={() => act(api.enableHardware)} />;
   return (
     <>
       <div className="page-head">
         <div className="page-head-main">
           <h1>Hardware</h1>
-          {hw.enabled && snap && (
+          {snap && (
             <div className="page-sub">
               <span><span className={"dot " + (problems ? "bad" : "ok")} /> {problems ? `${problems} need${problems === 1 ? "s" : ""} attention` : "All healthy"}</span>
               <span>Read {ago(snap.at)}</span>
             </div>
           )}
         </div>
-        {hw.enabled && admin && (
+        {admin && (
           <div className="page-actions">
             <MoreMenu label="More" actions={[{
-              label: "Turn off", icon: "power_settings_new", danger: true,
-              confirm: hw.platform === "windows" ? "Turn off and remove the sensor task" : "Turn off",
+              label: "Disable", icon: "block", danger: true,
+              confirm: hw.platform === "windows" ? "Disable and remove the sensor task" : "Disable",
               onClick: () => act(api.disableHardware),
             }]} />
           </div>
         )}
       </div>
-      {!hw.enabled ? <TurnOn hw={hw} admin={admin} busy={busy} onTurnOn={() => act(api.enableHardware)} /> : !snap ? (
+      {!snap ? (
         <div className="empty"><span className="spinner small" /></div>
       ) : (
         <div className="page-body stack">
@@ -110,8 +112,8 @@ export function HardwarePage() {
   );
 }
 
-// TurnOn says what turning the page on does, before anything is asked for.
-function TurnOn({ hw, admin, busy, onTurnOn }: { hw: Hardware; admin: boolean; busy: boolean; onTurnOn: () => void }) {
+// Enable says what enabling the page does, before anything is asked for.
+function Enable({ hw, admin, busy, onEnable }: { hw: Hardware; admin: boolean; busy: boolean; onEnable: () => void }) {
   if (hw.platform === "macos") {
     return <div className="card welcome"><Icon name="memory" size={40} /><h2>Hardware</h2><p>Hardware monitoring covers Windows and Linux.</p></div>;
   }
@@ -122,21 +124,22 @@ function TurnOn({ hw, admin, busy, onTurnOn }: { hw: Hardware; admin: boolean; b
       <p>Every part of this computer, each memory stick by its slot, the processor, graphics, drives, fans and power, green while healthy and red when failing, read every few seconds.</p>
       {hw.platform === "windows" && (
         <>
-          <p>Temperatures, fan speeds, voltages and drive wear need administrator rights. Turning this on asks Windows once, on this computer's screen, and then:</p>
+          <p>Temperatures, fan speeds, voltages and drive wear need administrator rights. Enabling this asks Windows once, on this computer's screen, and then:</p>
           <ul className="bullets">
             <li>installs the <b>PawnIO</b> driver, which reads the board's sensor chips</li>
             <li>puts <b>LibreHardwareMonitor</b>'s sensor library in <code>Program Files\myTunnels\hardware</code></li>
             <li>adds a task that reads the sensors every few seconds as SYSTEM, from startup</li>
           </ul>
-          <p>Turning it off removes the task and those files. PawnIO stays installed, under Installed apps.</p>
+          <p>Disabling it removes the task and those files. PawnIO stays installed, under Installed apps.</p>
         </>
       )}
       <p>When a part starts failing or recovers, the host and admins get an email once SMTP is set up under Security, Two-Factor Auth.</p>
       {admin ? (
-        <button type="button" className="btn primary" disabled={busy} onClick={onTurnOn}>
-          {busy ? <span className="spinner on-accent" /> : <Icon name="power_settings_new" size={18} />}Turn on
+        <button type="button" className="btn primary" disabled={busy} onClick={onEnable}>
+          {/* Windows marks a button that asks for administrator rights with its shield. */}
+          {busy ? <span className="spinner on-accent" /> : hw.platform === "windows" && <Icon name="shield" size={18} />}Enable
         </button>
-      ) : <p className="muted">The host or an admin can turn this on.</p>}
+      ) : <p className="muted">The host or an admin can enable this.</p>}
     </div>
   );
 }

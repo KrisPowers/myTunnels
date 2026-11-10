@@ -1480,9 +1480,9 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .cv-bar-row .ex-pick .dropdown { min-width: 130px; }
 
 /* ---- Hardware: each part, green while healthy and red when failing ---- */
-.hw-intro { justify-items: start; text-align: left; }
 .hw-intro > .icon { color: var(--accent); }
-.hw-intro p, .hw-intro .bullets { max-width: 640px; }
+.hw-intro p { max-width: 640px; }
+.hw-intro .bullets { gap: 4px; padding: 0; list-style: none; }
 .card-head h2 > .icon { flex-shrink: 0; }
 
 /* Memory: a tile per slot, a band of its health along the top; then a bar of

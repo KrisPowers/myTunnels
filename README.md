@@ -134,12 +134,12 @@ seconds, each green while healthy and red when failing:
   5% is healthy, past 10% is failing) and the **board's** own temperatures.
 - The last 30 days of crashes, hardware errors and power losses from Windows' System log.
 
-It is off until the host or an admin turns it on. On Windows, temperatures, fan speeds,
-voltages and drive wear need administrator rights, so turning it on asks Windows once, then
+It is off until the host or an admin presses **Enable**. On Windows, temperatures, fan speeds,
+voltages and drive wear need administrator rights, so enabling it asks Windows once, then
 installs the [PawnIO](https://pawnio.eu) driver, puts
 [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)'s
 library in `Program Files\myTunnels\hardware` (both downloads pinned by checksum) and adds a
-`myTunnels Hardware` task that reads the sensors as SYSTEM from startup. Turning it off
+`myTunnels Hardware` task that reads the sensors as SYSTEM from startup. Disabling it
 removes the task and those files; PawnIO stays installed. On Linux it reads `/sys` and
 needs nothing more; drive wear and errors there need root and are not shown.
 
