@@ -627,7 +627,8 @@ fn spun(db: &Db) -> BTreeSet<String> {
         .unwrap_or_default()
 }
 
-/// A part for each fan that spins or has spun.
+/// A part for each fan header: spinning, stopped after spinning, or never
+/// connected (shown as empty, so every header on the board is seen).
 fn fans(db: &Db, snap: &mut Snapshot, readings: Vec<(String, String, f64)>) {
     let mut seen = spun(db);
     let before = seen.len();
@@ -636,6 +637,10 @@ fn fans(db: &Db, snap: &mut Snapshot, readings: Vec<(String, String, f64)>) {
             seen.insert(id.clone());
         }
         if !seen.contains(&id) {
+            let mut p = Part::new("fan", id, name);
+            p.health = Health::Empty;
+            p.reason = "Nothing connected".into();
+            snap.parts.push(p);
             continue;
         }
         let mut p = Part::new("fan", id, name);
@@ -998,6 +1003,18 @@ mod windows {
                     .find(|(n, _)| n.contains("Package"))
                 {
                     p.read("Power", v, "W", Health::Ok, "");
+                }
+                // Each core's temperature, as "Core 1" and on, for the page's bars.
+                for (name, t) in &temps {
+                    if let Some(n) = name.strip_prefix("CPU Core #") {
+                        p.read(
+                            &format!("Core {n}"),
+                            *t,
+                            "°C",
+                            above(*t, 85.0, 95.0),
+                            "A core is running hot",
+                        );
+                    }
                 }
             }
             if p.readings.is_empty() {
