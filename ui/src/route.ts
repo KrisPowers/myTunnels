@@ -3,12 +3,12 @@
 // `#/tunnels/<id>/<page>` one tunnel; `#/security/<tab>`, Security,
 // whose Users and Devices tabs are also `#/users` and `#/devices`, with
 // `/<id>/<page>` for one of them; `#/apps`, the apps catalog;
-// `#/settings/<section>`; `#/preferences`, how the dashboard looks; and
+// `#/settings/<section>`, Preferences among them; and
 // `#/docs/<section>`; `#/dashboard`, the host and its containers;
 // `#/storage`, photos and videos, and `#/storage/files`; `#/containers`,
 // with `/<name>/<page>/...` for one, its tunnel and images among its pages.
 
-export type View = "tunnels" | "dashboard" | "apps" | "containers" | "storage" | "new" | "devices" | "users" | "security" | "settings" | "preferences" | "docs";
+export type View = "tunnels" | "dashboard" | "apps" | "containers" | "storage" | "new" | "devices" | "users" | "security" | "settings" | "docs";
 
 export interface Place {
   view: View;
@@ -26,9 +26,9 @@ export function readHash(): Place {
   const first = found;
   // Users and Devices are tabs of Security.
   if ((first === "users" || first === "devices") && !second) return { view: "security", id: first, page: "", more: [] };
-  // Appearance was a section of Settings; it is Preferences now.
-  if (first === "settings" && second === "appearance") return { view: "preferences", id: "", page: "", more: [] };
-  if (first === "dashboard" || first === "apps" || first === "preferences") return { view: first, id: "", page: "", more: [] };
+  // Appearance, then a Preferences page of its own, are Settings' Preferences now.
+  if ((first === "settings" && second === "appearance") || first === "preferences") return { view: "settings", id: "preferences", page: "", more: [] };
+  if (first === "dashboard" || first === "apps") return { view: first, id: "", page: "", more: [] };
   // `#/new/<port>` starts a tunnel to that port.
   if (first === "new") return { view: first, id: second, page: "", more: [] };
   // Media, Drive and Convert became Storage's tabs and its Convert action.

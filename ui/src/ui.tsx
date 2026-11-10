@@ -162,7 +162,7 @@ export function Dialog({ title, onClose, children, wide }: { title: ReactNode; o
 // (or over it, near the bottom of the window), in place of the browser's own.
 // A title is moved to data-tip the first time the pointer rests on it.
 export function Tooltips() {
-  const [tip, setTip] = useState<{ text: string; x: number; y: number; above: boolean; side: boolean } | null>(null);
+  const [tip, setTip] = useState<{ text: string; x: number; y: number; above: boolean } | null>(null);
   useEffect(() => {
     let target: HTMLElement | null = null;
     let timer = 0;
@@ -188,11 +188,9 @@ export function Tooltips() {
       timer = window.setTimeout(() => {
         if (target !== el || !el.isConnected) return;
         const r = el.getBoundingClientRect();
-        // The rail's icons are named to their right, where nothing else sits.
-        if (el.closest(".rail")) return setTip({ text, x: r.right + 10, y: r.top + r.height / 2, above: false, side: true });
         const above = r.bottom + 40 > innerHeight;
         const x = Math.min(Math.max(r.left + r.width / 2, 120), innerWidth - 120);
-        setTip({ text, x, y: above ? r.top - 6 : r.bottom + 6, above, side: false });
+        setTip({ text, x, y: above ? r.top - 6 : r.bottom + 6, above });
       }, 350);
     };
     document.addEventListener("pointerover", over);
@@ -209,7 +207,7 @@ export function Tooltips() {
   }, []);
   if (!tip) return null;
   return createPortal(
-    <div className="tip" role="tooltip" style={{ left: tip.x, top: tip.y, transform: tip.side ? "translateY(-50%)" : tip.above ? "translate(-50%, -100%)" : undefined }}>{tip.text}</div>,
+    <div className="tip" role="tooltip" style={{ left: tip.x, top: tip.y, transform: tip.above ? "translate(-50%, -100%)" : undefined }}>{tip.text}</div>,
     document.body,
   );
 }

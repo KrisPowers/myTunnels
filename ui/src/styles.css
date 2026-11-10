@@ -1,6 +1,6 @@
 /* myTunnels' dashboard: a console for a home server. A slim bar across the
-   top with the name, search and the account; a rail of page icons down the
-   left, and beside it the sections of the page that has them; pages of
+   top with the name and search; a sidebar of pages down the left, Help and
+   Settings at its foot; full-width pages of
    rounded, softly lit panels with quiet titles and roomy rows. Dark first,
    with a light theme to match: every colour is a light-dark() pair, picked
    by color-scheme, which Settings sets through data-theme. */
@@ -28,7 +28,7 @@
   --text-3: light-dark(#80868f, #7f838b);
   --accent: light-dark(#006fff, #4797ff);
   --accent-bg: light-dark(#e6f0ff, #172a45);
-  /* The top bar and the rail sit on the page's own ground. */
+  /* The top bar sits on the page's own ground. */
   --top: light-dark(#ffffff, #111214);
   --top-text: var(--text);
   --top-text-2: var(--text-2);
@@ -67,7 +67,6 @@
   --card-round: 12px;
   --side: 232px;
   --head: 52px;
-  --rail: 60px;
   --ease: cubic-bezier(.2, .8, .2, 1);
   --font: "Roboto", "Segoe UI", system-ui, -apple-system, sans-serif;
   --mono: "Roboto Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
@@ -107,8 +106,8 @@ kbd {
 
 .app { min-height: 100vh; }
 
-/* The top bar: the name on the left, search in the middle, what can be added,
-   the theme and the account on the right. */
+/* The top bar: the name on the left, search in the middle, what can be added
+   on the right. */
 .header {
   position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 520px) minmax(0, 1fr);
   align-items: center; gap: 16px; height: var(--head); padding: 0 12px 0 10px; background: var(--top); color: var(--top-text);
@@ -119,48 +118,32 @@ kbd {
 .header .icon-btn { color: var(--text-2); }
 .header .icon-btn:hover { background: var(--hover); color: var(--text); }
 .header-actions .icon-btn { width: 36px; height: 36px; border-radius: 50%; }
-.header-actions .icon-btn.on { color: var(--accent); background: var(--nav-on); }
 
-/* The rail of pages at the left, the open page's sections beside it when it
-   has them, and the page. */
-.shell { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); }
-.shell.sectioned { grid-template-columns: var(--rail) var(--side) minmax(0, 1fr); }
-.nav-drawer { display: contents; }
+/* The sidebar at the left, full height under the top bar, the page beside it. */
+.shell { display: grid; grid-template-columns: var(--side) minmax(0, 1fr); }
 
-/* The rail: a tile per page, its icon only; the open one lit in the accent. */
-.rail {
-  position: sticky; top: var(--head); align-self: start; display: flex; flex-direction: column; align-items: center; gap: 6px;
-  height: calc(100vh - var(--head)); padding: 12px 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
-  background: var(--top); border-right: 1px solid var(--line);
-}
-.rail-gap { flex: 1; }
-.rail .nav-item { justify-content: center; width: 40px; height: 40px; padding: 0; border-radius: var(--round); }
-.rail .nav-label { display: none; }
-.rail .nav-count {
-  position: absolute; top: 2px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
-  box-shadow: 0 0 0 2px var(--top); font-size: 10px; line-height: 16px;
-}
-
-/* The sections of settings or help: a list of soft rows. */
+/* The sidebar: a soft row per page, the open one lit in the accent; Help and
+   Settings at its foot. In settings or help, their sections take the top. */
 .sidebar {
-  position: sticky; top: var(--head); align-self: start; display: grid; align-content: start; gap: 2px;
-  height: calc(100vh - var(--head)); padding: 16px 12px; overflow-y: auto; overflow-x: hidden;
+  position: sticky; top: var(--head); align-self: start; display: flex; flex-direction: column; gap: 2px;
+  height: calc(100vh - var(--head)); padding: 12px; overflow-y: auto; overflow-x: hidden;
   background: var(--side-bg); border-right: 1px solid var(--line);
 }
-.nav-item {
-  position: relative; display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 12px;
+.nav-gap { flex: 1; min-height: 12px; }
+.nav-item, .nav-back {
+  position: relative; display: flex; align-items: center; gap: 12px; flex-shrink: 0; height: 40px; padding: 0 12px;
   border-radius: var(--radius); color: var(--text-2); font-weight: 500; white-space: nowrap; transition: background .12s, color .12s;
 }
 .nav-item .icon { color: inherit; }
-.nav-item:hover { background: var(--nav-hover); color: var(--text); }
+.nav-item:hover, .nav-back:hover { background: var(--nav-hover); color: var(--text); }
 .nav-item.on { background: var(--nav-on); color: var(--on-nav-on); }
 .nav-item.quiet.on { font-weight: 600; }
+.nav-back { margin-bottom: 6px; }
 .nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .scrim { display: none; }
 
-/* The page fills the space beside the navigation. */
-.page { min-width: 0; width: 100%; max-width: 1680px; padding: 24px 32px 56px; }
-.page.wide { max-width: none; }
+/* The page fills the space beside the sidebar. */
+.page { min-width: 0; width: 100%; padding: 24px 32px 56px; }
 
 /* The page's heading: its title, a line of facts under it, its actions on
    the right. */
@@ -437,7 +420,6 @@ a.result:hover { background: var(--hover); }
 .btn.danger.armed { background: var(--bad); color: var(--on-bad); }
 
 /* ---- settings and help: a readable column of panels ---- */
-.flow { max-width: 920px; }
 .flow .doc-title { margin-bottom: 0; font-size: 18px; font-weight: 600; line-height: 1.3; }
 .flow .card-head { gap: 24px; }
 .flow .card-titles { gap: 4px; }
@@ -633,8 +615,7 @@ a.result:hover { background: var(--hover); }
 .how-link { justify-self: start; margin-top: 4px; }
 .pick { display: grid; gap: 10px; justify-items: start; margin-top: 4px; }
 
-/* ---- narrow windows: the rail and sections slide over the page from the
-   menu, the rail with its labels ---- */
+/* ---- narrow windows: the sidebar slides over the page from the menu ---- */
 .menu-btn { display: none; }
 @media (max-width: 900px) {
   .header { display: flex; gap: 8px; padding: 0 8px 0 4px; }
@@ -644,18 +625,12 @@ a.result:hover { background: var(--hover); }
   .brand { padding: 0 4px; }
   .search kbd { display: none; }
   .search input { padding-right: 12px; }
-  .shell, .shell.sectioned { grid-template-columns: minmax(0, 1fr); }
-  .nav-drawer {
-    position: fixed; top: var(--head); left: 0; bottom: 0; z-index: 40; display: flex; max-width: calc(100vw - 48px);
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .sidebar {
+    position: fixed; top: var(--head); left: 0; bottom: 0; z-index: 40; width: var(--side); height: auto;
     box-shadow: var(--shadow); transform: translateX(-105%); transition: transform .22s var(--ease);
   }
-  .nav-drawer.open { transform: none; }
-  .rail, .sidebar { position: static; height: 100%; }
-  .rail { width: 200px; align-items: stretch; padding: 12px 10px; }
-  .rail .nav-item { justify-content: flex-start; width: auto; padding: 0 12px; }
-  .rail .nav-label { display: initial; }
-  .rail .nav-count { position: static; box-shadow: none; }
-  .sidebar { width: var(--side); }
+  .sidebar.open { transform: none; }
   .scrim { display: block; position: fixed; inset: var(--head) 0 0; z-index: 35; background: rgba(0, 0, 0, .5); animation: fade .2s both; }
   .page { padding: 16px 14px 40px; }
   .setting { flex-wrap: wrap; gap: 12px; }

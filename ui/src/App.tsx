@@ -10,16 +10,15 @@ import { DevicePage } from "./Devices";
 import { Icon, type IconName } from "./Icon";
 
 import { MeContext, useCan } from "./me";
-import { loadLook, saveLook } from "./prefs";
 import { go, readHash } from "./route";
-import { Preferences, SETTINGS, Settings } from "./Settings";
+import { SETTINGS, Settings } from "./Settings";
 import { Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
 import { StoragePage } from "./Storage";
 import { NewTunnel, target, TunnelPage } from "./Tunnels";
 import { NewUser, UserPage } from "./Users";
 import { SecurityPage } from "./Security";
-import { Callout, MoreMenu, Notices, Tooltips } from "./ui";
+import { Callout, Notices, Tooltips } from "./ui";
 
 export function App() {
   return (
@@ -76,7 +75,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const [needs, setNeeds] = useState<Needs | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [providers, setProviders] = useState<OAuthProvider[]>([]);
-  // On narrow windows the menu slides the rail and sections over the page.
+  // On narrow windows the menu slides the sidebar over the page.
   const [drawer, setDrawer] = useState(false);
 
   const load = useCallback(async () => {
@@ -165,7 +164,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
     ["apps", "Apps", "apps", "#/apps", true],
     ["security", "Security", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
   ];
-  const home = pages.find((p) => p[4])?.[3] ?? "#/preferences";
+  const home = pages.find((p) => p[4])?.[3] ?? "#/settings/preferences";
   useEffect(() => {
     if (view === "containers" && !id && !can("containers.view") && !can("tunnels.view") && home !== "#/") go(home);
   });
@@ -190,30 +189,25 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
         <Search routes={apps} devices={devices} />
         <div className="header-actions">
           <NewMenu />
-          <ThemeButton />
-          <MoreMenu label="Account" icon="person" actions={[
-            { label: "Preferences", icon: "brightness_auto", onClick: () => go("#/preferences") },
-            { label: "Sign out", icon: "logout", onClick: onSignOut },
-          ]} />
         </div>
       </header>
 
-      <div className={"shell" + (sections ? " sectioned" : "")}>
-        <div className={"nav-drawer" + (drawer ? " open" : "")}>
-          <nav className="rail" aria-label="Pages">
-            {pages.map(item)}
-            <span className="rail-gap" />
-            <NavItem to="#/settings" icon="settings" label="Settings" on={view === "settings"} />
-            <NavItem to="#/docs" icon="help" label="Help" on={view === "docs"} />
-          </nav>
-          {sections && (
-            <nav className="sidebar" aria-label={view === "docs" ? "Help" : "Settings"}>
+      <div className="shell">
+        <nav className={"sidebar" + (drawer ? " open" : "")} aria-label="Pages">
+          {sections ? (
+            <>
+              <a className="nav-back" href={home}><Icon name="arrow_back" /><span>Back</span></a>
               {sections.map(([key, label, icon], i) => (
                 <NavItem key={key} to={`#/${view}/${key}`} icon={icon} label={label} on={id === key || (!id && i === 0)} quiet />
               ))}
-            </nav>
+            </>
+          ) : (
+            pages.map(item)
           )}
-        </div>
+          <span className="nav-gap" />
+          <NavItem to="#/docs" icon="help" label="Help" on={view === "docs"} />
+          <NavItem to="#/settings" icon="settings" label="Settings" on={view === "settings"} />
+        </nav>
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
 
         <main className="page" key={view + id}>
@@ -229,7 +223,6 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {user && <UserPage user={user} page={page} routes={apps ?? []} devices={devices ?? []} catalog={catalog} me={me} onChanged={load} />}
           {view === "security" && <SecurityPage tab={id} users={users} devices={devices} />}
           {view === "settings" && <Settings sections={settings} section={id} status={status} routes={routes ?? []} onChanged={load} onSignOut={onSignOut} />}
-          {view === "preferences" && <Preferences />}
           {view === "docs" && <Docs section={id} />}
         </main>
       </div>
@@ -239,32 +232,14 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   );
 }
 
-// NavItem is a page in the rail, its name shown on hover, or a section in the
-// sidebar beside it, its name in full.
+// NavItem is a page, or a section of settings or help, in the sidebar.
 function NavItem({ to, icon, label, on, quiet, count }: { to: string; icon: IconName; label: string; on: boolean; quiet?: boolean; count?: number }) {
   return (
-    <a className={"nav-item" + (quiet ? " quiet" : "") + (on ? " on" : "")} href={to} aria-current={on ? "page" : undefined} title={quiet ? undefined : label}>
+    <a className={"nav-item" + (quiet ? " quiet" : "") + (on ? " on" : "")} href={to} aria-current={on ? "page" : undefined}>
       <Icon name={icon} />
       <span className="nav-label">{label}</span>
       {count !== undefined && <span className="nav-count">{count}</span>}
     </a>
-  );
-}
-
-// ThemeButton turns the dashboard light or dark at a click; Preferences can
-// hand it back to the computer's own setting.
-function ThemeButton() {
-  const dark = () => (loadLook("theme") === "system" ? matchMedia("(prefers-color-scheme: dark)").matches : loadLook("theme") === "dark");
-  const [isDark, setDark] = useState(dark);
-  const label = isDark ? "Light theme" : "Dark theme";
-  return (
-    <button type="button" className="icon-btn" aria-label={label} title={label}
-      onClick={() => {
-        saveLook("theme", isDark ? "light" : "dark");
-        setDark(!isDark);
-      }}>
-      <Icon name={isDark ? "light_mode" : "dark_mode"} />
-    </button>
   );
 }
 
