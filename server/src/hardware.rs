@@ -147,11 +147,15 @@ pub struct Snapshot {
     /// windows, linux or macos.
     platform: &'static str,
     /// Windows' sensor task: "none" where none is needed, else "missing",
-    /// "waiting" (for the admin prompt), "starting" (set up, no reading yet),
+    /// "waiting" (for the admin prompt), "installing" (setup under way),
+    /// "starting" (set up, no reading yet),
     /// "running", "stale" (stopped reading) or "outdated" (an older script
     /// than this release's, which setting it up again replaces).
     helper: &'static str,
     helper_error: String,
+    /// While setup runs: the step under way and how far along it is.
+    helper_step: String,
+    helper_percent: Option<u8>,
     /// Memory slots on the board, filled or not, where the system says.
     slots: usize,
     ecc: bool,
@@ -1305,10 +1309,25 @@ mod windows {
     /// The sensor task's last reading, and how the task is doing.
     fn read_sensors(db: &Db, snap: &mut Snapshot) -> Option<Value> {
         let dir = dir();
-        if let Ok(log) = std::fs::read_to_string(dir.join("setup.txt")) {
-            if let Some(line) = log.lines().rev().find(|l| l.starts_with("failed:")) {
-                snap.helper_error = line.trim_start_matches("failed:").trim().to_owned();
-            }
+        let now = util::now();
+        let asked = db
+            .setting("hardware_setup_at")
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(0);
+        // Setup's record: "installing <percent> <step>", "done" or "failed: <why>".
+        let record = dir.join("setup.txt");
+        let setup = std::fs::read_to_string(&record).unwrap_or_default();
+        let setup_at = std::fs::metadata(&record)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_secs() as i64);
+        let began = setup_at >= asked && setup_at > 0;
+        let setup = setup.trim();
+        if let Some(why) = setup.strip_prefix("failed:") {
+            snap.helper_error = why.trim().to_owned();
         }
         // What stopped the task itself, written by sensors.ps1.
         if let Ok(error) = std::fs::read_to_string(dir.join("sensors.error.txt")) {
@@ -1316,38 +1335,35 @@ mod windows {
                 snap.helper_error = why.trim().to_owned();
             }
         }
-        let asked = db
-            .setting("hardware_setup_at")
-            .ok()
-            .flatten()
-            .and_then(|v| v.parse::<i64>().ok())
-            .unwrap_or(0);
-        // The admin prompt, then the downloads and the task's first reading, take a while.
-        let recent = util::now() - asked < 180;
-        let age = reading_age();
-        snap.helper = if !installed() {
-            if recent {
-                "waiting"
-            } else {
-                "missing"
-            }
-        } else if age.is_some_and(|a| a < Duration::from_secs(30)) {
+        let installing = setup
+            .strip_prefix("installing ")
+            .filter(|_| now - setup_at < 300);
+        let reading = reading_age().is_some_and(|a| a < Duration::from_secs(30));
+        snap.helper = if !began && now - asked < 120 {
+            "waiting"
+        } else if let Some(rest) = installing {
+            let (percent, step) = rest.split_once(' ').unwrap_or((rest, ""));
+            snap.helper_percent = percent.parse().ok();
+            snap.helper_step = step.to_owned();
+            "installing"
+        } else if installed() && reading {
             if current() {
                 "running"
             } else {
                 "outdated"
             }
-        } else if recent {
-            if current() {
-                "starting"
-            } else {
-                "waiting"
+        } else if setup == "done" && now - setup_at < 180 {
+            "starting"
+        } else if !installed() {
+            if !began && now - asked < 900 && snap.helper_error.is_empty() {
+                snap.helper_error =
+                    "The Windows prompt was declined or closed before setup began.".into();
             }
+            "missing"
         } else {
             "stale"
         };
-        let file = dir.join("sensors.json");
-        let raw = std::fs::read_to_string(&file).ok()?;
+        let raw = std::fs::read_to_string(dir.join("sensors.json")).ok()?;
         serde_json::from_str(raw.trim_start_matches('\u{feff}')).ok()
     }
 
@@ -1386,25 +1402,51 @@ mod windows {
         Ok(())
     }
 
-    async fn fetch(client: &reqwest::Client, (url, sha): (&str, &str)) -> Result<Vec<u8>> {
-        let body = client
-            .get(url)
-            .send()
-            .await?
-            .error_for_status()?
-            .bytes()
-            .await?;
+    /// Records the step under way, and how far along setup is, for the page.
+    fn step(dir: &Path, percent: u8, text: &str) {
+        let _ = std::fs::write(
+            dir.join("setup.txt"),
+            format!("installing {percent} {text}\n"),
+        );
+    }
+
+    /// Downloads a pinned file, moving the record from `from` to `to` percent
+    /// as it comes in, and checks it is the file that was checked.
+    async fn fetch(
+        client: &reqwest::Client,
+        (url, sha): (&str, &str),
+        dir: &Path,
+        (from, to): (u8, u8),
+        text: &str,
+    ) -> Result<Vec<u8>> {
+        step(dir, from, text);
+        let mut answer = client.get(url).send().await?.error_for_status()?;
+        let total = answer.content_length().unwrap_or(0);
+        let mut body = Vec::with_capacity(total as usize);
+        let mut shown = from;
+        while let Some(chunk) = answer.chunk().await? {
+            body.extend_from_slice(&chunk);
+            if let Some(share) = (u64::from(to - from) * body.len() as u64).checked_div(total) {
+                let percent = from + share.min(u64::from(to - from)) as u8;
+                if percent != shown {
+                    step(dir, percent, text);
+                    shown = percent;
+                }
+            }
+        }
         let got = hex::encode(Sha256::digest(&body));
         if got != sha {
             bail!("{url} is not the file that was checked (sha256 {got})");
         }
-        Ok(body.to_vec())
+        Ok(body)
     }
 
     async fn turn_on(dir: &Path) -> Result<()> {
         std::fs::create_dir_all(dir)?;
         let path = dir.to_string_lossy().into_owned();
-        // Only SYSTEM and administrators may change what SYSTEM runs from here; everyone may read it.
+        // Only SYSTEM and administrators may change what SYSTEM runs from
+        // here; everyone may read it. The folder holds the rules and what is
+        // in it inherits them, which also puts right files from an earlier setup.
         run(
             "icacls",
             &[&path, "/setowner", "*S-1-5-32-544", "/T", "/C", "/Q"],
@@ -1418,12 +1460,15 @@ mod windows {
                 "*S-1-5-18:(OI)(CI)F",
                 "*S-1-5-32-544:(OI)(CI)F",
                 "*S-1-5-32-545:(OI)(CI)RX",
-                "/T",
                 "/C",
                 "/Q",
             ],
         )?;
-        std::fs::write(dir.join("setup.txt"), "installing\n")?;
+        let inside = dir.join("*").to_string_lossy().into_owned();
+        let _ = run("icacls", &[&inside, "/reset", "/T", "/C", "/Q"]);
+        // An earlier task holds the library open, and its error is old news.
+        let _ = run("schtasks", &["/End", "/TN", TASK]);
+        let _ = std::fs::remove_file(dir.join("sensors.error.txt"));
         let client = reqwest::Client::builder()
             .user_agent("mytunnels")
             .timeout(Duration::from_secs(300))
@@ -1431,15 +1476,39 @@ mod windows {
 
         // The PawnIO driver, which the library reads the sensor chips through.
         let setup = dir.join("PawnIO_setup.exe");
-        std::fs::write(&setup, fetch(&client, PAWNIO).await?)?;
+        std::fs::write(
+            &setup,
+            fetch(
+                &client,
+                PAWNIO,
+                dir,
+                (2, 20),
+                "Downloading the PawnIO driver",
+            )
+            .await?,
+        )?;
+        step(dir, 20, "Installing the PawnIO driver");
         let installed = std::process::Command::new(&setup).arg("-install").status();
         let _ = std::fs::remove_file(&setup);
         installed.context("cannot run the PawnIO setup")?;
 
         // The library and what it needs: the archive's top-level DLLs.
-        let archive = fetch(&client, LHM).await?;
+        let archive = fetch(
+            &client,
+            LHM,
+            dir,
+            (30, 80),
+            "Downloading LibreHardwareMonitor",
+        )
+        .await?;
+        step(dir, 80, "Unpacking the sensor library");
         let lib = dir.join("lib");
-        let _ = std::fs::remove_dir_all(&lib);
+        for _ in 0..20 {
+            if !lib.exists() || std::fs::remove_dir_all(&lib).is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
         std::fs::create_dir_all(&lib)?;
         let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive))?;
         for i in 0..zip.len() {
@@ -1452,6 +1521,7 @@ mod windows {
             std::io::copy(&mut file, &mut out)?;
         }
 
+        step(dir, 90, "Adding the sensor task");
         let script = dir.join("sensors.ps1");
         std::fs::write(&script, SENSORS)?;
         let xml = task_xml(&script);
@@ -1472,7 +1542,7 @@ mod windows {
             ],
         )?;
         let _ = std::fs::remove_file(&task);
-        let _ = run("schtasks", &["/End", "/TN", TASK]);
+        step(dir, 97, "Starting the sensor task");
         run("schtasks", &["/Run", "/TN", TASK])?;
         std::fs::write(dir.join("setup.txt"), "done\n")?;
         Ok(())
