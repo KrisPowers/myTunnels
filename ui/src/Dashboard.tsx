@@ -18,7 +18,7 @@ const dot = (h?: Health) => "dot" + (h === "ok" || failing(h) ? " " + h : "");
 
 // DashboardPage is the host the way UniFi shows a console: a column of its
 // facts on the left, under each part by its health, and on the right a chart
-// of the last five minutes over its storage and log. Advanced adds
+// of the last five minutes over its storage. Advanced adds
 // the sensors (temperatures, fans, voltages, drive wear), turned on once by
 // the host or an admin, since on Windows they need administrator rights.
 export function DashboardPage({ flags, users, devices, onChanged }: { flags: Flag[]; users: User[]; devices: Device[]; onChanged: () => Promise<void> }) {
@@ -121,7 +121,6 @@ export function DashboardPage({ flags, users, devices, onChanged }: { flags: Fla
             {flags.length > 0 && <NewDevices flags={flags} users={users} devices={devices} onChanged={onChanged} />}
             <Trend m={m} cpu={snap?.parts.find((p) => p.kind === "cpu")} advanced={advanced} />
             <Storage m={m} drives={snap?.parts.filter((p) => p.kind === "drive") ?? []} advanced={advanced} />
-            <Log snap={snap} />
           </div>
         </div>
       )}
@@ -387,26 +386,6 @@ function Storage({ m, drives, advanced }: { m: Metrics; drives: HwPart[]; advanc
           </table>
         </div>
       )}
-    </Section>
-  );
-}
-
-// The System log's crashes, hardware errors and power losses.
-function Log({ snap }: { snap: HwSnapshot | null }) {
-  if (!snap || (snap.platform !== "windows" && !snap.events.length)) return null;
-  return (
-    <Section title="System Log (Last 30 Days)">
-      {snap.events.length ? (
-        <ul className="events">
-          {snap.events.slice(0, 8).map((e, i) => (
-            <li key={i}>
-              <span className={dot(e.health)} />
-              <span className="events-text" title={e.text}>{e.text}</span>
-              <time>{new Date(e.at * 1000).toLocaleDateString([], { month: "short", day: "numeric" })}</time>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="empty-note">No crashes, hardware errors or power losses.</p>}
     </Section>
   );
 }
