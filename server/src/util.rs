@@ -8,6 +8,14 @@ use rand::distributions::Alphanumeric;
 use rand::{Rng, RngCore};
 use sha2::{Digest, Sha256};
 
+/// A PowerShell script as `-EncodedCommand` takes it, so no quoting can break it.
+#[cfg(windows)]
+pub fn powershell_encoded(script: &str) -> String {
+    use base64::Engine;
+    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    base64::engine::general_purpose::STANDARD.encode(utf16)
+}
+
 pub fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
