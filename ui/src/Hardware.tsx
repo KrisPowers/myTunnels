@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ago, api, message, type Hardware, type Health, type HwPart, type HwSnapshot } from "./api";
 import { Icon } from "./Icon";
 import { useMe } from "./me";
-import { Render } from "./Render";
+import { Gallery } from "./Gallery";
 import { Callout, MoreMenu, useNotify } from "./ui";
 
 const failing = (h: Health) => h === "warn" || h === "bad";
@@ -12,9 +12,9 @@ const figure = (value: number, unit: string) =>
   `${Number.isInteger(value) ? value : value.toFixed(unit === "V" ? 2 : 1)}${unit ? (unit === "%" ? "%" : ` ${unit}`) : ""}`;
 const STATE: Record<Health, string> = { ok: "Healthy", warn: "Needs attention", bad: "Failing", empty: "Empty", unknown: "No readings" };
 
-// HardwarePage is this computer drawn from above with each part in its
-// health, the picked part's readings beside it, every part and the 30-day log
-// under that. Off until the host or an admin enables it.
+// HardwarePage is every part of this computer as its own render, packed into
+// rows that fill the space, each in its health; the picked part's readings
+// beside them, with every part and the 30-day log. Off until the host or an admin enables it.
 export function HardwarePage() {
   const me = useMe();
   const admin = me.admin || me.host;
@@ -80,7 +80,7 @@ export function HardwarePage() {
       {!snap ? <div className="empty"><span className="spinner small" /></div> : (
         // The render and its panel fill the window, so nothing needs scrolling to.
         <div className="page-body hw-layout">
-            <div className="hw-stage"><Render snap={snap} picked={shown?.id ?? ""} onPick={setPicked} /></div>
+            <Gallery snap={snap} picked={shown?.id ?? ""} onPick={setPicked} />
             <aside className="hw-side">
               <Helper snap={snap} admin={admin} busy={busy} onSetUp={() => act(api.enableHardware)} />
               {snap.notes.map((n) => (
