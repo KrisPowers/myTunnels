@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import type { Health, HwPart, HwSnapshot } from "./api";
+import type { HwPart, HwSnapshot } from "./api";
 
 // Gallery is every part of this computer as a tile of its own render, packed
 // the way photo galleries pack pictures: each tile keeps its part's shape,
