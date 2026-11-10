@@ -107,60 +107,22 @@ jobs:
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: 0.1.${{ github.run_number }}
         run: |
+          # The next after the latest release, as scripts/build.ps1 numbers them.
+          latest=$(gh release list --limit 1 --json tagName -q '.[0].tagName')
+          latest=${latest#v}
+          VERSION=$([ -n "$latest" ] && echo "${latest%.*}.$(( ${latest##*.} + 1 ))" || echo 0.1.0)
           gh release create "v$VERSION" dist/* --title "$VERSION" --notes "Built from ${GITHUB_SHA::7}." --target "$GITHUB_SHA"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       - name: Formula
         run: |
-          sha() { sha256sum "dist/$1.tar.gz" | cut -d' ' -f1; }
-          base="https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
-          mkdir -p Formula
-          cat > Formula/mytunnels.rb <<EOF
-          # Written by the Release workflow for each release.
-          class Mytunnels < Formula
-            desc "Publish apps at home through Cloudflare Tunnel, with an access gateway"
-            homepage "https://github.com/$GITHUB_REPOSITORY"
-            version "$VERSION"
-            license "Apache-2.0"
-
-            on_macos do
-              on_arm do
-                url "$base/macos-arm64.tar.gz"
-                sha256 "$(sha macos-arm64)"
-              end
-              on_intel do
-                url "$base/macos-x64.tar.gz"
-                sha256 "$(sha macos-x64)"
-              end
-            end
-
-            on_linux do
-              on_arm do
-                url "$base/linux-arm64.tar.gz"
-                sha256 "$(sha linux-arm64)"
-              end
-              on_intel do
-                url "$base/linux-x64.tar.gz"
-                sha256 "$(sha linux-x64)"
-              end
-            end
-
-            def install
-              libexec.install Dir["*"]
-              bin.install_symlink libexec/"mytunnels"
-            end
-
-            # An upgrade starts a running myTunnels again on the new version.
-            def post_install
-              quiet_system bin/"mytunnels", "start" if quiet_system bin/"mytunnels", "status"
-            end
-
-            test do
-              assert_match "not running", shell_output("#{bin}/mytunnels status", 1)
-            end
-          end
-          EOF
+          # Each url line names the release and archive, with its sha256 under it.
+          f=Formula/mytunnels.rb
+          for n in macos-arm64 macos-x64 linux-arm64 linux-x64; do
+            sum=$(sha256sum "dist/$n.tar.gz" | cut -d' ' -f1)
+            sed -i -E "/\/$n\.tar\.gz\"/{s|/download/v[^/]+/|/download/v$VERSION/|;n;s|sha256 \"[^\"]*\"|sha256 \"$sum\"|}" "$f"
+          done
+          sed -i -E "s|^  version \"[^\"]*\"|  version \"$VERSION\"|" "$f"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/mytunnels.rb

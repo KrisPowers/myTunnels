@@ -24,18 +24,20 @@ browser ──https──> Cloudflare edge ──tunnel──> cloudflared ─�
 
 ## Quick start
 
-Install it, with nothing else needed first. cloudflared comes with it.
+Install it, with nothing else needed first. cloudflared comes with it. The repository is
+private, so each way signs in with [GitHub CLI](https://cli.github.com/) (`gh auth login`, and
+`gh auth setup-git` for Homebrew's tap) as an account that can see it.
 
 Windows, in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/KrisPowers/myTunnels/main/scripts/install.ps1 | iex
+irm https://api.github.com/repos/KrisPowers/myTunnels/contents/scripts/install.ps1 -Headers @{ Authorization = "Bearer $(gh auth token)"; Accept = 'application/vnd.github.raw' } | iex
 ```
 
 macOS or Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/KrisPowers/myTunnels/main/scripts/install.sh | sh
+curl -fsSL -H "Authorization: Bearer $(gh auth token)" -H "Accept: application/vnd.github.raw" https://api.github.com/repos/KrisPowers/myTunnels/contents/scripts/install.sh | sh
 ```
 
 Homebrew:
@@ -44,6 +46,11 @@ Homebrew:
 brew tap krispowers/mytunnels https://github.com/KrisPowers/myTunnels
 brew install mytunnels
 ```
+
+Releases are built by `pwsh scripts/build.ps1 -Publish`, which builds what the computer it
+runs on can (Windows, or macOS on a Mac, and Linux through zig), releases it and points the
+formula in `Formula/` at it. Run it on a Mac with `-Version` set to that release to add the
+macOS builds. Without `-Publish` it only builds, into `builds/`.
 
 Then start it, once:
 
