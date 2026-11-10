@@ -4,18 +4,25 @@ import { useDismiss, usePlace } from "./dismiss";
 import { message } from "./api";
 import { Icon, type IconName } from "./Icon";
 
-// Card is a soft filled block with a heading.
+// Card is a rounded panel with a heading. One with contents folds shut from
+// the chevron at its right, keeping what is typed in it.
 export function Card({ title, sub, action, children }: { title: ReactNode; sub?: ReactNode; action?: ReactNode; children?: ReactNode }) {
+  const [open, setOpen] = useState(true);
   return (
-    <section className="card">
+    <section className={"card" + (open ? "" : " folded")}>
       <div className="card-head">
         <div className="card-titles">
           <h2>{title}</h2>
           {sub && <p>{sub}</p>}
         </div>
         {action}
+        {children && (
+          <button type="button" className="icon-btn card-fold" aria-label={open ? "Collapse" : "Expand"} aria-expanded={open} onClick={() => setOpen(!open)}>
+            <Icon name="expand_more" />
+          </button>
+        )}
       </div>
-      {children}
+      {children && <div className="card-body" hidden={!open}>{children}</div>}
     </section>
   );
 }
@@ -155,7 +162,7 @@ export function Dialog({ title, onClose, children, wide }: { title: ReactNode; o
 // (or over it, near the bottom of the window), in place of the browser's own.
 // A title is moved to data-tip the first time the pointer rests on it.
 export function Tooltips() {
-  const [tip, setTip] = useState<{ text: string; x: number; y: number; above: boolean } | null>(null);
+  const [tip, setTip] = useState<{ text: string; x: number; y: number; above: boolean; side: boolean } | null>(null);
   useEffect(() => {
     let target: HTMLElement | null = null;
     let timer = 0;
@@ -181,9 +188,11 @@ export function Tooltips() {
       timer = window.setTimeout(() => {
         if (target !== el || !el.isConnected) return;
         const r = el.getBoundingClientRect();
+        // The rail's icons are named to their right, where nothing else sits.
+        if (el.closest(".rail")) return setTip({ text, x: r.right + 10, y: r.top + r.height / 2, above: false, side: true });
         const above = r.bottom + 40 > innerHeight;
         const x = Math.min(Math.max(r.left + r.width / 2, 120), innerWidth - 120);
-        setTip({ text, x, y: above ? r.top - 6 : r.bottom + 6, above });
+        setTip({ text, x, y: above ? r.top - 6 : r.bottom + 6, above, side: false });
       }, 350);
     };
     document.addEventListener("pointerover", over);
@@ -200,7 +209,7 @@ export function Tooltips() {
   }, []);
   if (!tip) return null;
   return createPortal(
-    <div className="tip" role="tooltip" style={{ left: tip.x, top: tip.y, transform: tip.above ? "translate(-50%, -100%)" : undefined }}>{tip.text}</div>,
+    <div className="tip" role="tooltip" style={{ left: tip.x, top: tip.y, transform: tip.side ? "translateY(-50%)" : tip.above ? "translate(-50%, -100%)" : undefined }}>{tip.text}</div>,
     document.body,
   );
 }

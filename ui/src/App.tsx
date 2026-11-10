@@ -10,6 +10,7 @@ import { DevicePage } from "./Devices";
 import { Icon, type IconName } from "./Icon";
 
 import { MeContext, useCan } from "./me";
+import { loadLook, saveLook } from "./prefs";
 import { go, readHash } from "./route";
 import { Preferences, SETTINGS, Settings } from "./Settings";
 import { Setup } from "./Setup";
@@ -75,24 +76,8 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const [needs, setNeeds] = useState<Needs | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [providers, setProviders] = useState<OAuthProvider[]>([]);
+  // On narrow windows the menu slides the rail and sections over the page.
   const [drawer, setDrawer] = useState(false);
-  // On wide windows the menu folds the sidebar to its icons, remembered here.
-  const [rail, setRail] = useState(() => {
-    try {
-      return localStorage.getItem("nav.rail") === "1";
-    } catch {
-      return false;
-    }
-  });
-  const menu = () => {
-    if (matchMedia("(max-width: 900px)").matches) return setDrawer((d) => !d);
-    setRail(!rail);
-    try {
-      localStorage.setItem("nav.rail", rail ? "0" : "1");
-    } catch {
-      // Kept until the page closes.
-    }
-  };
 
   const load = useCallback(async () => {
     const [r, d, u, s, o, f, n] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status(), api.oauth(), api.flags(), api.needs()]);
@@ -189,45 +174,46 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
     <NavItem key={key} to={to} icon={icon} label={label}
       on={view === key || (key === "containers" && (view === "new" || view === "tunnels")) || (key === "security" && (view === "users" || view === "devices"))}
-      count={key === "dashboard" ? flags.length || undefined : undefined} rail={rail} />
+      count={key === "dashboard" ? flags.length || undefined : undefined} />
   );
 
   return (
     <NeedsContext.Provider value={needs}>
-    <div className={"app" + (rail ? " rail" : "")}>
+    <div className="app">
       <header className="header">
         <div className="header-start">
-          <button type="button" className="icon-btn menu-btn" aria-label="Menu" aria-expanded={drawer || !rail} onClick={menu}>
+          <button type="button" className="icon-btn menu-btn" aria-label="Menu" aria-expanded={drawer} onClick={() => setDrawer(!drawer)}>
             <Icon name="menu" />
           </button>
-          <a className="brand" href="#/"><span className="brand-mark"><Icon name="public" size={20} /></span><span className="brand-name">myTunnels</span></a>
+          <a className="brand" href={home}><span className="brand-mark"><Icon name="public" size={18} /></span><span className="brand-name">myTunnels</span></a>
         </div>
         <Search routes={apps} devices={devices} />
         <div className="header-actions">
           <NewMenu />
-          <a className={"icon-btn" + (view === "docs" ? " on" : "")} href="#/docs" aria-label="Help" title="Help"><Icon name="help" /></a>
-          <MoreMenu label="Settings" icon="settings" actions={[
-            { label: "Settings", icon: "settings", onClick: () => go("#/settings") },
+          <ThemeButton />
+          <MoreMenu label="Account" icon="person" actions={[
             { label: "Preferences", icon: "brightness_auto", onClick: () => go("#/preferences") },
             { label: "Sign out", icon: "logout", onClick: onSignOut },
           ]} />
         </div>
       </header>
 
-      <div className="shell">
-        <nav className={"sidebar" + (drawer ? " open" : "")} aria-label="Pages">
-          {sections ? (
-            <>
-              <a className="nav-back" href="#/"><Icon name="arrow_back" /><span>Dashboard</span></a>
-              <hr className="nav-rule" />
+      <div className={"shell" + (sections ? " sectioned" : "")}>
+        <div className={"nav-drawer" + (drawer ? " open" : "")}>
+          <nav className="rail" aria-label="Pages">
+            {pages.map(item)}
+            <span className="rail-gap" />
+            <NavItem to="#/settings" icon="settings" label="Settings" on={view === "settings"} />
+            <NavItem to="#/docs" icon="help" label="Help" on={view === "docs"} />
+          </nav>
+          {sections && (
+            <nav className="sidebar" aria-label={view === "docs" ? "Help" : "Settings"}>
               {sections.map(([key, label, icon], i) => (
-                <NavItem key={key} to={`#/${view}/${key}`} icon={icon} label={label} on={id === key || (!id && i === 0)} quiet rail={rail} />
+                <NavItem key={key} to={`#/${view}/${key}`} icon={icon} label={label} on={id === key || (!id && i === 0)} quiet />
               ))}
-            </>
-          ) : (
-            pages.map(item)
+            </nav>
           )}
-        </nav>
+        </div>
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
 
         <main className="page" key={view + id}>
@@ -253,13 +239,32 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   );
 }
 
-function NavItem({ to, icon, label, on, quiet, count, rail }: { to: string; icon: IconName; label: string; on: boolean; quiet?: boolean; count?: number; rail?: boolean }) {
+// NavItem is a page in the rail, its name shown on hover, or a section in the
+// sidebar beside it, its name in full.
+function NavItem({ to, icon, label, on, quiet, count }: { to: string; icon: IconName; label: string; on: boolean; quiet?: boolean; count?: number }) {
   return (
-    <a className={"nav-item" + (quiet ? " quiet" : "") + (on ? " on" : "")} href={to} aria-current={on ? "page" : undefined} title={rail ? label : undefined}>
+    <a className={"nav-item" + (quiet ? " quiet" : "") + (on ? " on" : "")} href={to} aria-current={on ? "page" : undefined} title={quiet ? undefined : label}>
       <Icon name={icon} />
       <span className="nav-label">{label}</span>
       {count !== undefined && <span className="nav-count">{count}</span>}
     </a>
+  );
+}
+
+// ThemeButton turns the dashboard light or dark at a click; Preferences can
+// hand it back to the computer's own setting.
+function ThemeButton() {
+  const dark = () => (loadLook("theme") === "system" ? matchMedia("(prefers-color-scheme: dark)").matches : loadLook("theme") === "dark");
+  const [isDark, setDark] = useState(dark);
+  const label = isDark ? "Light theme" : "Dark theme";
+  return (
+    <button type="button" className="icon-btn" aria-label={label} title={label}
+      onClick={() => {
+        saveLook("theme", isDark ? "light" : "dark");
+        setDark(!isDark);
+      }}>
+      <Icon name={isDark ? "light_mode" : "dark_mode"} />
+    </button>
   );
 }
 
