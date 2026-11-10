@@ -179,7 +179,11 @@ fn run_installer(token: &str, path: &std::path::Path) -> Result<()> {
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     let quote = |p: &std::path::Path| p.display().to_string().replace('\'', "''");
-    let log = config::home().join("update.txt");
+    // An earlier update still holding update.txt gets a log of its own.
+    let mut log = config::home().join("update.txt");
+    if std::fs::OpenOptions::new().create(true).append(true).open(&log).is_err() {
+        log = config::home().join(format!("update-{}.txt", crate::util::now()));
+    }
     let script = format!(
         "$ErrorActionPreference = 'Stop'\n\
          try {{ & '{}' *> '{}' }}\n\
