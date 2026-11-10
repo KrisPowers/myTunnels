@@ -123,11 +123,11 @@ does and Docker Desktop does not.
 ## Hardware
 
 **Hardware** shows every part of the computer myTunnels is installed on, read every five
-seconds, each green while healthy and red when failing. The page is a photo of a board with
-the processor in its socket, each stick in its slot and the graphics card over its slot, each
-lit in its health, and the drives, power supply and fans beside it. The photos are from
-Wikimedia Commons under Creative Commons licenses, credited under **Photo credits** on the
-page.
+seconds, each green while healthy and red when failing. The page draws the computer from
+above, to scale, from what it reads: a board of the size its name gives, its memory slots with
+each stick where it sits, the processor engraved with its name, the graphics card over its
+slot, the drives, power supply and fans beside it (the fans turning at their measured speed),
+each glowing in its health.
 
 - **Memory**, slot by slot: each stick's size, its share of the total, its speed and serial,
   and the empty slots. A stick that stops being detected stays in its slot in red until it
