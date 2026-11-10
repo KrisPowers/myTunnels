@@ -1483,13 +1483,20 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .sec-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 28px; }
 .sec-head h2 { font-size: 17px; font-weight: 600; }
 .sec-tabs { display: inline-flex; align-items: center; }
-.sec-tabs button { padding: 0 12px; border: 0; background: none; color: var(--text-2); font: 500 14px var(--font); cursor: pointer; }
+.sec-tabs button { padding: 0 12px; border: 0; background: none; color: var(--text-2); font: 500 14px var(--font); cursor: pointer; transition: color .18s var(--ease); }
 .sec-tabs button + button { border-left: 1px solid var(--line-strong); }
 .sec-tabs button:hover { color: var(--text); }
 .sec-tabs button.on { color: var(--accent); }
 .sec-now { margin-left: auto; color: var(--text); font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sec-now .legend { font-size: 13px; font-weight: 400; }
 .dash-sec .chart-plot { height: 280px; }
+/* A picked tab's chart and figure fade up into place; the threads' strip
+   keeps its room on every tab and only fades. */
+.trend-in { display: block; animation: trend-in .26s var(--ease) both; }
+.sec-now > .trend-in { display: inline-block; }
+@keyframes trend-in { from { opacity: 0; transform: translateY(6px); } }
+.trend-extra { display: grid; gap: 14px; transition: opacity .2s var(--ease); }
+.trend-extra.off { opacity: 0; pointer-events: none; }
 /* On the page's ground, what the chart masks with the panel colour takes the page's. */
 .dash .chart-grid span { background: var(--bg); }
 .dash .chart-dot { box-shadow: 0 0 0 2px var(--bg); }
