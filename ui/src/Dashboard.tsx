@@ -3,27 +3,25 @@ import { ago, api, bytes, message, shortId, type ContainerStats, type Device, ty
 import { Chart, Meter, Spark } from "./charts";
 import { Icon } from "./Icon";
 import { useCan, useMe } from "./me";
-import { go } from "./route";
-import { MoreMenu, useNotify } from "./ui";
+import { Dialog, useNotify } from "./ui";
 
 // Chart colours, in a fixed order: blue, violet, orange.
 const BLUE = "var(--s1)";
 const VIOLET = "var(--s2)";
 const ORANGE = "var(--s3)";
+const SERIES = [BLUE, VIOLET, ORANGE];
 
 const failing = (h?: Health) => h === "warn" || h === "bad";
-const worst = (list: { health: Health }[]): Health =>
-  list.some((p) => p.health === "bad") ? "bad" : list.some((p) => p.health === "warn") ? "warn" : list.some((p) => p.health === "ok") ? "ok" : "unknown";
 const reading = (p: HwPart | undefined, label: string) => p?.readings.find((r) => r.label === label);
 const fact = (p: HwPart | undefined, key: string) => p?.facts.find(([k]) => k === key)?.[1] ?? "";
-const share = (n: number) => Math.min(Math.max(n, 0), 1);
+const dot = (h?: Health) => "dot" + (h === "ok" || failing(h) ? " " + h : "");
 
-// DashboardPage is the host at a glance, in panels of figures and charts.
-// Overview is what any account can read from the system; Advanced adds the
-// sensors: temperatures, fans, voltages and drive wear, which on Windows need
-// administrator rights once.
-export function DashboardPage({ tab, flags, users, devices, onChanged }: { tab: string; flags: Flag[]; users: User[]; devices: Device[]; onChanged: () => Promise<void> }) {
-  const advanced = tab === "advanced";
+// DashboardPage is the host the way UniFi shows a console: a column of its
+// facts on the left, under a chip for each part, and on the right a chart of
+// the last five minutes over its storage, containers and log. Advanced adds
+// the sensors (temperatures, fans, voltages, drive wear), turned on once by
+// the host or an admin, since on Windows they need administrator rights.
+export function DashboardPage({ flags, users, devices, onChanged }: { flags: Flag[]; users: User[]; devices: Device[]; onChanged: () => Promise<void> }) {
   const me = useMe();
   const admin = me.admin || me.host;
   const notify = useNotify();
@@ -31,6 +29,7 @@ export function DashboardPage({ tab, flags, users, devices, onChanged }: { tab: 
   const [problem, setProblem] = useState("");
   const [hw, setHw] = useState<Hardware | null>(null);
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -66,112 +65,83 @@ export function DashboardPage({ tab, flags, users, devices, onChanged }: { tab: 
     };
   }, []);
 
-  const act = async (call: () => Promise<Hardware>) => {
+  const advanced = !!hw?.enabled;
+  const toggle = async () => {
+    setAsking(false);
     setBusy(true);
     try {
-      setHw(await call());
+      setHw(await (advanced ? api.disableHardware() : api.enableHardware()));
     } catch (e) {
       notify(message(e), "bad");
     } finally {
       setBusy(false);
     }
   };
+  const forget = async (slot: string) => {
+    try {
+      setHw(await api.forgetSlot(slot));
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+  };
 
   const snap = hw?.snapshot ?? null;
-  const parts = snap?.parts ?? [];
-  const of = (kind: string) => parts.filter((p) => p.kind === kind);
-  const attention = [...parts, ...(snap?.notes ?? [])].filter((p) => failing(p.health));
-  const chart = m && { times: m.history.map((s) => s.at), keep: m.keep, every: m.every };
-
+  const windows = hw?.platform === "windows";
   return (
     <>
       <div className="page-head">
-        <div className="page-head-main">
-          <h1>Dashboard</h1>
-          {snap && (
-            <div className="page-sub">
-              <span className="health-line">
-                <span className={"dot " + (attention.length ? worst(attention) : "ok")} />
-                {attention.length ? `${attention.length} need${attention.length === 1 ? "s" : ""} attention` : "All healthy"}
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="page-actions">
-          <div className="seg-tabs" role="tablist" aria-label="View">
-            <button type="button" role="tab" aria-selected={!advanced} className={advanced ? "" : "on"} onClick={() => go("#/dashboard")}>Overview</button>
-            <button type="button" role="tab" aria-selected={advanced} className={advanced ? "on" : ""} onClick={() => go("#/dashboard/advanced")}>Advanced</button>
+        <div className="page-head-main"><h1>Dashboard</h1></div>
+        {admin && hw && hw.platform !== "macos" && (
+          <div className="page-actions">
+            <button type="button" className={"btn" + (advanced ? " lit" : "")} disabled={busy} onClick={() => setAsking(true)}>
+              {busy ? <span className="spinner small" /> : <Icon name={advanced ? "check" : windows ? "shield" : "tune"} size={18} />}Advanced
+            </button>
           </div>
-          {advanced && admin && hw?.platform === "windows" && hw.enabled && (
-            <MoreMenu label="More" actions={[{ label: "Turn off sensors", icon: "block", danger: true, confirm: "Remove the sensor task", onClick: () => act(api.disableHardware) }]} />
-          )}
-        </div>
+        )}
       </div>
+      {asking && (
+        <Dialog title={advanced ? "Turn off Advanced?" : "Turn on Advanced?"} onClose={() => setAsking(false)}>
+          <p className="muted">
+            {advanced
+              ? windows ? "The sensor task and its files are removed, so temperatures, fans, voltages and drive wear stop being read. PawnIO stays installed." : "Temperatures, fans and voltages are hidden again."
+              : windows ? "Temperatures, fans, voltages and drive wear need administrator rights. Windows asks once on this computer's screen, then installs the PawnIO driver and a sensor task that runs as SYSTEM from startup." : "Adds every temperature, fan and voltage this computer reports."}
+          </p>
+          <div className="edit-actions">
+            <button type="button" className="btn text" onClick={() => setAsking(false)}>Cancel</button>
+            <button type="button" className="btn primary danger-fill" autoFocus onClick={toggle}>{advanced ? "Turn off" : "Turn on"}</button>
+          </div>
+        </Dialog>
+      )}
       {problem && <div className="callout bad"><Icon name="error" /><span>{problem}</span></div>}
-      {advanced && hw && <Setup hw={hw} admin={admin} busy={busy} onEnable={() => act(api.enableHardware)} />}
-      {m && chart && m.history.length > 0 && (
-        <div className="page-body dash">
-          {flags.length > 0 && <NewDevices flags={flags} users={users} devices={devices} onChanged={onChanged} />}
-          <Host m={m} board={of("board")[0]} />
-          <Cpu m={m} cpu={of("cpu")[0]} advanced={advanced} chart={chart} />
-          <Memory m={m} snap={snap} chart={chart} admin={admin} onForget={(slot) => act(() => api.forgetSlot(slot))} />
-          <Network m={m} chart={chart} />
-          {advanced && <Temperatures m={m} parts={parts} chart={chart} />}
-          {advanced && <Fans fans={of("fan")} />}
-          {advanced && <Voltages power={of("power")[0]} />}
-          <Graphics gpus={of("gpu")} />
-          <Log snap={snap} />
-          <Volumes m={m} />
-          <Drives drives={of("drive")} advanced={advanced} />
-          <Containers m={m} />
+      {advanced && snap && <Setup snap={snap} />}
+      {m && m.history.length > 0 && (
+        <div className="dash">
+          <Side m={m} snap={snap} advanced={advanced} admin={admin} onForget={forget} />
+          <div className="dash-main">
+            {flags.length > 0 && <NewDevices flags={flags} users={users} devices={devices} onChanged={onChanged} />}
+            <Trend m={m} cpu={snap?.parts.find((p) => p.kind === "cpu")} advanced={advanced} />
+            <Storage m={m} drives={snap?.parts.filter((p) => p.kind === "drive") ?? []} advanced={advanced} />
+            <Containers m={m} />
+            <Log snap={snap} />
+          </div>
         </div>
       )}
     </>
   );
 }
 
-// ---- panels ----
+// ---- the column of facts ----
 
-interface Frame {
-  times: number[];
-  keep: number;
-  every: number;
-}
+type Fact = [string, ReactNode, Health?] | false | null | undefined;
 
-// Panel is one tile of the grid: a title with how it is doing, the figure
-// that matters now on the right, and its body.
-function Panel({ title, span, health, sub, now, flush, children }: {
-  title: ReactNode;
-  span: 4 | 6 | 12;
-  health?: Health;
-  sub?: ReactNode;
-  now?: ReactNode;
-  flush?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <section className={`panel span-${span}`}>
-      <header className="panel-head">
-        {failing(health) || health === "ok" ? <span className={"dot " + health} /> : null}
-        <h2>{title}</h2>
-        {sub && <span className="panel-sub">{sub}</span>}
-        {now && <span className="panel-now">{now}</span>}
-      </header>
-      <div className={"panel-body" + (flush ? " flush" : "")}>{children}</div>
-    </section>
-  );
-}
-
-type Fig = [string, ReactNode, Health?] | false | null | undefined;
-
-// Figures is a row of label-over-value pairs, those without a value left out.
-function Figures({ items, wide }: { items: Fig[]; wide?: boolean }) {
+// Rows is a group of label and value pairs, those without a value left out.
+function Rows({ items }: { items: Fact[] }) {
   const shown = items.filter((f): f is [string, ReactNode, Health?] => !!f && f[1] !== null && f[1] !== undefined && f[1] !== "" && f[1] !== false);
   if (!shown.length) return null;
   return (
-    <dl className={"figures" + (wide ? " wide" : "")}>
-      {shown.map(([label, value, health]) => (
-        <div key={label} data-health={health}>
+    <dl className="side-rows">
+      {shown.map(([label, value, health], i) => (
+        <div key={label + i} data-health={health}>
           <dt>{label}</dt>
           <dd>{value}</dd>
         </div>
@@ -180,30 +150,159 @@ function Figures({ items, wide }: { items: Fig[]; wide?: boolean }) {
   );
 }
 
-interface Row {
-  key: string;
-  label: string;
-  value: string;
-  // Where the bar under the value stands, from nothing to full.
-  fill?: number;
-  note?: string;
-  health?: Health;
-  title?: string;
+function Side({ m, snap, advanced, admin, onForget }: { m: Metrics; snap: HwSnapshot | null; advanced: boolean; admin: boolean; onForget: (slot: string) => void }) {
+  const parts = snap?.parts ?? [];
+  const of = (kind: string) => parts.filter((p) => p.kind === kind);
+  const cpu = of("cpu")[0];
+  const board = of("board")[0];
+  const power = of("power")[0];
+  const fans = of("fan").filter((f) => f.health !== "empty");
+  const gpus = of("gpu").filter((g) => g.readings.some((r) => r.unit !== "°C") || fact(g, "Memory"));
+  const attention = [...parts, ...(snap?.notes ?? [])].filter((p) => failing(p.health));
+  const status: Health = attention.some((p) => p.health === "bad") ? "bad" : attention.length ? "warn" : "ok";
+  const temp = reading(cpu, "Temperature");
+  const list = m.docker.containers.filter((c) => c.state === "running");
+  return (
+    <aside className="dash-side">
+      <h2 className="side-name">{m.host.name ?? "This host"}</h2>
+      <Bays parts={parts} />
+      {attention.length > 0 && (
+        <div className="side-notes">
+          {attention.map((p) => (
+            <p key={p.id} data-health={p.health}>
+              {p.id.startsWith("note:") ? p.name : p.reason}
+              {admin && p.kind === "memory" && p.health === "bad" && !p.bytes && p.place && (
+                <button type="button" className="link-btn" onClick={() => onForget(p.place)}>Taken out</button>
+              )}
+            </p>
+          ))}
+        </div>
+      )}
+      <Rows items={[
+        ["Status", attention.length ? `${attention.length} need${attention.length === 1 ? "s" : ""} attention` : "Online", status],
+        ["Platform", m.host.os],
+        ["Processor", m.host.cpu],
+        ["Cores", m.host.cores && m.host.cores !== m.host.threads ? `${m.host.cores} cores, ${m.host.threads} threads` : `${m.host.threads} threads`],
+        ["Memory", bytes(m.memory_total)],
+        ["Board", board?.name],
+        advanced && temp && ["Temperature (CPU)", degrees(temp.value), failing(temp.health) ? temp.health : undefined],
+        advanced && reading(cpu, "Power") && ["Power (CPU)", `${Math.round(reading(cpu, "Power")!.value)} W`],
+        ["System Uptime", duration(m.uptime)],
+        m.load && ["Load", m.load.map((n) => n.toFixed(2)).join("  ")],
+        ["Docker", m.host.docker],
+      ]} />
+      {gpus.map((g) => {
+        const t = reading(g, "Temperature");
+        const p = reading(g, "Power");
+        const limit = Number.parseFloat(fact(g, "Power limit"));
+        const mem = fact(g, "Memory").match(/([\d.]+) of ([\d.]+)/);
+        return (
+          <Rows key={g.id} items={[
+            ["Graphics", g.name.replace(/^NVIDIA\s+/, "")],
+            t && ["Temperature (GPU)", degrees(t.value), failing(t.health) ? t.health : undefined],
+            reading(g, "Load") && ["Load (GPU)", pct(reading(g, "Load")!.value)],
+            reading(g, "Fan") && ["Fan (GPU)", `${Math.round(reading(g, "Fan")!.value)}%`],
+            p && ["Power (GPU)", limit ? `${Math.round(p.value)} of ${Math.round(limit)} W` : `${Math.round(p.value)} W`],
+            mem && ["Video memory", `${bytes(Number(mem[1]) * 2 ** 20)} of ${bytes(Number(mem[2]) * 2 ** 20)}`],
+          ]} />
+        );
+      })}
+      {advanced && (
+        <Rows items={[
+          ...fans.map((f): Fact => ["Fan " + f.name.replace(/^Fan\s*/i, ""), `${Math.round(f.readings[0]?.value ?? 0).toLocaleString()} RPM`, failing(f.health) ? f.health : undefined]),
+          ...(power?.readings ?? []).map((r): Fact => [r.label, r.unit === "V" ? `${r.value.toFixed(2)} V` : `${Math.round(r.value)} ${r.unit}`, failing(r.health) ? r.health : undefined]),
+          ...(board?.readings ?? []).filter((r) => r.unit === "°C").map((r): Fact => [r.label, degrees(r.value), failing(r.health) ? r.health : undefined]),
+        ]} />
+      )}
+      <Rows items={[
+        ["Containers", m.docker.reachable ? `${list.length} running of ${m.docker.containers.length}` : "Docker is not reachable", m.docker.reachable ? undefined : "warn"],
+        m.docker.reachable && list.length > 0 && ["CPU (containers)", pct(list.reduce((n, c) => n + c.cpu, 0))],
+        m.docker.reachable && list.length > 0 && ["Memory (containers)", bytes(list.reduce((n, c) => n + c.memory, 0))],
+      ]} />
+      <a className="side-btn" href="#/containers">Manage Containers</a>
+    </aside>
+  );
 }
 
-// Rows is a list of readings: the name, a bar where it has one, the value.
-function Rows({ rows }: { rows: Row[] }) {
+// Bays is a chip for each part, lit by its health, as UniFi shows a
+// console's drive bays: every memory slot, each drive and graphics card.
+function Bays({ parts }: { parts: HwPart[] }) {
+  const memory = parts.filter((p) => p.kind === "memory").sort((a, b) => a.place.localeCompare(b.place));
+  const drives = parts.filter((p) => p.kind === "drive");
+  const gpus = parts.filter((p) => p.kind === "gpu");
+  if (!memory.length && !drives.length && !gpus.length) return null;
+  const counted: Record<string, number> = {};
+  const numbered = (kind: string, total: number) => {
+    counted[kind] = (counted[kind] ?? 0) + 1;
+    return total > 1 ? `${kind} ${counted[kind]}` : kind;
+  };
+  const kindOf = (d: HwPart) => {
+    const k = fact(d, "Kind");
+    return /nvme/i.test(k) ? "NVMe" : /ssd/i.test(k) ? "SSD" : /hdd/i.test(k) ? "HDD" : "Drive";
+  };
+  const chip = (p: HwPart, label: string) => {
+    const vacant = p.health === "empty";
+    return (
+      <span key={p.id} className={"bay" + (vacant ? " vacant" : "")} title={vacant ? "Empty slot" : [p.name, p.reason].filter(Boolean).join("\n")}>
+        <span className={vacant ? "dot" : dot(p.health)} />{label}
+      </span>
+    );
+  };
   return (
-    <ul className="rows">
-      {rows.map((r) => (
-        <li key={r.key} data-health={r.health} title={r.title}>
-          <span className="rows-label">{r.label}</span>
-          {r.fill !== undefined ? <span className="rows-bar"><span style={{ width: share(r.fill) * 100 + "%" }} /></span> : <span />}
-          <small>{r.note}</small>
-          <b>{r.value}</b>
-        </li>
-      ))}
-    </ul>
+    <div className="bays">
+      {memory.map((p, i) => chip(p, "DIMM " + (p.place.replace(/^Channel([A-Z])-DIMM(\d+)$/, (_, c: string, d: string) => `${c}${Number(d) + 1}`) || i + 1)))}
+      {drives.map((d) => chip(d, numbered(kindOf(d), drives.filter((x) => kindOf(x) === kindOf(d)).length)))}
+      {gpus.map((g) => chip(g, numbered("GPU", gpus.length)))}
+    </div>
+  );
+}
+
+// ---- the main column ----
+
+// Section is one block of the main column: a heading, links beside it, and
+// the figure that matters now on the right.
+function Section({ title, tabs, now, children }: { title: ReactNode; tabs?: ReactNode; now?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="dash-sec">
+      <div className="sec-head">
+        <h2>{title}</h2>
+        {tabs}
+        {now && <span className="sec-now">{now}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+type Tab = "CPU" | "Memory" | "Network" | "Temperature";
+
+// Trend is the last five minutes of one figure, picked from the links.
+function Trend({ m, cpu, advanced }: { m: Metrics; cpu: HwPart | undefined; advanced: boolean }) {
+  const [tab, setTab] = useState<Tab>("CPU");
+  const h = m.history;
+  const last = h[h.length - 1];
+  const hot = advanced && h.some((s) => s.temp !== null);
+  const tabs: Tab[] = ["CPU", "Memory", "Network", ...(hot ? ["Temperature" as const] : [])];
+  const open = tabs.includes(tab) ? tab : "CPU";
+  const span = { times: h.map((s) => s.at), keep: m.keep, every: m.every, ticks: true };
+  const total = m.memory_total || 1;
+  const coreTemps = cpu?.readings.filter((r) => /^Core \d+$/.test(r.label)).map((r) => r.value) ?? [];
+  const temps = coreTemps.length ? coreTemps : m.cores.map((c) => c.temp).filter((t): t is number => t !== null);
+  const peak = Math.max(...h.map((s) => Math.max(s.rx, s.tx)));
+  return (
+    <Section title={`${open} (Last 5 Minutes)`}
+      tabs={<nav className="sec-tabs">{tabs.map((t) => <button key={t} type="button" className={t === open ? "on" : ""} onClick={() => setTab(t)}>{t}</button>)}</nav>}
+      now={open === "CPU" ? pct(last.cpu)
+        : open === "Memory" ? `${bytes(last.memory)} of ${bytes(m.memory_total)}`
+        : open === "Network" ? <Legend items={[[`In ${rate(last.rx)}`, BLUE], [`Out ${rate(last.tx)}`, ORANGE]]} />
+        : last.temp !== null && degrees(last.temp)}>
+      {open === "CPU" && <Chart {...span} max={100} format={pct} lines={[{ label: "CPU", color: BLUE, values: h.map((s) => s.cpu) }]} />}
+      {open === "Memory" && <Chart {...span} max={100} format={pct} lines={[{ label: "In use", color: VIOLET, values: h.map((s) => (s.memory / total) * 100) }]} />}
+      {open === "Network" && <Chart {...span} max={nice(peak)} format={rate} lines={[{ label: "In", color: BLUE, values: h.map((s) => s.rx) }, { label: "Out", color: ORANGE, values: h.map((s) => s.tx) }]} />}
+      {open === "Temperature" && <Chart {...span} max={Math.max(100, nice(Math.max(...h.map((s) => s.temp ?? 0))))} format={degrees} lines={[{ label: "Processor", color: ORANGE, values: h.map((s) => s.temp) }]} />}
+      {open === "CPU" && <Strip label="Each thread" values={m.cores.map((c) => c.usage)} max={100} unit="%" />}
+      {open === "CPU" && advanced && <Strip heat label="Each core, °C" values={temps} max={100} unit="°C" />}
+    </Section>
   );
 }
 
@@ -216,258 +315,18 @@ function Strip({ label, values, max, unit, heat }: { label: string; values: numb
       <div className={"strip-bars" + (heat ? " heat" : "")}>
         {values.map((v, i) => (
           <span key={i} data-health={heat && v >= 85 ? (v >= 95 ? "bad" : "warn") : undefined}
-            style={{ height: `${Math.max(share(v / max), 0.03) * 100}%` }} title={`${i + 1}: ${Math.round(v)}${unit}`} />
+            style={{ height: `${Math.max(Math.min(v / max, 1), 0.03) * 100}%` }} title={`${i + 1}: ${Math.round(v)}${unit}`} />
         ))}
       </div>
     </div>
   );
 }
 
-function Reason({ part }: { part: HwPart }) {
-  return failing(part.health) ? <p className="reason" data-health={part.health}>{part.reason}</p> : null;
-}
-
-// The host: its name and every fact about it in one strip.
-function Host({ m, board }: { m: Metrics; board: HwPart | undefined }) {
-  return (
-    <Panel span={12} title={m.host.name ?? "This host"} now={<span className="chip ok">Online</span>}>
-      <Figures wide items={[
-        ["Platform", m.host.os],
-        ["Kernel", m.host.kernel],
-        ["Processor", m.host.cpu],
-        ["Cores", cores(m)],
-        ["Memory", bytes(m.memory_total)],
-        ["Board", board?.name],
-        ["Architecture", m.host.arch],
-        ["Docker", m.host.docker],
-        ["Uptime", duration(m.uptime)],
-        m.load && ["Load", m.load.map((n) => n.toFixed(2)).join("  ")],
-      ]} />
-    </Panel>
-  );
-}
-
-function Cpu({ m, cpu, advanced, chart }: { m: Metrics; cpu: HwPart | undefined; advanced: boolean; chart: Frame }) {
-  const h = m.history;
-  const last = h[h.length - 1];
-  const temp = reading(cpu, "Temperature");
-  const power = reading(cpu, "Power");
-  const sensed = cpu?.readings.filter((r) => /^Core \d+$/.test(r.label)).map((r) => r.value) ?? [];
-  const temps = sensed.length ? sensed : m.cores.map((c) => c.temp).filter((t): t is number => t !== null);
-  const mhz = m.cores.length ? m.cores.reduce((n, c) => n + c.mhz, 0) / m.cores.length : 0;
-  return (
-    <Panel span={4} title="CPU" health={advanced ? cpu?.health : undefined} now={pct(last.cpu)}>
-      <Chart {...chart} max={100} format={pct} lines={[{ label: "CPU", color: BLUE, values: h.map((s) => s.cpu) }]} />
-      <Strip label="Each thread" values={m.cores.map((c) => c.usage)} max={100} unit="%" />
-      {advanced && <Strip heat label="Each core, °C" values={temps} max={100} unit="°C" />}
-      <Figures items={[
-        ["Cores", cores(m)],
-        mhz > 0 && ["Clock", `${(mhz / 1000).toFixed(2)} GHz`],
-        m.load && ["Load", m.load[0].toFixed(2)],
-        advanced && temp && ["Package", degrees(temp.value), temp.health],
-        advanced && power && ["Power", `${Math.round(power.value)} W`],
-      ]} />
-      {advanced && cpu && <Reason part={cpu} />}
-    </Panel>
-  );
-}
-
-// Memory: its use over time, and the sticks in the board's slots.
-function Memory({ m, snap, chart, admin, onForget }: { m: Metrics; snap: HwSnapshot | null; chart: Frame; admin: boolean; onForget: (slot: string) => void }) {
-  const h = m.history;
-  const total = m.memory_total || 1;
-  const last = h[h.length - 1];
-  const slots = snap?.parts.filter((p) => p.kind === "memory") ?? [];
-  const sticks = slots.filter((p) => p.bytes);
-  const missing = slots.filter((p) => p.health === "bad" && !p.bytes);
-  const slow = sticks.find((p) => failing(p.health));
-  const count = Math.max(snap?.slots ?? 0, slots.length);
-  return (
-    <Panel span={4} title="Memory" health={slots.length ? worst(slots) : undefined} now={pct((last.memory / total) * 100)}>
-      <Chart {...chart} max={100} format={pct} lines={[{ label: "In use", color: VIOLET, values: h.map((s) => (s.memory / total) * 100) }]} />
-      <Figures items={[
-        ["In use", bytes(last.memory)],
-        ["Free", bytes(Math.max(0, m.memory_total - last.memory))],
-        m.swap_total > 0 && ["Swap", `${bytes(last.swap)} of ${bytes(m.swap_total)}`],
-        count > 0 && ["Slots", `${sticks.length} of ${count}`],
-        ["Speed", fact(sticks[0], "Running at") || fact(sticks[0], "Rated speed")],
-        snap?.ecc && ["ECC", "On"],
-      ]} />
-      {missing.map((p) => (
-        <p key={p.id} className="reason" data-health="bad">
-          {p.name} in {p.place} is not detected.
-          {admin && <button type="button" className="link-btn" onClick={() => onForget(p.place)}>Taken out</button>}
-        </p>
-      ))}
-      {slow && <p className="reason" data-health={slow.health}>{slow.reason}</p>}
-    </Panel>
-  );
-}
-
-function Network({ m, chart }: { m: Metrics; chart: Frame }) {
-  const h = m.history;
-  const last = h[h.length - 1];
-  const peakIn = Math.max(...h.map((s) => s.rx));
-  const peakOut = Math.max(...h.map((s) => s.tx));
-  return (
-    <Panel span={4} title="Network" now={<Legend items={[["In", BLUE], ["Out", ORANGE]]} />}>
-      <Chart {...chart} max={nice(Math.max(peakIn, peakOut))} format={rate}
-        lines={[{ label: "In", color: BLUE, values: h.map((s) => s.rx) }, { label: "Out", color: ORANGE, values: h.map((s) => s.tx) }]} />
-      <Figures items={[["In", rate(last.rx)], ["Out", rate(last.tx)], ["Peak in", rate(peakIn)], ["Peak out", rate(peakOut)]]} />
-    </Panel>
-  );
-}
-
-// Every temperature read: the processor over time, then each part's.
-function Temperatures({ m, parts, chart }: { m: Metrics; parts: HwPart[]; chart: Frame }) {
-  const h = m.history;
-  const last = h[h.length - 1];
-  const rows: (Row & { c: number })[] = [];
-  for (const p of parts) {
-    for (const r of p.readings) {
-      if (r.unit !== "°C" || /^Core \d+$/.test(r.label)) continue;
-      const label = p.kind === "board" ? r.label : p.kind === "cpu" ? "Processor" : p.name;
-      rows.push({ key: `${p.id}:${r.label}`, label, value: degrees(r.value), fill: r.value / 100, health: r.health, c: r.value });
-    }
-  }
-  if (!rows.length) {
-    for (const s of m.sensors) {
-      const health: Health = s.temp >= (s.critical ?? 95) ? "bad" : s.temp >= (s.max ?? 85) ? "warn" : "ok";
-      rows.push({ key: s.label, label: s.label, value: degrees(s.temp), fill: s.temp / 100, health, c: s.temp });
-    }
-  }
-  const history = h.some((s) => s.temp !== null);
-  if (!rows.length && !history) return null;
-  const top = Math.max(100, nice(Math.max(...h.map((s) => s.temp ?? 0), ...rows.map((r) => r.c))));
-  return (
-    <Panel span={4} title="Temperature" health={rows.length ? worst(rows.map((r) => ({ health: r.health ?? "unknown" }))) : undefined}
-      now={last.temp !== null ? degrees(last.temp) : undefined}>
-      {history && <Chart {...chart} max={top} format={degrees} lines={[{ label: "Processor", color: ORANGE, values: h.map((s) => s.temp) }]} />}
-      <Rows rows={rows} />
-    </Panel>
-  );
-}
-
-// The fans that are connected, each against the fastest.
-function Fans({ fans }: { fans: HwPart[] }) {
-  const on = fans.filter((f) => f.health !== "empty");
-  if (!on.length) return null;
-  const speed = (f: HwPart) => f.readings[0]?.value ?? 0;
-  const top = Math.max(...on.map(speed), 1);
-  return (
-    <Panel span={4} title="Fans" health={worst(on)} sub={`${on.length} of ${fans.length} headers`}>
-      <Rows rows={on.map((f) => ({
-        key: f.id, label: f.name, value: `${Math.round(speed(f)).toLocaleString()} RPM`, fill: speed(f) / top,
-        health: f.health, title: failing(f.health) ? f.reason : undefined,
-      }))} />
-    </Panel>
-  );
-}
-
-// The supply's rails, each with how far it is off its nominal voltage.
-function Voltages({ power }: { power: HwPart | undefined }) {
-  const rails = power?.readings.filter((r) => r.unit === "V") ?? [];
-  if (!power || !rails.length) return null;
-  const nominal = (label: string) => (/12/.test(label) ? 12 : /3\.?3|3vcc/i.test(label) ? 3.3 : 5);
-  const watts = power.readings.filter((r) => r.unit === "W");
-  return (
-    <Panel span={4} title="Voltages" health={power.health}>
-      <Rows rows={[
-        ...rails.map((r) => {
-          const off = ((r.value - nominal(r.label)) / nominal(r.label)) * 100;
-          return { key: r.label, label: r.label, value: `${r.value.toFixed(2)} V`, note: `${off >= 0 ? "+" : ""}${off.toFixed(1)}%`, health: r.health };
-        }),
-        ...watts.map((r) => ({ key: r.label, label: r.label, value: `${Math.round(r.value)} W` })),
-      ]} />
-      <Reason part={power} />
-    </Panel>
-  );
-}
-
-// Graphics: each card nvidia-smi reads with its figures, the rest by their state.
-function Graphics({ gpus }: { gpus: HwPart[] }) {
-  if (!gpus.length) return null;
-  const read = gpus.filter((g) => g.readings.some((r) => r.unit !== "°C") || fact(g, "Memory"));
-  const rest = gpus.filter((g) => !read.includes(g));
-  return (
-    <Panel span={6} title="Graphics" health={worst(gpus)}>
-      {read.map((g) => {
-        const t = reading(g, "Temperature");
-        const load = reading(g, "Load");
-        const fan = reading(g, "Fan");
-        const power = reading(g, "Power");
-        const limit = Number.parseFloat(fact(g, "Power limit"));
-        const mem = fact(g, "Memory").match(/([\d.]+) of ([\d.]+)/);
-        return (
-          <div key={g.id} className="gpu">
-            <b className="gpu-name">{g.name}</b>
-            <Figures items={[
-              t && ["Temperature", degrees(t.value), t.health],
-              load && ["Load", pct(load.value)],
-              fan && ["Fan", `${Math.round(fan.value)}%`],
-              power && ["Power", limit ? `${Math.round(power.value)} of ${Math.round(limit)} W` : `${Math.round(power.value)} W`],
-            ]} />
-            {mem && <Rows rows={[{ key: "vram", label: "Video memory", value: `${bytes(Number(mem[1]) * 2 ** 20)} of ${bytes(Number(mem[2]) * 2 ** 20)}`, fill: Number(mem[1]) / Number(mem[2]) }]} />}
-            <Reason part={g} />
-          </div>
-        );
-      })}
-      {rest.length > 0 && <Rows rows={rest.map((g) => ({ key: g.id, label: g.name, value: g.reason || "Unknown", health: g.health }))} />}
-    </Panel>
-  );
-}
-
-// The System log's crashes, hardware errors and power losses.
-function Log({ snap }: { snap: HwSnapshot | null }) {
-  if (!snap || (snap.platform !== "windows" && !snap.events.length)) return null;
-  return (
-    <Panel span={6} title="System log" health={snap.notes.length ? worst(snap.notes) : "ok"} sub="Last 30 days">
-      {snap.events.length ? (
-        <ul className="events">
-          {snap.events.slice(0, 6).map((e, i) => (
-            <li key={i}>
-              <span className={"dot " + e.health} />
-              <span className="events-text" title={e.text}>{e.text}</span>
-              <time>{new Date(e.at * 1000).toLocaleDateString([], { month: "short", day: "numeric" })}</time>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="empty-note">No crashes, hardware errors or power losses.</p>}
-    </Panel>
-  );
-}
-
-function Volumes({ m }: { m: Metrics }) {
-  return (
-    <Panel span={6} title="Volumes" flush>
-      {m.disks.length ? (
-        <div className="table-wrap">
-          <table className="table">
-            <thead><tr><th className="grow">Volume</th><th>Used</th><th>Free</th><th>Size</th></tr></thead>
-            <tbody>
-              {m.disks.map((d) => {
-                const used = d.total - d.available;
-                return (
-                  <tr key={d.name + d.mount}>
-                    <td className="name-cell"><span className="mono">{d.mount}</span><small>{[d.name, d.fs].filter(Boolean).join(" · ")}</small></td>
-                    <td><Meter value={used} max={d.total} label={pct((used / d.total) * 100)} /></td>
-                    <td className="num">{bytes(d.available)}</td>
-                    <td className="num">{bytes(d.total)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : <p className="empty-note card-pad">No volumes found.</p>}
-    </Panel>
-  );
-}
-
-// The physical drives: their health, and with Advanced their temperature,
-// life, errors and hours, each column only where some drive reports it.
-function Drives({ drives, advanced }: { drives: HwPart[]; advanced: boolean }) {
-  if (!drives.length) return null;
+// Storage: every volume's share of the space in one bar, then the volumes
+// and the drives they sit on.
+function Storage({ m, drives, advanced }: { m: Metrics; drives: HwPart[]; advanced: boolean }) {
+  const used = (d: Metrics["disks"][number]) => d.total - d.available;
+  const free = m.disks.reduce((n, d) => n + d.available, 0);
   const life = (d: HwPart) => {
     const left = reading(d, "Life left");
     const worn = reading(d, "Worn");
@@ -479,61 +338,80 @@ function Drives({ drives, advanced }: { drives: HwPart[]; advanced: boolean }) {
     errors: advanced && drives.some((d) => reading(d, "Uncorrected errors")),
     hours: advanced && drives.some((d) => fact(d, "Powered on")),
   };
+  if (!m.disks.length && !drives.length) return null;
   return (
-    <Panel span={6} title="Drives" health={worst(drives)} flush>
-      <div className="table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th className="grow">Drive</th><th>Health</th>
-              {show.temp && <th>Temperature</th>}{show.life && <th>Life left</th>}{show.errors && <th>Errors</th>}{show.hours && <th>Powered on</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {drives.map((d) => {
-              const t = reading(d, "Temperature");
-              const l = life(d);
-              const e = reading(d, "Uncorrected errors");
-              return (
-                <tr key={d.id}>
-                  <td className="name-cell">{d.name}<small>{[fact(d, "Kind"), fact(d, "Size")].filter(Boolean).join(" · ")}</small></td>
-                  <td>
-                    <span className="health-line" title={d.reason || undefined}>
-                      <span className={"dot " + (d.health === "unknown" ? "" : d.health)} />
-                      {d.health === "ok" ? "Healthy" : failing(d.health) ? d.reason : "Unknown"}
-                    </span>
-                  </td>
-                  {show.temp && <td className="num" data-health={t?.health}>{t ? degrees(t.value) : ""}</td>}
-                  {show.life && <td className="num" data-health={l?.health}>{l ? `${Math.round(l.value)}%` : ""}</td>}
-                  {show.errors && <td className="num" data-health={e?.health}>{e ? e.value.toLocaleString() : ""}</td>}
-                  {show.hours && <td className="num">{fact(d, "Powered on")}</td>}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </Panel>
+    <Section title="Storage">
+      {m.disks.length > 0 && (
+        <>
+          <div className="usage-bar" aria-hidden>
+            {m.disks.map((d, i) => <span key={d.name + d.mount} style={{ flexGrow: used(d), background: SERIES[i % 3] }} />)}
+            <span className="usage-free" style={{ flexGrow: free }} />
+          </div>
+          <div className="legend usage-legend">
+            {m.disks.map((d, i) => <span key={d.name + d.mount}><i style={{ background: SERIES[i % 3] }} />{d.mount} <b>{bytes(used(d))}</b></span>)}
+            <span><i className="usage-free" />Free <b>{bytes(free)}</b></span>
+          </div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th className="grow">Volume</th><th>Usage</th><th>Size</th></tr></thead>
+              <tbody>
+                {m.disks.map((d) => (
+                  <tr key={d.name + d.mount}>
+                    <td className="name-cell"><span className="mono">{d.mount}</span><small>{[d.name, d.fs].filter(Boolean).join(" · ")}</small></td>
+                    <td><Meter value={used(d)} max={d.total} label={`${bytes(used(d))} / ${bytes(d.total)}`} /></td>
+                    <td className="num">{bytes(d.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {drives.length > 0 && (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th className="grow">Drive</th><th>Health</th>
+                {show.temp && <th>Temperature</th>}{show.life && <th>Life left</th>}{show.errors && <th>Errors</th>}{show.hours && <th>Powered on</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {drives.map((d) => {
+                const t = reading(d, "Temperature");
+                const l = life(d);
+                const e = reading(d, "Uncorrected errors");
+                return (
+                  <tr key={d.id}>
+                    <td className="name-cell"><span className="name-line"><span className={dot(d.health)} />{d.name}</span><small>{[fact(d, "Kind"), fact(d, "Size")].filter(Boolean).join(" · ")}</small></td>
+                    <td data-health={d.health} title={d.reason || undefined}>{d.health === "ok" ? "Healthy" : failing(d.health) ? d.reason : "Unknown"}</td>
+                    {show.temp && <td className="num" data-health={t?.health}>{t ? degrees(t.value) : ""}</td>}
+                    {show.life && <td className="num" data-health={l?.health}>{l ? `${Math.round(l.value)}%` : ""}</td>}
+                    {show.errors && <td className="num" data-health={e?.health}>{e ? e.value.toLocaleString() : ""}</td>}
+                    {show.hours && <td className="num">{fact(d, "Powered on")}</td>}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Section>
   );
 }
 
 function Containers({ m }: { m: Metrics }) {
   const list = m.docker.containers;
-  const running = list.filter((c) => c.state === "running").length;
+  if (!m.docker.reachable || !list.length) return null;
   return (
-    <Panel span={12} title="Containers" sub={m.docker.reachable ? `${running} running of ${list.length}` : undefined} flush
-      now={<a className="btn small" href="#/containers">Manage</a>}>
-      {!m.docker.reachable ? <p className="empty-note card-pad">Docker is not reachable: {m.docker.error}</p>
-        : !list.length ? <p className="empty-note card-pad">No containers.</p>
-        : (
-          <div className="table-wrap">
-            <table className="table containers">
-              <thead><tr><th className="grow">Container</th><th>CPU</th><th>Memory</th><th>Network</th><th>Disk</th><th>Status</th></tr></thead>
-              <tbody>{list.map((c) => <ContainerRow key={c.id} c={c} keep={m.keep} hostMemory={m.memory_total} />)}</tbody>
-            </table>
-          </div>
-        )}
-    </Panel>
+    <Section title="Containers">
+      <div className="table-wrap">
+        <table className="table containers">
+          <thead><tr><th className="grow">Container</th><th>CPU</th><th>Memory</th><th>Network</th><th>Status</th></tr></thead>
+          <tbody>{list.map((c) => <ContainerRow key={c.id} c={c} keep={m.keep} hostMemory={m.memory_total} />)}</tbody>
+        </table>
+      </div>
+    </Section>
   );
 }
 
@@ -546,14 +424,33 @@ function ContainerRow({ c, keep, hostMemory }: { c: ContainerStats; keep: number
       <td>{on && (
         <span className="cpu-cell">
           <Spark values={c.history} max={Math.max(c.cpu_limit ? c.cpu_limit * 100 : 100, ...c.history)} keep={keep} times={[]} every={0} color={BLUE} />
-          <span className="num">{pct(c.cpu)}{c.cpu_limit > 0 && <small> of {pct(c.cpu_limit * 100)}</small>}</span>
+          <span className="num">{pct(c.cpu)}</span>
         </span>
       )}</td>
-      <td>{on && <Meter value={c.memory} max={limit} label={bytes(c.memory)} />}</td>
+      <td>{on && <Meter value={c.memory} max={limit} label={`${bytes(c.memory)} / ${bytes(limit)}`} />}</td>
       <td className="num">{on && <>↓ {rate(c.rx)}<br />↑ {rate(c.tx)}</>}</td>
-      <td className="num">{on && <>R {rate(c.read)}<br />W {rate(c.write)}</>}</td>
       <td className="muted">{c.status}</td>
     </tr>
+  );
+}
+
+// The System log's crashes, hardware errors and power losses.
+function Log({ snap }: { snap: HwSnapshot | null }) {
+  if (!snap || (snap.platform !== "windows" && !snap.events.length)) return null;
+  return (
+    <Section title="System Log (Last 30 Days)">
+      {snap.events.length ? (
+        <ul className="events">
+          {snap.events.slice(0, 8).map((e, i) => (
+            <li key={i}>
+              <span className={dot(e.health)} />
+              <span className="events-text" title={e.text}>{e.text}</span>
+              <time>{new Date(e.at * 1000).toLocaleDateString([], { month: "short", day: "numeric" })}</time>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="empty-note">No crashes, hardware errors or power losses.</p>}
+    </Section>
   );
 }
 
@@ -571,7 +468,7 @@ function NewDevices({ flags, users, devices, onChanged }: { flags: Flag[]; users
     }
   };
   return (
-    <Panel span={12} title="New devices" health="warn" sub={`${flags.length} sign-in${flags.length === 1 ? "" : "s"}`} flush>
+    <Section title="New Devices" now={`${flags.length} sign-in${flags.length === 1 ? "" : "s"}`}>
       <div className="table-wrap">
         <table className="table">
           <thead><tr><th className="grow">Account</th><th>Device</th><th>From</th><th>When</th>{can("users.manage") && <th />}</tr></thead>
@@ -592,33 +489,15 @@ function NewDevices({ flags, users, devices, onChanged }: { flags: Flag[]; users
           </tbody>
         </table>
       </div>
-    </Panel>
+    </Section>
   );
 }
 
-// Setup is how Advanced's sensors are doing where they need something: the
-// one Windows prompt to turn them on, its step and percent while it runs, and
-// why the sensor task stopped when it has.
-function Setup({ hw, admin, busy, onEnable }: { hw: Hardware; admin: boolean; busy: boolean; onEnable: () => void }) {
-  if (hw.platform === "macos") {
-    return <div className="callout"><Icon name="info" /><span>Sensor readings cover Windows and Linux.</span></div>;
-  }
-  const snap = hw.snapshot;
-  if (!snap) return null;
+// Setup is the Windows sensor task while it is not simply running: waiting
+// for the prompt, its step and percent, or why it stopped.
+function Setup({ snap }: { snap: HwSnapshot }) {
   const why = snap.helper_error && <> {snap.helper_error}</>;
   switch (snap.helper) {
-    case "off":
-      return (
-        <div className="callout held">
-          <Icon name="shield" />
-          <span>Temperatures, fans, voltages and drive wear need administrator rights once, to install the <b>PawnIO</b> driver and a sensor task that runs as SYSTEM.</span>
-          {admin ? (
-            <button type="button" className="btn primary small" disabled={busy} onClick={onEnable}>
-              {busy ? <span className="spinner on-accent" /> : <Icon name="shield" size={16} />}Enable
-            </button>
-          ) : <span className="muted">The host or an admin can enable this.</span>}
-        </div>
-      );
     case "waiting":
       return <div className="callout held"><span className="spinner small" /><span>Waiting for the Windows prompt on this computer's screen to be approved.</span></div>;
     case "installing":
@@ -632,12 +511,7 @@ function Setup({ hw, admin, busy, onEnable }: { hw: Hardware; admin: boolean; bu
     case "starting":
       return <div className="callout held"><span className="spinner small" /><span>Starting the sensor task. Its first readings arrive within a minute.{why}</span></div>;
     case "missing":
-      return (
-        <div className="callout warn held">
-          <Icon name="warning" /><span>The sensor task is not installed.{why}</span>
-          {admin && <button type="button" className="btn small" disabled={busy} onClick={onEnable}>Set it up</button>}
-        </div>
-      );
+      return <div className="callout warn held"><Icon name="warning" /><span>The sensor task is not installed. Turn Advanced off and on again to set it up.{why}</span></div>;
     case "stale":
       return <div className="callout bad held"><Icon name="error" /><span>The sensor task stopped sending readings; Windows starts it again within a minute.{why}</span></div>;
     default:
@@ -655,10 +529,6 @@ function Legend({ items }: { items: [string, string][] }) {
 
 // ---- words and numbers ----
 
-function cores(m: Metrics) {
-  return m.host.cores && m.host.cores !== m.host.threads ? `${m.host.cores} cores, ${m.host.threads} threads` : `${m.host.threads} threads`;
-}
-
 const pct = (n: number) => `${n < 10 ? n.toFixed(1) : Math.round(n)}%`;
 const degrees = (n: number) => `${Math.round(n)}°C`;
 const rate = (n: number) => `${bytes(n)}/s`;
@@ -674,5 +544,5 @@ function duration(s: number) {
   const d = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600);
   const min = Math.floor((s % 3600) / 60);
-  return d ? `${d} d ${h} h` : h ? `${h} h ${min} min` : `${min} min`;
+  return d ? `${d}d ${h}h` : h ? `${h}h ${min}m` : `${min}m`;
 }

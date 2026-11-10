@@ -4,8 +4,7 @@
 // whose Users and Devices tabs are also `#/users` and `#/devices`, with
 // `/<id>/<page>` for one of them; `#/apps`, the apps catalog;
 // `#/settings/<section>`, Preferences among them; and
-// `#/docs/<section>`; `#/dashboard`, the host and its containers, and `#/dashboard/advanced`
-// with its sensors, where `#/hardware` now goes;
+// `#/docs/<section>`; `#/dashboard`, the host and its containers, where `#/hardware` now goes;
 // `#/storage`, photos and videos, and `#/storage/files`; `#/containers`,
 // with `/<name>/<page>/...` for one, its tunnel and images among its pages.
 
@@ -29,10 +28,9 @@ export function readHash(): Place {
   if ((first === "users" || first === "devices") && !second) return { view: "security", id: first, page: "", more: [] };
   // Appearance, then a Preferences page of its own, are Settings' Preferences now.
   if ((first === "settings" && second === "appearance") || first === "preferences") return { view: "settings", id: "preferences", page: "", more: [] };
-  if (first === "apps") return { view: first, id: "", page: "", more: [] };
-  if (first === "dashboard") return { view: first, id: second, page: "", more: [] };
-  // Hardware became the Dashboard's Advanced view.
-  if (first === "hardware") return { view: "dashboard", id: "advanced", page: "", more: [] };
+  if (first === "dashboard" || first === "apps") return { view: first, id: "", page: "", more: [] };
+  // Hardware became part of the Dashboard.
+  if (first === "hardware") return { view: "dashboard", id: "", page: "", more: [] };
   // `#/new/<port>` starts a tunnel to that port.
   if (first === "new") return { view: first, id: second, page: "", more: [] };
   // Media, Drive and Convert became Storage's tabs and its Convert action.

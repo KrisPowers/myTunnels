@@ -234,8 +234,8 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
         </nav>
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
 
-        <main className="page" key={view === "dashboard" ? view : view + id}>
-          {view === "dashboard" && <DashboardPage tab={id} flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
+        <main className="page" key={view + id}>
+          {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
           {view === "apps" && <AppsPage />}
           {view === "storage" && <StoragePage tab={id} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} status={status}
