@@ -59,7 +59,10 @@ mytunnels start
 ```
 
 From then on it starts with the computer and comes back on its own whenever it stops. Running
-an install again updates it, and starts the new version when the old one was running.
+an install again updates it, and starts the new version when the old one was running. When a
+newer release is out, **Update Available** shows at the foot of the sidebar for the host and
+admins; it runs the same install, signed in to GitHub with `gh`, and reloads the panel on the
+new version.
 
 | Command | Does |
 | --- | --- |

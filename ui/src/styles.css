@@ -66,6 +66,7 @@
   --round: 10px;
   --card-round: 12px;
   --side: 232px;
+  --rail: 64px;
   --head: 52px;
   --ease: cubic-bezier(.2, .8, .2, 1);
   --font: "Roboto", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -119,8 +120,10 @@ kbd {
 .header .icon-btn:hover { background: var(--hover); color: var(--text); }
 .header-actions .icon-btn { width: 36px; height: 36px; border-radius: 50%; }
 
-/* The sidebar at the left, full height under the top bar, the page beside it. */
-.shell { display: grid; grid-template-columns: var(--side) minmax(0, 1fr); }
+/* The sidebar at the left, full height under the top bar, the page beside
+   it; the menu folds it to its icons. */
+.shell { display: grid; grid-template-columns: var(--side) minmax(0, 1fr); transition: grid-template-columns .2s var(--ease); }
+.app.rail .shell { grid-template-columns: var(--rail) minmax(0, 1fr); }
 
 /* The sidebar: a soft row per page, the open one lit in the accent; Help and
    Settings at its foot. In settings or help, their sections take the top. */
@@ -138,6 +141,15 @@ kbd {
 .nav-item:hover, .nav-back:hover { background: var(--nav-hover); color: var(--text); }
 .nav-item.on { background: var(--nav-on); color: var(--on-nav-on); }
 .nav-item.quiet.on { font-weight: 600; }
+/* A newer release, ready to install: a button among the rows, in the accent. */
+button.nav-item { width: 100%; border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.nav-item.update { color: var(--accent); }
+.nav-item.update:hover { background: var(--accent-bg); color: var(--accent); }
+.nav-item.update:disabled { cursor: default; }
+.nav-item.update .spinner { width: 18px; height: 18px; margin: 3px; }
+/* Folded to icons, the names and counts give way. */
+.app.rail .nav-label, .app.rail .nav-count { display: none; }
+.app.rail .nav-item, .app.rail .nav-back { justify-content: center; padding: 0; }
 .nav-back { margin-bottom: 6px; }
 .nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .scrim { display: none; }
@@ -616,16 +628,16 @@ a.result:hover { background: var(--hover); }
 .pick { display: grid; gap: 10px; justify-items: start; margin-top: 4px; }
 
 /* ---- narrow windows: the sidebar slides over the page from the menu ---- */
-.menu-btn { display: none; }
 @media (max-width: 900px) {
   .header { display: flex; gap: 8px; padding: 0 8px 0 4px; }
   .header .search { flex: 1; min-width: 0; }
-  .menu-btn { display: inline-grid; }
   .brand-name { display: none; }
   .brand { padding: 0 4px; }
   .search kbd { display: none; }
   .search input { padding-right: 12px; }
-  .shell { grid-template-columns: minmax(0, 1fr); }
+  .shell, .app.rail .shell { grid-template-columns: minmax(0, 1fr); }
+  .app.rail .nav-label, .app.rail .nav-count { display: initial; }
+  .app.rail .nav-item, .app.rail .nav-back { justify-content: flex-start; padding: 0 12px; }
   .sidebar {
     position: fixed; top: var(--head); left: 0; bottom: 0; z-index: 40; width: var(--side); height: auto;
     box-shadow: var(--shadow); transform: translateX(-105%); transition: transform .22s var(--ease);

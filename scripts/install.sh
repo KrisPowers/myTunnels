@@ -39,15 +39,19 @@ echo "Downloading myTunnels for $os-$arch"
 if [ -n "$token" ]; then
   # The latest release's archive, by its API address, which takes the token.
   auth="Authorization: Bearer $token"
-  asset="$(curl -fsSL -H "$auth" "https://api.github.com/repos/$repo/releases/latest" \
+  release="$(curl -fsSL -H "$auth" "https://api.github.com/repos/$repo/releases/latest")"
+  asset="$(printf '%s' "$release" \
     | grep -oE '"(url|name)": *"[^"]*"' \
     | awk -F'": *' -v want="\"$file\"" '/^"url"/ && /\/releases\/assets\// { u = $2 } /^"name"/ && $2 == want { gsub(/"/, "", u); print u; exit }')"
   if [ -z "$asset" ]; then echo "The latest release has no build for $os-$arch" >&2; exit 1; fi
   # curl leaves the token off when GitHub sends it on to its file storage.
   curl -fsSL -H "$auth" -H "Accept: application/octet-stream" "$asset" | tar -xz -C "$new"
 else
+  release="$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest")"
   curl -fsSL "https://github.com/$repo/releases/latest/download/$file" | tar -xz -C "$new"
 fi
+# The release in place, which the panel compares with the latest to offer an update.
+printf '%s' "$release" | grep -oE '"tag_name": *"[^"]*"' | head -n 1 | sed -E 's/.*"([^"]*)"$/\1/' > "$new/release"
 
 # An update stops the one running, swaps the files, then starts it again.
 running=false
