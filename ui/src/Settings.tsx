@@ -12,6 +12,7 @@ export const SETTINGS: [string, string, IconName][] = [
   ["network", "Network", "router"],
   ["connector", "Connector", "dns"],
   ["account", "Account", "person"],
+  ["preferences", "Preferences", "brightness_auto"],
   ["about", "About", "info"],
 ];
 
@@ -47,6 +48,7 @@ export function Settings({ sections, section, status, routes, onChanged, onSignO
             </Row>
           </Card>
         )}
+        {key === "preferences" && <Preferences />}
         {key === "about" && <About />}
       </div>
     </>
@@ -351,36 +353,25 @@ const DENSITY: Option<string>[] = [
   { value: "compact", label: "Compact", hint: "More rows on screen" },
 ];
 
-// Preferences is how the dashboard looks in this browser, a page of its own
-// apart from Settings.
-export function Preferences() {
+// Preferences is how the dashboard looks in this browser.
+function Preferences() {
   const [look, setLook] = useState(() => ({ theme: loadLook("theme"), motion: loadLook("motion"), density: loadLook("density") }));
   const set = (key: Look) => (value: string) => {
     saveLook(key, value);
     setLook((l) => ({ ...l, [key]: value }));
   };
   return (
-    <>
-      <div className="page-head">
-        <div className="page-head-main">
-          <h1>Preferences</h1>
-          <div className="page-sub">Kept in this browser</div>
-        </div>
-      </div>
-      <div className="page-body stack flow">
-        <Card title="Look and feel">
-          <Row title="Theme" sub="Light, dark, or whatever this computer is set to">
-            <Dropdown label="Theme" value={look.theme} options={THEMES} onChange={set("theme")} />
-          </Row>
-          <Row title="Motion" sub="Animations as pages change">
-            <Dropdown label="Motion" value={look.motion} options={MOTION} onChange={set("motion")} />
-          </Row>
-          <Row title="Density" sub="How tightly lists are packed">
-            <Dropdown label="Density" value={look.density} options={DENSITY} onChange={set("density")} />
-          </Row>
-        </Card>
-      </div>
-    </>
+    <Card title="Look and feel" sub="Kept in this browser">
+      <Row title="Theme" sub="Light, dark, or whatever this computer is set to">
+        <Dropdown label="Theme" value={look.theme} options={THEMES} onChange={set("theme")} />
+      </Row>
+      <Row title="Motion" sub="Animations as pages change">
+        <Dropdown label="Motion" value={look.motion} options={MOTION} onChange={set("motion")} />
+      </Row>
+      <Row title="Density" sub="How tightly lists are packed">
+        <Dropdown label="Density" value={look.density} options={DENSITY} onChange={set("density")} />
+      </Row>
+    </Card>
   );
 }
 
