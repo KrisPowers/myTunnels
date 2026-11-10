@@ -59,6 +59,15 @@
   --s1: light-dark(#006fff, #4797ff);
   --s2: light-dark(#8a4dff, #a67cff);
   --s3: light-dark(#e07b00, #f5a524);
+  /* The Hardware page's drawing: the board, its slots and parts. */
+  --pcb: light-dark(#e6ece8, #16201b);
+  --pcb-edge: light-dark(#c6d1ca, #2a3a31);
+  --silk: light-dark(#7f9186, #5c7166);
+  --slot: light-dark(#d5ddd8, #0f1613);
+  --part: light-dark(#ffffff, #1f2226);
+  --die: light-dark(#e3e6ea, #2b2f35);
+  --stick: light-dark(#1f6f45, #1d4d34);
+  --chip: light-dark(#1b2a22, #0e1511);
   --bone: var(--card-2);
   --bone-shine: var(--card);
   --shadow: 0 1px 2px light-dark(rgba(20, 24, 31, .08), rgba(0, 0, 0, .4)), 0 12px 32px light-dark(rgba(20, 24, 31, .14), rgba(0, 0, 0, .5));
@@ -1483,30 +1492,60 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .cv-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .cv-bar-row .ex-pick .dropdown { min-width: 130px; }
 
-/* ---- Hardware: each part, green while healthy and red when failing ---- */
+/* ---- Hardware: the computer drawn as its board, each part outlined in its
+   health, and the picked part's readings beside it ---- */
 .hw-intro > .icon { color: var(--accent); }
 .hw-intro p { max-width: 640px; }
 .hw-intro .bullets { gap: 4px; padding: 0; list-style: none; }
 .hw-summary { display: inline-flex; align-items: center; gap: 8px; }
+.hw-setup { position: relative; overflow: hidden; }
+.hw-setup > :not(.hw-setup-bar) { position: relative; }
+.hw-setup-bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--accent); transition: width .4s var(--ease); }
 
-/* Cards side by side; memory takes two columns where there is room, the
-   log the whole row. */
-.hw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; align-items: start; }
-.hw-full { grid-column: 1 / -1; }
-@media (min-width: 1100px) { .hw-wide { grid-column: span 2; } }
-.hw-head { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
-.hw-head > .icon { color: var(--accent); }
-.hw-head h2 { font-size: 14px; font-weight: 600; }
-.hw-head-sub { color: var(--text-3); font-size: 12px; }
-.hw-head .chip { margin-left: auto; text-transform: none; }
+.hw-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+.hw-stage { padding: 16px; border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); }
+.hw-board { display: block; width: 100%; height: auto; }
 
-/* A part: its name and state on one line, its readings as tiles, its facts in small type. */
-.hw-part { display: grid; gap: 10px; padding: 12px 16px 14px; }
-.hw-part + .hw-part { border-top: 1px solid var(--line); }
-.hw-part-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.hw-part-top b { min-width: 0; overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.hw-place { color: var(--text-3); font-size: 12px; white-space: nowrap; }
-.hw-reason { color: var(--text-3); font-size: 12px; line-height: 1.4; }
+/* The drawing. */
+.hw-pcb { fill: var(--pcb); stroke: var(--pcb-edge); stroke-width: 1.5; }
+.hw-hole { fill: var(--card); stroke: var(--pcb-edge); stroke-width: 1.5; }
+.hw-silk { fill: var(--silk); font: 600 11px var(--font); letter-spacing: .08em; text-transform: uppercase; }
+.hw-comp { fill: var(--part); stroke: var(--line-strong); stroke-width: 2; transition: stroke .2s, stroke-width .15s; }
+.hw-die { fill: var(--die); }
+.hw-dimm-slot, .hw-pcie, .hw-port { fill: var(--slot); stroke: var(--pcb-edge); stroke-width: 1; }
+.hw-stick { fill: var(--stick); }
+.hw-chip { fill: var(--chip); }
+.hw-pin { fill: var(--pcb-edge); }
+.hw-fan-ring { fill: none; stroke: var(--line-strong); stroke-width: 2; }
+.hw-fan-hub { fill: var(--line-strong); }
+.hw-wire { fill: none; stroke: var(--line-strong); stroke-width: 2; stroke-dasharray: 1 5; stroke-linecap: round; }
+.hw-label { fill: var(--text-2); font: 600 12px var(--font); letter-spacing: .04em; }
+.hw-value { fill: var(--text); font: 600 22px var(--font); font-variant-numeric: tabular-nums; }
+.hw-value.small { font-size: 15px; }
+.hw-small { fill: var(--text-3); font: 500 11px var(--font); }
+.hw-stick-size { fill: var(--text); font: 600 12px var(--font); }
+.hw-board text, .hw-chip, .hw-pin, .hw-fan-hub, .hw-fan-ring { pointer-events: none; }
+.hw-off { opacity: .55; }
+/* Health: a green, yellow or red outline, the failing ones glowing. */
+.hw-hit { cursor: pointer; outline: none; }
+.hw-hit.ok .hw-comp { stroke: var(--ok); }
+.hw-hit.warn .hw-comp { stroke: var(--warn); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--warn) 55%, transparent)); }
+.hw-hit.bad .hw-comp { stroke: var(--bad); filter: drop-shadow(0 0 8px color-mix(in srgb, var(--bad) 60%, transparent)); animation: hw-alert 1.6s ease-in-out infinite; }
+.hw-hit:hover .hw-comp { stroke-width: 3; }
+.hw-hit.picked .hw-comp { stroke-width: 3.5; }
+.hw-hit:focus-visible .hw-comp { stroke: var(--accent); }
+@keyframes hw-alert { 50% { stroke-opacity: .4; } }
+
+/* Beside the drawing: the picked part, every part, and the log. */
+.hw-side { display: grid; gap: 16px; padding: 18px; border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); }
+.hw-side-block + .hw-side-block { padding-top: 16px; border-top: 1px solid var(--line); }
+.hw-side h3 { margin: 0 0 8px; color: var(--text-3); font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.hw-details { display: grid; gap: 12px; }
+.hw-details-head { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.hw-details-head .dot { margin-top: 7px; }
+.hw-details-head b { display: block; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.hw-details-head small { color: var(--text-3); font-size: 12px; }
+.hw-reason { margin: 0; color: var(--text-3); font-size: 12.5px; line-height: 1.45; }
 .hw-reason.warn { color: var(--warn); }
 .hw-reason.bad { color: var(--bad); }
 .hw-metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
@@ -1517,38 +1556,22 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .hw-metric.warn b { color: var(--warn); }
 .hw-metric.bad { background: var(--bad-bg); }
 .hw-metric.bad b { color: var(--bad); }
-.hw-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--text-3); font-size: 12px; }
-.hw-facts b { color: var(--text-2); font-weight: 500; }
-
-/* Memory: a tile per slot, a band of its health along the top, then a bar of
-   how much each stick gives. */
-.hw-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 14px 16px 12px; }
-.hw-slot {
-  position: relative; display: grid; align-content: start; gap: 2px; min-width: 0; padding: 12px 12px 10px;
-  border: 1px solid var(--line); border-radius: var(--radius); background: var(--card-2); overflow: hidden;
+.hw-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; font-size: 12.5px; }
+.hw-facts dt { color: var(--text-3); }
+.hw-facts dd { margin: 0; color: var(--text-2); overflow-wrap: anywhere; }
+.hw-parts { list-style: none; margin: 0 -8px; padding: 0; }
+.hw-parts button {
+  display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 7px 8px;
+  border: 0; border-radius: 6px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
 }
-.hw-slot::before { content: ""; position: absolute; inset: 0 0 auto; height: 3px; background: var(--line-strong); }
-.hw-slot.ok::before { background: var(--ok); }
-.hw-slot.warn::before { background: var(--warn); }
-.hw-slot.bad::before { background: var(--bad); }
-.hw-slot.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); background: var(--bad-bg); }
-.hw-slot.empty { border-style: dashed; background: transparent; }
-.hw-slot.empty::before { display: none; }
-.hw-slot-place { color: var(--text-3); font-size: 11.5px; }
-.hw-slot > b { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.hw-slot > b.bad { color: var(--bad); }
-.hw-slot > b small { margin-left: 6px; color: var(--text-3); font-size: 12px; font-weight: 500; }
-.hw-slot-line { overflow: hidden; color: var(--text-2); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.hw-slot-empty { padding: 6px 0; color: var(--text-3); }
-.hw-slot .btn { justify-self: start; margin-top: 6px; }
-.hw-share { display: flex; gap: 3px; height: 6px; margin: 0 16px 14px; border-radius: 3px; overflow: hidden; }
-.hw-share span { min-width: 4px; background: var(--ok); }
-.hw-share span.warn { background: var(--warn); }
-.hw-share span.bad { background: var(--bad); }
-
-/* The log: one line per event. */
-.hw-events { list-style: none; margin: 0; padding: 4px 0; }
-.hw-events li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 36px; padding: 4px 16px; }
-.hw-event-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hw-events time { color: var(--text-3); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-@media (max-width: 760px) { .hw-grid { grid-template-columns: minmax(0, 1fr); } }
+.hw-parts button:hover { background: var(--hover); }
+.hw-parts button.on { background: var(--nav-on); }
+.hw-parts-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hw-parts-value { color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hw-parts-value.warn { color: var(--warn); }
+.hw-parts-value.bad { color: var(--bad); }
+.hw-events { list-style: none; margin: 0; padding: 0; }
+.hw-events li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 30px; }
+.hw-event-text { overflow: hidden; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.hw-events time { color: var(--text-3); font-size: 12px; white-space: nowrap; }
+@media (max-width: 1100px) { .hw-layout { grid-template-columns: minmax(0, 1fr); } }

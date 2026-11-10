@@ -161,6 +161,8 @@ export interface HwSnapshot {
   platform: string;
   helper: "none" | "missing" | "waiting" | "starting" | "running" | "stale" | "outdated";
   helper_error: string;
+  helper_step: string;
+  helper_percent: number | null;
   slots: number;
   ecc: boolean;
   parts: HwPart[];
