@@ -1449,40 +1449,57 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .cv-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .cv-bar-row .ex-pick .dropdown { min-width: 130px; }
 
-/* ---- the Dashboard: panels of figures and charts on twelve columns ---- */
-.dash { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-flow: dense; gap: 16px; }
-.panel { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); animation: rise .2s var(--ease) both; }
-.panel.span-4 { grid-column: span 4; }
-.panel.span-6 { grid-column: span 6; }
-.panel.span-12 { grid-column: 1 / -1; }
-.panel-head { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 14px 20px 6px; }
-.panel-head h2 { min-width: 0; overflow: hidden; font-size: 15px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.panel-sub { min-width: 0; overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.panel-now { margin-left: auto; flex-shrink: 0; color: var(--text); font-size: 17px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.panel-now .legend { font-weight: 400; }
-.panel-body { flex: 1; display: flex; flex-direction: column; gap: 16px; min-height: 0; padding: 6px 20px 18px; }
-.panel-body.flush { gap: 0; padding: 0 0 4px; }
-.panel .chart-plot { height: 132px; }
-.health-line { display: inline-flex; align-items: center; gap: 8px; }
+/* ---- the Dashboard, after a UniFi console: one surface, the host's facts
+   in a column on the left under a chip for each part, the chart and tables
+   on the right ---- */
+.dash { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); animation: rise .2s var(--ease) both; }
+.dash-side { display: flex; flex-direction: column; gap: 18px; min-width: 0; padding: 24px; border-right: 1px solid var(--line); }
+.side-name { overflow: hidden; font-size: 18px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.btn.lit { background: var(--accent-bg); color: var(--on-accent-bg); }
 
-/* Figures: a quiet label over each value. */
-.figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 12px 16px; margin: 0; }
-.figures.wide { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px 24px; }
-.figures > div { min-width: 0; }
-.figures dt { color: var(--text-3); font-size: 12px; }
-.figures dd { margin: 2px 0 0; overflow: hidden; font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+/* A chip per part, as a console's drive bays. An empty slot is "vacant",
+   never "empty", which is the page-wide padded empty state. */
+.bays { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.bay {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; height: 34px; padding: 0 10px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius); font-size: 13px; font-weight: 500; white-space: nowrap;
+}
+.bay.vacant { border-style: dashed; color: var(--text-3); }
+.side-notes { display: grid; gap: 6px; }
+.side-notes p { margin: 0; font-size: 12.5px; line-height: 1.45; }
 
-/* Rows of readings: name, bar, how far off, value. */
-.rows { display: grid; margin: 0; padding: 0; list-style: none; }
-.rows li { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto auto; align-items: center; gap: 12px; min-height: 32px; font-size: 13px; }
-.rows li + li { border-top: 1px solid var(--line); }
-.rows-label { overflow: hidden; color: var(--text-2); text-overflow: ellipsis; white-space: nowrap; }
-.rows-bar { display: block; height: 6px; border-radius: 3px; background: var(--card-2); overflow: hidden; }
-.rows-bar > span { display: block; height: 100%; border-radius: 3px; background: var(--s1); transition: width .5s var(--ease); }
-.rows [data-health="warn"] .rows-bar > span { background: var(--warn); }
-.rows [data-health="bad"] .rows-bar > span { background: var(--bad); }
-.rows small { color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
-.rows b { min-width: 64px; text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Label on the left, value on the right, a rule between groups. */
+.side-rows { display: grid; margin: 0; padding-top: 14px; border-top: 1px solid var(--line); }
+.side-rows > div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; min-height: 38px; padding: 8px 0; font-size: 14.5px; }
+.side-rows dt { flex-shrink: 0; color: var(--text-2); }
+.side-rows dd { min-width: 0; margin: 0; overflow: hidden; text-align: right; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.side-btn {
+  display: grid; place-items: center; height: 44px; border: 1px solid var(--accent); border-radius: var(--radius);
+  color: var(--accent); font-size: 14px; font-weight: 500;
+}
+.side-btn:hover { background: var(--accent-bg); text-decoration: none; }
+
+/* The main column: each section a heading with its links, then its body. */
+.dash-main { display: flex; flex-direction: column; min-width: 0; }
+.dash-sec { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 24px; }
+.dash-sec + .dash-sec { border-top: 1px solid var(--line); }
+.sec-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 28px; }
+.sec-head h2 { font-size: 17px; font-weight: 600; }
+.sec-tabs { display: inline-flex; align-items: center; }
+.sec-tabs button { padding: 0 12px; border: 0; background: none; color: var(--text-2); font: 500 14px var(--font); cursor: pointer; }
+.sec-tabs button + button { border-left: 1px solid var(--line-strong); }
+.sec-tabs button:hover { color: var(--text); }
+.sec-tabs button.on { color: var(--accent); }
+.sec-now { margin-left: auto; color: var(--text); font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sec-now .legend { font-size: 13px; font-weight: 400; }
+.dash-sec .chart-plot { height: 280px; }
+.dash-sec > .table-wrap { margin: 0 -24px; }
+.dash-sec > .table-wrap .table th:first-child, .dash-sec > .table-wrap .table td:first-child { padding-left: 24px; }
+
+/* A minute's upright line, and its time under the chart. */
+.chart-vgrid { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--line); pointer-events: none; }
+.chart-axis.ticks { position: relative; display: block; height: 22px; padding-top: 0; font-size: 12px; }
+.chart-axis.ticks span { position: absolute; top: 6px; transform: translateX(-50%); white-space: nowrap; }
 
 /* A thin bar per thread or core. */
 .strip { display: grid; gap: 6px; }
@@ -1493,28 +1510,32 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .strip-bars span[data-health="warn"] { background: var(--warn); }
 .strip-bars span[data-health="bad"] { background: var(--bad); }
 
-/* What a health colours: a figure, a reading, a table cell, a reason. */
-.figures [data-health="warn"] dd, .rows [data-health="warn"] b, .table td[data-health="warn"], .reason[data-health="warn"] { color: var(--warn); }
-.figures [data-health="bad"] dd, .rows [data-health="bad"] b, .table td[data-health="bad"], .reason[data-health="bad"] { color: var(--bad); }
-.reason { margin: 0; color: var(--text-3); font-size: 12.5px; line-height: 1.45; }
-.link-btn { margin-left: 8px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
+/* Storage: each volume's share of the space in one bar, its legend under it. */
+.usage-bar { display: flex; gap: 2px; height: 10px; border-radius: 5px; overflow: hidden; }
+.usage-bar > span { min-width: 2px; transition: flex-grow .5s var(--ease); }
+.usage-free { background: var(--card-2); }
+.usage-legend { gap: 8px 24px; font-size: 13px; }
+.usage-legend b { color: var(--text); font-weight: 600; }
 
-/* Graphics: each card's name over its figures. */
-.gpu { display: grid; gap: 12px; }
-.gpu + .gpu, .gpu + .rows { padding-top: 16px; border-top: 1px solid var(--line); }
-.gpu-name { font-weight: 600; }
+/* What a health colours: a fact, a note, a table cell. */
+.side-rows [data-health="ok"] dd { color: var(--ok); }
+.side-rows [data-health="warn"] dd, .side-notes [data-health="warn"], .table td[data-health="warn"] { color: var(--warn); }
+.side-rows [data-health="bad"] dd, .side-notes [data-health="bad"], .table td[data-health="bad"] { color: var(--bad); }
+.link-btn { margin-left: 8px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
 
 /* The System log. */
 .events { margin: 0; padding: 0; list-style: none; }
-.events li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 34px; }
+.events li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 38px; }
 .events li + li { border-top: 1px solid var(--line); }
-.events-text { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.events time { color: var(--text-3); font-size: 12px; white-space: nowrap; }
+.events-text { overflow: hidden; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+.events time { color: var(--text-3); font-size: 12.5px; white-space: nowrap; }
 
 /* The sensor task's setup: its step and percent, a bar filling along the foot. */
 .setup-progress { position: relative; overflow: hidden; }
 .setup-progress > :not(.setup-bar) { position: relative; }
 .setup-bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--accent); transition: width .4s var(--ease); }
 
-@media (max-width: 1280px) { .panel.span-4 { grid-column: span 6; } }
-@media (max-width: 900px) { .panel.span-4, .panel.span-6 { grid-column: 1 / -1; } }
+@media (max-width: 1100px) {
+  .dash { grid-template-columns: minmax(0, 1fr); }
+  .dash-side { border-right: 0; border-bottom: 1px solid var(--line); }
+}

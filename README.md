@@ -101,7 +101,9 @@ tunnel, and the dashboard's own sign-in (and emailed code, when on) still applie
 ## Dashboard
 
 **Dashboard** is the host at a glance, read every two seconds, with the last five minutes
-drawn as charts. **Overview** holds what any account can read from the system:
+drawn as charts: its facts in a column on the left, under a chip for each memory slot,
+drive and graphics card lit by its health, and the chart and tables on the right. It
+shows what any account can read from the system:
 
 - The host: its platform, kernel, processor, cores, memory, board, Docker and uptime.
 - **CPU** over time and per thread, **memory** over time with the sticks in the board's
@@ -113,17 +115,17 @@ drawn as charts. **Overview** holds what any account can read from the system:
 - **Volumes**, how full each one is, and the **drives** with their health.
 - **Containers**, each one's CPU, memory, network and disk traffic, and its state.
 
-**Advanced** adds the sensors: the processor's temperature over time and per core, every
+**Advanced**, a button the host or an admin confirms once, adds the sensors: the processor's temperature over time and per core, every
 temperature read, the **fans** (a fan that spun before and reads 0 has stopped), the power
 supply's 12, 5 and 3.3 V rails (within 5% is healthy, past 10% is failing), and each drive's
 temperature, life left, errors and hours. On Linux these come from `/sys` and need nothing
 more; drive wear and errors there need root and are not shown. On Windows they need
-administrator rights, so **Enable** asks Windows once, then installs the
+administrator rights, so turning it on asks Windows once, then installs the
 [PawnIO](https://pawnio.eu) driver, puts
 [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)'s
 library in `Program Files\myTunnels\hardware` (both downloads pinned by checksum) and adds a
-`myTunnels Hardware` task that reads the sensors as SYSTEM from startup. **Turn off sensors**
-in the page's menu removes the task and those files; PawnIO stays installed.
+`myTunnels Hardware` task that reads the sensors as SYSTEM from startup. Turning
+**Advanced** off removes the task and those files; PawnIO stays installed.
 
 When a part has been failing, or healthy again, for 15 seconds, the host and every admin
 get an email, once SMTP is set up under **Security**, **Two-Factor Auth**.
