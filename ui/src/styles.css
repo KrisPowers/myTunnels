@@ -439,6 +439,27 @@ a.result:hover { background: var(--hover); }
   background: light-dark(#1e2228, #f0f0f0); color: light-dark(#ffffff, #1d2129); box-shadow: var(--shadow);
   animation: rise .2s var(--ease) both;
 }
+/* Installs under way, in the bottom right on every page, with their step. */
+.install-pills {
+  position: fixed; right: 20px; bottom: 20px; z-index: 80; display: grid; justify-items: end; gap: 8px;
+  max-width: calc(100vw - 40px); pointer-events: none;
+}
+.install-pill {
+  display: flex; align-items: center; gap: 8px; height: 30px; max-width: 100%; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--raised); color: var(--text-2); box-shadow: var(--shadow);
+  font-size: 12px; white-space: nowrap; pointer-events: auto; animation: rise .2s var(--ease) both;
+}
+.install-pill > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-weight: 600; }
+.install-pill > .spinner { width: 12px; height: 12px; color: var(--accent); }
+.install-pill.ok > .icon { color: var(--ok); }
+.install-pill.bad > .icon { color: var(--bad); }
+.install-steps { display: inline-flex; gap: 3px; margin-left: 2px; }
+.install-steps > i { width: 10px; height: 3px; border-radius: 2px; background: var(--line-strong); }
+.install-steps > i.done { background: var(--accent); }
+.install-steps > i.on { background: var(--accent); animation: pulse 1s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity: .35; } }
+@media (max-width: 600px) { .install-pills { bottom: 84px; } }
+@media (prefers-reduced-motion: reduce) { .install-steps > i.on { animation: none; } }
 .toast .icon { color: var(--bad); }
 .toast.bad { border-left-color: var(--bad); }
 .toast.ok .icon { color: var(--ok); }

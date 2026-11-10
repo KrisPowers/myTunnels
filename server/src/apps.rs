@@ -1011,14 +1011,175 @@ async fn version_of(bin: &FsPath, args: &[&str]) -> Option<String> {
     Some(line)
 }
 
+/// How far along an install is. It only ever moves forward.
+#[derive(Clone, Copy, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Stage {
+    Preparing,
+    Downloading,
+    Installing,
+    /// The installer is done and the app is being looked at again.
+    Checking,
+}
+
 /// An install running or done here.
 #[derive(Clone, Serialize)]
 struct Job {
     action: Action,
     running: bool,
     failed: bool,
-    /// The last of what the installer said.
+    /// While running, the installer's latest line; after, the last of what it said.
     log: String,
+    stage: Stage,
+    /// How much of the download is done, while downloading and the installer says.
+    percent: Option<u8>,
+}
+
+impl Job {
+    /// Moves the job along by a line the installer printed.
+    fn feed(&mut self, line: &str) {
+        let low = line.to_lowercase();
+        let has = |words: &[&str]| words.iter().any(|w| low.contains(w));
+        let stage = if has(&[
+            "starting package",
+            "pouring",
+            "unpacking",
+            "setting up",
+            "installing",
+            "uninstalling",
+            "removing",
+            "linking",
+        ]) {
+            Some(Stage::Installing)
+        } else if has(&["download", "fetching"]) || low.starts_with("get:") {
+            Some(Stage::Downloading)
+        } else {
+            None
+        };
+        let percent = progress(line);
+        let stage = stage.or(percent.map(|_| Stage::Downloading));
+        if let Some(s) = stage.filter(|s| *s > self.stage) {
+            self.stage = s;
+            self.percent = None;
+        }
+        if self.stage == Stage::Downloading {
+            self.percent = percent.or(self.percent);
+        }
+        if line.chars().filter(|c| c.is_alphabetic()).count() > 2 {
+            self.log = line.chars().take(160).collect();
+        }
+    }
+}
+
+/// The share done a progress line shows: `45%`, or `10.0 MB / 20.5 MB`.
+fn progress(line: &str) -> Option<u8> {
+    if let Some(at) = line.find('%') {
+        let digits: String = line[..at]
+            .chars()
+            .rev()
+            .take_while(|c| c.is_ascii_digit() || *c == '.')
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        if let Ok(p) = digits.parse::<f32>() {
+            return Some(p.clamp(0.0, 100.0) as u8);
+        }
+    }
+    let size = |n: &str, unit: &str| -> Option<f64> {
+        let n: f64 = n.parse().ok()?;
+        let scale = match unit.to_ascii_uppercase().as_str() {
+            "B" => 1.0,
+            "KB" | "KIB" => 1e3,
+            "MB" | "MIB" => 1e6,
+            "GB" | "GIB" => 1e9,
+            _ => return None,
+        };
+        Some(n * scale)
+    };
+    let (before, after) = line.split_once(" / ")?;
+    let mut before = before.split_whitespace().rev();
+    let unit = before.next()?;
+    let done = size(before.next()?, unit)?;
+    let mut after = after.split_whitespace();
+    let total = size(after.next()?, after.next()?)?;
+    (total > 0.0).then(|| (done / total * 100.0).clamp(0.0, 100.0) as u8)
+}
+
+/// Sends what a pipe says to `tx`, a line at a time; a carriage return ends a
+/// line too, so each step of a progress bar arrives as it is drawn.
+fn lines_of(
+    mut pipe: impl tokio::io::AsyncRead + Unpin + Send + 'static,
+    tx: tokio::sync::mpsc::UnboundedSender<String>,
+) {
+    use tokio::io::AsyncReadExt;
+    tokio::spawn(async move {
+        let mut buf = [0u8; 4096];
+        let mut line = Vec::new();
+        let send = |line: &mut Vec<u8>| {
+            if !line.is_empty() {
+                let _ = tx.send(String::from_utf8_lossy(line).trim().to_owned());
+                line.clear();
+            }
+        };
+        while let Ok(n @ 1..) = pipe.read(&mut buf).await {
+            for &b in &buf[..n] {
+                if b == b'\n' || b == b'\r' {
+                    send(&mut line);
+                } else {
+                    line.push(b);
+                }
+            }
+        }
+        send(&mut line);
+    });
+}
+
+/// Runs the installer, moving `id`'s job along as it prints. Ends with whether
+/// it worked and the last of what it said.
+async fn run_installer(id: &str, program: &FsPath, args: &[String]) -> (bool, String) {
+    let child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn();
+    let mut child = match child {
+        Ok(c) => c,
+        Err(err) => return (false, format!("Could not start the installer: {err}")),
+    };
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    if let Some(out) = child.stdout.take() {
+        lines_of(out, tx.clone());
+    }
+    if let Some(err) = child.stderr.take() {
+        lines_of(err, tx);
+    }
+    let mut tail: Vec<String> = Vec::new();
+    let read = async {
+        while let Some(line) = rx.recv().await {
+            if line.is_empty() {
+                continue;
+            }
+            if let Some(job) = lock(&JOBS).get_mut(id) {
+                job.feed(&line);
+            }
+            if line.chars().any(char::is_alphanumeric) && progress(&line).is_none() {
+                tail.push(line);
+                if tail.len() > 6 {
+                    tail.remove(0);
+                }
+            }
+        }
+        child.wait().await
+    };
+    let ended = tokio::time::timeout(Duration::from_secs(30 * 60), read).await;
+    match ended {
+        Ok(Ok(status)) => (status.success(), tail.join("\n")),
+        Ok(Err(err)) => (false, format!("The installer stopped: {err}")),
+        Err(_) => (false, "The installer took over half an hour".into()),
+    }
 }
 
 static JOBS: LazyLock<Mutex<HashMap<String, Job>>> = LazyLock::new(Mutex::default);
@@ -1103,49 +1264,34 @@ pub fn local_install(id: &str, action: Action, version: Option<&str>) -> Result<
             Some(_) => "Install Node.js first, for npm".to_owned(),
             None => format!("{} cannot be installed here; get it from {}", a.name, a.url),
         })?;
-    let job = move |running, failed, log: String| Job {
-        action,
-        running,
-        failed,
-        log,
-    };
-    lock(&JOBS).insert(id.into(), job(true, false, String::new()));
+    lock(&JOBS).insert(
+        id.into(),
+        Job {
+            action,
+            running: true,
+            failed: false,
+            log: String::new(),
+            stage: Stage::Preparing,
+            percent: None,
+        },
+    );
     let id = id.to_owned();
     tokio::spawn(async move {
         tracing::info!("installing {id}: {} {}", program.display(), args.join(" "));
-        let run = Command::new(&program)
-            .args(&args)
-            .stdin(Stdio::null())
-            .kill_on_drop(true)
-            .output();
-        let done = match tokio::time::timeout(Duration::from_secs(30 * 60), run).await {
-            Ok(Ok(out)) => {
-                let text = format!(
-                    "{}{}",
-                    String::from_utf8_lossy(&out.stdout),
-                    String::from_utf8_lossy(&out.stderr)
-                );
-                let tail: String = text
-                    .lines()
-                    .map(str::trim)
-                    .filter(|l| !l.is_empty())
-                    .rev()
-                    .take(6)
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .rev()
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                job(false, !out.status.success(), tail)
-            }
-            Ok(Err(err)) => job(false, true, format!("Could not start the installer: {err}")),
-            Err(_) => job(false, true, "The installer took over half an hour".into()),
-        };
-        if done.failed {
-            tracing::warn!("installing {id} failed: {}", done.log);
+        let (worked, log) = run_installer(&id, &program, &args).await;
+        if !worked {
+            tracing::warn!("installing {id} failed: {log}");
+        }
+        if let Some(job) = lock(&JOBS).get_mut(&id) {
+            job.stage = Stage::Checking;
+            job.percent = None;
         }
         detect().await;
-        lock(&JOBS).insert(id, done);
+        if let Some(job) = lock(&JOBS).get_mut(&id) {
+            job.running = false;
+            job.failed = !worked;
+            job.log = log;
+        }
     });
     Ok(())
 }
@@ -1573,6 +1719,33 @@ mod tests {
         assert!(valid_version("1:2.39.5-0+deb12u2"));
         assert!(!valid_version("--force"));
         assert!(!valid_version("1.0 && x"));
+    }
+
+    #[test]
+    fn an_install_moves_forward_by_what_it_prints() {
+        let mut job = Job {
+            action: Action::Update,
+            running: true,
+            failed: false,
+            log: String::new(),
+            stage: Stage::Preparing,
+            percent: None,
+        };
+        job.feed("Found cloudflared [Cloudflare.cloudflared] Version 2025.11.1");
+        assert!(job.stage == Stage::Preparing);
+        job.feed("Downloading https://example.test/cloudflared.msi");
+        assert!(job.stage == Stage::Downloading);
+        job.feed("  ██████████▒▒▒▒▒▒▒▒▒▒  10.0 MB / 20.0 MB");
+        assert_eq!(job.percent, Some(50));
+        job.feed("  ████████████████▒▒▒▒  80%");
+        assert_eq!(job.percent, Some(80));
+        job.feed("Starting package install...");
+        assert!(job.stage == Stage::Installing);
+        assert_eq!(job.percent, None);
+        job.feed("==> Downloading https://example.test/again");
+        assert!(job.stage == Stage::Installing);
+        assert_eq!(job.log, "==> Downloading https://example.test/again");
+        assert_eq!(progress("Successfully installed"), None);
     }
 
     #[test]
