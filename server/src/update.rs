@@ -25,7 +25,7 @@ use crate::util::{ApiError, ApiResult};
 const REPO: &str = "KrisPowers/myTunnels";
 
 /// How long the latest release found is trusted before asking GitHub again.
-const FRESH: Duration = Duration::from_secs(15 * 60);
+const FRESH: Duration = Duration::from_secs(60);
 
 /// The latest release found, and when.
 static FOUND: Mutex<Option<(Instant, String)>> = Mutex::new(None);

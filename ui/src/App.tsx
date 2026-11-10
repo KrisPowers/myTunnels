@@ -272,9 +272,14 @@ function UpdateButton({ rail }: { rail: boolean }) {
 
   useEffect(() => {
     const check = () => api.update().then((u) => setLatest(u.available ? u.latest ?? "" : "")).catch(() => {});
+    // Every two minutes, and as soon as the window is looked at again.
     check();
-    const t = setInterval(check, 30 * 60_000);
-    return () => clearInterval(t);
+    const t = setInterval(check, 2 * 60_000);
+    addEventListener("focus", check);
+    return () => {
+      clearInterval(t);
+      removeEventListener("focus", check);
+    };
   }, []);
 
   if (!latest) return null;
