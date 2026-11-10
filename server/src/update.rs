@@ -124,7 +124,7 @@ pub async fn check(State(state): State<AppState>) -> ApiResult<Json<Value>> {
 
 /// Starts installing the latest release. The panel stops answering while the
 /// files are swapped, and answers again on the new release.
-pub async fn install() -> ApiResult<StatusCode> {
+pub async fn install(State(state): State<AppState>) -> ApiResult<StatusCode> {
     if installed().is_none() {
         return Err(ApiError::bad(
             "This copy of myTunnels was not put here by its install script, so it cannot update itself",
@@ -133,24 +133,59 @@ pub async fn install() -> ApiResult<StatusCode> {
     let token = token().await.ok_or_else(|| {
         ApiError::bad("Sign in to GitHub CLI on this computer (gh auth login) so myTunnels can fetch its update")
     })?;
-    let _ = std::fs::remove_file(progress_file());
-    run_installer(&token)?;
+    // The install script is fetched here, so a failure to fetch it is said
+    // at once rather than lost in a window no one sees.
+    let name = if cfg!(windows) {
+        "install.ps1"
+    } else {
+        "install.sh"
+    };
+    let script = state
+        .http
+        .get(format!(
+            "https://api.github.com/repos/{REPO}/contents/scripts/{name}"
+        ))
+        .header("User-Agent", "mytunnels")
+        .header("Accept", "application/vnd.github.raw")
+        .bearer_auth(&token)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| {
+            ApiError::bad(format!(
+                "Could not fetch the install script from GitHub: {e}"
+            ))
+        })?
+        .text()
+        .await?;
+    let path = config::home().join(name);
+    std::fs::write(&path, script)?;
+    std::fs::write(
+        progress_file(),
+        json!({ "step": "start", "percent": null, "at": crate::util::now() }).to_string(),
+    )?;
+    run_installer(&token, &path)?;
     *FOUND.lock().unwrap_or_else(PoisonError::into_inner) = None;
     Ok(StatusCode::ACCEPTED)
 }
 
 /// Runs install.ps1 in a PowerShell started by another that ends at once,
 /// so the new one is no longer under this program when `stop` ends this
-/// program and everything it started.
+/// program and everything it started. Its output goes to update.txt; if it
+/// fails, why goes to the progress file the panel shows.
 #[cfg(windows)]
-fn run_installer(token: &str) -> Result<()> {
+fn run_installer(token: &str, path: &std::path::Path) -> Result<()> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+    let quote = |p: &std::path::Path| p.display().to_string().replace('\'', "''");
     let log = config::home().join("update.txt");
     let script = format!(
-        "irm https://api.github.com/repos/{REPO}/contents/scripts/install.ps1 -Headers @{{ Authorization = \"Bearer $env:GH_TOKEN\"; Accept = 'application/vnd.github.raw' }} | iex *> '{}'",
-        log.display().to_string().replace('\'', "''"),
+        "$ErrorActionPreference = 'Stop'\n\
+         try {{ & '{}' *> '{}' }}\n\
+         catch {{ [IO.File]::WriteAllText($env:MYTUNNELS_PROGRESS, (@{{ step = 'failed'; percent = $null; error = \"$($_.Exception.Message)\"; at = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }} | ConvertTo-Json -Compress)) }}",
+        quote(path),
+        quote(&log),
     );
     let encoded = crate::util::powershell_encoded(&script);
     std::process::Command::new("powershell")
@@ -174,12 +209,14 @@ fn run_installer(token: &str) -> Result<()> {
 /// leaves it running: as a unit of its own where systemd runs the service,
 /// otherwise in a process group of its own.
 #[cfg(unix)]
-fn run_installer(token: &str) -> Result<()> {
+fn run_installer(token: &str, path: &std::path::Path) -> Result<()> {
     use std::fs::OpenOptions;
     use std::os::unix::process::CommandExt;
 
+    // If it fails, why goes to the progress file the panel shows.
     let script = format!(
-        "curl -fsSL -H \"Authorization: Bearer $GH_TOKEN\" -H 'Accept: application/vnd.github.raw' https://api.github.com/repos/{REPO}/contents/scripts/install.sh | sh"
+        "sh '{}' || printf '{{\"step\":\"failed\",\"percent\":null,\"error\":\"The install script stopped; see update.txt\",\"at\":%s}}' \"$(date +%s)\" > \"$MYTUNNELS_PROGRESS\"",
+        path.display().to_string().replace('\'', "'\\''"),
     );
     let systemd = cfg!(target_os = "linux")
         && std::process::Command::new("systemctl")

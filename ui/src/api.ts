@@ -598,7 +598,7 @@ export const api = {
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),
   // Whether a newer release than the one installed is out, and installing it.
-  update: () => call<{ available: boolean; current?: string; latest?: string; progress?: { step: string; percent: number | null } | null }>("/update"),
+  update: () => call<{ available: boolean; current?: string; latest?: string; progress?: { step: string; percent: number | null; error?: string } | null }>("/update"),
   installUpdate: () => call("/update", "POST"),
   hardware: () => call<Hardware>("/hardware"),
   enableHardware: () => call<Hardware>("/hardware/enable", "POST"),

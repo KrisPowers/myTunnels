@@ -324,6 +324,15 @@ function UpdateButton({ rail }: { rail: boolean }) {
         if (u.current === latest) {
           clearInterval(wait);
           location.reload();
+        } else if (u.progress?.step === "failed") {
+          clearInterval(wait);
+          setBusy(false);
+          notify(`The update stopped: ${u.progress.error || "see update.txt in the myTunnels folder"}`, "bad");
+        } else if (u.progress?.step === "start" && Date.now() - began > 60_000) {
+          // The install script writes its first step within seconds.
+          clearInterval(wait);
+          setBusy(false);
+          notify("The update did not start. Its log is update.txt in the myTunnels folder.", "bad");
         } else if (u.progress && STEPS[u.progress.step]) {
           setStep(u.progress);
         }
