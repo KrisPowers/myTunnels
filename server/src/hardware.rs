@@ -148,9 +148,8 @@ pub struct Snapshot {
     platform: &'static str,
     /// Windows' sensor task: "none" where none is needed, else "missing",
     /// "waiting" (for the admin prompt), "installing" (setup under way),
-    /// "starting" (set up, no reading yet),
-    /// "running", "stale" (stopped reading) or "outdated" (an older script
-    /// than this release's, which setting it up again replaces).
+    /// "starting" (set up, no reading yet), "running" or "stale" (stopped
+    /// reading). Once set up, it is never set up again.
     helper: &'static str,
     helper_error: String,
     /// While setup runs: the step under way and how far along it is.
@@ -204,9 +203,9 @@ pub async fn enable(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         ));
     }
     state.db.set_setting("hardware", "on")?;
-    // Set up, or set up again: when missing, out of date, or no longer reading.
+    // Set up once: only when the task is not in place.
     #[cfg(windows)]
-    if windows::needs_setup() {
+    if !windows::installed() {
         state
             .db
             .set_setting("hardware_setup_at", &util::now().to_string())?;
@@ -851,16 +850,6 @@ mod windows {
         SystemTime::now().duration_since(modified).ok()
     }
 
-    /// Whether the script in place is this release's.
-    fn current() -> bool {
-        std::fs::read_to_string(dir().join("sensors.ps1"))
-            .is_ok_and(|s| s.replace("\r\n", "\n") == SENSORS.replace("\r\n", "\n"))
-    }
-
-    pub fn needs_setup() -> bool {
-        !installed() || !current() || reading_age().is_none_or(|a| a >= Duration::from_secs(30))
-    }
-
     /// Runs `mytunnels hardware <arg>` with administrator rights, which
     /// Windows asks for on this computer's screen.
     pub fn elevate(arg: &str) -> Result<()> {
@@ -1347,11 +1336,7 @@ mod windows {
             snap.helper_step = step.to_owned();
             "installing"
         } else if installed() && reading {
-            if current() {
-                "running"
-            } else {
-                "outdated"
-            }
+            "running"
         } else if setup == "done" && now - setup_at < 180 {
             "starting"
         } else if !installed() {
@@ -1400,6 +1385,22 @@ mod windows {
             );
         }
         Ok(())
+    }
+
+    /// Whether Windows lists PawnIO as installed, where its own setup records it.
+    fn pawnio_installed() -> bool {
+        std::process::Command::new("reg")
+            .args([
+                "query",
+                r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO",
+                "/v",
+                "DisplayVersion",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
     }
 
     /// Records the step under way, and how far along setup is, for the page.
@@ -1474,23 +1475,26 @@ mod windows {
             .timeout(Duration::from_secs(300))
             .build()?;
 
-        // The PawnIO driver, which the library reads the sensor chips through.
-        let setup = dir.join("PawnIO_setup.exe");
-        std::fs::write(
-            &setup,
-            fetch(
-                &client,
-                PAWNIO,
-                dir,
-                (2, 20),
-                "Downloading the PawnIO driver",
-            )
-            .await?,
-        )?;
-        step(dir, 20, "Installing the PawnIO driver");
-        let installed = std::process::Command::new(&setup).arg("-install").status();
-        let _ = std::fs::remove_file(&setup);
-        installed.context("cannot run the PawnIO setup")?;
+        // The PawnIO driver, which the library reads the sensor chips
+        // through: installed once, and left alone when Windows lists it.
+        if !pawnio_installed() {
+            let setup = dir.join("PawnIO_setup.exe");
+            std::fs::write(
+                &setup,
+                fetch(
+                    &client,
+                    PAWNIO,
+                    dir,
+                    (2, 20),
+                    "Downloading the PawnIO driver",
+                )
+                .await?,
+            )?;
+            step(dir, 20, "Installing the PawnIO driver");
+            let installed = std::process::Command::new(&setup).arg("-install").status();
+            let _ = std::fs::remove_file(&setup);
+            installed.context("cannot run the PawnIO setup")?;
+        }
 
         // The library and what it needs: the archive's top-level DLLs.
         let archive = fetch(
