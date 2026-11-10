@@ -1553,9 +1553,9 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .hw-donut-mid span { color: var(--text-3); font-size: 11.5px; }
 /* Every slot the same box, tops and bottoms in one line. An empty slot is
    "vacant", never "empty", which is the page-wide padded empty state. */
-.hw-slots { display: flex; justify-content: center; align-items: flex-start; gap: 12px; }
-.hw-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 40px; }
-.hw-slot .rd { flex-shrink: 0; width: 36px; height: 126px; }
+.hw-slots { display: flex; justify-content: center; align-items: flex-start; gap: 10px; }
+.hw-slot { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 28px; }
+.hw-slot .rd { flex-shrink: 0; width: 26px; height: 91px; }
 .hw-slot.ok .rd { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--ok) 55%, transparent)); }
 .hw-slot.warn .rd { filter: drop-shadow(0 0 6px var(--warn)); }
 .hw-slot.bad .rd { filter: drop-shadow(0 0 7px var(--bad)); }
@@ -1617,6 +1617,7 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 
 /* Board: across the whole content width, its temperatures then its log. */
 .hw-full { grid-column: 1 / -1; }
+.hw-temps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 32px; }
 .hw-events { list-style: none; margin: 0; padding: 0; }
 .hw-events li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 28px; }
 .hw-event-text { overflow: hidden; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
