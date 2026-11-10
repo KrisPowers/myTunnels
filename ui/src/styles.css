@@ -1452,7 +1452,13 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 /* ---- the Dashboard, after a UniFi console: straight on the page's own
    ground, no panel around it; the host's facts in a column on the left under
    a chip for each part, the chart and tables on the right ---- */
-.dash { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); animation: rise .2s var(--ease) both; }
+.dash { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); animation: rise .2s var(--ease) both; }
+/* The page holds still at the window's height; each column scrolls on its
+   own under the pointer, with no scroll bars, and never moves the other. */
+main.page:has(> .dash) { display: flex; flex-direction: column; height: calc(100vh - var(--head)); padding-bottom: 0; overflow: hidden; }
+main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
+.dash-side, .dash-main { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.dash-side::-webkit-scrollbar, .dash-main::-webkit-scrollbar { display: none; }
 .dash-side { display: flex; flex-direction: column; gap: 18px; min-width: 0; padding: 0 28px 24px 0; border-right: 1px solid var(--line); }
 .side-name { font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
 .btn.lit { background: var(--accent-bg); color: var(--on-accent-bg); }
@@ -1539,7 +1545,10 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .setup-bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--accent); transition: width .4s var(--ease); }
 
 @media (max-width: 1100px) {
-  .dash { grid-template-columns: minmax(0, 1fr); }
+  /* Stacked, the columns scroll with the page as one. */
+  main.page:has(> .dash) { display: block; height: auto; padding-bottom: 40px; overflow: visible; }
+  .dash { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
+  .dash-side, .dash-main { overflow: visible; }
   .dash-side { padding-right: 0; border-right: 0; border-bottom: 1px solid var(--line); }
   .dash-sec { padding-left: 0; }
   .dash-sec:first-child { padding-top: 28px; }
