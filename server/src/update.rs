@@ -118,7 +118,6 @@ pub async fn install() -> ApiResult<StatusCode> {
 /// program and everything it started.
 #[cfg(windows)]
 fn run_installer(token: &str) -> Result<()> {
-    use base64::Engine;
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -127,8 +126,7 @@ fn run_installer(token: &str) -> Result<()> {
         "irm https://api.github.com/repos/{REPO}/contents/scripts/install.ps1 -Headers @{{ Authorization = \"Bearer $env:GH_TOKEN\"; Accept = 'application/vnd.github.raw' }} | iex *> '{}'",
         log.display().to_string().replace('\'', "''"),
     );
-    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
-    let encoded = base64::engine::general_purpose::STANDARD.encode(utf16);
+    let encoded = crate::util::powershell_encoded(&script);
     std::process::Command::new("powershell")
         .args([
             "-NoProfile",

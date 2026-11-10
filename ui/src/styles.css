@@ -1478,3 +1478,62 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .dup-group .item-row input { flex-shrink: 0; margin: 0; accent-color: var(--accent); }
 .cv-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .cv-bar-row .ex-pick .dropdown { min-width: 130px; }
+
+/* ---- Hardware: each part, green while healthy and red when failing ---- */
+.hw-intro { justify-items: start; text-align: left; }
+.hw-intro > .icon { color: var(--accent); }
+.hw-intro p, .hw-intro .bullets { max-width: 640px; }
+.card-head h2 > .icon { flex-shrink: 0; }
+
+/* Memory: a tile per slot, a band of its health along the top; then a bar of
+   how much each stick gives. */
+.hw-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; padding: 0 20px 16px; }
+.hw-slot {
+  position: relative; display: grid; align-content: start; gap: 4px; min-height: 150px; padding: 18px 16px 14px;
+  border: 1px solid var(--line); border-radius: var(--round); background: var(--card-2); overflow: hidden;
+}
+.hw-slot::before { content: ""; position: absolute; inset: 0 0 auto; height: 3px; background: var(--line-strong); }
+.hw-slot.ok::before { background: var(--ok); }
+.hw-slot.warn::before { background: var(--warn); }
+.hw-slot.bad::before { background: var(--bad); }
+.hw-slot.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); background: var(--bad-bg); }
+.hw-slot.empty { border-style: dashed; background: transparent; }
+.hw-slot.empty::before { display: none; }
+.hw-slot-place { color: var(--text-3); font-size: 12px; font-weight: 500; }
+.hw-slot > b { font-size: 24px; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.hw-slot > b.hw-slot-empty { color: var(--text-3); font-size: 16px; font-weight: 400; }
+.hw-slot > small { color: var(--text-2); font-size: 12px; }
+.hw-slot > small.warn { color: var(--warn); }
+.hw-slot > small.bad { color: var(--bad); }
+.hw-slot-state { display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; color: var(--text-2); font-size: 12px; line-height: 1.4; }
+.hw-slot-state .dot { margin-top: 4px; }
+.hw-slot .btn { justify-self: start; margin-top: 8px; }
+.hw-share { display: flex; gap: 3px; height: 8px; margin: 0 20px 18px; border-radius: 4px; overflow: hidden; }
+.hw-share span { min-width: 4px; background: var(--ok); }
+.hw-share span.warn { background: var(--warn); }
+.hw-share span.bad { background: var(--bad); }
+
+/* Every other kind: a row per part, its readings as pills on the right. */
+.hw-list { list-style: none; margin: 0; padding: 0; }
+.hw-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 16px; min-height: 56px; padding: 10px 20px; border-top: 1px solid var(--line); }
+.hw-name { display: grid; gap: 2px; min-width: 0; }
+.hw-name b { font-weight: 500; }
+.hw-name small { overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.hw-name small.warn { color: var(--warn); }
+.hw-name small.bad { color: var(--bad); }
+.hw-place { margin-left: 10px; color: var(--text-3); font-size: 12px; font-weight: 400; }
+.hw-when { color: var(--text-3); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hw-readings { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.hw-reading {
+  display: inline-flex; align-items: baseline; gap: 8px; height: 26px; padding: 0 11px; border-radius: 13px;
+  background: var(--card-2); color: var(--text-2); font-size: 12px; line-height: 26px; white-space: nowrap;
+}
+.hw-reading b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.hw-reading.warn { background: var(--warn-bg); }
+.hw-reading.warn b { color: var(--warn); }
+.hw-reading.bad { background: var(--bad-bg); }
+.hw-reading.bad b { color: var(--bad); }
+@media (max-width: 900px) {
+  .hw-row { grid-template-columns: 8px minmax(0, 1fr); }
+  .hw-readings { grid-column: 2; justify-content: flex-start; }
+}

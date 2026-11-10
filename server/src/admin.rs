@@ -56,6 +56,10 @@ pub fn router(state: AppState) -> Router {
             "/update",
             get(crate::update::check).post(crate::update::install),
         )
+        .route("/hardware", get(crate::hardware::view))
+        .route("/hardware/enable", post(crate::hardware::enable))
+        .route("/hardware/disable", post(crate::hardware::disable))
+        .route("/hardware/forget", post(crate::hardware::forget))
         .route("/metrics", get(metrics))
         .route("/containers", get(list_containers))
         .route("/images", get(crate::images::list))

@@ -141,6 +141,34 @@ export interface Settings {
   trusted_networks: string;
 }
 
+// Hardware: each part, its readings and health, as the server last read them.
+export type Health = "ok" | "warn" | "bad" | "empty" | "unknown";
+export interface HwReading { label: string; value: number; unit: string; health: Health }
+export interface HwPart {
+  kind: string;
+  id: string;
+  name: string;
+  place: string;
+  facts: [string, string][];
+  readings: HwReading[];
+  health: Health;
+  reason: string;
+  bytes?: number;
+}
+export interface HwEvent { at: number; kind: string; health: Health; text: string }
+export interface HwSnapshot {
+  at: number;
+  platform: string;
+  helper: "none" | "missing" | "waiting" | "running" | "stale";
+  helper_error: string;
+  slots: number;
+  ecc: boolean;
+  parts: HwPart[];
+  notes: HwPart[];
+  events: HwEvent[];
+}
+export interface Hardware { enabled: boolean; platform: string; snapshot: HwSnapshot | null }
+
 export interface Status {
   configured: boolean;
   running: boolean;
@@ -570,6 +598,10 @@ export const api = {
   // Whether a newer release than the one installed is out, and installing it.
   update: () => call<{ available: boolean; current?: string; latest?: string }>("/update"),
   installUpdate: () => call("/update", "POST"),
+  hardware: () => call<Hardware>("/hardware"),
+  enableHardware: () => call<Hardware>("/hardware/enable", "POST"),
+  disableHardware: () => call<Hardware>("/hardware/disable", "POST"),
+  forgetSlot: (slot: string) => call<Hardware>("/hardware/forget", "POST", { slot }),
   metrics: () => call<Metrics>("/metrics"),
   apps: () => call<Apps>("/apps"),
   // An install may name a version, in place of the latest.

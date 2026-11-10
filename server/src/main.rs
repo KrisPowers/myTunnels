@@ -12,6 +12,7 @@ mod docker;
 mod dupes;
 mod gate;
 mod guard;
+mod hardware;
 mod images;
 mod limits;
 mod mail;
@@ -57,6 +58,8 @@ async fn main() -> Result<()> {
         // This computer's own figures, for a Dashboard that runs inside Docker Desktop.
         Some("host") => return metrics::serve_host().await,
         Some(name @ ("start" | "stop" | "status" | "run")) => return service::command(name),
+        // The Hardware page's sensor task, put in place or taken away with administrator rights.
+        Some("hardware") => return hardware::command(std::env::args().nth(2).as_deref()).await,
         _ => {}
     }
 
@@ -81,6 +84,7 @@ async fn main() -> Result<()> {
     tokio::spawn(admin::remove_git_address(state.clone()));
     netinfo::spawn(state.clone());
     metrics::spawn();
+    hardware::spawn(state.clone());
     convert::spawn(state.clone());
     deploy::spawn(state.clone());
     limits::spawn(state.clone());
