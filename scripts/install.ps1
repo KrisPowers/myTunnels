@@ -131,7 +131,15 @@
     }
 
     if ($running) {
-        & $exe start
+        # Started on its own, not through this script's output: what `start`
+        # leaves running would hold that output open, and this script, its
+        # log with it, would never end.
+        $started = Start-Process $exe -ArgumentList 'start' -WindowStyle Hidden -PassThru
+        # Held now, so its exit code is still there to read once it ends.
+        $null = $started.Handle
+        $started.WaitForExit()
+        if ($started.ExitCode -ne 0) { throw "mytunnels start failed with code $($started.ExitCode)" }
+        Write-Host 'myTunnels is running again.'
     }
     else {
         Write-Host 'myTunnels is installed. Start it, now and with this computer from then on:'
