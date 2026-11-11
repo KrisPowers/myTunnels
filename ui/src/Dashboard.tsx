@@ -89,16 +89,6 @@ export function DashboardPage({ flags, users, devices, onChanged }: { flags: Fla
   const windows = hw?.platform === "windows";
   return (
     <>
-      <div className="page-head">
-        <div className="page-head-main"><h1>Dashboard</h1></div>
-        {admin && hw && hw.platform !== "macos" && (
-          <div className="page-actions">
-            <button type="button" className={"btn" + (advanced ? " lit" : "")} disabled={busy} onClick={() => setAsking(true)}>
-              {busy ? <span className="spinner small" /> : <Icon name={advanced ? "check" : windows ? "shield" : "tune"} size={18} />}Advanced
-            </button>
-          </div>
-        )}
-      </div>
       {asking && (
         <Dialog title={advanced ? "Turn off Advanced?" : "Turn on Advanced?"} onClose={() => setAsking(false)}>
           <p className="muted">
@@ -116,7 +106,11 @@ export function DashboardPage({ flags, users, devices, onChanged }: { flags: Fla
       {advanced && snap && <Setup snap={snap} />}
       {m && m.history.length > 0 && (
         <div className="dash">
-          <Side m={m} snap={snap} advanced={advanced} admin={admin} onForget={forget} />
+          <Side m={m} snap={snap} advanced={advanced} admin={admin} onForget={forget} toggle={admin && hw && hw.platform !== "macos" && (
+            <button type="button" className={"icon-btn" + (advanced ? " lit" : "")} aria-label="Advanced" title="Advanced" aria-pressed={advanced} disabled={busy} onClick={() => setAsking(true)}>
+              {busy ? <span className="spinner small" /> : <Icon name={windows ? "shield" : "tune"} size={20} />}
+            </button>
+          )} />
           <div className="dash-main">
             {flags.length > 0 && <NewDevices flags={flags} users={users} devices={devices} onChanged={onChanged} />}
             <Trend m={m} cpu={snap?.parts.find((p) => p.kind === "cpu")} advanced={advanced} />
@@ -129,6 +123,12 @@ export function DashboardPage({ flags, users, devices, onChanged }: { flags: Fla
 }
 
 // ---- the column of facts ----
+
+// owned names the page for the computer, "KrisComputer's Dashboard".
+function owned(name?: string | null) {
+  if (!name) return "Dashboard";
+  return name + (name.endsWith("s") ? "' " : "'s ") + "Dashboard";
+}
 
 type Fact = [string, ReactNode, Health?] | false | null | undefined;
 
@@ -148,7 +148,7 @@ function Rows({ items }: { items: Fact[] }) {
   );
 }
 
-function Side({ m, snap, advanced, admin, onForget }: { m: Metrics; snap: HwSnapshot | null; advanced: boolean; admin: boolean; onForget: (slot: string) => void }) {
+function Side({ m, snap, advanced, admin, onForget, toggle }: { m: Metrics; snap: HwSnapshot | null; advanced: boolean; admin: boolean; onForget: (slot: string) => void; toggle: ReactNode }) {
   const parts = snap?.parts ?? [];
   const of = (kind: string) => parts.filter((p) => p.kind === kind);
   const cpu = of("cpu")[0];
@@ -161,7 +161,10 @@ function Side({ m, snap, advanced, admin, onForget }: { m: Metrics; snap: HwSnap
   const temp = reading(cpu, "Temperature");
   return (
     <aside className="dash-side">
-      <h2 className="side-name">{m.host.name ?? "This host"}</h2>
+      <div className="side-head">
+        <h1 className="side-name">{owned(m.host.name)}</h1>
+        {toggle}
+      </div>
       <Bays parts={parts} />
       {attention.length > 0 && (
         <div className="side-notes">
