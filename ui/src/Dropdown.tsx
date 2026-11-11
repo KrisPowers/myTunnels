@@ -9,6 +9,8 @@ export interface Option<T> {
   // A line under the label, saying what the choice does.
   hint?: string;
   icon?: IconName;
+  // Shown but not pickable, such as a choice whose app is not installed.
+  disabled?: boolean;
 }
 
 // Dropdown picks one of `options`: a field showing the choice that opens a
@@ -50,6 +52,7 @@ export function Dropdown<T extends string | number>({ label, value, options, onC
   usePlace(open, field, list, at.left);
 
   const pick = (v: T) => {
+    if (options.find((o) => o.value === v)?.disabled) return;
     onChange(v);
     setOpen(false);
     field.current?.focus();
@@ -63,7 +66,14 @@ export function Dropdown<T extends string | number>({ label, value, options, onC
         return setOpen(true);
       }
       const step = e.key === "ArrowDown" ? 1 : -1;
-      setActive((a) => (a + step + options.length) % options.length);
+      setActive((a) => {
+        let next = a;
+        for (let i = 0; i < options.length; i++) {
+          next = (next + step + options.length) % options.length;
+          if (!options[next].disabled) break;
+        }
+        return next;
+      });
     } else if ((e.key === "Enter" || e.key === " ") && open) {
       e.preventDefault();
       pick(options[active].value);
@@ -86,8 +96,8 @@ export function Dropdown<T extends string | number>({ label, value, options, onC
         <ul ref={list} className="dropdown-list" role="listbox" aria-label={label}
           style={{ left: at.left, minWidth: at.width }}>
           {options.map((o, i) => (
-            <li key={String(o.value)} role="option" aria-selected={o.value === value}
-              className={"dropdown-option" + (i === active ? " active" : "")}
+            <li key={String(o.value)} role="option" aria-selected={o.value === value} aria-disabled={o.disabled || undefined}
+              className={"dropdown-option" + (i === active && !o.disabled ? " active" : "") + (o.disabled ? " unpickable" : "")}
               onMouseEnter={() => setActive(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(o.value)}>
               {o.icon && <Icon name={o.icon} size={20} className="dropdown-icon" />}
               <span className="dropdown-text">
