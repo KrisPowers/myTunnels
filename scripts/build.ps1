@@ -5,8 +5,10 @@
 #   pwsh scripts/build.ps1 -Publish    build, release it, and point the Homebrew formula at it
 #
 # Windows builds windows-x64, a Mac both macOS builds, and either builds
-# linux-x64 and linux-arm64 through zig when zig is installed. Each archive
-# holds mytunnels, cloudflared and the panel, as the install scripts expect.
+# linux-x64 and linux-arm64 through zig when zig is installed. Through zig,
+# Windows and Linux build both macOS archives too, against Apple's SDK, which
+# is fetched once into builds/.sdk. Each archive holds mytunnels, cloudflared
+# and the panel, as the install scripts expect.
 #
 # -Publish makes the next release (or adds to the one -Version names, as a
 # Mac does after Windows) and opens and merges the formula's update.
@@ -40,7 +42,7 @@ $all = @(
 )
 $zig = [bool](Get-Command zig -ErrorAction SilentlyContinue)
 $builds = $all | Where-Object {
-    ($IsWindows -and $_.Name -like 'windows-*') -or ($IsMacOS -and $_.Name -like 'macos-*') -or ($zig -and $_.Name -like 'linux-*')
+    ($IsWindows -and $_.Name -like 'windows-*') -or (($IsMacOS -or $zig) -and $_.Name -like 'macos-*') -or ($zig -and $_.Name -like 'linux-*')
 }
 if (-not $zig) { Write-Host 'zig is not installed, so the Linux builds are left out' }
 if (-not $builds) { throw 'Nothing here can be built for' }
@@ -53,8 +55,28 @@ try {
 }
 finally { Pop-Location }
 
-if ($builds | Where-Object Name -like 'linux-*') {
+# Built through zig: Linux anywhere, macOS anywhere but a Mac.
+function Zigged($b) { $b.Name -like 'linux-*' -or ($b.Name -like 'macos-*' -and -not $IsMacOS) }
+if ($builds | Where-Object { Zigged $_ }) {
     if (-not (Get-Command cargo-zigbuild -ErrorAction SilentlyContinue)) { Step cargo install --locked cargo-zigbuild }
+}
+
+# Apple's SDK, which zig links macOS builds against, pinned by its checksum.
+$sdk = $null
+if (-not $IsMacOS -and ($builds | Where-Object Name -like 'macos-*')) {
+    $sdkName = 'MacOSX15.5.sdk'
+    $sdkHash = 'c15cf0f3f17d714d1aa5a642da8e118db53d79429eb015771ba816aa7c6c1cbd'
+    $cache = Join-Path $out '.sdk'
+    $sdk = Join-Path $cache $sdkName
+    if (-not (Test-Path (Join-Path $sdk 'SDKSettings.json'))) {
+        Write-Host "Fetching $sdkName"
+        New-Item -ItemType Directory -Force $cache | Out-Null
+        $xz = Join-Path $cache "$sdkName.tar.xz"
+        Invoke-WebRequest "https://github.com/joseluisq/macosx-sdks/releases/download/15.5/$sdkName.tar.xz" -OutFile $xz
+        if ((Get-FileHash $xz -Algorithm SHA256).Hash.ToLower() -ne $sdkHash) { throw "$sdkName does not match its checksum" }
+        Step tar -xf $xz -C $cache
+        Remove-Item $xz
+    }
 }
 
 New-Item -ItemType Directory -Force $out | Out-Null
@@ -62,10 +84,11 @@ $made = @()
 foreach ($b in $builds) {
     Write-Host "Building $($b.Name)"
     Step rustup target add $b.Target
-    $build = if ($b.Name -like 'linux-*') { 'zigbuild' } else { 'build' }
+    $build = if (Zigged $b) { 'zigbuild' } else { 'build' }
+    $env:SDKROOT = if ($b.Name -like 'macos-*') { $sdk } else { $null }
     Push-Location $server
     try { Step cargo $build --release --locked --target $b.Target }
-    finally { Pop-Location }
+    finally { Pop-Location; $env:SDKROOT = $null }
 
     $exe = if ($b.Name -like 'windows-*') { '.exe' } else { '' }
     $stage = Join-Path $out ".stage-$($b.Name)"
