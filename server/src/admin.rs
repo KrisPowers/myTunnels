@@ -268,8 +268,8 @@ async fn require_session(State(state): State<AppState>, mut req: Request, next: 
     next.run(req).await
 }
 
-/// What first-run setup has saved so far, so the panel can resume where it was left.
-/// Setup is done once there is an admin account and Cloudflare is connected.
+/// What first-run setup has saved so far. Setup is done once there is a host
+/// account; Cloudflare is connected later, when a tunnel first needs it.
 async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let db = &state.db;
     let host = db.host()?;
@@ -307,7 +307,7 @@ async fn auth_state(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
             "account": password,
             "token": db.setting("cf_token")?.is_some(),
             "cloudflare": state.cloudflare().is_ok(),
-            "done": password && state.cloudflare().is_ok(),
+            "done": password,
         },
     })))
 }
