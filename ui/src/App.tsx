@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent } from "react";
 import { AppsPage, InstallPill, NeedsContext } from "./Apps";
-import { api, deviceInfo, message, shortId, type Auth, type Device, type Flag, type Group, type Needs, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
+import { api, deviceInfo, message, shortId, type Auth, type Device, type Flag, type Forward, type Group, type Needs, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { NewMenu } from "./Builds";
 import { ContainersPage } from "./Containers";
 
 import { DashboardPage } from "./Dashboard";
 import { DevicePage } from "./Devices";
+import { ForwardPage } from "./Forward";
 
 import { Icon, type IconName } from "./Icon";
 
@@ -15,7 +16,7 @@ import { SETTINGS, Settings } from "./Settings";
 import { Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
 import { StoragePage } from "./Storage";
-import { NewTunnel, target, TunnelPage } from "./Tunnels";
+import { target, TunnelPage } from "./Tunnels";
 import { NewUser, UserPage } from "./Users";
 import { SecurityPage } from "./Security";
 import { Callout, Notices, Tooltips, useNotify } from "./ui";
@@ -69,6 +70,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const [place, setPlace] = useState(readHash);
   const can = useCan();
   const [routes, setRoutes] = useState<Route[] | null>(null);
+  const [forwards, setForwards] = useState<Forward[] | null>(null);
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [users, setUsers] = useState<User[] | null>(null);
   const [flags, setFlags] = useState<Flag[]>([]);
@@ -98,8 +100,9 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   };
 
   const load = useCallback(async () => {
-    const [r, d, u, s, o, f, n, h] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status(), api.oauth(), api.flags(), api.needs(), api.hardware()]);
+    const [r, d, u, s, o, f, n, h, w] = await Promise.allSettled([api.routes(), api.devices(), api.users(), api.status(), api.oauth(), api.flags(), api.needs(), api.hardware(), api.forwards()]);
     if (r.status === "fulfilled") setRoutes(r.value);
+    if (w.status === "fulfilled") setForwards(w.value);
     if (d.status === "fulfilled") setDevices(d.value);
     if (u.status === "fulfilled") setUsers(u.value);
     if (s.status === "fulfilled") setStatus(s.value);
@@ -174,7 +177,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
   // A tunnel, device or account that is gone goes back to its list.
   useEffect(() => {
-    if (view === "tunnels" && id && routes && !route) go("#/");
+    if (view === "tunnels" && id && routes && !route) go("#/forward");
     if (view === "devices" && id && devices && !device) go("#/devices");
     if (view === "users" && id && id !== "new" && users && !user) go("#/users");
   }, [view, id, routes, devices, users, route, device, user]);
@@ -182,20 +185,21 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   // Each page shows for those who may use it; the first of them is home.
   const pages: [string, string, IconName, string, boolean][] = [
     ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
-    ["containers", "Containers", "deployed_code", "#/", can("containers.view") || can("tunnels.view")],
+    ["containers", "Containers", "deployed_code", "#/", can("containers.view")],
+    ["forward", "Forward", "swap_horiz", "#/forward", can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("media.view") || can("drive.view")],
     ["apps", "Apps", "apps", "#/apps", true],
     ["security", "Security", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
   ];
   const home = pages.find((p) => p[4])?.[3] ?? "#/settings/preferences";
   useEffect(() => {
-    if (view === "containers" && !id && !can("containers.view") && !can("tunnels.view") && home !== "#/") go(home);
+    if (view === "containers" && !id && !can("containers.view") && home !== "#/") go(home);
   });
   const settings = SETTINGS.filter(([k]) => can("settings.manage") || !["cloudflare", "network", "connector"].includes(k));
   const sections = view === "settings" ? settings : view === "docs" ? DOCS : null;
   const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
     <NavItem key={key} to={to} icon={icon} label={label}
-      on={view === key || (key === "containers" && (view === "new" || view === "tunnels")) || (key === "security" && (view === "users" || view === "devices"))}
+      on={view === key || (key === "forward" && view === "tunnels") || (key === "security" && (view === "users" || view === "devices"))}
       count={key === "dashboard" ? flags.length + faults || undefined : undefined} rail={rail} />
   );
 
@@ -238,9 +242,10 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
           {view === "apps" && <AppsPage />}
           {view === "storage" && <StoragePage tab={id} />}
-          {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} status={status}
+          {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} forwards={forwards ?? []}
             users={users ?? []} providers={providers} onChanged={load} />}
-          {view === "new" && <NewTunnel users={users ?? []} providers={providers} onPublished={load} port={id} />}
+          {view === "forward" && <ForwardPage id={id} port={page} routes={apps} forwards={forwards} status={status}
+            users={users ?? []} providers={providers} onChanged={load} />}
           {route && <TunnelPage route={route} users={users ?? []} providers={providers} onChanged={load} />}
           {device && <DevicePage device={device} users={users ?? []} onChanged={load} />}
           {view === "users" && id === "new" && <NewUser routes={apps ?? []} onAdded={load} />}

@@ -1,6 +1,7 @@
-// Where the page is, kept in the URL hash: `#/` the containers and tunnels,
-// `#/new` publishing a tunnel (`#/new/<port>` to that port),
-// `#/tunnels/<id>/<page>` one tunnel; `#/security/<tab>`, Security,
+// Where the page is, kept in the URL hash: `#/` the containers,
+// `#/forward` every tunnel, router port and Tailscale forward, with
+// `#/forward/new` adding one (`#/forward/new/<port>` to that port, where
+// `#/new` now goes), `#/tunnels/<id>/<page>` one tunnel; `#/security/<tab>`, Security,
 // whose Users and Devices tabs are also `#/users` and `#/devices`, with
 // `/<id>/<page>` for one of them; `#/apps`, the apps catalog;
 // `#/settings/<section>`, Preferences among them; and
@@ -8,7 +9,7 @@
 // `#/storage`, photos and videos, and `#/storage/files`; `#/containers`,
 // with `/<name>/<page>/...` for one, its tunnel and images among its pages.
 
-export type View = "tunnels" | "dashboard" | "apps" | "containers" | "storage" | "new" | "devices" | "users" | "security" | "settings" | "docs";
+export type View = "tunnels" | "dashboard" | "apps" | "containers" | "forward" | "storage" | "devices" | "users" | "security" | "settings" | "docs";
 
 export interface Place {
   view: View;
@@ -31,8 +32,9 @@ export function readHash(): Place {
   if (first === "dashboard" || first === "apps") return { view: first, id: "", page: "", more: [] };
   // Hardware became part of the Dashboard.
   if (first === "hardware") return { view: "dashboard", id: "", page: "", more: [] };
-  // `#/new/<port>` starts a tunnel to that port.
-  if (first === "new") return { view: first, id: second, page: "", more: [] };
+  // Adding a tunnel became adding a forward.
+  if (first === "new") return { view: "forward", id: "new", page: second, more: [] };
+  if (first === "forward") return { view: first, id: second, page: third, more: [] };
   // Media, Drive and Convert became Storage's tabs and its Convert action.
   if (first === "media" || first === "convert") return { view: "storage", id: "", page: "", more: [] };
   if (first === "drive") return { view: "storage", id: "files", page: "", more: [] };
