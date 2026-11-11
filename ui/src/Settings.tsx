@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ago, api, message, TOKEN_URL, type Account, type AdminAccount, type PasskeyInfo, type Route, type Settings as Saved, type Status, type TotpSetup } from "./api";
+import { useCloudflare } from "./Cloudflare";
 import { createPasskey, deviceName, dismissed, passkeysWork } from "./passkey";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
@@ -217,6 +218,7 @@ function Authenticator({ on, onChange }: { on: boolean; onChange: (on: boolean) 
 
 function Cloudflare({ saved, routes, onSaved }: { saved: Saved; routes: Route[]; onSaved: () => Promise<void> }) {
   const cf = saved.cloudflare;
+  const connect = useCloudflare();
   const [token, setToken] = useState("");
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [account, setAccount] = useState(cf.account_id ?? "");
@@ -254,6 +256,16 @@ function Cloudflare({ saved, routes, onSaved }: { saved: Saved; routes: Route[];
   };
 
   const options: Option<string>[] = (accounts ?? [{ id: cf.account_id ?? "", name: cf.account_name ?? "" }]).map((a) => ({ value: a.id, label: a.name }));
+
+  if (!cf.configured) {
+    return (
+      <Card title="Connection">
+        <Row title="Not connected" sub="Tunnels need a Cloudflare account. myTunnels makes the tunnel and its DNS records.">
+          <button type="button" className="btn primary" onClick={() => connect(onSaved)}><Icon name="cloud" size={18} />Connect</button>
+        </Row>
+      </Card>
+    );
+  }
 
   return (
     <>
