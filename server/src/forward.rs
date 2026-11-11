@@ -531,4 +531,18 @@ mod tests {
         f.public_port = 8443;
         assert!(check_funnel(&f).is_ok());
     }
+
+    #[test]
+    fn both_carries_tcp_and_udp() {
+        assert_eq!(
+            protocols(&sample("port", "both", 27015)),
+            [PortMappingProtocol::TCP, PortMappingProtocol::UDP]
+        );
+        assert_eq!(
+            protocols(&sample("port", "udp", 27015)),
+            [PortMappingProtocol::UDP]
+        );
+        assert!(overlap("both", "udp") && overlap("tcp", "both") && overlap("tcp", "tcp"));
+        assert!(!overlap("tcp", "udp"));
+    }
 }
