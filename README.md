@@ -114,7 +114,7 @@ shows what any account can read from the system:
   `nvidia-smi`, other cards by their state.
 - **Volumes**, how full each one is, and the **drives** with their health.
 
-**Advanced**, a button the host or an admin confirms once, adds the sensors: the processor's temperature over time and per core, every
+**Advanced**, the button beside the computer's name that the host or an admin confirms once, adds the sensors: the processor's temperature over time and per core, every
 temperature read, the **fans** (a fan that spun before and reads 0 has stopped), the power
 supply's 12, 5 and 3.3 V rails (within 5% is healthy, past 10% is failing), and each drive's
 temperature, life left, errors and hours. On Linux these come from `/sys` and need nothing

@@ -1460,8 +1460,9 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
 .dash-side, .dash-main { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .dash-side::-webkit-scrollbar, .dash-main::-webkit-scrollbar { display: none; }
 .dash-side { display: flex; flex-direction: column; gap: 18px; min-width: 0; padding: 0 28px 24px 0; border-right: 1px solid var(--line); }
-.side-name { font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
-.btn.lit { background: var(--accent-bg); color: var(--on-accent-bg); }
+.side-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.side-name { min-width: 0; font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
+.icon-btn.lit, .icon-btn.lit:hover { background: var(--accent-bg); color: var(--on-accent-bg); }
 
 /* A chip per part, as a console's drive bays. An empty slot is "vacant",
    never "empty", which is the page-wide padded empty state. */
