@@ -1,5 +1,6 @@
 import { useContext, useState, type FormEvent, type ReactNode } from "react";
 import { NeedsContext } from "./Apps";
+import { useCloudflare, useCloudflareReady } from "./Cloudflare";
 import { api, message, type Forward, type Needs, type OAuthProvider, type Port, type Route, type Status, type User } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
@@ -15,11 +16,13 @@ const ICON: Record<Method, IconName> = { tunnel: "public", port: "router", tails
 const LABEL: Record<Method, string> = { tunnel: "Tunnel", port: "Port forward", tailscale: "Tailscale" };
 
 // Each way, with the ones whose app is not installed shown but not pickable.
-function methods(needs: Needs | null): Option<Method>[] {
+// A tunnel picked before Cloudflare is connected asks to connect it.
+function methods(needs: Needs | null, cloudflare: boolean): Option<Method>[] {
   const missing = (app: keyof Needs) => !!needs && !needs[app];
   return [
     { value: "tunnel", label: LABEL.tunnel, icon: ICON.tunnel, disabled: missing("cloudflared"),
-      hint: missing("cloudflared") ? "Install cloudflared from Apps" : "An address on your domain, with sign-in and passwords" },
+      hint: missing("cloudflared") ? "Install cloudflared from Apps"
+        : cloudflare ? "An address on your domain, with sign-in and passwords" : "Connect Cloudflare first" },
     { value: "port", label: LABEL.port, icon: ICON.port, hint: "Opens a port on the router, by UPnP" },
     { value: "tailscale", label: LABEL.tailscale, icon: ICON.tailscale, disabled: missing("tailscale"),
       hint: missing("tailscale") ? "Install Tailscale from Apps" : "Your tailnet, or the internet through Funnel" },
@@ -52,12 +55,19 @@ export function ForwardComposer({ users, providers, container, port, sub, onDone
   onDone: (tunnel: Route | null) => Promise<void>;
 }) {
   const needs = useContext(NeedsContext);
-  const options = methods(needs);
-  const [method, setMethod] = useState<Method>(() => options.find((o) => !o.disabled)?.value ?? "port");
+  const ready = useCloudflareReady();
+  const cloudflare = useCloudflare();
+  const options = methods(needs, ready);
+  // A tunnel is the first choice only once Cloudflare is connected.
+  const [method, setMethod] = useState<Method>(() => options.find((o) => !o.disabled && (ready || o.value !== "tunnel"))?.value ?? "port");
+  const pick = (m: Method) => {
+    if (m === "tunnel" && !cloudflare(() => setMethod("tunnel"))) return;
+    setMethod(m);
+  };
   const lead = (
     <div className="tf static method">
       <div className="tf-box">
-        <Dropdown label="Forward by" value={method} options={options} onChange={setMethod} />
+        <Dropdown label="Forward by" value={method} options={options} onChange={pick} />
         <span className="tf-label">Forward by</span>
       </div>
     </div>

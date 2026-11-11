@@ -53,6 +53,9 @@ const CONTENT: Record<string, ReactNode> = {
       <Doc title="How a visit travels">
         <p>The browser reaches Cloudflare, which sends the visit down the tunnel to the connector running inside myTunnels. myTunnels checks the tunnel's access layers, then hands the request to the app on its local port. WebSockets work the same way.</p>
       </Doc>
+      <Doc title="Connecting Cloudflare">
+        <p>Setup asks only for the host account. Cloudflare is connected the first time a tunnel needs it: picking <b>Tunnel</b> under <b>Forward by</b>, or <b>Connect</b> under Settings, Cloudflare, opens <b>Connect Cloudflare</b>, and it opens again each time until it is connected. <b>Open Cloudflare</b> makes a token with the right permissions; paste it back and the tunnel and connector are set up.</p>
+      </Doc>
       <Doc title="Changing the Cloudflare connection">
         <p>Settings, Cloudflare holds the account and tunnel. A new API token can replace the old one at any time. Switching to another account or tunnel needs every tunnel removed first, since their DNS records live in the old one.</p>
       </Doc>

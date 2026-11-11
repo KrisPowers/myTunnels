@@ -77,18 +77,16 @@ it in Docker instead, see [Running in Docker](#running-in-docker).
 
 On the computer running it, open `http://localhost:7070`. The panel answers there alone:
 every other device, at home or away, reaches myTunnels through a tunnel, so no port is opened
-on your network. Until everything is in place the panel is a short setup, one
-step at a time, each saved as soon as it is done, so it can be left and resumed:
+on your network. Setup asks only for the host account: an email, a username and a password
+for the panel. Either the email or the username signs in, and both can be changed under
+**Settings, Account**.
 
-1. **Admin account.** An email, a username and a password for the panel. Either the email
-   or the username signs in, and both can be changed under **Settings, Account**.
-2. **Cloudflare.** **Open Cloudflare** goes to the token page with the permissions already
-   picked (Account, Cloudflare Tunnel, Edit; Zone, DNS, Edit; Zone, Zone, Read). Create the
-   token, paste it back, and the tunnel is created and the connector started. A token that
-   sees more than one account asks which one.
-3. **Network.** Where your apps run and what counts as the home network. The defaults suit
-   most setups.
-4. **Ready.** A summary, the connector coming online, and the theme.
+Cloudflare is connected the first time something needs it: picking **Tunnel** under
+**Forward by**, or **Connect** under **Settings, Cloudflare**. It asks again each time until it
+is connected. **Open Cloudflare** goes to the token page with the permissions already picked
+(Account, Cloudflare Tunnel, Edit; Zone, DNS, Edit; Zone, Zone, Read). Create the token, paste
+it back, and the tunnel is created and the connector started. A token that sees more than one
+account asks which one.
 
 Then, on **Containers**, open a container, and on its **Forward** page press the plus: keep
 **Tunnel** under **Forward by**, type the subdomain, pick the domain, choose who can open it and

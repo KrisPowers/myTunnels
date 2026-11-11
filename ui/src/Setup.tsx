@@ -1,48 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { api, LEVELS, list, message, strength, TOKEN_URL, type Account, type Auth } from "./api";
-import { Dropdown } from "./Dropdown";
+import { api, LEVELS, list, message, strength, type Auth } from "./api";
 import { Icon } from "./Icon";
 import { dismissed, passkeysWork, signWithPasskey } from "./passkey";
 import { solve, type Proof } from "./pow";
 import { Callout, TextField } from "./ui";
 
-const STEPS = ["Host account", "Cloudflare"];
-
-const TUNNEL_NAME = "homelab";
-
-// Setup holds the dashboard until it can work: an admin account, then
-// Cloudflare. Everything else is found by the server. Each step is saved the
-// moment it is done, so leaving and coming back resumes where it was left.
-// After setup this is the sign-in page.
+// Setup holds the dashboard until it has a host account. Cloudflare is
+// connected later, the first time something that uses it is opened. After
+// setup this is the sign-in page.
 export function Setup({ auth, onChange }: { auth: Auth; onChange: () => Promise<void> }) {
-  const { setup } = auth;
-
-  // Signing in is a gate in front of setup, not one of its steps.
-  if (setup.password && !auth.authenticated) {
-    return (
-      <Frame>
-        <div className="setup-card card">
-          <PasswordStep auth={auth} onDone={onChange} />
-        </div>
-      </Frame>
-    );
-  }
-
-  const step = setup.password ? 1 : 0;
   return (
     <Frame>
-      <ol className="steps" aria-label="Setup steps">
-        {STEPS.map((label, i) => (
-          <li key={label} className={"step " + (i === step ? "now" : i < step ? "done" : "later")} aria-current={i === step ? "step" : undefined}>
-            <span className="step-mark">{i < step ? <Icon name="check" size={16} /> : i + 1}</span>
-            <span className="step-label">{label}</span>
-          </li>
-        ))}
-      </ol>
-      <div className="setup-card card" key={step}>
-        {step === 0 ? <PasswordStep auth={auth} onDone={onChange} /> : <CloudflareStep auth={auth} onDone={onChange} />}
+      <div className="setup-card card">
+        <PasswordStep auth={auth} onDone={onChange} />
       </div>
-      <p className="setup-note"><Icon name="cloud" size={16} />Each step saves as you go. Close this page any time and pick up where you left off.</p>
     </Frame>
   );
 }
@@ -65,7 +36,7 @@ function StepHead({ title, sub }: { title: string; sub: ReactNode }) {
   );
 }
 
-// ---- 1. Host account: create it, or sign in ----
+// ---- the host account: create it, or sign in ----
 
 function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }) {
   const create = !auth.setup.password;
@@ -136,7 +107,7 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
   return (
     <form onSubmit={submit}>
       <StepHead title={create ? "Create the host account" : "Sign in"}
-        sub={create ? "The account that owns this dashboard. Others, admins included, are added under Users." : auth.setup.cloudflare ? "Sign in with your account." : "Sign in with the host account to carry on with setup."} />
+        sub={create ? "The account that owns this dashboard. Others, admins included, are added under Users." : "Sign in with your account."} />
       {create && (
         <>
           <TextField label="Email" type="email" autoFocus autoComplete="email" value={email} onChange={setEmail} />
@@ -205,119 +176,5 @@ function CodeStep({ ticket, sentTo, app, onDone, onBack }: { ticket: string; sen
         </button>
       </div>
     </form>
-  );
-}
-
-// ---- 2. Cloudflare: one link to make the token, paste it, done ----
-
-type Phase = "idle" | "checking" | "pick" | "connecting" | "connected";
-
-function CloudflareStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }) {
-  const [token, setToken] = useState("");
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [connected, setConnected] = useState<Account | null>(null);
-  const [problem, setProblem] = useState("");
-
-  // Connecting creates the tunnel and finishes setup; the dashboard opens
-  // after a moment on the confirmation.
-  const connect = async (account: Account, withToken: string | null) => {
-    setPhase("connecting");
-    setProblem("");
-    try {
-      await api.connect(withToken, account.id, TUNNEL_NAME);
-      setConnected(account);
-      setPhase("connected");
-      setTimeout(onDone, 1200);
-    } catch (e) {
-      setProblem(message(e));
-      setPhase(accounts.length > 1 ? "pick" : "idle");
-    }
-  };
-
-  // Checks a token (or the one saved earlier, with null) and connects straight
-  // away when it can see a single account.
-  const check = async (withToken: string | null) => {
-    setPhase("checking");
-    setProblem("");
-    try {
-      const list = await api.accounts(withToken);
-      setAccounts(list);
-      if (list.length === 0) {
-        setProblem("Cloudflare accepted the token, but it reaches no account or domain. Make it again with the link above and keep All zones selected.");
-        setPhase("idle");
-      } else if (list.length === 1) {
-        await connect(list[0], withToken);
-      } else {
-        setPhase("pick");
-      }
-    } catch (e) {
-      setProblem(message(e).replace(/^Cloudflare: /, "Cloudflare says: "));
-      setPhase("idle");
-    }
-  };
-
-  // A token saved on an earlier visit is picked up again on arrival.
-  useEffect(() => {
-    if (auth.setup.token) check(null);
-  }, []);
-
-  // A pasted token is checked once typing stops.
-  useEffect(() => {
-    const t = token.trim();
-    if (t.length < 30) return;
-    const timer = setTimeout(() => check(t), 500);
-    return () => clearTimeout(timer);
-  }, [token]);
-
-  const busy = phase === "checking" || phase === "connecting";
-
-  if (phase === "connected") {
-    return (
-      <>
-        <StepHead title="Connected" sub="Opening the dashboard." />
-        <Callout tone="ok" icon="check_circle">
-          Connected to <b>{connected?.name}</b>. Tunnel <b>{TUNNEL_NAME}</b> is ready.
-        </Callout>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <StepHead title="Connect Cloudflare" sub="myTunnels creates the tunnel and the DNS records for you. It needs an API token to do that." />
-      <ol className="how">
-        <li>
-          <span className="how-num">1</span>
-          <div className="how-body">
-            <b>Make a token on Cloudflare</b>
-            <span className="muted">Opens with the right permissions already picked. Scroll down, press <b>Continue to summary</b>, then <b>Create Token</b>, and copy it.</span>
-            <a className="btn primary how-link" href={TOKEN_URL} target="_blank" rel="noreferrer"><Icon name="open_in_new" size={18} />Open Cloudflare</a>
-          </div>
-        </li>
-        <li>
-          <span className="how-num">2</span>
-          <div className="how-body">
-            <b>Paste it here</b>
-            <TextField label="API token" type="password" mono autoComplete="off" data-1p-ignore data-lpignore="true"
-              placeholder={auth.setup.token ? "Saved. Paste a new one to replace it." : undefined}
-              value={token} onChange={setToken}
-              trailing={busy ? <span className="spinner small" aria-label="Checking" /> : undefined}
-              hint={phase === "checking" ? "Checking the token" : phase === "connecting" ? "Creating the tunnel" : undefined} />
-            {phase === "pick" && (
-              <div className="pick">
-                <span className="muted">This token sees more than one account. Pick the one with your domains.</span>
-                <Dropdown label="Cloudflare account" value="" options={[{ value: "", label: "Pick an account" }, ...accounts.map((a) => ({ value: a.id, label: a.name }))]}
-                  onChange={(id) => {
-                    const account = accounts.find((a) => a.id === id);
-                    if (account) connect(account, token.trim() || null);
-                  }} />
-              </div>
-            )}
-          </div>
-        </li>
-      </ol>
-      {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
-    </>
   );
 }
