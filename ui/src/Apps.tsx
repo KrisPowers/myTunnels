@@ -10,7 +10,7 @@ import { Callout, MoreMenu, useNotify, usePopover, type MenuAction } from "./ui"
 // What features need where myTunnels runs, from the shell.
 export const NeedsContext = createContext<Needs | null>(null);
 
-const NEEDED: Record<keyof Needs, string> = { docker: "Docker", git: "Git", cloudflared: "cloudflared" };
+const NEEDED: Record<keyof Needs, string> = { docker: "Docker", git: "Git", cloudflared: "cloudflared", tailscale: "Tailscale" };
 
 // NeedsApp says a feature cannot work until an app is installed, with the way
 // to install it. Nothing shows while the app is there.
