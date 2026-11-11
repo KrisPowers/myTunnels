@@ -149,8 +149,11 @@ The plus asks first how to forward:
 
 - **Tunnel**: an address on your domain through Cloudflare Tunnel, with no port opened on the
   router, behind the tunnel's Access Control (home network, a tunnel password, sign-in).
-- **Port forward**: the router, asked by UPnP, sends a port of your public address to the app.
-  The router has no sign-in or password, so anyone with the address reaches it.
+- **Port forward**: opens the port on this PC (a Windows Firewall rule, which asks for
+  administrator rights, and a relay when the app is on another port or machine), then asks the
+  router by UPnP to send the same port here. Most routers keep UPnP off; the row then says
+  **Router not forwarded**, and the router's own settings can forward it. Neither has a sign-in
+  or password.
 - **Tailscale**: `tailscale serve` puts the app on your tailnet at this machine's tailnet name;
   **Open to the internet** uses Funnel instead, on port 443, 8443 or 10000.
 

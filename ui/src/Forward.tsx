@@ -23,7 +23,7 @@ function methods(needs: Needs | null, cloudflare: boolean): Option<Method>[] {
     { value: "tunnel", label: LABEL.tunnel, icon: ICON.tunnel, disabled: missing("cloudflared"),
       hint: missing("cloudflared") ? "Install cloudflared from Apps"
         : cloudflare ? "An address on your domain, with sign-in and passwords" : "Connect Cloudflare first" },
-    { value: "port", label: LABEL.port, icon: ICON.port, hint: "Opens a port on the router, by UPnP" },
+    { value: "port", label: LABEL.port, icon: ICON.port, hint: "Opens the port on this PC, and on the router when it lets it" },
     { value: "tailscale", label: LABEL.tailscale, icon: ICON.tailscale, disabled: missing("tailscale"),
       hint: missing("tailscale") ? "Install Tailscale from Apps" : "Your tailnet, or the internet through Funnel" },
   ];
@@ -99,6 +99,7 @@ function OpenComposer({ method, lead, container, port: startPort, onAdded }: {
   const [host, setHost] = useState("");
   const [open, setOpen] = useState(false);
   const [closeIn, setCloseIn] = useState(0);
+  const [name, setName] = useState(container?.name ?? "");
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
 
@@ -115,7 +116,7 @@ function OpenComposer({ method, lead, container, port: startPort, onAdded }: {
     setBusy(true);
     try {
       const f = await api.addForward({
-        method, name: container?.name ?? "", target_host: elsewhere ? host.trim() : null, target_port: appPort,
+        method, name: name.trim(), target_host: elsewhere ? host.trim() : null, target_port: appPort,
         protocol, public_port: publicPort, public: method === "tailscale" && open, expires_in: closeIn,
       });
       notify(`Forwarded port ${f.public_port}`);
@@ -133,8 +134,11 @@ function OpenComposer({ method, lead, container, port: startPort, onAdded }: {
   return (
     <form className="stack" onSubmit={submit}>
       <div className="card composer">
-        <div className="composer-row">
+        <div className="composer-row composer-lead">
           {lead}
+          <TextField className="grow" label="Name" placeholder="Minecraft" autoComplete="off" value={name} onChange={(v) => setName(v.slice(0, 100))} />
+        </div>
+        <div className="composer-row">
           {web ? (
             <div className="tf static port">
               <div className="tf-box">
@@ -143,7 +147,7 @@ function OpenComposer({ method, lead, container, port: startPort, onAdded }: {
               </div>
             </div>
           ) : (
-            <TextField className="port" label={method === "port" ? "Router port" : "Port"} placeholder={appPort ? String(appPort) : "25565"} mono inputMode="numeric"
+            <TextField className="port" label="Port" placeholder={appPort ? String(appPort) : "25565"} mono inputMode="numeric"
               value={outside} onChange={(v) => setOutside(v.replace(/\D/g, "").slice(0, 5))} />
           )}
           <Icon name="arrow_forward" className="composer-arrow" />
@@ -197,7 +201,7 @@ function OpenComposer({ method, lead, container, port: startPort, onAdded }: {
             <Switch label="Open to the internet" on={open} onChange={setOpen} />
           </Row>
         ) : (
-          <Row title="Open to the internet" sub="Anyone with your public address reaches this port. The router has no sign-in or password." />
+          <Row title="Who reaches it" sub="Devices on your network, and anyone on the internet once the router forwards it too. Neither asks for a sign-in or password." />
         )}
         {!funnelOk && <p className="empty-note card-pad">Funnel opens only ports 443, 8443 and 10000.</p>}
         <Row title="Close after" sub="Closes on its own, and stays in the list switched off.">
@@ -215,8 +219,9 @@ export type Opening = { r: Route } | { f: Forward };
 
 const where = (f: Forward) => (f.target_host ? `${f.target_host}:${f.target_port}` : String(f.target_port));
 
+// A forward goes by its name, or its port when it has none.
 function titleOf(f: Forward) {
-  return f.address ?? (f.method === "port" ? `Router port ${f.public_port}` : `Tailscale port ${f.public_port}`);
+  return f.name || `Port ${f.public_port}`;
 }
 
 const labelOf = (o: Opening) => ("r" in o ? o.r.hostname : titleOf(o.f));
@@ -325,14 +330,15 @@ function ForwardRow({ f, onChanged }: { f: Forward; onChanged: () => Promise<voi
       <div className="ct-row-main">
         <span className={"ct-kind " + tone} title={LABEL[f.method]}><Icon name={ICON[f.method]} /></span>
         <span className="ct-name-text">
-          <b className={f.address ? "mono" : undefined}>{title}</b>
+          <b>{title}</b>
           {f.problem && f.enabled
             ? <small className="fw-problem" title={f.problem}>{f.problem}</small>
-            : <small className="mono">{f.name ? `${f.name}, ` : ""}to {where(f)}{speaks}</small>}
+            : <small className="mono">{f.address ? `${f.address} ` : ""}to {where(f)}{speaks}</small>}
         </span>
         <span className="ct-reach">
           <span className="access">
-            <span className="chip">{f.method === "tailscale" && !f.public ? "Tailnet" : "Internet"}</span>
+            <span className="chip">{f.method === "tailscale" ? (f.public ? "Internet" : "Tailnet") : f.router ? "Internet" : "This network"}</span>
+            {f.enabled && f.method === "port" && !f.router && f.router_problem && <span className="chip warn" title={f.router_problem}>Router not forwarded</span>}
             {f.enabled && f.expires_at > 0 && <span className="chip warn">Closes in {closesIn(f.expires_at)}</span>}
           </span>
         </span>
@@ -380,7 +386,7 @@ export function ForwardPage({ id, port, routes, forwards, status, users, provide
   const needle = q.trim().toLowerCase();
   const shown = items
     .filter((o) => show === "all" || ("r" in o ? show === "tunnel" : o.f.method === show))
-    .filter((o) => !needle || [labelOf(o), "r" in o ? target(o.r) : `${o.f.name} ${where(o.f)}`].some((v) => v.toLowerCase().includes(needle)));
+    .filter((o) => !needle || [labelOf(o), "r" in o ? target(o.r) : `${o.f.address ?? ""} ${where(o.f)}`].some((v) => v.toLowerCase().includes(needle)));
   const live = items.filter(liveOf).length;
   const tunnels = (routes ?? []).length > 0;
 

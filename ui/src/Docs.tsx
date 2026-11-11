@@ -137,7 +137,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Forward</b> is every opening in one list: tunnels, router ports and Tailscale, a row each with its address, where it goes, who reaches it and whether it is open. Search, or show one way at a time. The plus, here and in the header, forwards a port; its first field, <b>Forward by</b>, picks the way:</p>
         <ul>
           <li><b>Tunnel</b> gives the app an address on your domain through Cloudflare Tunnel, without opening a port on the router, with the full Access Control below.</li>
-          <li><b>Port forward</b> asks the router, by UPnP, to send a port of your public address to the app. The router has no sign-in or password, so anyone with the address reaches it. UPnP must be on at the router.</li>
+          <li><b>Port forward</b> opens the port on this PC first: a rule in Windows Firewall, which Windows asks administrator rights for, and a relay when the app is on another port or another machine. Then it asks the router, by UPnP, to send the same port of your public address here. Most routers keep UPnP off; the row then says <b>Router not forwarded</b>, the port still reaches this PC from your network, and the router's own settings can forward it. There is no sign-in or password on either.</li>
           <li><b>Tailscale</b> serves the app to the devices on your tailnet, at this machine's tailnet name. <b>Open to the internet</b> serves it to anyone through Funnel, on port 443, 8443 or 10000.</li>
         </ul>
         <p>A way whose app is not installed, cloudflared or Tailscale, stays in the list but cannot be picked until it is installed from <a href="#/apps">Apps</a>.</p>
@@ -146,7 +146,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>Pick <b>Tunnel</b>, type a subdomain, pick one of your domains, and enter the port the app listens on. Choose who can open it, then press <b>Publish</b>. The DNS record and the route are made for you, and removed with the tunnel.</p>
       </Doc>
       <Doc title="A router or Tailscale forward">
-        <p>Pick <b>Port forward</b> or <b>Tailscale</b>, then the port it is reached on, the app's port and its protocol: TCP, UDP or TCP & UDP at the router; http, https or TCP on Tailscale, where TCP carries anything else, such as SSH. The app runs on this computer or another machine on your network, by its IP address. <b>Close after</b> closes it on its own after an hour, a day or a week; it stays in the list switched off, and its menu opens it again. The router is asked again every twenty minutes, so a router that restarts gets it back.</p>
+        <p>Pick <b>Port forward</b> or <b>Tailscale</b>, give it a name, which the list shows it by, then the port it is reached on, the app's port and its protocol: TCP, UDP or TCP & UDP at the router; http, https or TCP on Tailscale, where TCP carries anything else, such as SSH. The app runs on this computer or another machine on your network, by its IP address. <b>Close after</b> closes it on its own after an hour, a day or a week; it stays in the list switched off, and its menu opens it again. The router is asked again every twenty minutes, so a router that restarts, or has UPnP turned on later, gets it.</p>
       </Doc>
       <Doc title="Where requests go">
         <p>By default a tunnel sends requests to the port on this computer. Under <b>Local app</b> it can point at a container name or another machine instead, and use https when the app serves it itself. Self-signed certificates are accepted.</p>

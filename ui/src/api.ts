@@ -561,6 +561,9 @@ export interface Forward {
   address?: string | null;
   // Why it did not open the last time.
   problem?: string | null;
+  // A port forward: whether the router took it too, and why not.
+  router?: boolean;
+  router_problem?: string | null;
 }
 
 export type NewForward = Pick<Forward, "method" | "name" | "target_host" | "target_port" | "protocol" | "public_port" | "public"> & { expires_in: number };

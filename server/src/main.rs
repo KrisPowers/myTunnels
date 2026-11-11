@@ -16,6 +16,7 @@ mod guard;
 mod hardware;
 mod images;
 mod limits;
+mod machine;
 mod mail;
 mod metrics;
 mod netinfo;

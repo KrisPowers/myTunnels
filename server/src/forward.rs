@@ -1,7 +1,11 @@
-//! Forwards: a port opened by the router or by Tailscale, beside the Cloudflare
-//! tunnels. Each opens when it is added or switched on, and closes when it is
-//! switched off, removed or its time is up. The router's are asked for again
-//! every twenty minutes, so a router that restarts gets them back.
+//! Forwards: a port opened on this computer and its router, or by Tailscale,
+//! beside the Cloudflare tunnels. Each opens when it is added or switched on,
+//! and closes when it is switched off, removed or its time is up.
+//!
+//! A port forward opens on this computer first (see `machine`), which must
+//! work, then on the router by UPnP when it answers, which may not: most
+//! routers need their own dashboard for it. The router is asked again every
+//! twenty minutes, so one that restarts, or has UPnP turned on later, gets it.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
@@ -36,6 +40,9 @@ const LONGEST: i64 = 30 * 86_400;
 static PROBLEMS: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(Mutex::default);
 /// The router's public address, as it last said.
 static PUBLIC_IP: LazyLock<Mutex<Option<IpAddr>>> = LazyLock::new(Mutex::default);
+/// Whether the router took each port forward, by ID: nothing when it did,
+/// why not when it did not.
+static ROUTED: LazyLock<Mutex<HashMap<String, Option<String>>>> = LazyLock::new(Mutex::default);
 /// This machine's name on the tailnet, if it is on one, and when that was asked.
 type Asked = Option<(Instant, Option<String>)>;
 static TAILNET: LazyLock<Mutex<Asked>> = LazyLock::new(Mutex::default);
@@ -47,14 +54,14 @@ async fn router() -> Result<Gateway<Tokio>> {
     options.timeout = Some(Duration::from_secs(4));
     options.single_search_timeout = Some(Duration::from_secs(2));
     search_gateway(options).await.map_err(|_| {
-        anyhow!("No router answered. Turn on UPnP on the router to forward ports from it.")
+        anyhow!("No router answered by UPnP. Forward the port in the router's own settings, or turn UPnP on there.")
     })
 }
 
-/// This machine's address on the router's network.
-fn own_ip(router: SocketAddr) -> Result<IpAddr> {
+/// This machine's address on the network that leads to `to`. Nothing is sent.
+fn own_ip(to: SocketAddr) -> Result<IpAddr> {
     let socket = UdpSocket::bind(("0.0.0.0", 0))?;
-    socket.connect(router)?;
+    socket.connect(to)?;
     Ok(socket.local_addr()?.ip())
 }
 
@@ -97,15 +104,10 @@ fn refused(err: AddPortError, f: &Forward) -> String {
     }
 }
 
-async fn open_port(f: &Forward) -> Result<()> {
+/// Asks the router to send the port to this computer, where `machine` has it.
+async fn route_port(f: &Forward) -> Result<()> {
     let gw = router().await?;
-    let ip = match f.target_host.as_deref() {
-        None | Some("localhost" | "127.0.0.1") => own_ip(gw.addr)?,
-        Some(host) => host.parse().map_err(|_| {
-            anyhow!("The router forwards to an IP address on its network, such as 192.168.1.20")
-        })?,
-    };
-    let to = SocketAddr::new(ip, f.target_port);
+    let to = SocketAddr::new(own_ip(gw.addr)?, f.public_port);
     let about = format!("myTunnels {}", f.public_port);
     for &kind in protocols(f) {
         let added = match gw.add_port(kind, f.public_port, to, lease(f), &about).await {
@@ -123,14 +125,30 @@ async fn open_port(f: &Forward) -> Result<()> {
     Ok(())
 }
 
-async fn close_port(f: &Forward) -> Result<()> {
-    let gw = router().await?;
-    for &kind in protocols(f) {
-        gw.remove_port(kind, f.public_port)
-            .await
-            .map_err(|e| anyhow!("The router would not close port {}: {e}", f.public_port))?;
-    }
+/// Tries the router and keeps how it went; it is never the reason a forward fails.
+async fn try_router(f: &Forward) {
+    let said = route_port(f).await.err().map(|e| format!("{e:#}"));
+    lock(&ROUTED).insert(f.id.clone(), said);
+}
+
+async fn open_port(f: &Forward) -> Result<()> {
+    crate::machine::open(f).await?;
+    try_router(f).await;
     Ok(())
+}
+
+async fn close_port(f: &Forward) -> Result<()> {
+    let routed = lock(&ROUTED).remove(&f.id);
+    if let Some(None) = routed {
+        if let Ok(gw) = router().await {
+            for &kind in protocols(f) {
+                if let Err(err) = gw.remove_port(kind, f.public_port).await {
+                    tracing::warn!("the router kept port {}: {err}", f.public_port);
+                }
+            }
+        }
+    }
+    crate::machine::close(f).await
 }
 
 // ---- Tailscale ----
@@ -223,12 +241,17 @@ async fn open(f: &Forward) -> Result<()> {
     } else {
         run_tailscale(&serve_args(f, true)).await.map(drop)
     };
+    note(f, &done);
+    done
+}
+
+/// Keeps why a forward did not open, or forgets it once it did.
+fn note(f: &Forward, done: &Result<()>) {
     let mut problems = lock(&PROBLEMS);
-    match &done {
+    match done {
         Ok(()) => problems.remove(&f.id),
         Err(err) => problems.insert(f.id.clone(), format!("{err:#}")),
     };
-    done
 }
 
 async fn close(f: &Forward) -> Result<()> {
@@ -240,7 +263,8 @@ async fn close(f: &Forward) -> Result<()> {
     }
 }
 
-/// Where it is reached from, once that is known.
+/// Where it is reached from, once that is known: for a port forward, the
+/// public address once the router took it, this computer's otherwise.
 fn address(f: &Forward, tailnet: Option<&str>, ip: Option<IpAddr>) -> Option<String> {
     let port = f.public_port;
     match (f.method.as_str(), f.protocol.as_str()) {
@@ -276,9 +300,10 @@ pub fn spawn(state: AppState) {
                     }
                     tracing::info!("closed port {}, its time was up", f.public_port);
                 } else if renew && f.method == "port" {
-                    if let Err(err) = open(f).await {
-                        tracing::warn!("could not renew port {}: {err:#}", f.public_port);
-                    }
+                    // The relay starts again after a restart; the router is asked again.
+                    let resumed = crate::machine::resume(f).await;
+                    note(f, &resumed);
+                    try_router(f).await;
                 }
             }
             if renew {
@@ -297,15 +322,28 @@ pub async fn list(State(state): State<AppState>) -> ApiResult<Json<Vec<Value>>> 
     } else {
         None
     };
-    let ip = *lock(&PUBLIC_IP);
+    let public =
+        (*lock(&PUBLIC_IP)).or_else(|| state.public_ips().into_iter().find(IpAddr::is_ipv4));
+    let lan = own_ip(SocketAddr::from(([1, 1, 1, 1], 80))).ok();
     let problems = lock(&PROBLEMS).clone();
+    let routed = lock(&ROUTED).clone();
     Ok(Json(
         forwards
             .iter()
             .map(|f| {
                 let mut v = json!(f);
+                let router = routed.get(&f.id).cloned();
+                let ip = if matches!(router, Some(None)) {
+                    public
+                } else {
+                    lan
+                };
                 v["address"] = json!(address(f, tailnet.as_deref(), ip));
                 v["problem"] = json!(problems.get(&f.id));
+                if f.method == "port" {
+                    v["router"] = json!(matches!(router, Some(None)));
+                    v["router_problem"] = json!(router.flatten());
+                }
                 v
             })
             .collect(),
