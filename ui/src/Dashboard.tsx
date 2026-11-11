@@ -93,8 +93,8 @@ export function DashboardPage({ flags, users, devices, onChanged }: { flags: Fla
         <Dialog title={advanced ? "Turn off Advanced?" : "Turn on Advanced?"} onClose={() => setAsking(false)}>
           <p className="muted">
             {advanced
-              ? windows ? "The sensor task and its files are removed, so temperatures, fans, voltages and drive wear stop being read. PawnIO stays installed." : "Temperatures, fans and voltages are hidden again."
-              : windows ? "Temperatures, fans, voltages and drive wear need administrator rights. Windows asks once on this computer's screen, then installs the PawnIO driver and a sensor task that runs as SYSTEM from startup." : "Adds every temperature, fan and voltage this computer reports."}
+              ? windows ? "The sensor task and its files are removed, so temperatures, fans, voltages and drive wear stop being read. PawnIO stays installed." : "Temperatures are hidden again."
+              : windows ? "Temperatures, fans, voltages and drive wear need administrator rights. Windows asks once on this computer's screen, then installs the PawnIO driver and a sensor task that runs as SYSTEM from startup." : hw?.platform === "macos" ? "Adds every temperature this Mac reports." : "Adds every temperature, fan and voltage this computer reports."}
           </p>
           <div className="edit-actions">
             <button type="button" className="btn text" onClick={() => setAsking(false)}>Cancel</button>
@@ -106,7 +106,7 @@ export function DashboardPage({ flags, users, devices, onChanged }: { flags: Fla
       {advanced && snap && <Setup snap={snap} />}
       {m && m.history.length > 0 && (
         <div className="dash">
-          <Side m={m} snap={snap} advanced={advanced} admin={admin} onForget={forget} toggle={admin && hw && hw.platform !== "macos" && (
+          <Side m={m} snap={snap} advanced={advanced} admin={admin} onForget={forget} toggle={admin && hw && (
             <button type="button" className={"icon-btn" + (advanced ? " lit" : "")} aria-label="Advanced" title="Advanced" aria-pressed={advanced} disabled={busy} onClick={() => setAsking(true)}>
               {busy ? <span className="spinner small" /> : <Icon name={windows ? "shield" : "tune"} size={20} />}
             </button>
@@ -243,7 +243,7 @@ function Bays({ parts }: { parts: HwPart[] }) {
   };
   return (
     <div className="bays">
-      {memory.map((p, i) => chip(p, "DIMM " + (p.place.replace(/^Channel([A-Z])-DIMM(\d+)$/, (_, c: string, d: string) => `${c}${Number(d) + 1}`) || i + 1)))}
+      {memory.map((p, i) => chip(p, !p.place && p.health !== "empty" ? "Memory" : "DIMM " + (p.place.replace(/^Channel([A-Z])-DIMM(\d+)$/, (_, c: string, d: string) => `${c}${Number(d) + 1}`) || i + 1)))}
       {drives.map((d) => chip(d, numbered(kindOf(d), drives.filter((x) => kindOf(x) === kindOf(d)).length)))}
       {gpus.map((g) => chip(g, numbered("GPU", gpus.length)))}
     </div>

@@ -6,7 +6,8 @@
 //! is `hardware/inventory.ps1` (the memory slots and sticks, drives,
 //! processor, board and graphics cards, and the System log's crashes,
 //! hardware errors and power losses) and `nvidia-smi`; on Linux it is `/sys`
-//! (hwmon, EDAC and the block devices) and `nvidia-smi`.
+//! (hwmon, EDAC and the block devices) and `nvidia-smi`; on macOS it is
+//! `system_profiler` and the system's own temperature sensors.
 //!
 //! Temperatures, fan speeds, voltages and drive wear on Windows need
 //! administrator rights, for the Dashboard's Advanced view. Turning it on
@@ -28,7 +29,7 @@ use serde_json::{json, Value};
 use crate::db::{Db, ADMIN};
 use crate::mail;
 use crate::state::AppState;
-use crate::util::{self, ApiError, ApiResult};
+use crate::util::{self, ApiResult};
 
 /// How a part is doing. Empty is a memory slot with nothing in it; Unknown is
 /// a part that reports nothing to judge it by.
@@ -198,11 +199,6 @@ pub async fn view(State(state): State<AppState>) -> ApiResult<Json<Value>> {
 /// Turns Advanced on. On Windows this asks for administrator rights on this
 /// computer's screen, to put the sensor task in place.
 pub async fn enable(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    if PLATFORM == "macos" {
-        return Err(ApiError::bad(
-            "Hardware monitoring covers Windows and Linux",
-        ));
-    }
     state.db.set_setting("hardware", "on")?;
     // Set up once: only when the task is not in place.
     #[cfg(windows)]
@@ -262,8 +258,8 @@ async fn run(state: AppState) {
 /// What is slow to read, kept between readings.
 #[derive(Default)]
 struct Sources {
-    /// Windows' inventory, read once a minute, and when.
-    #[cfg_attr(not(windows), allow(dead_code))]
+    /// Windows' inventory or macOS's system_profiler, read once a minute, and when.
+    #[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
     inventory: Option<(std::time::Instant, Value)>,
 }
 
@@ -279,7 +275,9 @@ async fn collect(db: &Db, sources: &mut Sources) -> Snapshot {
     windows::collect(db, sources, &mut snap, &gpus, enabled(db)).await;
     #[cfg(target_os = "linux")]
     linux::collect(db, &mut snap, &gpus);
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    macos::collect(db, sources, &mut snap, &gpus).await;
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     let _ = (db, sources, gpus);
     #[cfg(target_os = "linux")]
     let _ = sources;
@@ -575,6 +573,7 @@ fn gpu_parts(snap: &mut Snapshot, gpus: &[Gpu]) {
 // ---- events, notes and the parts they concern ----
 
 /// Notes from recent events: each kind's worst in its window.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn notes_from_events(snap: &mut Snapshot) {
     let now = util::now();
     let mut worst: HashMap<&'static str, (Health, String)> = HashMap::new();
@@ -599,6 +598,7 @@ fn notes_from_events(snap: &mut Snapshot) {
 // ---- rails: a supply voltage is healthy within 5% of its nominal value ----
 
 /// The nominal voltage a sensor's name stands for: the 12, 5 and 3.3 volt rails.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn rail(name: &str) -> Option<f64> {
     let n = name.to_ascii_lowercase().replace(' ', "");
     if n.contains("12v") {
@@ -612,6 +612,7 @@ fn rail(name: &str) -> Option<f64> {
     }
 }
 
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn rail_health(volts: f64, nominal: f64) -> Health {
     let off = (volts - nominal).abs() / nominal;
     if off > 0.10 {
@@ -625,6 +626,7 @@ fn rail_health(volts: f64, nominal: f64) -> Health {
 
 // ---- fans: a fan that has spun before and now reads 0 has stopped ----
 
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn spun(db: &Db) -> BTreeSet<String> {
     db.setting("hardware_fans")
         .ok()
@@ -635,6 +637,7 @@ fn spun(db: &Db) -> BTreeSet<String> {
 
 /// A part for each fan header: spinning, stopped after spinning, or never
 /// connected (shown as empty, so every header on the board is seen).
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn fans(db: &Db, snap: &mut Snapshot, readings: Vec<(String, String, f64)>) {
     let mut seen = spun(db);
     let before = seen.len();
@@ -1939,6 +1942,291 @@ mod linux {
             snap.parts.push(p);
         }
         notes_from_events(snap);
+    }
+}
+
+// ---- macOS ----
+
+#[cfg(target_os = "macos")]
+mod macos {
+    use std::time::Instant;
+
+    use sysinfo::Components;
+
+    use super::*;
+
+    const REPORTS: [&str; 6] = [
+        "SPHardwareDataType",
+        "SPMemoryDataType",
+        "SPNVMeDataType",
+        "SPSerialATADataType",
+        "SPDisplaysDataType",
+        "SPPowerDataType",
+    ];
+
+    /// system_profiler's report on the parts, which takes a few seconds.
+    async fn profile() -> Result<Value> {
+        let run = tokio::process::Command::new("system_profiler")
+            .arg("-json")
+            .args(REPORTS)
+            .stdin(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .output();
+        let out = tokio::time::timeout(Duration::from_secs(60), run).await??;
+        anyhow::ensure!(out.status.success(), "system_profiler failed");
+        Ok(serde_json::from_slice(&out.stdout)?)
+    }
+
+    fn text(v: &Value, key: &str) -> String {
+        v[key].as_str().unwrap_or_default().trim().to_owned()
+    }
+
+    /// "8 GB", "2667 MHz" or "500.28 GB" as a number of its unit.
+    fn amount(s: &str) -> Option<f64> {
+        s.split_whitespace().next()?.parse().ok()
+    }
+
+    fn bytes(s: &str) -> u64 {
+        let n = amount(s).unwrap_or(0.0);
+        let unit = s.split_whitespace().nth(1).unwrap_or("");
+        let scale: u64 = match unit {
+            "TB" => 1 << 40,
+            "GB" => 1 << 30,
+            "MB" => 1 << 20,
+            _ => 1,
+        };
+        (n * scale as f64) as u64
+    }
+
+    /// "proc 10:8:2" on Apple silicon: all the cores, then the performance
+    /// and efficiency ones.
+    fn cores(s: &str) -> String {
+        let n: Vec<&str> = s.trim_start_matches("proc ").split(':').collect();
+        match n.as_slice() {
+            [all, p, e] => format!("{all} ({p} performance, {e} efficiency)"),
+            _ => n.join(""),
+        }
+    }
+
+    /// Every item under a report, through its controllers.
+    fn items<'a>(report: &'a Value) -> Vec<&'a Value> {
+        let mut out = Vec::new();
+        for group in report.as_array().into_iter().flatten() {
+            match group["_items"].as_array() {
+                Some(list) => out.extend(list),
+                None => out.push(group),
+            }
+        }
+        out
+    }
+
+    pub async fn collect(db: &Db, sources: &mut Sources, snap: &mut Snapshot, gpus: &[Gpu]) {
+        let stale = sources
+            .inventory
+            .as_ref()
+            .is_none_or(|(at, _)| at.elapsed() > Duration::from_secs(60));
+        if stale {
+            match profile().await {
+                Ok(v) => sources.inventory = Some((Instant::now(), v)),
+                Err(err) => tracing::warn!("could not read this computer's parts: {err:#}"),
+            }
+        }
+        let inv = sources
+            .inventory
+            .as_ref()
+            .map(|(_, v)| v.clone())
+            .unwrap_or(Value::Null);
+        let components = Components::new_with_refreshed_list();
+        let temps: Vec<(String, f64)> = components
+            .iter()
+            .filter_map(|c| Some((c.label().to_owned(), f64::from(c.temperature()?))))
+            .filter(|(_, t)| *t > 0.0 && *t < 150.0)
+            .collect();
+
+        // Memory: each stick in its slot on an Intel Mac; on Apple silicon
+        // it is built into the chip, one part with no slots.
+        let report = &inv["SPMemoryDataType"];
+        let slots: Vec<&Value> = items(report)
+            .into_iter()
+            .filter(|i| i.get("dimm_size").is_some())
+            .collect();
+        if slots.is_empty() {
+            if let Some(m) = report.as_array().and_then(|a| a.first()) {
+                let total = bytes(&text(m, "SPMemoryDataType"));
+                let name = [
+                    size(total),
+                    text(m, "dimm_manufacturer"),
+                    text(m, "dimm_type"),
+                ]
+                .into_iter()
+                .filter(|v| !v.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+                let mut p = Part::new("memory", "memory", name);
+                p.bytes = Some(total);
+                p.fact("Kind", text(m, "dimm_type"));
+                p.fact("Maker", text(m, "dimm_manufacturer"));
+                p.judge(Health::Ok, "Built into the chip");
+                snap.parts.push(p);
+            }
+        } else {
+            let sticks = slots
+                .iter()
+                .filter(|i| i["dimm_size"].as_str().is_some_and(|s| s != "empty"))
+                .map(|i| {
+                    let name = text(i, "_name");
+                    let (bank, slot) = name.split_once('/').unwrap_or(("", &name));
+                    Stick {
+                        slot: slot.to_owned(),
+                        bank: bank.to_owned(),
+                        bytes: bytes(&text(i, "dimm_size")),
+                        speed: amount(&text(i, "dimm_speed")).unwrap_or(0.0) as u64,
+                        configured: 0,
+                        maker: text(i, "dimm_manufacturer"),
+                        part: text(i, "dimm_part_number"),
+                        serial: text(i, "dimm_serial_number"),
+                        errors: None,
+                    }
+                })
+                .collect();
+            memory(db, snap, sticks, slots.len());
+        }
+
+        // The processor, with the hottest of its own sensors.
+        let hw = &inv["SPHardwareDataType"][0];
+        let chip = [text(hw, "chip_type"), text(hw, "cpu_type")]
+            .into_iter()
+            .find(|v| !v.is_empty())
+            .unwrap_or_else(|| "Processor".into());
+        let mut cpu = Part::new("cpu", "cpu:0", chip.clone());
+        cpu.fact("Speed", text(hw, "current_processor_speed"));
+        cpu.fact("Cores", cores(&text(hw, "number_processors")));
+        let die = temps
+            .iter()
+            .filter(|(l, _)| {
+                ["CPU", "PMU tdie", "pACC", "eACC"]
+                    .iter()
+                    .any(|k| l.contains(k))
+            })
+            .map(|(_, t)| *t)
+            .fold(f64::NAN, f64::max);
+        if !die.is_nan() {
+            cpu.read(
+                "Temperature",
+                die,
+                "°C",
+                above(die, 95.0, 105.0),
+                "Running hot",
+            );
+            cpu.judge(Health::Ok, "Normal temperature");
+        } else {
+            cpu.reason = "This processor reports no temperature".into();
+        }
+        snap.parts.push(cpu);
+
+        // Graphics: NVIDIA's own reading where there is one, every other card
+        // as the system names it.
+        gpu_parts(snap, gpus);
+        for (n, d) in items(&inv["SPDisplaysDataType"]).into_iter().enumerate() {
+            let name = [text(d, "sppci_model"), text(d, "_name")]
+                .into_iter()
+                .find(|v| !v.is_empty())
+                .unwrap_or_else(|| "Graphics".into());
+            if gpus
+                .iter()
+                .any(|g| name.contains(&g.name) || g.name.contains(&name))
+            {
+                continue;
+            }
+            let mut p = Part::new("gpu", format!("gpu:{n}"), name);
+            p.fact("Cores", text(d, "sppci_cores"));
+            let vram = [
+                text(d, "spdisplays_vram"),
+                text(d, "spdisplays_vram_shared"),
+            ]
+            .into_iter()
+            .find(|v| !v.is_empty())
+            .unwrap_or_default();
+            p.fact("Memory", vram);
+            p.judge(Health::Ok, "Working");
+            snap.parts.push(p);
+        }
+
+        // Drives, NVMe and SATA, judged by their own SMART status.
+        let drives = items(&inv["SPNVMeDataType"])
+            .into_iter()
+            .map(|d| (d, "NVMe SSD".to_owned()))
+            .chain(items(&inv["SPSerialATADataType"]).into_iter().map(|d| {
+                let kind = if text(d, "spsata_medium_type").contains("Rotational") {
+                    "HDD"
+                } else {
+                    "SSD"
+                };
+                (d, format!("{kind} SATA"))
+            }));
+        for (d, kind) in drives {
+            if d.get("bsd_name").is_none() {
+                continue;
+            }
+            let bsd = text(d, "bsd_name");
+            let model = [text(d, "device_model"), text(d, "_name")]
+                .into_iter()
+                .find(|v| !v.is_empty())
+                .unwrap_or_else(|| bsd.clone());
+            let mut p = Part::new("drive", format!("drive:{bsd}"), model);
+            p.place = format!("/dev/{bsd}");
+            p.fact("Kind", kind);
+            if let Some(b) = d["size_in_bytes"].as_u64() {
+                p.fact("Size", size(b));
+            }
+            p.fact("Serial", text(d, "device_serial"));
+            match text(d, "smart_status").as_str() {
+                "Verified" => p.judge(Health::Ok, "SMART status verified"),
+                "Failing" => p.judge(Health::Bad, "SMART reports the drive is failing"),
+                _ => p.reason = "This drive reports no SMART status".into(),
+            }
+            snap.parts.push(p);
+        }
+
+        // The battery, where there is one, as the power supply.
+        if let Some(b) = items(&inv["SPPowerDataType"])
+            .into_iter()
+            .find(|i| i.get("sppower_battery_health_info").is_some())
+        {
+            let info = &b["sppower_battery_health_info"];
+            let mut p = Part::new("power", "power", "Battery");
+            if let Some(c) = info["sppower_battery_cycle_count"].as_u64() {
+                p.fact("Cycles", c.to_string());
+            }
+            p.fact(
+                "Capacity",
+                text(info, "sppower_battery_health_maximum_capacity"),
+            );
+            match text(info, "sppower_battery_health").as_str() {
+                "Good" => p.judge(Health::Ok, "Battery healthy"),
+                "" => {}
+                other => p.judge(Health::Warn, format!("Battery condition: {other}")),
+            }
+            snap.parts.push(p);
+        }
+
+        // The computer itself, with every other temperature it reports.
+        let model = text(hw, "machine_name");
+        if !model.is_empty() {
+            let id = text(hw, "machine_model");
+            let name = if id.is_empty() {
+                model
+            } else {
+                format!("{model} ({id})")
+            };
+            let mut p = Part::new("board", "board", name);
+            p.fact("Model number", text(hw, "model_number"));
+            for (label, t) in &temps {
+                p.read(label, *t, "°C", above(*t, 95.0, 105.0), "Running hot");
+            }
+            p.judge(Health::Ok, "Normal");
+            snap.parts.push(p);
+        }
     }
 }
 

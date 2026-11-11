@@ -338,10 +338,15 @@ fn host(system: &System, info: Option<&Value>) -> Value {
     })
 }
 
-/// Interfaces whose traffic counts: not loopback, and not the bridges and
-/// virtual pairs containers hang off, which would count the same bytes twice.
+/// Interfaces whose traffic counts: not loopback, and not the bridges,
+/// virtual pairs and tunnels that carry the same bytes a second time, such as
+/// a Mac's VPN (utun), AirDrop (awdl, llw) and USB (anpi) links.
 fn counted(name: &str) -> bool {
     !(name == "lo"
+        || name == "lo0"
+        || ["utun", "awdl", "llw", "anpi", "bridge", "gif", "stf"]
+            .iter()
+            .any(|p| name.starts_with(p))
         || name.starts_with("veth")
         || name.starts_with("docker")
         || name.starts_with("br-")
@@ -397,7 +402,16 @@ fn core_temp(sensors: &[Sensor], id: u32) -> Option<f32> {
 /// The processor's temperature: its package sensor where there is one,
 /// otherwise the hottest core.
 fn cpu_temp(sensors: &[Sensor], cores: &[Core]) -> Option<f32> {
-    const PACKAGE: [&str; 5] = ["Package id 0", "Tdie", "Tctl", "cpu_thermal", "CPU"];
+    // The last two are Apple silicon's die and performance cores.
+    const PACKAGE: [&str; 7] = [
+        "Package id 0",
+        "Tdie",
+        "Tctl",
+        "cpu_thermal",
+        "CPU",
+        "PMU tdie",
+        "pACC MTR",
+    ];
     PACKAGE
         .iter()
         .find_map(|name| sensors.iter().find(|s| s.label.contains(name)))
@@ -412,7 +426,8 @@ fn disk_list(disks: &Disks) -> Vec<Disk> {
         let name = disk.name().to_string_lossy().into_owned();
         let mount = disk.mount_point().to_string_lossy().into_owned();
         let skip = disk.total_space() == 0
-            || ["/etc/", "/proc", "/sys", "/dev", "/run"]
+            // macOS's own volumes share the start disk's space, which "/" shows.
+            || ["/etc/", "/proc", "/sys", "/dev", "/run", "/System/Volumes/", "/Library/Developer/CoreSimulator", "/private/var/vm"]
                 .iter()
                 .any(|p| mount.starts_with(p));
         if skip || seen.contains(&(name.clone(), disk.total_space())) {
