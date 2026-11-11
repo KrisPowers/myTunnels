@@ -117,7 +117,7 @@ function OpenComposer({ method, lead, container, port: startPort, onAdded }: {
   };
 
   const protocols: Option<Forward["protocol"]>[] = method === "port"
-    ? [{ value: "tcp", label: "TCP" }, { value: "udp", label: "UDP" }]
+    ? [{ value: "tcp", label: "TCP" }, { value: "udp", label: "UDP" }, { value: "both", label: "TCP & UDP" }]
     : [{ value: "http", label: "http" }, { value: "https", label: "https", hint: "Self-signed certificates are fine" }, { value: "tcp", label: "TCP", hint: "Any other app, such as SSH or a game" }];
 
   return (
@@ -223,7 +223,7 @@ function closesIn(at: number) {
 // The ports a container publishes here that a router or Tailscale forward
 // goes to.
 export function forwardsOf(c: { ports: Port[] }, forwards: Forward[]) {
-  return forwards.filter((f) => !f.target_host && c.ports.some((p) => p.public === f.target_port && (f.method === "tailscale" || p.type === f.protocol)));
+  return forwards.filter((f) => !f.target_host && c.ports.some((p) => p.public === f.target_port && (f.method === "tailscale" || f.protocol === "both" || p.type === f.protocol)));
 }
 
 // ForwardRows is a row per opening: what it is in a tile tinted by its state,
@@ -309,7 +309,7 @@ function ForwardRow({ f, onChanged }: { f: Forward; onChanged: () => Promise<voi
   ];
   const tone = !f.enabled ? "" : f.problem ? "bad" : "ok";
   // TCP is said only where it is not the plain choice.
-  const speaks = f.protocol === "udp" || (f.method === "tailscale" && f.protocol === "tcp") ? `, ${f.protocol.toUpperCase()}` : "";
+  const speaks = f.protocol === "both" ? ", TCP & UDP" : f.protocol === "udp" || (f.method === "tailscale" && f.protocol === "tcp") ? `, ${f.protocol.toUpperCase()}` : "";
   return (
     <li className="ct-row">
       <div className="ct-row-main">

@@ -143,7 +143,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>Pick <b>Tunnel</b>, type a subdomain, pick one of your domains, and enter the port the app listens on. Choose who can open it, then press <b>Publish</b>. The DNS record and the route are made for you, and removed with the tunnel.</p>
       </Doc>
       <Doc title="A router or Tailscale forward">
-        <p>Pick <b>Port forward</b> or <b>Tailscale</b>, then the port it is reached on, the app's port and its protocol: TCP or UDP at the router; http, https or TCP on Tailscale, where TCP carries anything else, such as SSH. The app runs on this computer or another machine on your network, by its IP address. <b>Close after</b> closes it on its own after an hour, a day or a week; it stays in the list switched off, and its menu opens it again. The router is asked again every twenty minutes, so a router that restarts gets it back.</p>
+        <p>Pick <b>Port forward</b> or <b>Tailscale</b>, then the port it is reached on, the app's port and its protocol: TCP, UDP or TCP & UDP at the router; http, https or TCP on Tailscale, where TCP carries anything else, such as SSH. The app runs on this computer or another machine on your network, by its IP address. <b>Close after</b> closes it on its own after an hour, a day or a week; it stays in the list switched off, and its menu opens it again. The router is asked again every twenty minutes, so a router that restarts gets it back.</p>
       </Doc>
       <Doc title="Where requests go">
         <p>By default a tunnel sends requests to the port on this computer. Under <b>Local app</b> it can point at a container name or another machine instead, and use https when the app serves it itself. Self-signed certificates are accepted.</p>
