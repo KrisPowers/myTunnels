@@ -37,28 +37,28 @@ end
 class Mytunnels < Formula
   desc "Publish apps at home through Cloudflare Tunnel, with an access gateway"
   homepage "https://github.com/KrisPowers/myTunnels"
-  version "0.1.27"
+  version "0.1.28"
   license "Apache-2.0"
 
   on_macos do
     on_arm do
-      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.27/macos-arm64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "84d60a565d5b09b8c5932697e0a8257647d1b9fe829a6c8d524baea5c2a9c4ba"
+      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.28/macos-arm64.tar.gz", using: GitHubReleaseDownloadStrategy
+      sha256 "bc8f32034dad608202e3ccdf780b8925e6eae3db3ae5269d6fd60c81ac3f54a1"
     end
     on_intel do
-      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.27/macos-x64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "e08dc243e8dbfe28ad84f4c52088fea38b1e1bc13e2b1250df4fbe10b461a4c1"
+      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.28/macos-x64.tar.gz", using: GitHubReleaseDownloadStrategy
+      sha256 "bf613627d6fe3f8cbc8f1b043b435432e771d97ce1f94c0b2e0dfb2c802d52a1"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.27/linux-arm64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "bcd379798a522fa12cc638eb122c780e731e5522f066ba10d442fefe562a4f02"
+      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.28/linux-arm64.tar.gz", using: GitHubReleaseDownloadStrategy
+      sha256 "2101e6602e61a23293f6097f4c994910e0fd3f689e6faf12d8b2d96d21f46c74"
     end
     on_intel do
-      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.27/linux-x64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "85e0aac430d9402875d4c2226acc80676368bc2689e6719c9e41c9e1a4e70f28"
+      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.28/linux-x64.tar.gz", using: GitHubReleaseDownloadStrategy
+      sha256 "5bce8184e596c25f613b4ed4718531d5ecb59ed9e7f601e54fee54c1fc2c7db6"
     end
   end
 
