@@ -287,7 +287,7 @@ function Trend({ m, cpu, advanced }: { m: Metrics; cpu: HwPart | undefined; adva
     // its figure fade in on each pick, and the threads' room is kept on every
     // tab, so nothing under the chart jumps.
     <Section title="Last 5 Minutes"
-      tabs={<nav className="sec-tabs">{tabs.map((t) => <button key={t} type="button" className={t === open ? "on" : ""} onClick={() => setTab(t)}>{t}</button>)}</nav>}
+      tabs={<nav className="sub-nav sec-tabs">{tabs.map((t) => <button key={t} type="button" className={"sub-nav-item" + (t === open ? " on" : "")} aria-pressed={t === open} onClick={() => setTab(t)}>{t}</button>)}</nav>}
       now={<span key={open} className="trend-in">{open === "CPU" ? pct(last.cpu)
         : open === "Memory" ? `${bytes(last.memory)} of ${bytes(m.memory_total)}`
         : open === "Network" ? <Legend items={[[`In ${rate(last.rx)}`, BLUE], [`Out ${rate(last.tx)}`, ORANGE]]} />

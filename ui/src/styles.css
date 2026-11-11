@@ -1489,11 +1489,10 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
 .dash-sec + .dash-sec { border-top: 1px solid var(--line); }
 .sec-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 28px; }
 .sec-head h2 { font-size: 17px; font-weight: 600; }
-.sec-tabs { display: inline-flex; align-items: center; }
-.sec-tabs button { padding: 0 12px; border: 0; background: none; color: var(--text-2); font: 500 14px var(--font); cursor: pointer; transition: color .18s var(--ease); }
-.sec-tabs button + button { border-left: 1px solid var(--line-strong); }
-.sec-tabs button:hover { color: var(--text); }
-.sec-tabs button.on { color: var(--accent); }
+/* The chart's picks are the sub-page track, as on a container's page. */
+.sec-tabs { margin-bottom: 0; }
+.sec-tabs .sub-nav-item { border: 0; font: 500 14px var(--font); cursor: pointer; }
+.sec-tabs .sub-nav-item:not(.on) { background: transparent; }
 .sec-now { margin-left: auto; color: var(--text); font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sec-now .legend { font-size: 13px; font-weight: 400; }
 .dash-sec .chart-plot { height: 280px; }
