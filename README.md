@@ -48,9 +48,9 @@ brew install mytunnels
 ```
 
 Releases are built by `pwsh scripts/build.ps1 -Publish`, which builds what the computer it
-runs on can (Windows, or macOS on a Mac, and Linux through zig), releases it and points the
-formula in `Formula/` at it. Run it on a Mac with `-Version` set to that release to add the
-macOS builds. Without `-Publish` it only builds, into `builds/`.
+runs on can (Windows on Windows, macOS on a Mac, and with zig installed Linux and macOS from
+anywhere, against Apple's SDK fetched once into `builds/.sdk`), releases it and points the
+formula in `Formula/` at it. Without `-Publish` it only builds, into `builds/`.
 
 Then start it, once:
 
@@ -112,13 +112,17 @@ shows what any account can read from the system:
   in red until it is marked as taken out; one running below its rated speed turns yellow.
 - **Graphics**: NVIDIA cards' temperature, load, fan, power and video memory through
   `nvidia-smi`, other cards by their state.
+- On a Mac, the parts come from `system_profiler`: the memory (built into the chip on Apple
+  silicon), the drives with their SMART status, the graphics, and the battery's health.
 - **Volumes**, how full each one is, and the **drives** with their health.
 
 **Advanced**, the button beside the computer's name that the host or an admin confirms once, adds the sensors: the processor's temperature over time and per core, every
 temperature read, the **fans** (a fan that spun before and reads 0 has stopped), the power
 supply's 12, 5 and 3.3 V rails (within 5% is healthy, past 10% is failing), and each drive's
 temperature, life left, errors and hours. On Linux these come from `/sys` and need nothing
-more; drive wear and errors there need root and are not shown. On Windows they need
+more; drive wear and errors there need root and are not shown. On a Mac they are every
+temperature the system reports, which needs nothing more; its fans and rails are not
+shown. On Windows they need
 administrator rights, so turning it on asks Windows once, then installs the
 [PawnIO](https://pawnio.eu) driver, puts
 [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)'s
