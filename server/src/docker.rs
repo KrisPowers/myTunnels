@@ -196,9 +196,7 @@ async fn open(
         #[cfg(unix)]
         Endpoint::Unix(socket) => handshake(tokio::net::UnixStream::connect(socket).await?).await?,
         #[cfg(windows)]
-        Endpoint::Pipe(pipe) => {
-            handshake(tokio::net::windows::named_pipe::ClientOptions::new().open(pipe)?).await?
-        }
+        Endpoint::Pipe(pipe) => handshake(open_pipe(pipe).await?).await?,
         #[allow(unreachable_patterns)]
         _ => bail!("this kind of DOCKER_HOST does not work on this system"),
     };
@@ -210,6 +208,24 @@ async fn open(
         request = request.header(hyper::header::CONTENT_TYPE, kind);
     }
     Ok(sender.send_request(request.body(body)?).await?)
+}
+
+/// Opens the engine's named pipe. While every instance of it is taken by
+/// other callers, Windows says the pipe is busy; it is tried again shortly,
+/// until the caller's own time runs out.
+#[cfg(windows)]
+async fn open_pipe(
+    pipe: &str,
+) -> std::io::Result<tokio::net::windows::named_pipe::NamedPipeClient> {
+    const ERROR_PIPE_BUSY: i32 = 231;
+    loop {
+        match tokio::net::windows::named_pipe::ClientOptions::new().open(pipe) {
+            Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY) => {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            done => return done,
+        }
+    }
 }
 
 async fn handshake<S>(stream: S) -> Result<SendRequest<Body>>
