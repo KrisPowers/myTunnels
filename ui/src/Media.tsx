@@ -76,6 +76,9 @@ async function makeThumb(file: File): Promise<Blob | null> {
   }
 }
 
+// How many tiles the grid draws at first, and adds as its end comes near.
+const CLUSTER = 120;
+
 const monthOf = (at: number) => new Date(at * 1000).toLocaleDateString([], { month: "long", year: "numeric" });
 const dayOf = (at: number) => new Date(at * 1000).toLocaleDateString([], { dateStyle: "long" });
 
@@ -92,7 +95,9 @@ export function MediaPage({ nav, convert, shares, tools, extra, onReload }: TabP
   const [removing, setRemoving] = useState<string[] | null>(null);
   const [dragging, setDragging] = useState(false);
   const [menu, setMenu] = useState<(Menu & { name: string | null }) | null>(null);
+  const [drawn, setDrawn] = useState(CLUSTER);
   const input = useRef<HTMLInputElement>(null);
+  const end = useRef<HTMLDivElement>(null);
   const notify = useNotify();
 
   const load = useCallback(async () => {
@@ -117,8 +122,17 @@ export function MediaPage({ nav, convert, shares, tools, extra, onReload }: TabP
   const photos = all.filter((e) => !isVideo(e.name)).length;
   // Nothing picked shows everything, as both picked does.
   const items = all.filter((e) => !kinds.length || kinds.includes(isVideo(e.name) ? "videos" : "photos"));
+  // Tiles are drawn a cluster at a time, the next as the last comes into view.
+  const more = drawn < items.length;
+  useEffect(() => {
+    const el = end.current;
+    if (!more || !el) return;
+    const seen = new IntersectionObserver(([e]) => e.isIntersecting && setDrawn((n) => n + CLUSTER), { rootMargin: "800px" });
+    seen.observe(el);
+    return () => seen.disconnect();
+  }, [more, drawn]);
   const months: [string, FileEntry[]][] = [];
-  for (const e of items) {
+  for (const e of items.slice(0, drawn)) {
     const label = monthOf(e.modified);
     const last = months[months.length - 1];
     if (last && last[0] === label) last[1].push(e);
@@ -260,28 +274,31 @@ export function MediaPage({ nav, convert, shares, tools, extra, onReload }: TabP
           ) : items.length === 0 ? (
             <p className="muted">No {kinds[0]} yet.</p>
           ) : (
-            months.map(([label, list]) => (
-              <section key={label} className="m-month">
-                <h2>{label}</h2>
-                <ul className="m-grid">
-                  {list.map((e) => {
-                    const on = selected.has(e.name);
-                    return (
-                      <li key={e.name} className={"m-tile" + (on ? " on" : "") + (selected.size ? " picking" : "")} onContextMenu={(ev) => contextMenu(ev, e.name)}>
-                        <button type="button" className="m-open" title={`${e.name}\n${dayOf(e.modified)}`}
-                          onClick={() => (selected.size ? toggle(e.name) : setViewing(items.indexOf(e)))}>
-                          <Thumb name={e.name} />
-                          {isVideo(e.name) && <Icon name="play_circle" size={22} className="m-badge" />}
-                        </button>
-                        <button type="button" className="m-check" aria-label={on ? `Unselect ${e.name}` : `Select ${e.name}`} aria-pressed={on} onClick={() => toggle(e.name)}>
-                          <Icon name="check" size={16} />
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            ))
+            <>
+              {months.map(([label, list]) => (
+                <section key={label} className="m-month">
+                  <h2>{label}</h2>
+                  <ul className="m-grid">
+                    {list.map((e) => {
+                      const on = selected.has(e.name);
+                      return (
+                        <li key={e.name} className={"m-tile" + (on ? " on" : "") + (selected.size ? " picking" : "")} onContextMenu={(ev) => contextMenu(ev, e.name)}>
+                          <button type="button" className="m-open" title={`${e.name}\n${dayOf(e.modified)}`}
+                            onClick={() => (selected.size ? toggle(e.name) : setViewing(items.indexOf(e)))}>
+                            <Thumb name={e.name} />
+                            {isVideo(e.name) && <Icon name="play_circle" size={22} className="m-badge" />}
+                          </button>
+                          <button type="button" className="m-check" aria-label={on ? `Unselect ${e.name}` : `Select ${e.name}`} aria-pressed={on} onClick={() => toggle(e.name)}>
+                            <Icon name="check" size={16} />
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ))}
+              {more && <div ref={end} />}
+            </>
           )}
         </div>
       )}
