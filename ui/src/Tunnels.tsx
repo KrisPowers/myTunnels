@@ -355,8 +355,8 @@ export function TunnelComposer({ users, providers, onPublished, port: startPort,
   return (
     <form className="stack" onSubmit={submit}>
       <div className="card composer">
+        {lead && <div className="composer-row composer-lead">{lead}</div>}
         <div className="composer-row">
-          {lead}
           <TextField className="grow" label="Subdomain" placeholder="app1" autoComplete="off" autoFocus={!startSub} value={sub}
             onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
           <span className="composer-dot">.</span>
