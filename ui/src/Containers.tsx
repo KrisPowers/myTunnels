@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { NeedsApp } from "./Apps";
-import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Deploy, type Image, type Metrics, type OAuthProvider, type Route, type Status, type User } from "./api";
+import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Deploy, type Forward, type Image, type Metrics, type OAuthProvider, type Route, type User } from "./api";
 import { BuildLog, Builds, DeploySettings, NewMenu, sourceOf, waiting } from "./Builds";
 import { Chart, Meter } from "./charts";
 import { Dropdown, type Option } from "./Dropdown";
+import { ForwardComposer, ForwardRows, forwardsOf } from "./Forward";
 import { Icon, type IconName } from "./Icon";
 import { ContainerImages, ImageView, useImageRemoval } from "./Images";
 import { useCan } from "./me";
 import { Resources } from "./Resources";
 import { go } from "./route";
-import { AccessChips, reachOf, target, TunnelComposer, TunnelsView, tunnelsOf } from "./Tunnels";
+import { reachOf, TunnelDetail, tunnelsOf } from "./Tunnels";
 import { Callout, Copy, Dialog, MoreMenu, SubNav, Switch, useNotify, type MenuAction } from "./ui";
 
 type Act = ContainerAction | "remove";
@@ -91,17 +92,18 @@ function pending(d: Deploy): Container {
   };
 }
 
-// What a container's page and its tunnel need from the dashboard.
+// What a container's page and its forwards need from the dashboard.
 export interface Shared {
   routes: Route[] | null;
+  forwards: Forward[];
   users: User[];
   providers: OAuthProvider[];
   onChanged: () => Promise<void>;
 }
 
-export function ContainersPage({ id, page, more, status, ...shared }: { id: string; page: string; more: string[]; status: Status | null } & Shared) {
+export function ContainersPage({ id, page, more, ...shared }: { id: string; page: string; more: string[] } & Shared) {
   if (id) return <ContainerPage name={id} tab={page} more={more} {...shared} />;
-  return <ContainerList routes={shared.routes} status={status} onChanged={shared.onChanged} />;
+  return <ContainerList routes={shared.routes} forwards={shared.forwards} />;
 }
 
 // ---- the list ----
@@ -117,15 +119,14 @@ const SHOW: Option<Show>[] = [
   { value: "running", label: "Running" },
 ];
 
-// One thing in the catalog: a container, or a tunnel to a port elsewhere,
-// which is a container of another kind.
-type Item = { key: string; name: string; project: string | null; on: boolean } & ({ c: Container } | { r: Route });
+// One container in the catalog.
+type Item = { key: string; name: string; project: string | null; on: boolean; c: Container };
 
-// ContainerList is the one catalog: every container and every tunnel to a port
-// elsewhere, a row each with what it is, its state, its address and its use,
-// and one menu. Compose projects of two or more fold under their name. It
-// refreshes on its own.
-function ContainerList({ routes, status, onChanged }: { routes: Route[] | null; status: Status | null; onChanged: () => Promise<void> }) {
+// ContainerList is the catalog of containers, a row each with what it is, its
+// state, its address and its use, and one menu. Compose projects of two or
+// more fold under their name. It refreshes on its own; tunnels and other
+// forwards to ports elsewhere are on Forward.
+function ContainerList({ routes, forwards }: { routes: Route[] | null; forwards: Forward[] }) {
   const can = useCan();
   const seeContainers = can("containers.view");
   const seeTunnels = can("tunnels.view");
@@ -137,7 +138,6 @@ function ContainerList({ routes, status, onChanged }: { routes: Route[] | null; 
   const [show, setShow] = useState<Show>("all");
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const m = useMetrics();
-  const notify = useNotify();
 
   const load = useCallback(async () => {
     if (!seeContainers) return;
@@ -162,20 +162,17 @@ function ContainerList({ routes, status, onChanged }: { routes: Route[] | null; 
   const cleanup = useImageRemoval(load);
 
   const allRoutes = seeTunnels ? routes ?? [] : [];
+  const allForwards = seeTunnels ? forwards : [];
   const made = new Set((list ?? []).map((c) => c.name));
   const containers = [...(list ?? []), ...deploys.filter((d) => !made.has(d.name)).map(pending)];
-  const reached = new Set(containers.flatMap((c) => tunnelsOf(c, allRoutes).map((r) => r.id)));
-  const items: Item[] = [
-    ...containers.map((c) => ({ key: c.id || c.name, name: c.name, project: c.project, on: live(c), c })),
-    ...allRoutes.filter((r) => !reached.has(r.id)).map((r) => ({ key: r.id, name: r.hostname, project: null, on: r.enabled, r })),
-  ];
+  const items: Item[] = containers.map((c) => ({ key: c.id || c.name, name: c.name, project: c.project, on: live(c), c }));
   const byDeploy = new Map(deploys.map((d) => [d.id, d]));
   const stats = useMemo(() => Object.fromEntries((m?.docker.containers ?? []).map((s) => [shortId(s.id), s])), [m]);
 
   const needle = q.trim().toLowerCase();
   const shown = items
     .filter((i) => show === "all" || i.on)
-    .filter((i) => !needle || [i.name, i.project ?? "", "c" in i ? i.c.image : target(i.r)].some((v) => v.toLowerCase().includes(needle)))
+    .filter((i) => !needle || [i.name, i.project ?? "", i.c.image].some((v) => v.toLowerCase().includes(needle)))
     .sort((a, b) => (a.project ?? a.name).localeCompare(b.project ?? b.name) || a.name.localeCompare(b.name));
   const counts = new Map<string, number>();
   for (const i of shown) if (i.project) counts.set(i.project, (counts.get(i.project) ?? 0) + 1);
@@ -183,22 +180,12 @@ function ContainerList({ routes, status, onChanged }: { routes: Route[] | null; 
   const running = (list ?? []).filter(live);
   const cpu = running.reduce((n, c) => n + (stats[shortId(c.id)]?.cpu ?? 0), 0);
   const memory = running.reduce((n, c) => n + (stats[shortId(c.id)]?.memory ?? 0), 0);
-  const liveTunnels = allRoutes.filter((r) => r.enabled).length;
   const unused = (images ?? []).filter((i) => !i.containers.length);
   const spare = unused.reduce((n, i) => n + i.size, 0);
   const pageMenu: MenuAction[] = can("containers.remove") && unused.length > 0
     ? [{ label: `Delete unused images, ${bytes(spare)}`, icon: "layers", danger: true, onClick: () => cleanup.remove(unused), confirm: `Delete ${unused.length} for good` }]
     : [];
 
-  const removeTunnel = async (r: Route) => {
-    try {
-      await api.removeRoute(r.id);
-      notify(`Removed ${r.hostname}`);
-      await onChanged();
-    } catch (e) {
-      notify(message(e), "bad");
-    }
-  };
   const fold = (project: string) => setFolded((f) => {
     const next = new Set(f);
     if (next.has(project)) next.delete(project);
@@ -211,14 +198,13 @@ function ContainerList({ routes, status, onChanged }: { routes: Route[] | null; 
   for (const i of shown) {
     const grouped = !!i.project && (counts.get(i.project) ?? 0) > 1;
     if (grouped && i.project !== group) {
-      const members = shown.filter((x) => x.project === i.project && "c" in x).map((x) => (x as { c: Container }).c);
+      const members = shown.filter((x) => x.project === i.project).map((x) => x.c);
       rows.push(<GroupHead key={"g-" + i.project} name={i.project!} items={members} open={!folded.has(i.project!)} onFold={() => fold(i.project!)} run={run} />);
     }
     group = grouped ? i.project! : "";
     if (grouped && folded.has(i.project!)) continue;
-    rows.push("c" in i
-      ? <ContainerRow key={i.key} c={i.c} d={i.c.deploy ? byDeploy.get(i.c.deploy) : undefined} s={stats[shortId(i.c.id)]} routes={tunnelsOf(i.c, allRoutes)} busy={busy.has(i.c.id)} run={run} grouped={grouped} />
-      : <TunnelRow key={i.key} r={i.r} onRemove={() => removeTunnel(i.r)} />);
+    rows.push(<ContainerRow key={i.key} c={i.c} d={i.c.deploy ? byDeploy.get(i.c.deploy) : undefined} s={stats[shortId(i.c.id)]}
+      routes={tunnelsOf(i.c, allRoutes)} forwards={forwardsOf(i.c, allForwards)} busy={busy.has(i.c.id)} run={run} grouped={grouped} />);
   }
 
   return (
@@ -230,7 +216,6 @@ function ContainerList({ routes, status, onChanged }: { routes: Route[] | null; 
             {list && <span><b>{running.length}</b> of {list.length} running</span>}
             {list && m && <span>CPU <b>{pct(cpu)}</b></span>}
             {list && m && <span>Memory <b>{bytes(memory)}</b></span>}
-            {seeTunnels && <span><b>{liveTunnels}</b> tunnel{liveTunnels === 1 ? "" : "s"} live{status && !status.connections ? ", connector offline" : ""}</span>}
           </div>
         </div>
         <div className="page-actions">
@@ -250,7 +235,7 @@ function ContainerList({ routes, status, onChanged }: { routes: Route[] | null; 
           <div className="card welcome">
             <Icon name="deployed_code" size={40} />
             <h2>Nothing here yet</h2>
-            <p className="muted">Add a container or a tunnel with the plus. Containers Docker runs here show up on their own.</p>
+            <p className="muted">Add a container with the plus. Containers Docker runs here show up on their own.</p>
           </div>
         ) : (
           <div className="card">
@@ -278,17 +263,23 @@ function Use({ s }: { s?: ContainerStats }) {
   return <span className="ct-use">{pct(s.cpu)}<span>{bytes(s.memory)}</span></span>;
 }
 
-function ContainerRow({ c, d, s, routes, busy, run, grouped }: {
+function ContainerRow({ c, d, s, routes, forwards, busy, run, grouped }: {
   c: Container;
   d?: Deploy;
   s?: ContainerStats;
   routes: Route[];
+  forwards: Forward[];
   busy: boolean;
   run: (targets: Target[], action: Act) => void;
   grouped: boolean;
 }) {
   const can = useCan();
-  const first = routes[0];
+  // Its first address: a tunnel's, or a router or Tailscale forward's.
+  const addresses = [
+    ...routes.map((r) => ({ at: r.hostname, on: r.enabled })),
+    ...forwards.filter((f) => f.address).map((f) => ({ at: f.address!, on: f.enabled && !f.problem })),
+  ];
+  const first = addresses[0];
   return (
     <li className={"ct-row" + (grouped ? " in-group" : "")}>
       <a className="ct-row-main" href={pageOf(c.name)}>
@@ -298,35 +289,11 @@ function ContainerRow({ c, d, s, routes, busy, run, grouped }: {
           <small className="mono">{d ? `${sourceOf(d)}${d.branch ? `, ${d.branch}` : ""}` : c.image}</small>
         </span>
         <span className="ct-reach">
-          {first && <><span className={"dot " + (first.enabled ? "ok" : "")} />{first.hostname}{routes.length > 1 && <span className="muted">+{routes.length - 1}</span>}</>}
+          {first && <><span className={"dot " + (first.on ? "ok" : "")} />{first.at}{addresses.length > 1 && <span className="muted">+{addresses.length - 1}</span>}</>}
         </span>
         {live(c) ? <Use s={s} /> : <span className="ct-use muted">{c.status}</span>}
       </a>
       <span className="ct-menu">{busy ? <span className="spinner small" /> : <MoreMenu label={`Actions for ${c.name}`} actions={actionsOf(c, run, can)} />}</span>
-    </li>
-  );
-}
-
-// TunnelRow is a tunnel to a port on this computer or another machine.
-function TunnelRow({ r, onRemove }: { r: Route; onRemove: () => void }) {
-  const can = useCan();
-  return (
-    <li className="ct-row">
-      <a className="ct-row-main" href={`#/tunnels/${r.id}`}>
-        <span className={"ct-kind " + (r.enabled ? "ok" : "")} title={r.enabled ? "Live" : "Off"}><Icon name="public" /></span>
-        <span className="ct-name-text">
-          <b>{r.hostname}</b>
-          <small className="mono">to {target(r)}</small>
-        </span>
-        <span className="ct-reach"><AccessChips route={r} /></span>
-        <span className="ct-use muted">{r.enabled ? "Live" : "Off"}</span>
-      </a>
-      <span className="ct-menu">
-        <MoreMenu label={`Actions for ${r.hostname}`} actions={[
-          { label: "Open", icon: "open_in_new", onClick: () => window.open(`https://${r.hostname}`, "_blank", "noreferrer") },
-          ...(can("tunnels.delete") ? [{ label: "Remove", icon: "delete" as IconName, danger: true, onClick: onRemove, confirm: "Remove for good" }] : []),
-        ]} />
-      </span>
     </li>
   );
 }
@@ -361,7 +328,7 @@ function GroupHead({ name, items, open, onFold, run }: {
 }
 
 // The actions a container's menu holds, by what it may do now. `page` leaves
-// out what the page itself shows, its logs and tunnel.
+// out what the page itself shows, its logs and forwards.
 function actionsOf(c: (Container | ContainerDetail) & { deploy?: string | null }, run: (targets: Target[], action: Act) => void, can: (key: string) => boolean, page = false): MenuAction[] {
   const on = live(c);
   const manage = can("containers.manage");
@@ -371,7 +338,7 @@ function actionsOf(c: (Container | ContainerDetail) & { deploy?: string | null }
   return [
     ...(page ? [] : [
       { label: "Logs", icon: "terminal" as IconName, onClick: () => go(`${pageOf(c.name)}/logs`) },
-      ...(can("tunnels.create") ? [{ label: "Tunnel", icon: "public" as IconName, onClick: () => go(`${pageOf(c.name)}/tunnel`) }] : []),
+      ...(can("tunnels.view") ? [{ label: "Forward", icon: "swap_horiz" as IconName, onClick: () => go(`${pageOf(c.name)}/forward`) }] : []),
     ]),
     ...(manage && !c.own && on && !page ? [{ label: "Stop", icon: "stop" as IconName, onClick: () => run([c], "stop") }] : []),
     ...(manage && !c.own && c.state === "paused" && !page ? [{ label: "Resume", icon: "play_arrow" as IconName, onClick: () => run([c], "unpause") }] : []),
@@ -387,7 +354,7 @@ function actionsOf(c: (Container | ContainerDetail) & { deploy?: string | null }
 
 const TABS: [string, string, IconName][] = [
   ["overview", "Overview", "info"],
-  ["tunnel", "Tunnel", "public"],
+  ["forward", "Forward", "swap_horiz"],
   ["images", "Images", "layers"],
   ["logs", "Logs", "terminal"],
   ["resources", "Resources", "tune"],
@@ -396,10 +363,12 @@ const TABS: [string, string, IconName][] = [
 
 const AUTO_START: Record<string, string> = { "on-failure": "When it fails", "unless-stopped": "Unless stopped by hand", always: "Always" };
 
-// ContainerPage is one container and its tunnel together: its name, state and
-// address in the heading, with Open, the one button its state calls for, and a
-// menu for the rest; then its sub-pages.
-function ContainerPage({ name, tab, more, routes, users, providers, onChanged }: { name: string; tab: string; more: string[] } & Shared) {
+// ContainerPage is one container and its forwards together: its name, state
+// and address in the heading, with Open, the one button its state calls for,
+// and a menu for the rest; then its sub-pages.
+function ContainerPage({ name, tab: asked, more, routes, forwards, users, providers, onChanged }: { name: string; tab: string; more: string[] } & Shared) {
+  // Its Tunnel page became Forward.
+  const tab = asked === "tunnel" ? "forward" : asked;
   const [c, setC] = useState<ContainerDetail | null>(null);
   // The repository it is built from: undefined until known, null for none.
   const [d, setD] = useState<Deploy | null | undefined>(undefined);
@@ -433,7 +402,7 @@ function ContainerPage({ name, tab, more, routes, users, providers, onChanged }:
   // container from a repository that is not made yet shows its builds.
   const head = c ?? listed.get(name) ?? (d ? pending(d) : undefined);
   const made = !!head?.id;
-  const tabs = TABS.filter(([k]) => (k !== "tunnel" || can("tunnels.view"))
+  const tabs = TABS.filter(([k]) => (k !== "forward" || can("tunnels.view"))
     && (made || !["overview", "logs", "resources"].includes(k))
     && (k !== "settings" || (!!d && can("containers.deploy"))));
   const current = tabs.some(([k]) => k === tab) ? tab : tabs[0][0];
@@ -481,7 +450,7 @@ function ContainerPage({ name, tab, more, routes, users, providers, onChanged }:
               <span className="ct-source"><Icon name="git" size={16} /><span className="mono">{sourceOf(d)}</span>, {d.branch}{d.running && <>, build {d.running.number}</>}</span>
             ) : <span className="mono">{head.image}</span>}
             {reaching.map((r) => (
-              <a key={r.id} className="ct-address" href={`${base}/tunnel/${r.id}`}><span className={"dot " + (r.enabled ? "ok" : "")} />{r.hostname}</a>
+              <a key={r.id} className="ct-address" href={`${base}/forward/${r.id}`}><span className={"dot " + (r.enabled ? "ok" : "")} />{r.hostname}</a>
             ))}
           </div>
         </div>
@@ -503,9 +472,10 @@ function ContainerPage({ name, tab, more, routes, users, providers, onChanged }:
       <div className="page-body stack" key={current}>
         {problem && made && !c && <Callout tone="bad" icon="error">{problem}</Callout>}
         {current === "overview" && (c ? <Overview c={c} /> : <div className="repo-loading"><span className="spinner" /></div>)}
-        {current === "tunnel" && !routes && <div className="repo-loading"><span className="spinner" /></div>}
-        {current === "tunnel" && routes && (
-          <ContainerTunnel c={head} pick={more[0] ?? ""} base={`${base}/tunnel`} routes={reaching} users={users} providers={providers} onChanged={onChanged} />
+        {current === "forward" && !routes && <div className="repo-loading"><span className="spinner" /></div>}
+        {current === "forward" && routes && (
+          <ContainerForward c={head} pick={more[0] ?? ""} base={`${base}/forward`} routes={reaching} forwards={forwardsOf(head, forwards)}
+            users={users} providers={providers} onChanged={onChanged} />
         )}
         {current === "images" && (more[0] === "build" && d ? <BuildLog d={d} number={Number(more[1])} back={`${base}/images`} />
           : more[0] ? <ImageView id={more[0]} back={`${base}/images`} />
@@ -519,49 +489,46 @@ function ContainerPage({ name, tab, more, routes, users, providers, onChanged }:
   );
 }
 
-// ContainerTunnel is the container's addresses in the middle, the picked
-// one's controls at the side. A new address is published from a dialog.
-function ContainerTunnel({ c, pick, base, routes, users, providers, onChanged }: {
+// ContainerForward is every way the container is reached, a tunnel, the
+// router or Tailscale, a row each; the picked tunnel's activity and controls
+// sit under and beside them. The plus adds one from a dialog.
+function ContainerForward({ c, pick, base, routes, forwards, users, providers, onChanged }: {
   c: Container | ContainerDetail;
   pick: string;
   base: string;
   routes: Route[];
+  forwards: Forward[];
   users: User[];
   providers: OAuthProvider[];
   onChanged: () => Promise<void>;
 }) {
   const can = useCan();
   const [adding, setAdding] = useState(false);
-  const creates = can("tunnels.create");
-  const dialog = adding && (
-    <Dialog title="Publish an address" wide onClose={() => setAdding(false)}>
-      <TunnelComposer users={users} providers={providers} sub={routes.length ? "" : c.name} container={{ name: c.name, reach: reachOf(c) }}
-        onPublished={async (r) => {
-          await onChanged();
-          setAdding(false);
-          go(`${base}/${r.id}`);
-        }} />
-    </Dialog>
+  const picked = routes.find((r) => r.id === pick) ?? routes[0];
+  const list = (
+    <section className="card">
+      <div className="card-head">
+        <div className="card-titles"><h2>Forward</h2></div>
+        {can("tunnels.create") && <button type="button" className="icon-btn" aria-label="Forward a port" title="Forward a port" onClick={() => setAdding(true)}><Icon name="add" /></button>}
+      </div>
+      {routes.length || forwards.length ? (
+        <ForwardRows items={[...routes.map((r) => ({ r })), ...forwards.map((f) => ({ f }))]} hrefOf={(r) => `${base}/${r.id}`} picked={picked?.id} onChanged={onChanged} />
+      ) : <p className="empty-note card-pad">Nothing reaches this container from outside yet.</p>}
+    </section>
   );
-  const add = creates && <button type="button" className="icon-btn" aria-label="Publish an address" title="Publish an address" onClick={() => setAdding(true)}><Icon name="add" /></button>;
-  if (!routes.length) {
-    return (
-      <>
-        <section className="card">
-          <div className="card-head">
-            <div className="card-titles"><h2>Address</h2></div>
-            {add}
-          </div>
-          <p className="empty-note card-pad">Nothing reaches this container through a tunnel yet.</p>
-        </section>
-        {dialog}
-      </>
-    );
-  }
   return (
     <>
-      <TunnelsView routes={routes} pick={pick} base={base} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go(base)} add={add} />
-      {dialog}
+      {picked ? <TunnelDetail route={picked} top={list} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go(base)} /> : list}
+      {adding && (
+        <Dialog title="Forward a port" wide onClose={() => setAdding(false)}>
+          <ForwardComposer users={users} providers={providers} sub={routes.length ? "" : c.name} container={{ name: c.name, reach: reachOf(c) }}
+            onDone={async (r) => {
+              await onChanged();
+              setAdding(false);
+              if (r) go(`${base}/${r.id}`);
+            }} />
+        </Dialog>
+      )}
     </>
   );
 }
