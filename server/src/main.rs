@@ -10,6 +10,7 @@ mod db;
 mod deploy;
 mod docker;
 mod dupes;
+mod forward;
 mod gate;
 mod guard;
 mod hardware;
@@ -83,6 +84,7 @@ async fn main() -> Result<()> {
     tunnel::spawn(state.clone());
     tokio::spawn(admin::remove_git_address(state.clone()));
     netinfo::spawn(state.clone());
+    forward::spawn(state.clone());
     metrics::spawn();
     hardware::spawn(state.clone());
     convert::spawn(state.clone());

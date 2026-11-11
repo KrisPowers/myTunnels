@@ -90,9 +90,9 @@ step at a time, each saved as soon as it is done, so it can be left and resumed:
    most setups.
 4. **Ready.** A summary, the connector coming online, and the theme.
 
-Then, on **Containers**, open a container, and on its **Tunnel** page press the plus: type the
-subdomain, pick the domain, choose who can open it and press **Publish**. The plus at the top of
-Containers publishes any other port the same way.
+Then, on **Containers**, open a container, and on its **Forward** page press the plus: keep
+**Tunnel** under **Forward by**, type the subdomain, pick the domain, choose who can open it and
+press **Publish**. The plus on **Forward** opens any other port the same way.
 
 To manage myTunnels from anywhere, publish the dashboard itself: under **Local app**, set
 **Runs on** to **This dashboard**, with no port. It takes the same access rules as any
@@ -143,33 +143,48 @@ what passes through myTunnels, or the computer's while `server host` runs.
 Temperatures need sensors the host exposes under `/sys/class/hwmon`, which a Linux host
 does and Docker Desktop does not.
 
+## Forward
+
+**Forward** is every opening in one list: Cloudflare tunnels, router port forwards and
+Tailscale, a row each with its address, where it goes, who reaches it and whether it is open.
+The plus asks first how to forward:
+
+- **Tunnel**: an address on your domain through Cloudflare Tunnel, with no port opened on the
+  router, behind the tunnel's Access Control (home network, a tunnel password, sign-in).
+- **Port forward**: the router, asked by UPnP, sends a port of your public address to the app.
+  The router has no sign-in or password, so anyone with the address reaches it.
+- **Tailscale**: `tailscale serve` puts the app on your tailnet at this machine's tailnet name;
+  **Open to the internet** uses Funnel instead, on port 443, 8443 or 10000.
+
+Router and Tailscale forwards can **Close after** an hour, a day or a week, and stay in the list
+switched off. A way whose app is missing (cloudflared, Tailscale) is listed but cannot be picked
+until it is installed from **Apps**.
+
 ## Containers
 
-**Containers** is one catalog of everything published here: every container, and every tunnel to
-a port elsewhere, such as another machine or the dashboard, which is a container of another
-kind. It says how many containers run, their CPU and memory together, and how many tunnels are
-live, then a row each: what it is (a container Docker runs, one built from Git, one run from an
-image, or a tunnel) in a tile tinted by its state, its name over where it comes from, its
-address, and its CPU and memory while it runs. Each row has one menu: logs, its tunnel, start or
+**Containers** is the catalog of containers. It says how many run and their CPU and memory
+together, then a row each: what it is (a container Docker runs, one built from Git, or one run
+from an image) in a tile tinted by its state, its name over where it comes from, its address,
+and its CPU and memory while it runs. Each row has one menu: logs, its forwards, start or
 stop, restart, kill and delete. Compose projects with more than one container fold under their
 name, with start, stop and restart for all of them. Search, or pick **All** or **Running**; the
 catalog refreshes on its own.
 
-The plus at the top, here and in the header, adds anything: a **Tunnel** to any port, or a
-**Container from Git**, **from GitHub** or **from an image**. The menu beside it deletes every
+The plus at the top, here and in the header, adds a **Container from Git**, **from GitHub** or
+**from an image**, or a **Forward**. The menu beside it deletes every
 image no container uses.
 
-A container and its tunnel are one page. Its heading holds its state, image and address,
+A container and its forwards are one page. Its heading holds its state, image and address,
 **Open**, the one button its state calls for (start, stop or resume), and a menu for restart,
 pause, kill and delete. Under it:
 
 - **Overview**: its CPU over time, memory, network and disk while it runs, then what it runs,
   its state and restarts, its ports, networks and mounts.
-- **Tunnel**: its addresses in the middle, each with its state, where it goes and who can open
-  it, and the picked one's activity under them. Its controls sit at the side: Open, its live
-  switch, a menu to change the address or remove it, and its access control.
-  The plus publishes an address: type the subdomain, pick the domain, choose who can open it
-  and press **Publish**; the port is the container's own, asked only when it has more than one.
+- **Forward**: every way it is reached, a tunnel, a router port or Tailscale, each with its
+  state, where it goes and who reaches it, and the picked tunnel's activity under them. That
+  tunnel's controls sit at the side: Open, its live switch, a menu to change the address or
+  remove it, and its access control. The plus forwards a port as the Forward page does; the
+  port is the container's own, asked only when it has more than one.
 - **Images**: the image it runs and the others of the same name, such as earlier versions, with
   their size and age. Open one for its entrypoint, command, working folder, user, exposed ports,
   environment, labels and layers. One no container uses can be deleted.

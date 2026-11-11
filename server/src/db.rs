@@ -168,6 +168,19 @@ CREATE TABLE IF NOT EXISTS limits (
     name TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS forwards (
+    id TEXT PRIMARY KEY,
+    method TEXT NOT NULL,
+    name TEXT NOT NULL,
+    target_host TEXT,
+    target_port INTEGER NOT NULL,
+    protocol TEXT NOT NULL,
+    public_port INTEGER NOT NULL,
+    public INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    enabled INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+);
 ";
 
 /// Columns added to `routes` after its first release, with how to add each.
@@ -222,6 +235,46 @@ pub struct Route {
     pub password_set: bool,
     pub dns_record_id: Option<String>,
     pub created_at: i64,
+}
+
+/// A port opened by the router or by Tailscale, beside the tunnels: `method` is
+/// `port` or `tailscale`.
+#[derive(Clone, Serialize)]
+pub struct Forward {
+    pub id: String,
+    pub method: String,
+    /// What it opens, such as a container's name; empty for a bare port.
+    pub name: String,
+    pub target_host: Option<String>,
+    pub target_port: u16,
+    /// `tcp` or `udp` for the router; `http`, `https` or `tcp` for Tailscale.
+    pub protocol: String,
+    /// The port it is reached on: the router's, or the tailnet machine's.
+    pub public_port: u16,
+    /// Tailscale only: open to the internet through Funnel, not just the tailnet.
+    pub public: bool,
+    /// When it closes on its own; 0 is never.
+    pub expires_at: i64,
+    pub enabled: bool,
+    pub created_at: i64,
+}
+
+const FORWARD_COLS: &str = "id, method, name, target_host, target_port, protocol, public_port,      public, expires_at, enabled, created_at";
+
+fn forward_row(r: &Row) -> rusqlite::Result<Forward> {
+    Ok(Forward {
+        id: r.get(0)?,
+        method: r.get(1)?,
+        name: r.get(2)?,
+        target_host: r.get(3)?,
+        target_port: r.get(4)?,
+        protocol: r.get(5)?,
+        public_port: r.get(6)?,
+        public: r.get(7)?,
+        expires_at: r.get(8)?,
+        enabled: r.get(9)?,
+        created_at: r.get(10)?,
+    })
 }
 
 /// Someone who can sign in at tunnels that ask for an account.
@@ -823,6 +876,68 @@ impl Db {
     pub fn delete_route(&self, id: &str) -> Result<()> {
         self.conn()
             .execute("DELETE FROM routes WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    pub fn forwards(&self) -> Result<Vec<Forward>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {FORWARD_COLS} FROM forwards ORDER BY created_at"
+        ))?;
+        let list = stmt
+            .query_map([], forward_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(list)
+    }
+
+    pub fn forward(&self, id: &str) -> Result<Option<Forward>> {
+        let found = self
+            .conn()
+            .query_row(
+                &format!("SELECT {FORWARD_COLS} FROM forwards WHERE id = ?1"),
+                [id],
+                forward_row,
+            )
+            .optional()?;
+        Ok(found)
+    }
+
+    pub fn insert_forward(&self, f: &Forward) -> Result<()> {
+        self.conn().execute(
+            &format!(
+                "INSERT INTO forwards ({FORWARD_COLS})
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"
+            ),
+            params![
+                f.id,
+                f.method,
+                f.name,
+                f.target_host,
+                f.target_port,
+                f.protocol,
+                f.public_port,
+                f.public,
+                f.expires_at,
+                f.enabled,
+                f.created_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Saves what can change once it is open: on or off, who reaches it, and
+    /// when it closes.
+    pub fn update_forward(&self, f: &Forward) -> Result<()> {
+        self.conn().execute(
+            "UPDATE forwards SET public = ?2, expires_at = ?3, enabled = ?4 WHERE id = ?1",
+            params![f.id, f.public, f.expires_at, f.enabled],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_forward(&self, id: &str) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM forwards WHERE id = ?1", [id])?;
         Ok(())
     }
 

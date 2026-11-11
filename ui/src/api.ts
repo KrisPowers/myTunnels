@@ -538,7 +538,32 @@ export interface Apps {
 }
 
 // What features need where myTunnels runs, and whether it is there.
-export interface Needs { docker: boolean; git: boolean; cloudflared: boolean }
+export interface Needs { docker: boolean; git: boolean; cloudflared: boolean; tailscale: boolean }
+
+// A port opened by the router or by Tailscale, beside the tunnels.
+export interface Forward {
+  id: string;
+  method: "port" | "tailscale";
+  // What it opens, such as a container's name.
+  name: string;
+  target_host: string | null;
+  target_port: number;
+  // tcp or udp at the router; http, https or tcp through Tailscale.
+  protocol: "tcp" | "udp" | "http" | "https";
+  public_port: number;
+  // Tailscale only: open to the internet through Funnel.
+  public: boolean;
+  // When it closes on its own, in seconds; 0 is never.
+  expires_at: number;
+  enabled: boolean;
+  created_at: number;
+  // Where it is reached, once known.
+  address?: string | null;
+  // Why it did not open the last time.
+  problem?: string | null;
+}
+
+export type NewForward = Pick<Forward, "method" | "name" | "target_host" | "target_port" | "protocol" | "public_port" | "public"> & { expires_in: number };
 
 export interface Auth {
   authenticated: boolean;
@@ -643,6 +668,11 @@ export const api = {
   removeRoute: (id: string) => call(`/routes/${id}`, "DELETE"),
   routeActivity: (id: string) => call<TunnelEvent[]>(`/routes/${id}/activity`),
   moveRoute: (id: string, subdomain: string, zone_id: string) => call<Route>(`/routes/${id}/address`, "PUT", { subdomain, zone_id }),
+
+  forwards: () => call<Forward[]>("/forwards"),
+  addForward: (body: NewForward) => call<Forward>("/forwards", "POST", body),
+  editForward: (id: string, edit: { enabled?: boolean; public?: boolean; expires_in?: number }) => call<Forward>(`/forwards/${id}`, "PATCH", edit),
+  removeForward: (id: string) => call(`/forwards/${id}`, "DELETE"),
 
   devices: () => call<Device[]>("/devices"),
   editDevice: (id: string, patch: Pick<Device, "name">) =>

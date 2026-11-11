@@ -400,6 +400,7 @@ a.result:hover { background: var(--hover); }
 .dropdown-list.up { transform-origin: bottom; }
 .dropdown-option { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 5px 10px; border-radius: 6px; color: var(--text); cursor: pointer; }
 .dropdown-option.active { background: var(--hover); }
+.dropdown-option.unpickable { opacity: .5; cursor: not-allowed; }
 .dropdown-list.multi .dropdown-option { padding-left: 10px; }
 .dropdown-list.multi .dropdown-option[aria-selected="true"] { background: none; color: var(--text); box-shadow: none; }
 .dropdown-list.multi .dropdown-option:hover { background: var(--hover); }
@@ -653,7 +654,7 @@ a.result:hover { background: var(--hover); }
   .composer-row { flex-wrap: wrap; }
   .composer-row .grow { flex-basis: 100%; }
   .composer-dot, .composer-arrow { display: none; }
-  .composer-row .port { flex: 1; }
+  .composer-row .port, .composer-row .method, .composer-row .protocol { flex: 1; }
   .result.tunnel-row { grid-template-columns: 16px minmax(0, 1fr) auto; gap: 4px 12px; padding: 10px 12px 10px 16px; }
   .result.device-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 10px 12px 10px 16px; }
   .result.tunnel-row .result-service, .result.device-row .result-meta { display: none; }
@@ -1252,6 +1253,11 @@ a.result.thread-row:hover .scan-target { color: var(--accent); }
 .tn-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 12px 20px; color: var(--text); }
 a.tn-row:hover { background: var(--hover); text-decoration: none; }
 .tn-row.on { background: var(--accent-bg); }
+.ct-row.on { background: var(--accent-bg); }
+.ct-name-text .fw-problem { color: var(--bad); }
+.composer-row .method { width: 180px; flex-shrink: 0; }
+.composer-row .protocol { width: 120px; flex-shrink: 0; }
+.composer-fixed { padding-top: 12px; color: var(--text-2); white-space: nowrap; }
 .tn-name { display: grid; min-width: 0; }
 .tn-name b { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .tn-name small { overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }

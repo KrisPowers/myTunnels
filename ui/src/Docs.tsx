@@ -7,7 +7,7 @@ export const DOCS: [string, string, IconName][] = [
   ["dashboard", "Dashboard", "dashboard"],
   ["containers", "Containers", "deployed_code"],
   ["storage", "Storage", "cloud"],
-  ["publish", "Publishing", "public"],
+  ["forward", "Forward", "swap_horiz"],
   ["access", "Access Control", "shield"],
   ["devices", "Devices", "devices"],
   ["users", "Users", "group"],
@@ -74,13 +74,13 @@ const CONTENT: Record<string, ReactNode> = {
   containers: (
     <>
       <Doc title="What it shows">
-        <p><b>Containers</b> is one catalog: every container, and every tunnel to a port elsewhere, a row each with what it is in a tile tinted by its state, its name over where it comes from, its address, and its CPU and memory while it runs. Compose projects with more than one container fold under their name. Search, or pick <b>All</b> or <b>Running</b>; it refreshes on its own. The plus, here and in the header, adds a <b>Tunnel</b> or a <b>Container from GitHub</b> or <b>from an image</b>.</p>
+        <p><b>Containers</b> is the catalog of containers, a row each with what it is in a tile tinted by its state, its name over where it comes from, its address, and its CPU and memory while it runs. Compose projects with more than one container fold under their name. Search, or pick <b>All</b> or <b>Running</b>; it refreshes on its own. The plus, here and in the header, adds a <b>Container from GitHub</b> or <b>from an image</b>, or a <b>Forward</b>.</p>
       </Doc>
       <Doc title="One container">
-        <p>A container and its tunnel are one page. Its heading holds its state, image and address, <b>Open</b>, the one button its state calls for (start, stop or resume) and a menu for the rest. Under it: <b>Overview</b> (its CPU, memory, network and disk while it runs, then what it runs, its state, ports, networks and mounts), <b>Tunnel</b>, <b>Images</b>, <b>Logs</b> and <b>Resources</b>: its CPU limit and priority, memory limit, reserved memory and swap, how many processes it may run and its <b>Auto-start</b>. Set to unless stopped by hand or always, it comes back on its own after a crash or a restart of the machine, once Docker runs again. A change applies at once and is given back when the container is made again.</p>
+        <p>A container and its forwards are one page. Its heading holds its state, image and address, <b>Open</b>, the one button its state calls for (start, stop or resume) and a menu for the rest. Under it: <b>Overview</b> (its CPU, memory, network and disk while it runs, then what it runs, its state, ports, networks and mounts), <b>Forward</b>, <b>Images</b>, <b>Logs</b> and <b>Resources</b>: its CPU limit and priority, memory limit, reserved memory and swap, how many processes it may run and its <b>Auto-start</b>. Set to unless stopped by hand or always, it comes back on its own after a crash or a restart of the machine, once Docker runs again. A change applies at once and is given back when the container is made again.</p>
       </Doc>
-      <Doc title="Its tunnel">
-        <p><b>Tunnel</b> lists the container's addresses in the middle, each with its state, where it goes and who may open it, and the picked one's activity under them. Its controls sit at the side: Open, its live switch, a menu to change the address or remove it, and its access control. The plus publishes an address: type the subdomain, pick the domain, choose who may open it and press <b>Publish</b>; the port is the container's own, asked only when it has more than one.</p>
+      <Doc title="Its forwards">
+        <p><b>Forward</b> lists every way the container is reached, a tunnel, a router port or Tailscale, each with its state, where it goes and who reaches it. A tunnel's activity sits under the list and its controls at the side: Open, its live switch, a menu to change the address or remove it, and its access control. The plus forwards a port the same way the Forward page does; the port is the container's own, asked only when it has more than one. A router or Tailscale forward reaches only a port the container publishes on this computer.</p>
       </Doc>
       <Doc title="From a repository">
         <p><b>Container from GitHub</b> makes a container from code: give any https address (GitHub and the like, with a token for a private one), then its branch, its name and how it updates: <b>When the branch changes</b>, <b>On a timer</b> (every hour to every week), or <b>Only when I press Update</b>. <b>Update</b>, in its heading, builds the latest commit at any time.</p>
@@ -91,7 +91,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Images</b> lists the image the container runs and the others of the same name, such as earlier versions, with their size and age. Open one for what it runs, its environment and labels, and its layers. One no container uses can be deleted; the menu at the top of Containers deletes every unused image at once.</p>
       </Doc>
       <Doc title="Managing them">
-        <p>Each row's menu holds logs, its tunnel, start or stop, restart, kill and delete; a project's menu starts, stops or restarts all of it. Deleting takes a stopped container away and leaves its volumes. The container myTunnels runs in is marked and is never stopped from here.</p>
+        <p>Each row's menu holds logs, its forwards, start or stop, restart, kill and delete; a project's menu starts, stops or restarts all of it. Deleting takes a stopped container away and leaves its volumes. The container myTunnels runs in is marked and is never stopped from here.</p>
       </Doc>
       <Doc title="What Docker allows">
         <p>myTunnels reaches Docker through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers, building images from a container's repository, listing and removing images, and the engine's info, and nothing else, so volumes and networks cannot be changed from here.</p>
@@ -108,7 +108,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>When myTunnels runs in Docker, that machine is reached through <span className="mono">server host</span> running on it. It pairs with the first myTunnels to ask and installs only for that one; to pair again, remove the <span className="mono">paired</span> file it names.</p>
       </Doc>
       <Doc title="What features need">
-        <p>Containers need Docker, tunnels need cloudflared, and containers from a repository need Git, where myTunnels runs. Without one, the feature stays and says which app to install.</p>
+        <p>Containers need Docker, tunnels need cloudflared, Tailscale forwards need Tailscale, and containers from a repository need Git, where myTunnels runs. Without one, the feature stays and says which app to install; on Forward, a way whose app is missing is listed but cannot be picked.</p>
       </Doc>
     </>
   ),
@@ -128,10 +128,22 @@ const CONTENT: Record<string, ReactNode> = {
       </Doc>
     </>
   ),
-  publish: (
+  forward: (
     <>
+      <Doc title="Three ways">
+        <p><b>Forward</b> is every opening in one list: tunnels, router ports and Tailscale, a row each with its address, where it goes, who reaches it and whether it is open. Search, or show one way at a time. The plus, here and in the header, forwards a port; its first field, <b>Forward by</b>, picks the way:</p>
+        <ul>
+          <li><b>Tunnel</b> gives the app an address on your domain through Cloudflare Tunnel, without opening a port on the router, with the full Access Control below.</li>
+          <li><b>Port forward</b> asks the router, by UPnP, to send a port of your public address to the app. The router has no sign-in or password, so anyone with the address reaches it. UPnP must be on at the router.</li>
+          <li><b>Tailscale</b> serves the app to the devices on your tailnet, at this machine's tailnet name. <b>Open to the internet</b> serves it to anyone through Funnel, on port 443, 8443 or 10000.</li>
+        </ul>
+        <p>A way whose app is not installed, cloudflared or Tailscale, stays in the list but cannot be picked until it is installed from <a href="#/apps">Apps</a>.</p>
+      </Doc>
       <Doc title="A new tunnel">
-        <p>Press <b>New tunnel</b>, type a subdomain, pick one of your domains, and enter the port the app listens on. Choose who can open it, then press <b>Publish</b>. The DNS record and the route are made for you, and removed with the tunnel.</p>
+        <p>Pick <b>Tunnel</b>, type a subdomain, pick one of your domains, and enter the port the app listens on. Choose who can open it, then press <b>Publish</b>. The DNS record and the route are made for you, and removed with the tunnel.</p>
+      </Doc>
+      <Doc title="A router or Tailscale forward">
+        <p>Pick <b>Port forward</b> or <b>Tailscale</b>, then the port it is reached on, the app's port and its protocol: TCP or UDP at the router; http, https or TCP on Tailscale, where TCP carries anything else, such as SSH. The app runs on this computer or another machine on your network, by its IP address. <b>Close after</b> closes it on its own after an hour, a day or a week; it stays in the list switched off, and its menu opens it again. The router is asked again every twenty minutes, so a router that restarts gets it back.</p>
       </Doc>
       <Doc title="Where requests go">
         <p>By default a tunnel sends requests to the port on this computer. Under <b>Local app</b> it can point at a container name or another machine instead, and use https when the app serves it itself. Self-signed certificates are accepted.</p>

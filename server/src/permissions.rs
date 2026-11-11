@@ -78,20 +78,24 @@ pub const GROUPS: &[Group] = &[
         ],
     },
     Group {
-        label: "Tunnels",
+        label: "Forward",
         permissions: &[
             p(
                 "tunnels.view",
-                "View tunnels",
-                "Their addresses, access and activity",
+                "View forwards",
+                "Tunnels, router ports and Tailscale, their access and activity",
             ),
-            p("tunnels.create", "Publish tunnels", ""),
+            p(
+                "tunnels.create",
+                "Add forwards",
+                "Publish tunnels and open ports",
+            ),
             p(
                 "tunnels.edit",
-                "Change tunnels",
+                "Change forwards",
                 "Address, where it goes, access, on and off",
             ),
-            p("tunnels.delete", "Remove tunnels", ""),
+            p("tunnels.delete", "Remove forwards", ""),
         ],
     },
     Group {
@@ -274,6 +278,10 @@ pub fn needed(method: &Method, path: &str) -> Need {
         "routes" if *method == Method::POST => any(&["tunnels.create"]),
         "routes" if *method == Method::DELETE => any(&["tunnels.delete"]),
         "routes" => any(&["tunnels.edit"]),
+        "forwards" if read => any(&["tunnels.view"]),
+        "forwards" if *method == Method::POST => any(&["tunnels.create"]),
+        "forwards" if *method == Method::DELETE => any(&["tunnels.delete"]),
+        "forwards" => any(&["tunnels.edit"]),
         "devices" if read => any(&["devices.view", "users.view"]),
         "devices" if *method == Method::DELETE => any(&["devices.remove"]),
         "devices" => any(&["devices.approve"]),
