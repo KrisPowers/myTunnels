@@ -300,8 +300,10 @@ const NO_ACCESS: Access = {
 
 // TunnelComposer publishes an address: the address on top, then where the app
 // runs, then who can open it. For a container, where it runs is the container,
-// so only its port is asked, and only when it has more than one.
-export function TunnelComposer({ users, providers, onPublished, port: startPort, container, sub: startSub = "" }: {
+// so only its port is asked, and only when it has more than one. `lead` opens
+// the address row, such as the pick of how to forward.
+export function TunnelComposer({ users, providers, onPublished, port: startPort, container, sub: startSub = "", lead }: {
+  lead?: ReactNode;
   users: User[];
   providers: OAuthProvider[];
   onPublished: (route: Route) => Promise<void>;
@@ -354,6 +356,7 @@ export function TunnelComposer({ users, providers, onPublished, port: startPort,
     <form className="stack" onSubmit={submit}>
       <div className="card composer">
         <div className="composer-row">
+          {lead}
           <TextField className="grow" label="Subdomain" placeholder="app1" autoComplete="off" autoFocus={!startSub} value={sub}
             onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
           <span className="composer-dot">.</span>
@@ -402,27 +405,6 @@ export function TunnelComposer({ users, providers, onPublished, port: startPort,
       <AccessCard value={access} users={users} providers={providers} onChange={(patch) => setAccess((a) => ({ ...a, ...patch }))}
         hostname={sub && zones ? `${sub}.${zones.find((z) => z.id === zone)?.name ?? ""}` : undefined} />
     </form>
-  );
-}
-
-// NewTunnel publishes any port, such as one on another machine or the dashboard.
-export function NewTunnel({ users, providers, onPublished, port }: { users: User[]; providers: OAuthProvider[]; onPublished: () => Promise<void>; port?: string }) {
-  return (
-    <>
-      <div className="page-head">
-        <a className="icon-btn" href="#/" aria-label="Containers" title="Containers"><Icon name="arrow_back" /></a>
-        <div className="page-head-main">
-          <h1>New tunnel</h1>
-        </div>
-      </div>
-      <div className="page-body stack">
-        <NeedsApp app="cloudflared" what="Publishing a tunnel" />
-        <TunnelComposer users={users} providers={providers} port={port} onPublished={async (route) => {
-          await onPublished();
-          go(`#/tunnels/${route.id}`);
-        }} />
-      </div>
-    </>
   );
 }
 
@@ -562,36 +544,53 @@ export function TunnelsView({ routes, pick, base, add, users, providers, onChang
   const route = routes.find((r) => r.id === pick) ?? routes[0];
   if (!route) return null;
   return (
+    <TunnelDetail route={route} users={users} providers={providers} onChanged={onChanged} onRemoved={onRemoved} top={
+      <section className="card">
+        <div className="card-head">
+          <div className="card-titles"><h2>{routes.length === 1 ? "Address" : "Addresses"}</h2></div>
+          {add}
+        </div>
+        <ul className="results">
+          {routes.map((r) => {
+            const body = (
+              <>
+                <span className={"dot " + (r.enabled ? "ok" : "")} role="img" aria-label={r.enabled ? "Live" : "Off"} title={r.enabled ? "Live" : "Off"} />
+                <span className="tn-name">
+                  <b>{r.hostname}</b>
+                  <small className="mono">to {target(r)}</small>
+                </span>
+                <AccessChips route={r} />
+              </>
+            );
+            return (
+              <li key={r.id}>
+                {base ? (
+                  <a className={"result tn-row" + (r.id === route.id ? " on" : "")} href={`${base}/${r.id}`} aria-current={r.id === route.id ? "true" : undefined}>{body}</a>
+                ) : <div className="result tn-row">{body}</div>}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    } />
+  );
+}
+
+// TunnelDetail is one tunnel: what sits over it, such as the list it was
+// picked from, then its activity in the middle and its controls at the side.
+export function TunnelDetail({ route, top, users, providers, onChanged, onRemoved }: {
+  route: Route;
+  top?: ReactNode;
+  users: User[];
+  providers: OAuthProvider[];
+  onChanged: () => Promise<void>;
+  onRemoved: () => void;
+}) {
+  return (
     <div className="tn-layout">
       <div className="tn-main stack">
         <NeedsApp app="cloudflared" what="A tunnel" />
-        <section className="card">
-          <div className="card-head">
-            <div className="card-titles"><h2>{routes.length === 1 ? "Address" : "Addresses"}</h2></div>
-            {add}
-          </div>
-          <ul className="results">
-            {routes.map((r) => {
-              const body = (
-                <>
-                  <span className={"dot " + (r.enabled ? "ok" : "")} role="img" aria-label={r.enabled ? "Live" : "Off"} title={r.enabled ? "Live" : "Off"} />
-                  <span className="tn-name">
-                    <b>{r.hostname}</b>
-                    <small className="mono">to {target(r)}</small>
-                  </span>
-                  <AccessChips route={r} />
-                </>
-              );
-              return (
-                <li key={r.id}>
-                  {base ? (
-                    <a className={"result tn-row" + (r.id === route.id ? " on" : "")} href={`${base}/${r.id}`} aria-current={r.id === route.id ? "true" : undefined}>{body}</a>
-                  ) : <div className="result tn-row">{body}</div>}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+        {top}
         <section>
           <h2 className="section-title">Activity</h2>
           <TunnelLogs route={route} users={users} />
@@ -615,7 +614,7 @@ export function TunnelPage({ route, users, providers, onChanged }: { route: Rout
     if (!containers) return;
     api.containers().then((list) => {
       const c = list.find((c) => tunnelsOf(c, [route]).length > 0);
-      if (c) go(`#/containers/${encodeURIComponent(c.name)}/tunnel/${route.id}`);
+      if (c) go(`#/containers/${encodeURIComponent(c.name)}/forward/${route.id}`);
     }).catch(() => {});
   }, [containers, route.id, route.target_host, route.target_port]);
 
@@ -630,9 +629,9 @@ export function TunnelPage({ route, users, providers, onChanged }: { route: Rout
           </div>
         </div>
       </div>
-      <SubNav back="#/" backLabel="Containers" base={`#/tunnels/${route.id}`} items={[]} current="" />
+      <SubNav back="#/forward" backLabel="Forward" base={`#/tunnels/${route.id}`} items={[]} current="" />
       <div className="page-body">
-        <TunnelsView routes={[route]} pick={route.id} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go("#/")} />
+        <TunnelsView routes={[route]} pick={route.id} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go("#/forward")} />
       </div>
     </>
   );
