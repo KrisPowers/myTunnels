@@ -548,8 +548,8 @@ export interface Forward {
   name: string;
   target_host: string | null;
   target_port: number;
-  // tcp or udp at the router; http, https or tcp through Tailscale.
-  protocol: "tcp" | "udp" | "http" | "https";
+  // tcp, udp or both at the router; http, https or tcp through Tailscale.
+  protocol: "tcp" | "udp" | "both" | "http" | "https";
   public_port: number;
   // Tailscale only: open to the internet through Funnel.
   public: boolean;
