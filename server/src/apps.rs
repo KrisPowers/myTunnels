@@ -966,6 +966,20 @@ fn expand(path: &str, var: impl Fn(&str) -> Option<String>) -> String {
     out
 }
 
+/// Where a program is, as a new sign-in would find it, or in the folder its
+/// installer puts it in when that is not on the PATH.
+pub fn locate(bin: &str) -> Option<PathBuf> {
+    let mut dirs = search_dirs();
+    if let Some(programs) = std::env::var_os("ProgramFiles") {
+        dirs.push(PathBuf::from(programs).join("Tailscale"));
+    }
+    which(bin, &dirs).or_else(|| {
+        // The Mac app keeps its command inside itself, named for the app.
+        let mac = PathBuf::from("/Applications/Tailscale.app/Contents/MacOS/Tailscale");
+        (bin == "tailscale" && mac.is_file()).then_some(mac)
+    })
+}
+
 fn which(bin: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
     let names: Vec<String> = if cfg!(windows) {
         ["exe", "cmd", "bat"]
@@ -1685,6 +1699,10 @@ pub async fn needs(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         "docker": docker,
         "git": runs("git".into(), V).await,
         "cloudflared": runs(state.config.cloudflared_bin.clone(), V).await,
+        "tailscale": match locate("tailscale") {
+            Some(bin) => runs(bin.to_string_lossy().into_owned(), &["version"]).await,
+            None => false,
+        },
     });
     *lock(&NEEDS) = Some((Instant::now(), v.clone()));
     Ok(Json(v))
