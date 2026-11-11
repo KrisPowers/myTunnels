@@ -147,11 +147,13 @@ export function AppsPage() {
     }
   }, []);
   const running = Object.values(apps?.host?.apps ?? {}).some((a) => a.job?.running);
+  // While the host's first look runs, apps fill in as each answers.
+  const checking = !!apps?.host?.checking;
   useEffect(() => {
     load();
-    const t = setInterval(load, running ? 3000 : 15000);
+    const t = setInterval(load, checking ? 500 : running ? 3000 : 15000);
     return () => clearInterval(t);
-  }, [load, running]);
+  }, [load, running, checking]);
 
   const act = async (app: AppItem, action: AppAction, version?: string) => {
     try {
@@ -200,7 +202,7 @@ export function AppsPage() {
         {!apps && !problem && <div className="repo-loading"><span className="spinner" /></div>}
         {apps && (shown.length ? (
           <div className="provider-grid">
-            {shown.map((a) => <Tile key={a.id} app={a} state={host?.apps[a.id]} onAct={(action, version) => act(a, action, version)} />)}
+            {shown.map((a) => <Tile key={a.id} app={a} state={host?.apps[a.id]} checking={checking} onAct={(action, version) => act(a, action, version)} />)}
           </div>
         ) : <p className="empty-note">No apps match.</p>)}
       </div>
@@ -209,8 +211,8 @@ export function AppsPage() {
 }
 
 // Why an app cannot be installed now, if it cannot.
-function blocked(app: AppItem, state: HostApp | undefined, allowed: boolean): string {
-  if (!state) return "server host is not answering";
+function blocked(app: AppItem, state: HostApp | undefined, allowed: boolean, checking: boolean): string {
+  if (!state) return checking ? "Checking whether it is installed" : "server host is not answering";
   if (!allowed) return "You don't have permission to install apps";
   if (!state.can) return app.needs ? "Install what it needs first" : "Its package manager does not carry it here";
   return "";
@@ -218,10 +220,12 @@ function blocked(app: AppItem, state: HostApp | undefined, allowed: boolean): st
 
 // Tile is one app: its mark, name and what it is, and Install, or Installed
 // with its menu for the rest.
-function Tile({ app, state, onAct }: { app: AppItem; state?: HostApp; onAct: (action: AppAction, version?: string) => void }) {
+function Tile({ app, state, checking, onAct }: { app: AppItem; state?: HostApp; checking: boolean; onAct: (action: AppAction, version?: string) => void }) {
   const can = useCan();
   const job = state?.job;
-  const why = blocked(app, state, can("apps.install"));
+  const why = blocked(app, state, can("apps.install"), checking);
+  // Not reached yet by the host's first look.
+  const looking = !state && checking;
   const stopped = !!why || !!job?.running;
   // Install is the tile's main action only while it can be pressed.
   const main = !state?.installed && !stopped;
@@ -243,7 +247,7 @@ function Tile({ app, state, onAct }: { app: AppItem; state?: HostApp; onAct: (ac
           ? <button type="button" className="btn" disabled title={state.version ?? undefined}><Icon name="check" size={18} />Installed</button>
           : (
             <button type="button" className={"btn" + (main ? " primary" : "")} disabled={stopped} title={why || undefined} onClick={() => onAct("install")}>
-              <Icon name="download" size={18} />Install
+              {looking ? <><span className="spinner small" />Checking</> : <><Icon name="download" size={18} />Install</>}
             </button>
           )}
         <Versions app={app} installed={state?.installed ? state.version : null} primary={main}

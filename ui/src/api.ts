@@ -530,8 +530,9 @@ export interface AppJob {
 
 export interface Apps {
   catalog: AppItem[];
-  // Null while `server host` is not answering.
-  host: { os: Os; manager: string | null; apps: Record<string, HostApp> } | null;
+  // Null while `server host` is not answering. `checking` while its first
+  // look is under way; apps it has not reached yet have no entry.
+  host: { os: Os; manager: string | null; apps: Record<string, HostApp>; checking?: boolean } | null;
   remote: boolean;
   // `server host` answers, but is too old to say what it has.
   outdated: boolean;
