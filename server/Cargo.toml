@@ -17,6 +17,7 @@ hmac = "0.12"
 hyper = { version = "1", features = ["client", "http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
+igd-next = { version = "0.18", default-features = false, features = ["aio_tokio"] }
 lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "smtp-transport", "tokio1-rustls-tls"] }
 p256 = "0.13"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
