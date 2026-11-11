@@ -1220,20 +1220,24 @@ async fn detect() -> Value {
             (i, None)
         });
     }
+    let state = |a: &App, version: &Option<String>| {
+        json!({
+            "installed": version.is_some(),
+            "version": version,
+            "can": install_command(a, m, &dirs, Action::Install, None).is_some(),
+        })
+    };
     let mut found = vec![None; CATALOG.len()];
     while let Some(Ok((i, v))) = asking.join_next().await {
+        // On the first look, each app shows as soon as it answers.
+        if let Some((_, kept)) = lock(&FOUND).as_mut().filter(|f| f.1["checking"] == true) {
+            kept["apps"][CATALOG[i].id] = state(&CATALOG[i], &v);
+        }
         found[i] = v;
     }
     let mut apps = serde_json::Map::new();
     for (a, version) in CATALOG.iter().zip(found) {
-        apps.insert(
-            a.id.into(),
-            json!({
-                "installed": version.is_some(),
-                "version": version,
-                "can": install_command(a, m, &dirs, Action::Install, None).is_some(),
-            }),
-        );
+        apps.insert(a.id.into(), state(a, &version));
     }
     let v = json!({ "os": os(), "manager": manager_name(m), "apps": apps });
     *lock(&FOUND) = Some((Instant::now(), v.clone()));
@@ -1241,20 +1245,28 @@ async fn detect() -> Value {
 }
 
 /// This machine: which apps it has, and which it is installing. What was last
-/// found is answered with straight away; only the very first look is waited on.
+/// found is answered with straight away. The very first look answers with
+/// nothing found yet and `checking` set; apps fill in as each answers.
 pub async fn local_status() -> Value {
-    let kept = lock(&FOUND).clone();
-    let mut status = match kept {
-        Some((at, v)) => {
-            if at.elapsed() >= FOUND_FOR && !LOOKING.swap(true, Ordering::Relaxed) {
-                tokio::spawn(async {
-                    detect().await;
-                    LOOKING.store(false, Ordering::Relaxed);
-                });
-            }
-            v
+    let mut status = {
+        let mut kept = lock(&FOUND);
+        if kept
+            .as_ref()
+            .is_none_or(|(at, _)| at.elapsed() >= FOUND_FOR)
+            && !LOOKING.swap(true, Ordering::Relaxed)
+        {
+            tokio::spawn(async {
+                detect().await;
+                LOOKING.store(false, Ordering::Relaxed);
+            });
         }
-        None => detect().await,
+        kept.get_or_insert_with(|| {
+            let m = manager(&search_dirs());
+            let v = json!({ "os": os(), "manager": manager_name(m), "apps": {}, "checking": true });
+            (Instant::now(), v)
+        })
+        .1
+        .clone()
     };
     for (id, job) in lock(&JOBS).iter() {
         status["apps"][id]["job"] = json!(job);
