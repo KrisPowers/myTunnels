@@ -456,3 +456,71 @@ pub async fn remove(
     state.db.delete_forward(&id)?;
     Ok(Json(json!({ "ok": true })))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample(method: &str, protocol: &str, port: u16) -> Forward {
+        Forward {
+            id: "f1".into(),
+            method: method.into(),
+            name: String::new(),
+            target_host: None,
+            target_port: 8080,
+            protocol: protocol.into(),
+            public_port: port,
+            public: false,
+            expires_at: 0,
+            enabled: true,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn serve_opens_and_closes_the_same_port() {
+        let web = sample("tailscale", "http", 443);
+        assert_eq!(
+            serve_args(&web, true),
+            ["serve", "--bg", "--https=443", "http://127.0.0.1:8080"]
+        );
+        assert_eq!(serve_args(&web, false), ["serve", "--https=443", "off"]);
+        let raw = Forward {
+            public: true,
+            ..sample("tailscale", "tcp", 10000)
+        };
+        assert_eq!(
+            serve_args(&raw, true),
+            ["funnel", "--bg", "--tcp=10000", "tcp://127.0.0.1:8080"]
+        );
+    }
+
+    #[test]
+    fn addresses_follow_the_method() {
+        let ip = Some(IpAddr::from([203, 0, 113, 7]));
+        assert_eq!(
+            address(&sample("port", "tcp", 25565), None, ip).as_deref(),
+            Some("203.0.113.7:25565")
+        );
+        let name = Some("box.example.ts.net");
+        assert_eq!(
+            address(&sample("tailscale", "http", 443), name, None).as_deref(),
+            Some("https://box.example.ts.net")
+        );
+        assert_eq!(
+            address(&sample("tailscale", "https", 8443), name, None).as_deref(),
+            Some("https://box.example.ts.net:8443")
+        );
+        assert_eq!(address(&sample("tailscale", "tcp", 22), None, None), None);
+    }
+
+    #[test]
+    fn funnel_keeps_to_its_ports() {
+        let mut f = sample("tailscale", "http", 8080);
+        assert!(check_funnel(&f).is_ok());
+        f.public = true;
+        assert!(check_funnel(&f).is_err());
+        f.public_port = 8443;
+        assert!(check_funnel(&f).is_ok());
+    }
+}
