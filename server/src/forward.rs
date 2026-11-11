@@ -58,12 +58,18 @@ fn own_ip(router: SocketAddr) -> Result<IpAddr> {
     Ok(socket.local_addr()?.ip())
 }
 
-fn protocol(f: &Forward) -> PortMappingProtocol {
-    if f.protocol == "udp" {
-        PortMappingProtocol::UDP
-    } else {
-        PortMappingProtocol::TCP
+/// What the router is asked to carry: TCP, UDP, or both for `both`.
+fn protocols(f: &Forward) -> &'static [PortMappingProtocol] {
+    match f.protocol.as_str() {
+        "udp" => &[PortMappingProtocol::UDP],
+        "both" => &[PortMappingProtocol::TCP, PortMappingProtocol::UDP],
+        _ => &[PortMappingProtocol::TCP],
     }
+}
+
+/// Whether two router forwards of one port carry the same protocol.
+fn overlap(a: &str, b: &str) -> bool {
+    a == b || a == "both" || b == "both"
 }
 
 /// How long to ask the router for: a lease, or less when it closes sooner.
@@ -101,17 +107,16 @@ async fn open_port(f: &Forward) -> Result<()> {
     };
     let to = SocketAddr::new(ip, f.target_port);
     let about = format!("myTunnels {}", f.public_port);
-    let added = match gw
-        .add_port(protocol(f), f.public_port, to, lease(f), &about)
-        .await
-    {
-        // Such a router keeps it until it is removed, which closing does.
-        Err(AddPortError::OnlyPermanentLeasesSupported) => {
-            gw.add_port(protocol(f), f.public_port, to, 0, &about).await
-        }
-        other => other,
-    };
-    added.map_err(|e| anyhow!(refused(e, f)))?;
+    for &kind in protocols(f) {
+        let added = match gw.add_port(kind, f.public_port, to, lease(f), &about).await {
+            // Such a router keeps it until it is removed, which closing does.
+            Err(AddPortError::OnlyPermanentLeasesSupported) => {
+                gw.add_port(kind, f.public_port, to, 0, &about).await
+            }
+            other => other,
+        };
+        added.map_err(|e| anyhow!(refused(e, f)))?;
+    }
     if let Ok(ip) = gw.get_external_ip().await {
         *lock(&PUBLIC_IP) = Some(ip);
     }
@@ -119,11 +124,13 @@ async fn open_port(f: &Forward) -> Result<()> {
 }
 
 async fn close_port(f: &Forward) -> Result<()> {
-    router()
-        .await?
-        .remove_port(protocol(f), f.public_port)
-        .await
-        .map_err(|e| anyhow!("The router would not close port {}: {e}", f.public_port))
+    let gw = router().await?;
+    for &kind in protocols(f) {
+        gw.remove_port(kind, f.public_port)
+            .await
+            .map_err(|e| anyhow!("The router would not close port {}: {e}", f.public_port))?;
+    }
+    Ok(())
 }
 
 // ---- Tailscale ----
@@ -344,7 +351,7 @@ pub async fn create(
     Json(body): Json<NewForward>,
 ) -> ApiResult<Json<Forward>> {
     let kinds: &[&str] = match body.method.as_str() {
-        "port" => &["tcp", "udp"],
+        "port" => &["tcp", "udp", "both"],
         "tailscale" => &["http", "https", "tcp"],
         _ => return Err(ApiError::bad("Forward through the router or Tailscale")),
     };
@@ -376,11 +383,12 @@ pub async fn create(
         created_at: now(),
     };
     check_funnel(&f)?;
-    // The router keeps TCP and UDP apart; Tailscale has one of each port.
+    // The router keeps TCP and UDP apart, and both takes each; Tailscale has
+    // one of each port.
     let taken = state.db.forwards()?.into_iter().any(|o| {
         o.method == f.method
             && o.public_port == f.public_port
-            && (f.method == "tailscale" || o.protocol == f.protocol)
+            && (f.method == "tailscale" || overlap(&o.protocol, &f.protocol))
     });
     if taken {
         return Err(ApiError::conflict(format!(
