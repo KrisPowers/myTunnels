@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEven
 import { AppsPage, InstallPill, NeedsContext } from "./Apps";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type Flag, type Forward, type Group, type Needs, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { NewMenu } from "./Builds";
+import { CloudflareProvider } from "./Cloudflare";
 import { ContainersPage } from "./Containers";
 
 import { DashboardPage } from "./Dashboard";
@@ -30,8 +31,8 @@ export function App() {
   );
 }
 
-// Root shows setup until every step is done, and the sign-in page whenever
-// the session has ended; otherwise the dashboard.
+// Root shows setup until the host account is made, and the sign-in page
+// whenever the session has ended; otherwise the dashboard.
 function Root() {
   const [auth, setAuth] = useState<Auth | null>(null);
   const [problem, setProblem] = useState("");
@@ -205,6 +206,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
   return (
     <NeedsContext.Provider value={needs}>
+    <CloudflareProvider ready={status?.configured ?? true} onConnected={load}>
     <div className={"app" + (rail ? " rail" : "")}>
       <header className="header">
         <div className="header-start">
@@ -257,6 +259,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
       </div>
       <InstallPill />
     </div>
+    </CloudflareProvider>
     </NeedsContext.Provider>
   );
 }
