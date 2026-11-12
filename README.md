@@ -90,7 +90,7 @@ account asks which one.
 
 Then, on **Containers**, open a container, and on its **Forward** page press the plus: keep
 **Tunnel** under **Forward by**, type the subdomain, pick the domain, choose who can open it and
-press **Publish**. The plus on **Endpoints** opens any other port the same way.
+press **Publish**. The plus on **Routes** opens any other port the same way.
 
 To manage myTunnels from anywhere, publish the dashboard itself: under **Local app**, set
 **Runs on** to **This dashboard**, with no port. It takes the same access rules as any
@@ -141,9 +141,9 @@ what passes through myTunnels, or the computer's while `server host` runs.
 Temperatures need sensors the host exposes under `/sys/class/hwmon`, which a Linux host
 does and Docker Desktop does not.
 
-## Endpoints
+## Routes
 
-**Endpoints** is every opening in one list: Cloudflare tunnels, router port forwards and
+**Routes** is every opening in one list: Cloudflare tunnels, router port forwards and
 Tailscale, a row each with its address, where it goes, who reaches it and whether it is open.
 The plus asks first how to forward:
 
@@ -184,7 +184,7 @@ pause, kill and delete. Under it:
 - **Forward**: every way it is reached, a tunnel, a router port or Tailscale, each with its
   state, where it goes and who reaches it, and the picked tunnel's activity under them. That
   tunnel's controls sit at the side: Open, its live switch, a menu to change the address or
-  remove it, and its access control. The plus forwards a port as Endpoints does; the
+  remove it, and its access control. The plus forwards a port as Routes does; the
   port is the container's own, asked only when it has more than one.
 - **Images**: the image it runs and the others of the same name, such as earlier versions, with
   their size and age. Open one for its entrypoint, command, working folder, user, exposed ports,
