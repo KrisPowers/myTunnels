@@ -120,7 +120,6 @@ pub fn router(state: AppState) -> Router {
         .route("/flags", get(list_flags))
         .route("/flags/{id}", delete(clear_flag))
         .route("/devices/{id}/activity", get(device_activity))
-        .route("/media/fs/{op}", any(media_fs))
         .route("/drive/fs/{op}", any(drive_fs))
         .route("/convert", get(convert::list).post(convert::start))
         .route("/convert/{id}", delete(convert::remove))
@@ -1650,22 +1649,13 @@ async fn delete_route(
     Ok(Json(json!({ "ok": true })))
 }
 
-async fn media_fs(
-    State(state): State<AppState>,
-    Extension(caller): Extension<Caller>,
-    Path(op): Path<String>,
-    req: Request,
-) -> Response {
-    storage::fs(&state, storage::Space::Media, caller.id(), &op, req).await
-}
-
 async fn drive_fs(
     State(state): State<AppState>,
     Extension(caller): Extension<Caller>,
     Path(op): Path<String>,
     req: Request,
 ) -> Response {
-    storage::fs(&state, storage::Space::Drive, caller.id(), &op, req).await
+    storage::fs(&state, caller.id(), &op, req).await
 }
 
 // Devices

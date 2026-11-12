@@ -127,23 +127,19 @@ pub const GROUPS: &[Group] = &[
         ],
     },
     Group {
-        label: "Photos and videos",
+        label: "Storage",
         permissions: &[
-            p("media.view", "View photos and videos", "And download them"),
-            p("media.upload", "Upload photos and videos", ""),
-            p("media.delete", "Delete photos and videos", ""),
-        ],
-    },
-    Group {
-        label: "Files",
-        permissions: &[
-            p("drive.view", "View documents", "And download them"),
+            p(
+                "drive.view",
+                "View files",
+                "Documents, photos and videos, and download them",
+            ),
             p(
                 "drive.edit",
-                "Upload and change documents",
-                "Upload, make folders, rename and move",
+                "Upload and change files",
+                "Upload, make folders, rename, move and convert",
             ),
-            p("drive.delete", "Delete documents", ""),
+            p("drive.delete", "Delete files", ""),
         ],
     },
     Group {
@@ -254,7 +250,7 @@ pub fn needed(method: &Method, path: &str) -> Need {
     let at = |i: usize| seg.get(i).copied().unwrap_or("");
     let any = Need::Any;
     match at(0) {
-        // Share links and the duplicate finder check each space's own
+        // Share links and the duplicate finder check Storage's own
         // permission, and share links whose link it is.
         "account" | "status" | "device" | "shares" | "duplicates" | "needs" => Need::SignedIn,
         "apps" if read => Need::SignedIn,
@@ -290,26 +286,13 @@ pub fn needed(method: &Method, path: &str) -> Need {
         "users" => any(&["users.manage"]),
         "flags" if read => any(&["users.view"]),
         "flags" => any(&["users.manage"]),
-        "media" => files("media", read, at(2)),
-        "drive" => files("drive", read, at(2)),
-        // Each job is held to the collection it reads and writes, in `convert`.
-        "convert" if read => any(&["media.view", "drive.view"]),
-        "convert" => any(&["media.upload", "drive.edit"]),
+        "drive" if read => any(&["drive.view"]),
+        "drive" if at(2) == "delete" => any(&["drive.delete"]),
+        "drive" => any(&["drive.edit"]),
+        "convert" if read => any(&["drive.view"]),
+        "convert" => any(&["drive.edit"]),
         _ => any(&[]),
     }
-}
-
-/// Media's and Drive's file calls: reading, deleting, or anything else.
-fn files(space: &str, read: bool, op: &str) -> Need {
-    let keys: &'static [&'static str] = match (space, read, op) {
-        ("media", true, _) => &["media.view"],
-        ("media", false, "delete") => &["media.delete"],
-        ("media", false, _) => &["media.upload"],
-        (_, true, _) => &["drive.view"],
-        (_, false, "delete") => &["drive.delete"],
-        _ => &["drive.edit"],
-    };
-    Need::Any(keys)
 }
 
 #[cfg(test)]
@@ -338,12 +321,12 @@ mod tests {
 
     #[test]
     fn calls_need_their_feature() {
-        let viewer = account(&["dashboard", "media.view"]);
+        let viewer = account(&["dashboard", "drive.view"]);
         assert!(needed(&Method::GET, "/apps").met(&viewer));
         assert!(!needed(&Method::POST, "/apps/git/install").met(&viewer));
-        assert!(needed(&Method::GET, "/media/fs/list").met(&viewer));
-        assert!(!needed(&Method::PUT, "/media/fs/upload").met(&viewer));
-        assert!(!needed(&Method::POST, "/media/fs/delete").met(&viewer));
+        assert!(needed(&Method::GET, "/drive/fs/list").met(&viewer));
+        assert!(!needed(&Method::PUT, "/drive/fs/upload").met(&viewer));
+        assert!(!needed(&Method::POST, "/drive/fs/delete").met(&viewer));
         assert!(!needed(&Method::PATCH, "/routes/r1").met(&viewer));
         assert!(!needed(&Method::GET, "/settings").met(&viewer));
         assert!(needed(&Method::GET, "/status").met(&viewer));

@@ -1,4 +1,4 @@
-//! Convert: a new copy of a photo, video or PDF kept in Media or Drive, in
+//! Convert: a new copy of a photo, video or PDF kept in Storage, in
 //! another format or smaller, saved beside the original. Jobs wait in a queue
 //! and run one at a time, at low priority, so a long video never starves the
 //! gateway.
@@ -20,7 +20,7 @@ use tokio::task::AbortHandle;
 
 use crate::permissions::Caller;
 use crate::state::AppState;
-use crate::storage::{io_error, segments, Space, Store};
+use crate::storage::{io_error, segments, takes, Store};
 use crate::util::{lock, now, random_hex, ApiError, ApiResult};
 
 /// Finished jobs kept for the page, oldest dropped first.
@@ -130,7 +130,6 @@ struct Work {
     id: String,
     /// The account whose collection it reads and writes.
     owner: String,
-    space: Space,
     source: String,
     kind: Kind,
     to: &'static str,
@@ -155,7 +154,6 @@ impl Job {
     fn view(&self) -> Value {
         json!({
             "id": self.work.id,
-            "space": space_name(self.work.space),
             "source": self.work.source,
             "kind": self.work.kind,
             "to": self.work.to,
@@ -175,19 +173,9 @@ impl Job {
 static JOBS: LazyLock<Mutex<Vec<Job>>> = LazyLock::new(|| Mutex::new(Vec::new()));
 static WAKE: LazyLock<Arc<Notify>> = LazyLock::new(|| Arc::new(Notify::new()));
 
-fn space_name(space: Space) -> &'static str {
-    match space {
-        Space::Media => "media",
-        Space::Drive => "drive",
-    }
-}
-
 /// Whether the caller may read a collection and add to it.
-fn may(caller: &Caller, space: Space) -> bool {
-    match space {
-        Space::Media => caller.can("media.view") && caller.can("media.upload"),
-        Space::Drive => caller.can("drive.view") && caller.can("drive.edit"),
-    }
+fn may(caller: &Caller) -> bool {
+    caller.can("drive.view") && caller.can("drive.edit")
 }
 
 // ---- the API ----
@@ -212,7 +200,6 @@ pub async fn list(Extension(caller): Extension<Caller>) -> Json<Value> {
 
 #[derive(Deserialize)]
 pub struct Order {
-    space: String,
     paths: Vec<String>,
     to: String,
     #[serde(default)]
@@ -226,12 +213,7 @@ pub async fn start(
     Extension(caller): Extension<Caller>,
     Json(order): Json<Order>,
 ) -> ApiResult<Json<Value>> {
-    let space = match order.space.as_str() {
-        "media" => Space::Media,
-        "drive" => Space::Drive,
-        _ => return Err(ApiError::bad("Pick Media or Drive")),
-    };
-    if !may(&caller, space) {
+    if !may(&caller) {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "Your account cannot add to that".into(),
@@ -240,7 +222,7 @@ pub async fn start(
     if order.paths.is_empty() || order.paths.len() > 500 {
         return Err(ApiError::bad("Pick between 1 and 500 files"));
     }
-    let store = Store::open(&state, space, caller.id())?;
+    let store = Store::open(&state, caller.id())?;
     let mut queued = Vec::new();
     for path in &order.paths {
         let rel = segments(path)?;
@@ -267,7 +249,6 @@ pub async fn start(
             work: Work {
                 id: random_hex(8),
                 owner: caller.id().to_owned(),
-                space,
                 source: rel.join("/"),
                 kind,
                 to,
@@ -404,7 +385,7 @@ fn naming(to: &str) -> (&str, &str) {
 
 /// Removes what a job that did not finish left behind.
 async fn clean(state: &AppState, work: &Work) {
-    let Ok(store) = Store::open(state, work.space, &work.owner) else {
+    let Ok(store) = Store::open(state, &work.owner) else {
         return;
     };
     let Ok(rel) = segments(&work.source) else {
@@ -423,7 +404,7 @@ async fn clean(state: &AppState, work: &Work) {
 /// Makes the copy and gives it its name beside the original: its path in the
 /// collection and its size.
 async fn run(state: AppState, work: Work) -> ApiResult<(String, u64)> {
-    let store = Store::open(&state, work.space, &work.owner)?;
+    let store = Store::open(&state, &work.owner)?;
     let rel = segments(&work.source)?;
     let source = std::fs::canonicalize(store.real(&rel)?).map_err(io_error)?;
     let dir = source.parent().ok_or_else(ApiError::not_found)?.to_owned();
@@ -460,10 +441,10 @@ async fn run(state: AppState, work: Work) -> ApiResult<(String, u64)> {
         }
         n += 1;
     };
-    store.space.takes(&path[path.len() - 1])?;
+    takes(&path[path.len() - 1])?;
     tokio::fs::rename(&out, &target).await.map_err(io_error)?;
 
-    // The copy keeps the original's date, and in Media its preview.
+    // The copy keeps the original's date and its preview.
     let meta = std::fs::metadata(&source).map_err(io_error)?;
     if let Ok(modified) = meta.modified() {
         if let Ok(file) = std::fs::File::options().write(true).open(&target) {
@@ -471,12 +452,8 @@ async fn run(state: AppState, work: Work) -> ApiResult<(String, u64)> {
         }
     }
     // A cut-out shows itself; the original's preview still has its background.
-    let thumbs = if CUTOUTS.contains(&work.to) {
-        None
-    } else {
-        store.thumb(&rel).zip(store.thumb(&path))
-    };
-    if let Some((from, to)) = thumbs {
+    if !CUTOUTS.contains(&work.to) {
+        let (from, to) = (store.thumb(&rel), store.thumb(&path));
         if let Some(parent) = to.parent() {
             let _ = tokio::fs::create_dir_all(parent).await;
         }

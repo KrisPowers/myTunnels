@@ -11,7 +11,7 @@ use axum::http::StatusCode;
 use serde_json::{json, Value};
 use tokio::process::Command;
 
-use crate::storage::{io_error, size_of, Space, Store};
+use crate::storage::{io_error, size_of, takes, Store};
 use crate::util::{ApiError, ApiResult};
 
 /// Kinds of archive that open.
@@ -42,11 +42,11 @@ fn free(dir: &Path, stem: &str, ext: &str) -> String {
 }
 
 /// Opens the archive at `rel` into a folder beside it, named after it. Files
-/// Files does not keep are left out, as are links. Returns the folder and how
+/// Storage does not keep are left out, as are links. Returns the folder and how
 /// many were left out.
 pub async fn extract(store: &Store, rel: &[String]) -> ApiResult<Value> {
     let name = rel.last().cloned().ok_or_else(ApiError::not_found)?;
-    if store.space != Space::Drive || !ARCHIVES.contains(&ext_of(&name).as_str()) {
+    if !ARCHIVES.contains(&ext_of(&name).as_str()) {
         return Err(ApiError::bad("Only ZIP, 7z and RAR files open"));
     }
     let archive = store.real(rel)?;
@@ -99,7 +99,7 @@ fn opened_size(listed: &[u8]) -> u64 {
         .sum()
 }
 
-/// Removes links and files Files does not keep from what an archive opened to;
+/// Removes links and files Storage does not keep from what an archive opened to;
 /// returns how many went.
 fn tidy(dir: &Path) -> usize {
     let mut gone = 0;
@@ -117,7 +117,7 @@ fn tidy(dir: &Path) -> usize {
             gone += 1;
         } else if meta.is_dir() {
             gone += tidy(&path);
-        } else if name.starts_with('.') || Space::Drive.takes(&name).is_err() {
+        } else if name.starts_with('.') || takes(&name).is_err() {
             let _ = std::fs::remove_file(&path);
             gone += 1;
         }
@@ -128,9 +128,6 @@ fn tidy(dir: &Path) -> usize {
 /// Packs `rels`, files and folders in one folder, into a ZIP beside them: named
 /// after the one item, or "Archive". Returns its path.
 pub async fn compress(store: &Store, rels: &[Vec<String>]) -> ApiResult<Value> {
-    if store.space != Space::Drive {
-        return Err(ApiError::not_found());
-    }
     let first = rels
         .first()
         .ok_or_else(|| ApiError::bad("Pick what to pack"))?;

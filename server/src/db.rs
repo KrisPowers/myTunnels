@@ -398,21 +398,20 @@ pub struct Passkey {
 }
 
 const SHARE_COLS: &str =
-    "id, token_hash, space, paths, password_hash, expires, created_by, created_at, opened";
+    "id, token_hash, paths, password_hash, expires, created_by, created_at, opened";
 
 fn share_row(r: &Row) -> rusqlite::Result<Share> {
-    let password_hash: Option<String> = r.get(4)?;
+    let password_hash: Option<String> = r.get(3)?;
     Ok(Share {
         id: r.get(0)?,
         token_hash: r.get(1)?,
-        space: r.get(2)?,
-        paths: serde_json::from_str(&r.get::<_, String>(3)?).unwrap_or_default(),
+        paths: serde_json::from_str(&r.get::<_, String>(2)?).unwrap_or_default(),
         protected: password_hash.is_some(),
         password_hash,
-        expires: r.get(5)?,
-        created_by: r.get(6)?,
-        created_at: r.get(7)?,
-        opened: r.get(8)?,
+        expires: r.get(4)?,
+        created_by: r.get(5)?,
+        created_at: r.get(6)?,
+        opened: r.get(7)?,
     })
 }
 
@@ -490,11 +489,27 @@ fn user_row(r: &Row) -> rusqlite::Result<User> {
             .get::<_, String>(10)?
             .split(',')
             .filter(|p| !p.is_empty())
-            .map(str::to_owned)
-            .collect(),
+            .map(storage_key)
+            .fold(Vec::new(), |mut keys, p| {
+                if !keys.iter().any(|k| k == p) {
+                    keys.push(p.to_owned());
+                }
+                keys
+            }),
         storage_limit: r.get::<_, i64>(11)?.max(0) as u64,
         device_lock: r.get(12)?,
     })
+}
+
+/// Photos and videos joined Storage's files, and their permissions joined
+/// the files' ones.
+fn storage_key(key: &str) -> &str {
+    match key {
+        "media.view" => "drive.view",
+        "media.upload" => "drive.edit",
+        "media.delete" => "drive.delete",
+        key => key,
+    }
 }
 
 fn device_row(r: &Row) -> rusqlite::Result<Device> {
@@ -1248,11 +1263,10 @@ impl Db {
     pub fn add_share(&self, s: &Share) -> Result<()> {
         self.conn().execute(
             "INSERT INTO shares (id, token_hash, space, paths, password_hash, expires, created_by, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             VALUES (?1, ?2, 'drive', ?3, ?4, ?5, ?6, ?7)",
             params![
                 s.id,
                 s.token_hash,
-                s.space,
                 serde_json::to_string(&s.paths)?,
                 s.password_hash,
                 s.expires,

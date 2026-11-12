@@ -17,7 +17,7 @@ use crate::db::Route;
 use crate::permissions::Caller;
 use crate::secret;
 use crate::state::AppState;
-use crate::storage::{segments, send_file, Space, Store};
+use crate::storage::{is_media, segments, send_file, Store};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
 
 const TOKEN_LEN: usize = 32;
@@ -32,8 +32,6 @@ pub struct Share {
     pub id: String,
     #[serde(skip)]
     pub token_hash: String,
-    /// "media" or "drive".
-    pub space: String,
     /// What it opens: one folder, or one or more files.
     pub paths: Vec<String>,
     #[serde(skip)]
@@ -44,21 +42,6 @@ pub struct Share {
     pub created_by: String,
     pub created_at: i64,
     pub opened: i64,
-}
-
-fn space_of(name: &str) -> Option<Space> {
-    match name {
-        "media" => Some(Space::Media),
-        "drive" => Some(Space::Drive),
-        _ => None,
-    }
-}
-
-fn may_view(caller: &Caller, space: Space) -> bool {
-    caller.can(match space {
-        Space::Media => "media.view",
-        Space::Drive => "drive.view",
-    })
 }
 
 /// The dashboard's tunnel address, where links open.
@@ -90,7 +73,6 @@ pub async fn list(
 
 #[derive(Deserialize)]
 pub struct NewShare {
-    space: String,
     paths: Vec<String>,
     #[serde(default)]
     password: String,
@@ -105,8 +87,7 @@ pub async fn create(
     Extension(caller): Extension<Caller>,
     Json(body): Json<NewShare>,
 ) -> ApiResult<Json<Value>> {
-    let space = space_of(&body.space).ok_or_else(|| ApiError::bad("Unknown space"))?;
-    if !may_view(&caller, space) {
+    if !caller.can("drive.view") {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "You don't have permission for this".into(),
@@ -123,7 +104,7 @@ pub async fn create(
     if !(0..=MAX_DAYS).contains(&body.days) {
         return Err(ApiError::bad("A link lasts up to a year"));
     }
-    let store = Store::open(&state, space, caller.id())?;
+    let store = Store::open(&state, caller.id())?;
     let mut paths = Vec::new();
     for path in &body.paths {
         let rel = segments(path)?;
@@ -141,7 +122,6 @@ pub async fn create(
     let share = Share {
         id: random_hex(8),
         token_hash: sha256_hex(&token),
-        space: body.space,
         paths,
         password_hash: if password.is_empty() {
             None
@@ -307,11 +287,7 @@ fn within(share: &Share, p: &str) -> ApiResult<Vec<String>> {
 }
 
 fn store(state: &AppState, share: &Share) -> ApiResult<Store> {
-    Store::open(
-        state,
-        space_of(&share.space).ok_or_else(ApiError::not_found)?,
-        &share.created_by,
-    )
+    Store::open(state, &share.created_by)
 }
 
 /// The page a link opens: its photos as a grid, its files as a list, a shared
@@ -388,9 +364,7 @@ fn listing(state: &AppState, share: &Share, token: &str, p: &str) -> ApiResult<R
         }
         body.push_str("</ul>");
     }
-    let (pictures, others): (Vec<_>, Vec<_>) = files
-        .iter()
-        .partition(|(name, ..)| share.space == "media" && Space::Media.takes(name).is_ok());
+    let (pictures, others): (Vec<_>, Vec<_>) = files.iter().partition(|(name, ..)| is_media(name));
     if !pictures.is_empty() {
         body.push_str("<ul class=\"grid\">");
         for (name, path, _) in &pictures {
@@ -447,10 +421,12 @@ async fn file(
 async fn thumb(state: &AppState, share: &Share, p: &str, req: Request) -> ApiResult<Response> {
     let rel = within(share, p)?;
     let store = store(state, share)?;
-    let path = store
-        .thumb(&rel)
-        .filter(|t| t.is_file())
-        .unwrap_or(store.real(&rel)?);
+    let thumb = store.thumb(&rel);
+    let path = if thumb.is_file() {
+        thumb
+    } else {
+        store.real(&rel)?
+    };
     let name = rel.last().cloned().unwrap_or_default();
     send_file(&path, &name, true, req).await
 }
@@ -555,7 +531,6 @@ mod tests {
         Share {
             id: "s".into(),
             token_hash: String::new(),
-            space: "drive".into(),
             paths: paths.iter().map(|p| (*p).to_owned()).collect(),
             password_hash: None,
             protected: false,

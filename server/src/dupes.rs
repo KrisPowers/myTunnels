@@ -1,5 +1,5 @@
-//! The duplicate finder: files kept more than once across Storage's two
-//! spaces, found by size and then by content, so a renamed copy counts too.
+//! The duplicate finder: files kept more than once in Storage, found by size
+//! and then by content, so a renamed copy counts too.
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -13,44 +13,36 @@ use sha2::{Digest, Sha256};
 
 use crate::permissions::Caller;
 use crate::state::AppState;
-use crate::storage::{Space, Store};
+use crate::storage::Store;
 use crate::util::{ApiError, ApiResult};
 
 /// One copy of a file kept more than once.
 #[derive(Serialize, Clone, Debug, PartialEq)]
 struct Copy {
-    space: &'static str,
     path: String,
     size: u64,
     modified: i64,
 }
 
-/// Every set of identical files in the caller's own spaces that it may view, the biggest
+/// Every set of identical files in the caller's own Storage, the biggest
 /// first, each set oldest first.
 pub async fn find(
     State(state): State<AppState>,
     Extension(caller): Extension<Caller>,
 ) -> ApiResult<Json<Value>> {
-    let mut roots = Vec::new();
-    for (space, name, permission) in [
-        (Space::Media, "media", "media.view"),
-        (Space::Drive, "drive", "drive.view"),
-    ] {
-        if caller.can(permission) {
-            roots.push((name, Store::open(&state, space, caller.id())?.real(&[])?));
-        }
+    if !caller.can("drive.view") {
+        return Ok(Json(json!({ "groups": [] })));
     }
-    let groups = tokio::task::spawn_blocking(move || groups(&roots))
+    let root = Store::open(&state, caller.id())?.real(&[])?;
+    let groups = tokio::task::spawn_blocking(move || groups(&root))
         .await
         .map_err(|e| ApiError::from(anyhow::anyhow!(e)))?;
     Ok(Json(json!({ "groups": groups })))
 }
 
-fn groups(roots: &[(&'static str, PathBuf)]) -> Vec<Vec<Copy>> {
+fn groups(root: &Path) -> Vec<Vec<Copy>> {
     let mut files = Vec::new();
-    for (space, root) in roots {
-        walk(space, root, root, &mut files);
-    }
+    walk(root, root, &mut files);
     // Only files sharing a size can be the same, so only those are read.
     let mut by_size: HashMap<u64, Vec<(Copy, PathBuf)>> = HashMap::new();
     for (copy, real) in files {
@@ -75,8 +67,8 @@ fn groups(roots: &[(&'static str, PathBuf)]) -> Vec<Vec<Copy>> {
     out
 }
 
-/// Every file under `dir`, skipping the space's own hidden workings.
-fn walk(space: &'static str, root: &Path, dir: &Path, out: &mut Vec<(Copy, PathBuf)>) {
+/// Every file under `dir`, skipping Storage's own hidden workings.
+fn walk(root: &Path, dir: &Path, out: &mut Vec<(Copy, PathBuf)>) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
     };
@@ -88,7 +80,7 @@ fn walk(space: &'static str, root: &Path, dir: &Path, out: &mut Vec<(Copy, PathB
         let path = entry.path();
         let Ok(meta) = entry.metadata() else { continue };
         if meta.is_dir() {
-            walk(space, root, &path, out);
+            walk(root, &path, out);
         } else if meta.is_file() {
             let rel = path
                 .strip_prefix(root)
@@ -106,7 +98,6 @@ fn walk(space: &'static str, root: &Path, dir: &Path, out: &mut Vec<(Copy, PathB
                 .map_or(0, |d| d.as_secs() as i64);
             out.push((
                 Copy {
-                    space,
                     path: rel,
                     size: meta.len(),
                     modified,
@@ -138,16 +129,13 @@ mod tests {
     #[test]
     fn finds_the_same_content_under_other_names_only() {
         let dir = std::env::temp_dir().join(format!("dupes-{}", crate::util::random_hex(6)));
-        let media = dir.join("media");
-        let drive = dir.join("drive");
-        std::fs::create_dir_all(media.join("2026")).unwrap();
-        std::fs::create_dir_all(media.join(".thumbs")).unwrap();
-        std::fs::create_dir_all(&drive).unwrap();
-        std::fs::write(media.join("a.jpg"), b"same bytes").unwrap();
-        std::fs::write(media.join("2026/copy.jpg"), b"same bytes").unwrap();
-        std::fs::write(drive.join("other.pdf"), b"same size!").unwrap();
-        std::fs::write(media.join(".thumbs/a.jpg.jpg"), b"same bytes").unwrap();
-        let found = groups(&[("media", media), ("drive", drive)]);
+        std::fs::create_dir_all(dir.join("2026")).unwrap();
+        std::fs::create_dir_all(dir.join(".thumbs")).unwrap();
+        std::fs::write(dir.join("a.jpg"), b"same bytes").unwrap();
+        std::fs::write(dir.join("2026/copy.jpg"), b"same bytes").unwrap();
+        std::fs::write(dir.join("other.pdf"), b"same size!").unwrap();
+        std::fs::write(dir.join(".thumbs/a.jpg.jpg"), b"same bytes").unwrap();
+        let found = groups(&dir);
         assert_eq!(found.len(), 1);
         let mut paths: Vec<&str> = found[0].iter().map(|c| c.path.as_str()).collect();
         paths.sort_unstable();
