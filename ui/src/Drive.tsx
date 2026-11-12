@@ -39,6 +39,10 @@ const monthKey = (at: number) => {
   return d.getFullYear() * 12 + d.getMonth();
 };
 
+// Items dragged within the page carry their paths under this type.
+const MOVING = "application/x-moving";
+const carries = (e: DragEvent, type: string) => Array.from(e.dataTransfer.types).includes(type);
+
 // How many files are drawn at first, and added as the end of them comes near.
 const CLUSTER = 120;
 
@@ -71,6 +75,8 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [viewing, setViewing] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
+  // The folder items are being dragged over.
+  const [over, setOver] = useState<string | null>(null);
   const [drawn, setDrawn] = useState(CLUSTER);
   const input = useRef<HTMLInputElement>(null);
   const end = useRef<HTMLDivElement>(null);
@@ -119,6 +125,40 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
     setSelected(next);
   };
   const picked = [...selected].map((name) => join(path, name));
+  const chosen = entries.filter((e) => selected.has(e.name));
+
+  // An item drags the selection with it when it is in it, else only itself.
+  const drag = (e: FileEntry) => ({
+    draggable: can("drive.edit"),
+    onDragStart: (ev: DragEvent) => {
+      const names = selected.has(e.name) ? [...selected] : [e.name];
+      ev.dataTransfer.setData(MOVING, JSON.stringify(names.map((n) => join(path, n))));
+      ev.dataTransfer.effectAllowed = "move";
+    },
+    onDragEnd: () => setOver(null),
+  });
+  // A folder takes what is dropped on it.
+  const target = (dir: string) => ({
+    onDragOver: (ev: DragEvent) => {
+      if (!carries(ev, MOVING)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.dataTransfer.dropEffect = "move";
+      setOver(dir);
+    },
+    onDragLeave: (ev: DragEvent) => !ev.currentTarget.contains(ev.relatedTarget as Node) && setOver(null),
+    onDrop: (ev: DragEvent) => {
+      if (!carries(ev, MOVING)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      setOver(null);
+      const paths = (JSON.parse(ev.dataTransfer.getData(MOVING)) as string[]).filter((p) => p !== dir);
+      if (!paths.length) return;
+      const into = dir ? dir.split("/").pop() : "Storage";
+      setSelected(new Set());
+      run(() => files.move(paths, dir, false), paths.length === 1 ? `Moved ${paths[0].split("/").pop()} to ${into}` : `Moved ${paths.length} items to ${into}`);
+    },
+  });
   const rows = [...(kinds.length ? [] : folders), ...docs];
 
   // Files are drawn a cluster at a time, the next as the last comes into view.
@@ -182,6 +222,8 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
     if (!ownMenu(ev)) return;
     ev.preventDefault();
     ev.stopPropagation();
+    // Shift and right-click adds the item to the selection, or takes it out.
+    if (entry && ev.shiftKey) return toggle(entry.name);
     setMenu({ x: ev.clientX, y: ev.clientY, on: !!entry, entry });
   };
   const items = (entry: FileEntry | null): MenuItem[] => entry ? [
@@ -193,7 +235,7 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
     { label: "Extract here", icon: "folder_zip", hidden: kindOf(entry.name) !== "archive" || !can("drive.edit"), run: () => extract(entry) },
     { label: "Compress to ZIP", icon: "folder_zip", hidden: !can("drive.edit"), run: () => run(() => files.compress([join(path, entry.name)]), `Packed ${entry.name}`) },
     { label: "Rename", icon: "edit", hidden: !can("drive.edit"), run: () => setAsking({ rename: entry }) },
-    { label: selected.has(entry.name) ? "Unselect" : "Select", icon: "check_circle", hidden: !isMedia(entry.name), run: () => toggle(entry.name) },
+    { label: selected.has(entry.name) ? "Unselect" : "Select", icon: "check_circle", run: () => toggle(entry.name) },
     { label: "Delete", icon: "delete", danger: true, hidden: !can("drive.delete"), run: () => setAsking({ remove: [entry] }) },
   ] : [
     { label: "New folder", icon: "create_new_folder", hidden: !can("drive.edit"), run: () => setAsking("folder") },
@@ -202,7 +244,7 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
 
   const crumbs = path ? path.split("/") : [];
   const onDragOver = (e: DragEvent) => {
-    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    if (!carries(e, "Files") || carries(e, MOVING)) return;
     e.preventDefault();
     setDragging(true);
   };
@@ -211,6 +253,7 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
     <div className="drive" onContextMenu={(e) => contextMenu(e, null)} onDragOver={onDragOver}
       onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setDragging(false)}
       onDrop={async (e) => {
+        if (carries(e, MOVING)) return;
         e.preventDefault();
         setDragging(false);
         start(await dropped(e.dataTransfer.items));
@@ -229,10 +272,10 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
           {selected.size > 0 ? (
             <>
               <span className="m-picked">{selected.size} selected</span>
-              <button type="button" className="icon-btn" aria-label="Download" title="Download" onClick={() => media.filter((e) => selected.has(e.name)).forEach(download)}><Icon name="download" /></button>
+              {chosen.some((e) => !e.dir) && <button type="button" className="icon-btn" aria-label="Download" title="Download" onClick={() => chosen.filter((e) => !e.dir).forEach(download)}><Icon name="download" /></button>}
               <button type="button" className="icon-btn" aria-label="Share link" title="Share link" onClick={() => shares.open(picked)}><Icon name="link" /></button>
               {can("drive.edit") && picked.every(convertKind) && <button type="button" className="icon-btn" aria-label="Convert" title="Convert" onClick={() => convert.open(picked)}><Icon name="swap_horiz" /></button>}
-              {can("drive.delete") && <button type="button" className="icon-btn danger" aria-label="Delete" title="Delete" onClick={() => setAsking({ remove: media.filter((e) => selected.has(e.name)) })}><Icon name="delete" /></button>}
+              {can("drive.delete") && <button type="button" className="icon-btn danger" aria-label="Delete" title="Delete" onClick={() => setAsking({ remove: chosen })}><Icon name="delete" /></button>}
               <button type="button" className="icon-btn" aria-label="Clear selection" title="Clear selection" onClick={() => setSelected(new Set())}><Icon name="close" /></button>
             </>
           ) : (
@@ -263,7 +306,8 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
             <span key={i} className="ex-crumb-wrap">
               {i > 0 && <Icon name="chevron_right" size={20} className="ex-crumb-sep" />}
               {i === crumbs.length ? <span className="d-crumb on">{name}</span> : (
-                <button type="button" className="d-crumb" onClick={() => setPath(crumbs.slice(0, i).join("/"))}>{name}</button>
+                <button type="button" className={"d-crumb" + (over === crumbs.slice(0, i).join("/") ? " drop" : "")}
+                  onClick={() => setPath(crumbs.slice(0, i).join("/"))} {...target(crumbs.slice(0, i).join("/"))}>{name}</button>
               )}
             </span>
           ))}
@@ -288,7 +332,8 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
                   <ul className="d-folders">
                     {folders.map((f) => (
                       <li key={f.name}>
-                        <button type="button" className="d-folder" onClick={() => open(f)} onContextMenu={(ev) => contextMenu(ev, f)}>
+                        <button type="button" className={"d-folder" + (selected.has(f.name) ? " on" : "") + (over === join(path, f.name) ? " drop" : "")}
+                          onClick={() => open(f)} onContextMenu={(ev) => contextMenu(ev, f)} {...drag(f)} {...target(join(path, f.name))}>
                           <Icon name="folder" className="kind folder" /><span>{f.name}</span>
                         </button>
                       </li>
@@ -307,7 +352,7 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
                         {pictures.map((e) => {
                           const on = selected.has(e.name);
                           return (
-                            <li key={e.name} className={"m-tile" + (on ? " on" : "") + (selected.size ? " picking" : "")} onContextMenu={(ev) => contextMenu(ev, e)}>
+                            <li key={e.name} className={"m-tile" + (on ? " on" : "") + (selected.size ? " picking" : "")} onContextMenu={(ev) => contextMenu(ev, e)} {...drag(e)}>
                               <button type="button" className="m-open" title={`${e.name}\n${dayOf(e.modified)}`}
                                 onClick={() => (selected.size ? toggle(e.name) : open(e))}>
                                 <Thumb path={join(path, e.name)} />
@@ -327,7 +372,8 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
                           const k = kindOf(d.name)!;
                           return (
                             <li key={d.name}>
-                              <button type="button" className={"d-file " + k} onClick={() => open(d)} onContextMenu={(ev) => contextMenu(ev, d)} title={`${d.name}\n${bytes(d.size)}`}>
+                              <button type="button" className={"d-file " + k + (selected.has(d.name) ? " on" : "")} onClick={() => open(d)} onContextMenu={(ev) => contextMenu(ev, d)}
+                                title={`${d.name}\n${bytes(d.size)}`} {...drag(d)}>
                                 <span className="d-cover"><Icon name={KINDS[k].icon} size={56} /><span className="d-ext">{extOf(d.name)}</span></span>
                                 <span className="d-name"><Icon name={KINDS[k].icon} size={18} /><span>{d.name}</span></span>
                                 <small>{when(d.modified)}</small>
@@ -350,7 +396,8 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
                     {rows.slice(0, drawn).map((e) => {
                       const k = kindOf(e.name);
                       return (
-                        <tr key={e.name} onDoubleClick={() => open(e)} onContextMenu={(ev) => contextMenu(ev, e)}>
+                        <tr key={e.name} className={(selected.has(e.name) ? "on" : "") + (over === join(path, e.name) ? " drop" : "")}
+                          onDoubleClick={() => open(e)} onContextMenu={(ev) => contextMenu(ev, e)} {...drag(e)} {...(e.dir ? target(join(path, e.name)) : {})}>
                           <td>
                             <button type="button" className={"d-row-name " + (e.dir ? "" : k)} onClick={() => open(e)}>
                               <Icon name={e.dir ? "folder" : KINDS[k!].icon} className={e.dir ? "kind folder" : undefined} />

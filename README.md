@@ -262,6 +262,8 @@ delete them together. Every other kind is a card in its own colour. The browser 
 every upload keeps the date it was last changed on the device it came from. PDFs and text files
 open in a new tab, the rest download. **New** makes a folder or uploads files, which can also be
 dragged onto the page; right-click an item to open, download, share, convert, rename or delete it.
+Shift and right-click any item to add it to the selection, again to take it out; drag items onto a
+folder, or a folder in the path above, to move them there.
 ZIP, 7z and RAR archives are kept too: **Extract here** opens one into a folder beside it (leaving
 out links and kinds Storage does not keep, and refusing one that opens to over 100 GB), and
 **Compress to ZIP** packs a file or folder into a ZIP beside it. Archives are read with `unar`,
