@@ -387,20 +387,16 @@ export interface Listing {
   user: string | null;
 }
 
-// Where files are: the Media and Drive collections.
-export type Space = "media" | "drive";
+export const fileUrl = (path: string, inline: boolean) =>
+  `/api/drive/fs/file?path=${encodeURIComponent(path)}${inline ? "&inline=true" : ""}`;
 
-export const fileUrl = (path: string, inline: boolean, space: Space) =>
-  `/api/${space}/fs/file?path=${encodeURIComponent(path)}${inline ? "&inline=true" : ""}`;
-
-// A copy of a file in Media or Drive being made in another format or smaller,
+// A copy of a file in Storage being made in another format or smaller,
 // saved beside the original. `size` is a photo's longest side or a video's
 // shortest, in pixels, 0 for as it is.
 export type ConvertKind = "photo" | "video" | "pdf";
 export type Quality = "high" | "medium" | "small";
 export interface ConvertJob {
   id: string;
-  space: Space;
   source: string;
   kind: ConvertKind;
   to: string;
@@ -419,8 +415,8 @@ export interface ConvertState {
   kinds: { kind: ConvertKind; formats: string[]; sizes: number[] }[];
 }
 
-// A photo's or video's preview in Media.
-export const thumbUrl = (path: string) => `/api/media/fs/thumb?path=${encodeURIComponent(path)}`;
+// A photo's or video's preview in Storage.
+export const thumbUrl = (path: string) => `/api/drive/fs/thumb?path=${encodeURIComponent(path)}`;
 
 // A way to sign in at tunnels through another service, set up once and offered
 // by the tunnels that switch it on. The secret stays on the server;
@@ -465,7 +461,6 @@ export interface AdminAccount { username: string | null; email: string | null; h
 // A share link: what it opens, until when, and how often it was opened.
 export interface Share {
   id: string;
-  space: Space;
   paths: string[];
   protected: boolean;
   expires: number | null;
@@ -475,7 +470,7 @@ export interface Share {
 }
 
 // One copy of a file kept more than once, in Storage.
-export interface DuplicateCopy { space: Space; path: string; size: number; modified: number }
+export interface DuplicateCopy { path: string; size: number; modified: number }
 
 // A passkey of the account signed in: the site it signs in to, and when it was last used.
 export interface PasskeyInfo { id: string; rp_id: string; name: string; created_at: number; last_used: number | null }
@@ -605,7 +600,7 @@ export const api = {
   removeTotp: (code: string) => call("/account/totp", "DELETE", { code }),
   passkeys: () => call<PasskeyInfo[]>("/account/passkeys"),
   shares: () => call<{ shares: Share[]; address: string | null }>("/shares"),
-  share: (body: { space: Space; paths: string[]; password: string; days: number }) => call<{ share: Share; url: string }>("/shares", "POST", body),
+  share: (body: { paths: string[]; password: string; days: number }) => call<{ share: Share; url: string }>("/shares", "POST", body),
   endShare: (id: string) => call(`/shares/${encodeURIComponent(id)}`, "DELETE"),
   duplicates: () => call<{ groups: DuplicateCopy[][] }>("/duplicates"),
   beginPasskey: () => call<CreateOptions>("/account/passkeys/begin", "POST"),
@@ -699,22 +694,22 @@ export const api = {
   clearFlag: (id: number) => call(`/flags/${id}`, "DELETE"),
 
   convert: () => call<ConvertState>("/convert"),
-  startConvert: (body: { space: Space; paths: string[]; to: string; size: number; quality: Quality }) => call<{ queued: number }>("/convert", "POST", body),
+  startConvert: (body: { paths: string[]; to: string; size: number; quality: Quality }) => call<{ queued: number }>("/convert", "POST", body),
   removeConvert: (id: string) => call(`/convert/${id}`, "DELETE"),
 };
 
-// The files in a collection.
-export const filesIn = (space: Space) => ({
-  list: (path: string) => call<Listing>(`/${space}/fs/list?path=${encodeURIComponent(path)}`),
-  folder: (path: string) => call<{ path: string }>(`/${space}/fs/folder`, "POST", { path }),
-  rename: (path: string, name: string) => call<{ path: string }>(`/${space}/fs/rename`, "POST", { path, name }),
-  move: (paths: string[], to: string, copy: boolean) => call<{ done: number }>(`/${space}/fs/move`, "POST", { paths, to, copy }),
-  remove: (paths: string[]) => call<{ done: number }>(`/${space}/fs/delete`, "POST", { paths }),
-  extract: (path: string) => call<{ path: string; skipped: number }>(`/${space}/fs/extract`, "POST", { path }),
-  compress: (paths: string[]) => call<{ path: string }>(`/${space}/fs/compress`, "POST", { paths }),
-});
+// The files in Storage.
+export const files = {
+  list: (path: string) => call<Listing>(`/drive/fs/list?path=${encodeURIComponent(path)}`),
+  folder: (path: string) => call<{ path: string }>("/drive/fs/folder", "POST", { path }),
+  rename: (path: string, name: string) => call<{ path: string }>("/drive/fs/rename", "POST", { path, name }),
+  move: (paths: string[], to: string, copy: boolean) => call<{ done: number }>("/drive/fs/move", "POST", { paths, to, copy }),
+  remove: (paths: string[]) => call<{ done: number }>("/drive/fs/delete", "POST", { paths }),
+  extract: (path: string) => call<{ path: string; skipped: number }>("/drive/fs/extract", "POST", { path }),
+  compress: (paths: string[]) => call<{ path: string }>("/drive/fs/compress", "POST", { paths }),
+};
 
-// Saves a preview made in the browser beside a photo or video in Media.
+// Saves a preview made in the browser beside a photo or video in Storage.
 export async function saveThumb(path: string, jpeg: Blob) {
   await fetch(thumbUrl(path), { method: "PUT", credentials: "same-origin", headers: { "X-Requested-With": "fetch" }, body: jpeg });
 }
@@ -743,17 +738,17 @@ function put(url: string, body: Blob, onSent: (bytes: number) => void): Promise<
   });
 }
 
-// upload sends a file to `path` in `space` piece by piece, picking up where the
+// upload sends a file to `path` in Storage piece by piece, picking up where the
 // server says it got to if a piece is lost. `onProgress` gets the bytes sent so
 // far. With `keepDate`, the file keeps the date it was last changed.
-export async function upload(file: File, path: string, replace: boolean, onProgress: (sent: number) => void, cancelled: () => boolean, space: Space, keepDate = false) {
+export async function upload(file: File, path: string, replace: boolean, onProgress: (sent: number) => void, cancelled: () => boolean, keepDate = false) {
   const id = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
   let offset = 0;
   do {
     if (cancelled()) throw new Error("Cancelled");
     const end = Math.min(offset + PIECE, file.size);
     const date = keepDate && file.lastModified ? `&modified=${Math.floor(file.lastModified / 1000)}` : "";
-    const url = `/api/${space}/fs/upload?path=${encodeURIComponent(path)}&id=${id}&offset=${offset}&total=${file.size}&replace=${replace}${date}`;
+    const url = `/api/drive/fs/upload?path=${encodeURIComponent(path)}&id=${id}&offset=${offset}&total=${file.size}&replace=${replace}${date}`;
     const start = offset;
     const res = await put(url, file.slice(start, end), (sent) => onProgress(start + sent));
     if (res.status === 409 && typeof res.data.received === "number") {

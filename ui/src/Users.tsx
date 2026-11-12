@@ -117,7 +117,7 @@ function PasswordField({ label, value, onChange, hint }: { label: string; value:
 // ---- a new account ----
 
 // What a storage-only account holds: the dashboard, for Storage and nothing else.
-const STORAGE_ONLY = ["dashboard", "media.view", "media.upload", "media.delete", "drive.view", "drive.edit", "drive.delete"];
+const STORAGE_ONLY = ["dashboard", "drive.view", "drive.edit", "drive.delete"];
 
 export function NewUser({ routes, onAdded }: { routes: Route[]; onAdded: () => Promise<void> }) {
   const [access, setAccess] = useState("");

@@ -1,8 +1,8 @@
-//! Media and Drive: collections myTunnels keeps in its data folder, for photos
-//! and videos, and for documents, browsed and changed from the dashboard. Each
+//! Storage: the files myTunnels keeps in its data folder, documents, photos and
+//! videos together in folders, browsed and changed from the dashboard. Each
 //! account has its own, which no other account sees.
 //!
-//! Paths in the API are under the collection's folder, `/`-separated, `""` for
+//! Paths in the API are under the account's folder, `/`-separated, `""` for
 //! the folder itself.
 
 use std::path::{Path, PathBuf};
@@ -58,14 +58,7 @@ fn parent(path: &[String]) -> &[String] {
     &path[..path.len().saturating_sub(1)]
 }
 
-// ---- the collections ----
-
-/// Which collection a request is about.
-#[derive(Clone, Copy, PartialEq)]
-pub enum Space {
-    Media,
-    Drive,
-}
+// ---- what is kept ----
 
 const MEDIA_KINDS: &[&str] = &[
     "jpg", "jpeg", "png", "gif", "webp", "bmp", "avif", "heic", "heif", "tif", "tiff", "mp4",
@@ -77,39 +70,31 @@ const DRIVE_KINDS: &[&str] = &[
     "pages", "numbers", "epub", "zip", "7z", "rar",
 ];
 
-impl Space {
-    /// Where a collection is kept, under the data folder.
-    fn folder(self) -> &'static str {
-        match self {
-            Space::Media => "media",
-            Space::Drive => "drive",
-        }
-    }
+fn ext(name: &str) -> String {
+    name.rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase())
+        .unwrap_or_default()
+}
 
-    /// Refuses a file a collection does not keep, by its ending.
-    pub fn takes(self, name: &str) -> ApiResult<()> {
-        let ext = name
-            .rsplit_once('.')
-            .map(|(_, e)| e.to_ascii_lowercase())
-            .unwrap_or_default();
-        let (kinds, what) = match self {
-            Space::Media => (MEDIA_KINDS, "Media keeps photos and videos"),
-            Space::Drive => (
-                DRIVE_KINDS,
-                "Files keeps documents, spreadsheets, presentations, PDFs and archives",
-            ),
-        };
-        if kinds.contains(&ext.as_str()) {
-            Ok(())
-        } else {
-            Err(ApiError::bad(format!("{what}, not {name}")))
-        }
+/// Whether a file is a photo or a video, which shows as a picture.
+pub fn is_media(name: &str) -> bool {
+    MEDIA_KINDS.contains(&ext(name).as_str())
+}
+
+/// Refuses a file Storage does not keep, by its ending.
+pub fn takes(name: &str) -> ApiResult<()> {
+    let ext = ext(name);
+    if MEDIA_KINDS.contains(&ext.as_str()) || DRIVE_KINDS.contains(&ext.as_str()) {
+        Ok(())
+    } else {
+        Err(ApiError::bad(format!(
+            "Storage keeps documents, spreadsheets, presentations, PDFs, archives, photos and videos, not {name}"
+        )))
     }
 }
 
-/// One account's collection: its folder, apart from everyone else's.
+/// One account's files: its folder, apart from everyone else's.
 pub struct Store {
-    pub space: Space,
     base: PathBuf,
     /// The most the account's photos and files together may take up, and the
     /// folder holding them all; for accounts that have a limit.
@@ -117,11 +102,12 @@ pub struct Store {
 }
 
 impl Store {
-    /// The collection of the account `owner`. The host's is the data folder's
-    /// own; every other account's is under `people`, by its ID.
-    pub fn open(state: &AppState, space: Space, owner: &str) -> ApiResult<Self> {
-        let base = base(&state.config.data_dir, space, owner)?;
+    /// The files of the account `owner`. The host's are in the data folder's
+    /// own; every other account's are under `people`, by its ID.
+    pub fn open(state: &AppState, owner: &str) -> ApiResult<Self> {
+        let base = base(&state.config.data_dir, owner)?;
         std::fs::create_dir_all(&base).map_err(io_error)?;
+        fold_media(&base);
         let limit = state
             .snapshot()
             .users
@@ -129,7 +115,7 @@ impl Store {
             .map(|u| u.storage_limit)
             .filter(|&l| l > 0 && owner != HOST_ID)
             .and_then(|l| Some((l, base.parent()?.to_owned())));
-        Ok(Self { space, base, limit })
+        Ok(Self { base, limit })
     }
 
     /// The bytes the account's limit leaves free, when it has one.
@@ -156,17 +142,33 @@ impl Store {
         }
     }
 
-    /// Where a photo's or video's preview is kept, beside the collection.
-    pub fn thumb(&self, rel: &[String]) -> Option<PathBuf> {
-        if self.space != Space::Media {
-            return None;
-        }
-        let mut path = self.base.join(".thumbs");
-        for seg in rel {
-            path.push(seg);
-        }
+    /// Where a photo's or video's preview is kept, beside the files.
+    pub fn thumb(&self, rel: &[String]) -> PathBuf {
+        let mut path = self.thumbs_in(rel);
         path.as_mut_os_string().push(".jpg");
-        Some(path)
+        path
+    }
+
+    /// Where the previews of what is in a folder are kept.
+    fn thumbs_in(&self, rel: &[String]) -> PathBuf {
+        rel.iter()
+            .fold(self.base.join(".thumbs"), |path, seg| path.join(seg))
+    }
+
+    /// Moves the previews of what was at `from` to go with it to `to`: a
+    /// file's own, or those of everything in a folder.
+    fn move_previews(&self, from: &[String], to: &[String]) {
+        for (old, new) in [
+            (self.thumb(from), self.thumb(to)),
+            (self.thumbs_in(from), self.thumbs_in(to)),
+        ] {
+            if old.exists() {
+                if let Some(dir) = new.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                let _ = std::fs::rename(old, new);
+            }
+        }
     }
 
     /// The real path of a path in the collection, refused if it leads outside it,
@@ -213,22 +215,83 @@ fn full() -> ApiError {
     )
 }
 
-fn base(data: &Path, space: Space, owner: &str) -> ApiResult<PathBuf> {
+fn base(data: &Path, owner: &str) -> ApiResult<PathBuf> {
     if owner == HOST_ID {
-        return Ok(data.join(space.folder()));
+        return Ok(data.join("drive"));
     }
     if owner.is_empty() || !owner.bytes().all(|b| b.is_ascii_alphanumeric()) {
         return Err(ApiError::not_found());
     }
-    Ok(data.join("people").join(owner).join(space.folder()))
+    Ok(data.join("people").join(owner).join("drive"))
+}
+
+/// Photos and videos were kept apart, in a `media` folder beside the drive;
+/// they join the drive's top folder, with their previews, the first time it
+/// opens. A name already taken there gets a number.
+fn fold_media(drive: &Path) {
+    static FOLDING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let Some(media) = drive.parent().map(|p| p.join("media")) else {
+        return;
+    };
+    if !media.is_dir() {
+        return;
+    }
+    let _held = FOLDING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Ok(read) = std::fs::read_dir(&media) else {
+        return;
+    };
+    let thumb = |dir: &Path, name: &str| dir.join(".thumbs").join(format!("{name}.jpg"));
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        let free = free_name(drive, &name);
+        if std::fs::rename(entry.path(), drive.join(&free)).is_err() {
+            continue;
+        }
+        let to = thumb(drive, &free);
+        if let Some(dir) = to.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::rename(thumb(&media, &name), to);
+    }
+    // What is left is only previews of nothing and unfinished uploads.
+    let moved = std::fs::read_dir(&media).map_or(true, |r| {
+        r.flatten()
+            .all(|e| e.file_name().to_string_lossy().starts_with('.'))
+    });
+    if moved {
+        let _ = std::fs::remove_dir_all(&media);
+    }
+}
+
+/// `name`, or "name (2).ext" and on, whichever is not taken in `dir`.
+fn free_name(dir: &Path, name: &str) -> String {
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((s, e)) if !s.is_empty() => (s, format!(".{e}")),
+        _ => (name, String::new()),
+    };
+    (1..)
+        .map(|n| {
+            if n == 1 {
+                name.to_owned()
+            } else {
+                format!("{stem} ({n}){ext}")
+            }
+        })
+        .find(|n| std::fs::symlink_metadata(dir.join(n)).is_err())
+        .unwrap_or_default()
 }
 
 // ---- the files API ----
 
-/// One file operation, `op`, in `space` of the account `owner`.
-pub async fn fs(state: &AppState, space: Space, owner: &str, op: &str, req: Request) -> Response {
+/// One file operation, `op`, in the files of the account `owner`.
+pub async fn fs(state: &AppState, owner: &str, op: &str, req: Request) -> Response {
     let result = async {
-        let store = Store::open(state, space, owner)?;
+        let store = Store::open(state, owner)?;
         let method = req.method().clone();
         match (method, op) {
             (Method::GET, "list") => list(&store, query(&req)?).await,
@@ -543,7 +606,7 @@ async fn rename(store: &Store, body: Rename) -> ApiResult<Response> {
     target.push(new[0].clone());
     let to = store.item(&target)?;
     if !from.is_dir() {
-        store.space.takes(name)?;
+        takes(name)?;
     }
     // Only the case changing is the same file on Windows and macOS.
     let same = rel.last().is_some_and(|old| old.eq_ignore_ascii_case(name));
@@ -551,12 +614,7 @@ async fn rename(store: &Store, body: Rename) -> ApiResult<Response> {
         return Err(ApiError::conflict(format!("{name} already exists")));
     }
     tokio::fs::rename(&from, &to).await.map_err(io_error)?;
-    if let (Some(old), Some(new)) = (store.thumb(&rel), store.thumb(&target)) {
-        if let Some(dir) = new.parent() {
-            let _ = tokio::fs::create_dir_all(dir).await;
-        }
-        let _ = tokio::fs::rename(old, new).await;
-    }
+    store.move_previews(&rel, &target);
     Ok(Json(json!({ "path": joined(&target) })).into_response())
 }
 
@@ -610,6 +668,9 @@ async fn relocate(store: &Store, body: Relocate) -> ApiResult<Response> {
         .await
         .map_err(|e| ApiError::from(anyhow::anyhow!(e)))?
         .map_err(io_error)?;
+        if !body.copy {
+            store.move_previews(&rel, &target);
+        }
         done += 1;
     }
     Ok(Json(json!({ "done": done })).into_response())
@@ -651,10 +712,11 @@ async fn delete(store: &Store, body: Paths) -> ApiResult<Response> {
     for path in &body.paths {
         let rel = segments(path)?;
         targets.push(store.item(&rel)?);
-        thumbs.extend(store.thumb(&rel));
+        thumbs.push(store.thumb(&rel));
+        thumbs.push(store.thumbs_in(&rel));
     }
     for thumb in thumbs {
-        let _ = tokio::fs::remove_file(thumb).await;
+        let _ = tokio::task::spawn_blocking(move || remove(&thumb)).await;
     }
     let count = targets.len();
     tokio::task::spawn_blocking(move || targets.iter().try_for_each(|t| remove(t)))
@@ -694,7 +756,7 @@ async fn upload(store: &Store, req: Request) -> ApiResult<Response> {
     if rel.is_empty() {
         return Err(ApiError::bad("Name the file"));
     }
-    store.space.takes(&rel[rel.len() - 1])?;
+    takes(&rel[rel.len() - 1])?;
     let target = store.item(&rel)?;
     let dir = target.parent().ok_or_else(ApiError::not_found)?.to_owned();
     let temp = dir.join(format!(".{}{PART}", piece.id));
@@ -777,9 +839,7 @@ const MAX_THUMB: usize = 2 * 1024 * 1024;
 /// A photo's or video's preview, made by the page that uploaded it.
 async fn thumb(store: &Store, req: Request) -> ApiResult<Response> {
     let at: At = query(&req)?;
-    let path = store
-        .thumb(&segments(&at.path)?)
-        .ok_or_else(ApiError::not_found)?;
+    let path = store.thumb(&segments(&at.path)?);
     let mut response = ServeFile::new(&path)
         .try_call(req)
         .await
@@ -798,7 +858,7 @@ async fn save_thumb(store: &Store, req: Request) -> ApiResult<Response> {
     if !store.real(&rel)?.is_file() {
         return Err(ApiError::not_found());
     }
-    let path = store.thumb(&rel).ok_or_else(ApiError::not_found)?;
+    let path = store.thumb(&rel);
     let bytes = axum::body::to_bytes(req.into_body(), MAX_THUMB)
         .await
         .map_err(|_| ApiError(StatusCode::PAYLOAD_TOO_LARGE, "Too much at once".into()))?;
@@ -848,26 +908,42 @@ mod tests {
     #[test]
     fn each_account_has_its_own_folder() {
         let data = Path::new("data");
+        assert_eq!(base(data, HOST_ID).unwrap(), data.join("drive"));
         assert_eq!(
-            base(data, Space::Media, HOST_ID).unwrap(),
-            data.join("media")
-        );
-        assert_eq!(
-            base(data, Space::Drive, "a1b2c3").unwrap(),
+            base(data, "a1b2c3").unwrap(),
             data.join("people").join("a1b2c3").join("drive")
         );
-        assert!(base(data, Space::Media, "../a1").is_err());
-        assert!(base(data, Space::Media, "").is_err());
+        assert!(base(data, "../a1").is_err());
+        assert!(base(data, "").is_err());
     }
 
     #[test]
-    fn collections_keep_their_own_kinds() {
-        assert!(Space::Media.takes("IMG_0001.HEIC").is_ok());
-        assert!(Space::Media.takes("clip.mp4").is_ok());
-        assert!(Space::Media.takes("notes.docx").is_err());
-        assert!(Space::Drive.takes("Budget.xlsx").is_ok());
-        assert!(Space::Drive.takes("deck.pptx").is_ok());
-        assert!(Space::Drive.takes("setup.exe").is_err());
-        assert!(Space::Drive.takes("README").is_err());
+    fn keeps_documents_photos_and_videos() {
+        assert!(takes("IMG_0001.HEIC").is_ok());
+        assert!(takes("clip.mp4").is_ok());
+        assert!(takes("Budget.xlsx").is_ok());
+        assert!(takes("deck.pptx").is_ok());
+        assert!(takes("setup.exe").is_err());
+        assert!(takes("README").is_err());
+    }
+
+    #[test]
+    fn photos_join_the_drive_with_their_previews() {
+        let dir = std::env::temp_dir().join(format!("fold-{}", crate::util::random_hex(6)));
+        let (media, drive) = (dir.join("media"), dir.join("drive"));
+        std::fs::create_dir_all(media.join(".thumbs")).unwrap();
+        std::fs::create_dir_all(&drive).unwrap();
+        std::fs::write(media.join("a.jpg"), b"new").unwrap();
+        std::fs::write(media.join(".thumbs/a.jpg.jpg"), b"thumb").unwrap();
+        std::fs::write(drive.join("a.jpg"), b"old").unwrap();
+        fold_media(&drive);
+        assert!(!media.exists());
+        assert_eq!(std::fs::read(drive.join("a.jpg")).unwrap(), b"old");
+        assert_eq!(std::fs::read(drive.join("a (2).jpg")).unwrap(), b"new");
+        assert_eq!(
+            std::fs::read(drive.join(".thumbs/a (2).jpg.jpg")).unwrap(),
+            b"thumb"
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

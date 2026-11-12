@@ -192,7 +192,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
     ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
     ["containers", "Containers", "deployed_code", "#/", can("containers.view")],
     ["forward", "Routes", "alt_route", "#/routes", can("tunnels.view")],
-    ["storage", "Storage", "cloud", "#/storage", can("media.view") || can("drive.view")],
+    ["storage", "Storage", "cloud", "#/storage", can("drive.view")],
     ["apps", "Apps", "apps", "#/apps", true],
     ["security", "Security", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
   ];
@@ -248,7 +248,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
         <main className="page" key={ONE_OF.includes(view) ? view + id : view}>
           {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
           {view === "apps" && <AppsPage />}
-          {view === "storage" && <StoragePage tab={id} />}
+          {view === "storage" && <StoragePage />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} forwards={forwards ?? []}
             users={users ?? []} providers={providers} onChanged={load} />}
           {view === "forward" && <ForwardPage id={id} port={page} routes={apps} forwards={forwards} status={status}

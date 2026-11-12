@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent as PointerEvent } from "react";
-import { bytes, fileUrl, filesIn, message, type FileEntry, type Listing } from "./api";
+import { bytes, fileUrl, files, message, saveThumb, type FileEntry, type Listing } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
-import { ContextMenu, dropped, extOf, NameDialog, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Files";
+import { ContextMenu, convertKind, dropped, extOf, NameDialog, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Files";
 import { Icon, type IconName } from "./Icon";
+import { isPhoto, isVideo, makeThumb, Thumb, Viewer } from "./Media";
 import { useCan } from "./me";
-import type { TabProps } from "./Storage";
+import type { StorageProps } from "./Storage";
 import { Callout, Dialog, useNotify } from "./ui";
 
-const drive = filesIn("drive");
-
-type Kind = "doc" | "sheet" | "slides" | "pdf" | "text" | "archive";
+type Kind = "photo" | "video" | "doc" | "sheet" | "slides" | "pdf" | "text" | "archive";
 
 const KINDS: Record<Kind, { label: string; icon: IconName; exts: string[] }> = {
+  photo: { label: "Photos", icon: "image", exts: ["jpg", "jpeg", "png", "gif", "webp", "bmp", "avif", "heic", "heif", "tif", "tiff"] },
+  video: { label: "Videos", icon: "movie", exts: ["mp4", "mov", "m4v", "webm", "mkv", "avi", "3gp", "mts", "m2ts", "wmv"] },
   doc: { label: "Documents", icon: "article", exts: ["doc", "docx", "docm", "dot", "dotx", "odt", "rtf", "pages"] },
   sheet: { label: "Spreadsheets", icon: "table", exts: ["xls", "xlsx", "xlsm", "xlt", "xltx", "ods", "csv", "tsv", "numbers"] },
   slides: { label: "Presentations", icon: "slideshow", exts: ["ppt", "pptx", "pptm", "pps", "ppsx", "odp", "key"] },
@@ -22,12 +23,16 @@ const KINDS: Record<Kind, { label: string; icon: IconName; exts: string[] }> = {
 const ORDER = Object.keys(KINDS) as Kind[];
 
 const kindOf = (name: string) => ORDER.find((k) => KINDS[k].exts.includes(extOf(name)));
+const isMedia = (name: string) => isPhoto(name) || isVideo(name);
 // The browser opens these in a tab; the rest download.
 const opens = (name: string) => ["pdf", "txt", "md", "csv"].includes(extOf(name));
 const ACCEPT = ORDER.flatMap((k) => KINDS[k].exts.map((e) => "." + e)).join(",");
 
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 const when = (at: number) => new Date(at * 1000).toLocaleDateString([], { dateStyle: "medium" });
+
+// How many files are drawn at first, and added as the end of them comes near.
+const CLUSTER = 120;
 
 type Sort = "name" | "modified";
 const SORTS: Option<Sort>[] = [{ value: "modified", label: "Last modified" }, { value: "name", label: "Name" }];
@@ -40,9 +45,10 @@ function remembered(): "grid" | "list" {
   }
 }
 
-// DrivePage is Storage's Files tab: documents, spreadsheets, presentations and
-// PDFs on this host, in folders, each kind in its own colour.
-export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabProps) {
+// DrivePage is Storage: documents, photos and videos on this host, together in
+// folders. Photos and videos show their picture and open in a viewer; each
+// other kind has its own colour.
+export function DrivePage({ convert, shares, tools, extra, onReload }: StorageProps) {
   const can = useCan();
   const [path, setPath] = useState("");
   const [listing, setListing] = useState<Listing | null>(null);
@@ -52,13 +58,16 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
   const [view, setView] = useState(remembered);
   const [menu, setMenu] = useState<(Menu & { entry: FileEntry | null }) | null>(null);
   const [asking, setAsking] = useState<null | "folder" | { rename: FileEntry } | { remove: FileEntry }>(null);
+  const [viewing, setViewing] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [drawn, setDrawn] = useState(CLUSTER);
   const input = useRef<HTMLInputElement>(null);
+  const end = useRef<HTMLDivElement>(null);
   const notify = useNotify();
 
   const load = useCallback(async () => {
     try {
-      setListing(await drive.list(path));
+      setListing(await files.list(path));
       setProblem("");
     } catch (e) {
       setProblem(message(e));
@@ -66,22 +75,40 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
   }, [path]);
   useEffect(() => {
     setListing(null);
+    setDrawn(CLUSTER);
     load();
     onReload(load);
   }, [load, onReload]);
-  const { send, panel } = useUploads("drive", load);
+  // A photo or video gets its preview once it is in.
+  const { send, panel } = useUploads(load, async (item, at) => {
+    if (!isMedia(item.file.name)) return;
+    const jpeg = await makeThumb(item.file);
+    if (jpeg) await saveThumb(at, jpeg).catch(() => {});
+  });
 
   const entries = listing?.entries ?? [];
   const folders = entries.filter((e) => e.dir).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   const docs = entries
     .filter((e) => !e.dir && kindOf(e.name) && (!kind || kindOf(e.name) === kind))
     .sort((a, b) => (sort === "name" ? a.name.localeCompare(b.name, undefined, { numeric: true }) : b.modified - a.modified));
+  const media = docs.filter((e) => isMedia(e.name));
+  const rows = [...(kind ? [] : folders), ...docs];
+
+  // Files are drawn a cluster at a time, the next as the last comes into view.
+  const more = drawn < (view === "grid" ? docs.length : rows.length);
+  useEffect(() => {
+    const el = end.current;
+    if (!more || !el) return;
+    const seen = new IntersectionObserver(([e]) => e.isIntersecting && setDrawn((n) => n + CLUSTER), { rootMargin: "800px" });
+    seen.observe(el);
+    return () => seen.disconnect();
+  }, [more, drawn]);
 
   const start = (picked: Picked[]) => {
     const fit = picked.filter((p) => kindOf(p.file.name));
     if (fit.length < picked.length) {
       const n = picked.length - fit.length;
-      notify(`Skipped ${n} file${n === 1 ? "" : "s"}: Files keeps documents, spreadsheets, presentations, PDFs and archives`, "bad");
+      notify(`Skipped ${n} file${n === 1 ? "" : "s"}: Storage keeps documents, spreadsheets, presentations, PDFs, archives, photos and videos`, "bad");
     }
     const here = new Set(entries.map((e) => e.name));
     const clash = fit.find((p) => here.has(p.rel));
@@ -91,12 +118,13 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
 
   const open = (e: FileEntry) => {
     if (e.dir) return setPath(join(path, e.name));
-    if (opens(e.name)) window.open(fileUrl(join(path, e.name), true, "drive"), "_blank", "noopener");
+    if (isMedia(e.name)) return setViewing(media.indexOf(e));
+    if (opens(e.name)) window.open(fileUrl(join(path, e.name), true), "_blank", "noopener");
     else download(e);
   };
   const download = (e: FileEntry) => {
     const a = document.createElement("a");
-    a.href = fileUrl(join(path, e.name), false, "drive");
+    a.href = fileUrl(join(path, e.name), false);
     a.download = e.name;
     document.body.append(a);
     a.click();
@@ -115,8 +143,8 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
   const extract = async (e: FileEntry) => {
     notify(`Opening ${e.name}`);
     try {
-      const { skipped } = await drive.extract(join(path, e.name));
-      notify(skipped ? `Opened ${e.name}; left out ${skipped} file${skipped === 1 ? "" : "s"} Files does not keep` : `Opened ${e.name}`);
+      const { skipped } = await files.extract(join(path, e.name));
+      notify(skipped ? `Opened ${e.name}; left out ${skipped} file${skipped === 1 ? "" : "s"} Storage does not keep` : `Opened ${e.name}`);
     } catch (err) {
       notify(message(err), "bad");
     }
@@ -130,12 +158,13 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
     setMenu({ x: ev.clientX, y: ev.clientY, on: !!entry, entry });
   };
   const items = (entry: FileEntry | null): MenuItem[] => entry ? [
-    { label: "Open", icon: entry.dir ? "folder" : opens(entry.name) ? "open_in_new" : "download", run: () => open(entry) },
+    { label: "Open", icon: entry.dir ? "folder" : isMedia(entry.name) ? "image" : opens(entry.name) ? "open_in_new" : "download", run: () => open(entry) },
     { label: "Download", icon: "download", hidden: entry.dir, run: () => download(entry) },
-    { label: "Share link", icon: "link", run: () => shares.open("drive", [join(path, entry.name)]) },
-    { label: "Convert", icon: "swap_horiz", hidden: extOf(entry.name) !== "pdf" || !can("drive.edit"), run: () => convert.open("drive", [join(path, entry.name)]) },
+    { label: "Share link", icon: "link", run: () => shares.open([join(path, entry.name)]) },
+    { label: "Convert", icon: "swap_horiz", hidden: entry.dir || !convertKind(entry.name) || !can("drive.edit"), run: () => convert.open([join(path, entry.name)]) },
+    { label: "Remove background", icon: "content_cut", hidden: entry.dir || !isPhoto(entry.name) || !can("drive.edit"), run: () => convert.cutout([join(path, entry.name)]) },
     { label: "Extract here", icon: "folder_zip", hidden: kindOf(entry.name) !== "archive" || !can("drive.edit"), run: () => extract(entry) },
-    { label: "Compress to ZIP", icon: "folder_zip", hidden: !can("drive.edit"), run: () => run(() => drive.compress([join(path, entry.name)]), `Packed ${entry.name}`) },
+    { label: "Compress to ZIP", icon: "folder_zip", hidden: !can("drive.edit"), run: () => run(() => files.compress([join(path, entry.name)]), `Packed ${entry.name}`) },
     { label: "Rename", icon: "edit", hidden: !can("drive.edit"), run: () => setAsking({ rename: entry }) },
     { label: "Delete", icon: "delete", danger: true, hidden: !can("drive.delete"), run: () => setAsking({ remove: entry }) },
   ] : [
@@ -186,10 +215,9 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
           }}><Icon name="add" size={18} />New</button>}
         </div>
       </div>
-      {nav}
       {crumbs.length > 0 && (
         <div className="st-crumbs">
-          {["Files", ...crumbs].map((name, i) => (
+          {["Storage", ...crumbs].map((name, i) => (
             <span key={i} className="ex-crumb-wrap">
               {i > 0 && <Icon name="chevron_right" size={20} className="ex-crumb-sep" />}
               {i === crumbs.length ? <span className="d-crumb on">{name}</span> : (
@@ -213,8 +241,8 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
           {folders.length === 0 && docs.length === 0 ? (
             <div className="card welcome">
               <Icon name="cloud" size={40} />
-              <h2>{kind ? `No ${KINDS[kind].label.toLowerCase()} here` : path ? "This folder is empty" : "Your documents"}</h2>
-              <p className="muted">Word documents, spreadsheets, presentations and PDFs, kept on this host. Upload them, or drag them onto this page.</p>
+              <h2>{kind ? `No ${KINDS[kind].label.toLowerCase()} here` : path ? "This folder is empty" : "Your files"}</h2>
+              <p className="muted">Documents, photos and videos, kept on this host. Upload them, or drag them onto this page.</p>
               {can("drive.edit") && <button type="button" className="btn primary" onClick={() => input.current?.click()}><Icon name="upload_file" size={18} />Upload files</button>}
             </div>
           ) : view === "grid" ? (
@@ -237,12 +265,19 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
                 <section className="d-section">
                   <h2>Files</h2>
                   <ul className="d-files">
-                    {docs.map((d) => {
+                    {docs.slice(0, drawn).map((d) => {
                       const k = kindOf(d.name)!;
                       return (
                         <li key={d.name}>
                           <button type="button" className={"d-file " + k} onClick={() => open(d)} onContextMenu={(ev) => contextMenu(ev, d)} title={`${d.name}\n${bytes(d.size)}`}>
-                            <span className="d-cover"><Icon name={KINDS[k].icon} size={56} /><span className="d-ext">{extOf(d.name)}</span></span>
+                            {isMedia(d.name) ? (
+                              <span className="d-cover picture">
+                                <Thumb path={join(path, d.name)} />
+                                {isVideo(d.name) && <Icon name="play_circle" size={22} className="m-badge" />}
+                              </span>
+                            ) : (
+                              <span className="d-cover"><Icon name={KINDS[k].icon} size={56} /><span className="d-ext">{extOf(d.name)}</span></span>
+                            )}
                             <span className="d-name"><Icon name={KINDS[k].icon} size={18} /><span>{d.name}</span></span>
                             <small>{when(d.modified)}</small>
                           </button>
@@ -259,7 +294,7 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
                 <table className="table d-table">
                   <thead><tr><th className="grow">Name</th><th>Last modified</th><th>Size</th><th aria-label="Actions" /></tr></thead>
                   <tbody>
-                    {[...(kind ? [] : folders), ...docs].map((e) => {
+                    {rows.slice(0, drawn).map((e) => {
                       const k = kindOf(e.name);
                       return (
                         <tr key={e.name} onDoubleClick={() => open(e)} onContextMenu={(ev) => contextMenu(ev, e)}>
@@ -289,19 +324,25 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
               </div>
             </div>
           )}
+          {more && <div ref={end} />}
         </div>
       )}
 
-      {dragging && <div className="m-drop"><Icon name="cloud_upload" size={40} /><span>Drop files to upload to {crumbs[crumbs.length - 1] ?? "Files"}</span></div>}
+      {dragging && <div className="m-drop"><Icon name="cloud_upload" size={40} /><span>Drop files to upload to {crumbs[crumbs.length - 1] ?? "Storage"}</span></div>}
       <input ref={input} type="file" multiple hidden accept={ACCEPT} onChange={(e) => {
         if (e.target.files) start(Array.from(e.target.files, (file) => ({ file, rel: file.name })));
         e.target.value = "";
       }} />
       {menu && <ContextMenu at={menu} items={items(menu.entry)} onClose={() => setMenu(null)} />}
+      {viewing !== null && media[viewing] && (
+        <Viewer dir={path} items={media} at={viewing} onMove={setViewing} onClose={() => setViewing(null)}
+          onDownload={(name) => download(media.find((e) => e.name === name)!)}
+          onDelete={(name) => setAsking({ remove: media.find((e) => e.name === name)! })} />
+      )}
       {asking === "folder" && (
         <NameDialog title="New folder" label="Folder name" initial="Untitled folder" action="Create" onClose={() => setAsking(null)}
           onSave={async (name) => {
-            await drive.folder(join(path, name));
+            await files.folder(join(path, name));
             setAsking(null);
             await load();
           }} />
@@ -309,7 +350,7 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
       {asking && typeof asking === "object" && "rename" in asking && (
         <NameDialog title="Rename" label="Name" initial={asking.rename.name} action="Rename" onClose={() => setAsking(null)}
           onSave={async (name) => {
-            await drive.rename(join(path, asking.rename.name), name);
+            await files.rename(join(path, asking.rename.name), name);
             setAsking(null);
             await load();
           }} />
@@ -322,7 +363,8 @@ export function DrivePage({ nav, convert, shares, tools, extra, onReload }: TabP
             <button type="button" className="btn primary danger-fill" autoFocus onClick={() => {
               const target = asking.remove;
               setAsking(null);
-              run(() => drive.remove([join(path, target.name)]), `Deleted ${target.name}`);
+              setViewing(null);
+              run(() => files.remove([join(path, target.name)]), `Deleted ${target.name}`);
             }}>Delete</button>
           </div>
         </Dialog>

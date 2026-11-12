@@ -250,25 +250,25 @@ Podman works too, through its Docker-compatible API: mount Podman's socket in pl
 ## Storage
 
 **Storage** is a home cloud for your files, not tied to any folder you pick: everything uploaded is
-kept by myTunnels under `/data`. It has two tabs.
+kept by myTunnels under `/data/drive`, in one place like Google Drive. Documents, spreadsheets,
+presentations, PDFs, archives, photos and videos sit together in folders of your own. Each kind has
+its colour and a chip to show only that kind; files show as cards or as a list, by name or by when
+they last changed, drawn a cluster at a time as the page scrolls.
 
-- **Photos and videos** (`/data/media`) is laid out like a photo library: newest first, grouped by
-  month, narrowed to photos or videos. Open one to see it full size, step through with the arrow
-  keys, download or delete it. Tick several to download, convert or delete them together.
-  **Upload**, or drag photos and videos onto the page; each keeps the date it was last changed on
-  the device it came from, and the browser makes a small preview of it as it goes up.
-- **Files** (`/data/drive`) keeps documents: Word and other text documents, spreadsheets,
-  presentations and PDFs, in folders of your own. Each kind has its colour and a chip to show only
-  that kind; files show as cards or as a list, by name or by when they last changed. PDFs and text
-  files open in a new tab, the rest download. **New** makes a folder or uploads files, which can
-  also be dragged onto the page; right-click an item to open, download, convert, rename or delete
-  it. ZIP, 7z and RAR archives are kept too: **Extract here** opens one into a folder beside it
-  (leaving out links and kinds Files does not keep, and refusing one that opens to over 100 GB),
-  and **Compress to ZIP** packs a file or folder into a ZIP beside it. Archives are read with
-  `unar`, which the image includes.
+Photos and videos show their own picture; open one to see it full size and step through the
+folder's others with the arrow keys. The browser makes a small preview of each as it goes up, and
+every upload keeps the date it was last changed on the device it came from. PDFs and text files
+open in a new tab, the rest download. **New** makes a folder or uploads files, which can also be
+dragged onto the page; right-click an item to open, download, share, convert, rename or delete it.
+ZIP, 7z and RAR archives are kept too: **Extract here** opens one into a folder beside it (leaving
+out links and kinds Storage does not keep, and refusing one that opens to over 100 GB), and
+**Compress to ZIP** packs a file or folder into a ZIP beside it. Archives are read with `unar`,
+which the image includes.
 
-**Convert**, in an item's menu or for the photos and videos you tick, makes a copy in another
-format or smaller:
+Photos and videos used to be kept apart, under `/data/media`; the first time Storage opens they
+move into the top folder with their previews, a number added to any name already taken there.
+
+**Convert**, in an item's menu, makes a copy in another format or smaller:
 
 - **Photos** become JPEG or WebP, at their own size or with the longest side 3840, 2560, 1920
   or 1280 pixels. HEIC and AVIF photos from phones are read with libheif, the rest with
@@ -288,21 +288,20 @@ keeping its date and, for photos and videos, its preview; the original is never 
 Conversions wait in a queue and run one at a time at low priority, so a long video does not slow
 the gateway; a panel at the bottom right follows them, opens what is done and cancels what is not.
 
-Converting needs, for a tab, the permissions to view it and to add to it (**Upload photos and
-videos**, or **Upload and change documents**).
+Converting needs the permissions to view files and to add to them (**View files** and **Upload
+and change files**).
 
-**Share link**, in an item's menu or for the photos and videos you tick, makes a link anyone can
-open without an account: to a file, a folder, or a set of photos. It lasts a day, a week, a month
+**Share link**, in an item's menu, makes a link anyone can open without an account: to a file
+or a folder, its photos and videos shown as pictures. It lasts a day, a week, a month
 or until ended, and can ask for a password. Links open at the dashboard's tunnel address, under
 `/share/`, past that tunnel's own access rules; each link is its own key, and its page shows only
 what it shares. The link button at the top of Storage lists your links, how often each was opened,
 and ends them. The dashboard must be published through a tunnel for links to work.
 
-**Find duplicates**, at the top of Storage, lists every file kept more than once across both tabs,
-by content, so a renamed copy counts too, with the space each copy frees. The oldest copy in each
+**Find duplicates**, at the top of Storage, lists every file kept more than once, by content, so a renamed copy counts too, with the space each copy frees. The oldest copy in each
 set is kept unless you pick another, and the others can be deleted one set at a time or all at once.
 
-Each tab takes only its own kinds of file. Storage is in the dashboard alone, so publish the
+Storage takes only the kinds of file above. It is in the dashboard alone, so publish the
 dashboard through a tunnel to reach it from anywhere.
 
 ## Apps

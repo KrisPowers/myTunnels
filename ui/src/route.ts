@@ -6,7 +6,7 @@
 // `/<id>/<page>` for one of them; `#/apps`, the apps catalog;
 // `#/settings/<section>`, Preferences among them; and
 // `#/docs/<section>`; `#/dashboard`, the host and its containers, where `#/hardware` now goes;
-// `#/storage`, photos and videos, and `#/storage/files`; `#/containers`,
+// `#/storage`, documents, photos and videos together; `#/containers`,
 // with `/<name>/<page>/...` for one, its tunnel and images among its pages.
 
 export type View = "tunnels" | "dashboard" | "apps" | "containers" | "forward" | "storage" | "devices" | "users" | "security" | "settings" | "docs";
@@ -36,10 +36,8 @@ export function readHash(): Place {
   if (first === "new") return { view: "forward", id: "new", page: second, more: [] };
   // Forward, then Remote Access, became Routes.
   if (first === "routes" || first === "remote" || first === "forward") return { view: "forward", id: second, page: third, more: [] };
-  // Media, Drive and Convert became Storage's tabs and its Convert action.
-  if (first === "media" || first === "convert") return { view: "storage", id: "", page: "", more: [] };
-  if (first === "drive") return { view: "storage", id: "files", page: "", more: [] };
-  if (first === "storage") return { view: first, id: second, page: "", more: [] };
+  // Media, Drive and Convert became Storage, one page, and its Convert action.
+  if (first === "media" || first === "drive" || first === "convert" || first === "storage") return { view: "storage", id: "", page: "", more: [] };
   // Images became each container's Images page.
   if (first === "images") return { view: "containers", id: "", page: "", more: [] };
   if (first === "devices" || first === "users" || first === "settings" || first === "docs" || first === "containers" || first === "security") return { view: first, id: second, page: third, more };
