@@ -1,23 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ago, api, bytes, fileUrl, filesIn, message, type ConvertJob, type ConvertKind, type ConvertState, type DuplicateCopy, type Quality, type Share, type Space } from "./api";
+import { ago, api, bytes, fileUrl, files, message, type ConvertJob, type ConvertKind, type ConvertState, type DuplicateCopy, type Quality, type Share } from "./api";
 import { DrivePage } from "./Drive";
 import { Dropdown, type Option } from "./Dropdown";
 import { convertKind } from "./Files";
-import { Icon, type IconName } from "./Icon";
-import { MediaPage } from "./Media";
+import { Icon } from "./Icon";
 import { useCan } from "./me";
 import { Copy, Dialog, TextField, useNotify } from "./ui";
 
-// StoragePage is photos, videos and files kept on this host, in one page with a
-// tab for each: Photos and videos (the media space) and Files (the drive space).
-// Converting is an action on what is picked there, with its progress in a panel.
-export function StoragePage({ tab }: { tab: string }) {
-  const can = useCan();
-  const tabs: [string, string, IconName][] = [
-    ...(can("media.view") ? [["", "Photos and videos", "photo_library"] as [string, string, IconName]] : []),
-    ...(can("drive.view") ? [["files", "Files", "folder"] as [string, string, IconName]] : []),
-  ];
-  const current = tabs.some(([k]) => k === tab) ? tab : tabs[0]?.[0] ?? "";
+// StoragePage is the documents, photos and videos kept on this host, together
+// in folders. Converting is an action on what is picked there, with its
+// progress in a panel.
+export function StoragePage() {
   const reloads = useRef<() => unknown>(() => {});
   const convert = useConvert(() => reloads.current());
   const shares = useShares();
@@ -35,27 +28,15 @@ export function StoragePage({ tab }: { tab: string }) {
     </>
   );
 
-  const nav = tabs.length > 1 && (
-    <nav className="sub-nav" aria-label="Storage">
-      {tabs.map(([key, label, icon]) => (
-        <a key={key} className={"sub-nav-item" + (current === key ? " on" : "")} href={key ? `#/storage/${key}` : "#/storage"} aria-current={current === key ? "page" : undefined}>
-          <Icon name={icon} size={18} />
-          <span>{label}</span>
-        </a>
-      ))}
-    </nav>
-  );
   const onReload = useCallback((reload: () => unknown) => {
     reloads.current = reload;
   }, []);
-  const props = { nav, convert, shares, tools, extra, onReload };
-  return current === "files" ? <DrivePage {...props} /> : <MediaPage {...props} />;
+  return <DrivePage convert={convert} shares={shares} tools={tools} extra={extra} onReload={onReload} />;
 }
 
-// What a tab is given: the tabs to show under the heading, the converter, and a
-// way to say how to reload it once a conversion lands in it.
-export interface TabProps {
-  nav: ReactNode;
+// What the file browser is given: the converter, share links, and a way to say
+// how to reload it once a conversion lands in it.
+export interface StorageProps {
   convert: Converter;
   shares: Sharer;
   // The buttons for the whole of Storage, for the page's actions, and their dialogs.
@@ -66,10 +47,7 @@ export interface TabProps {
 
 // ---- the duplicate finder ----
 
-const SPACE_NAMES: Record<Space, string> = { media: "Photos and videos", drive: "Files" };
-
-// DuplicatesDialog lists files kept more than once, across both tabs, by
-// content. One copy in each set is kept, the oldest unless another is picked.
+// DuplicatesDialog lists files kept more than once, by content. One copy in each set is kept, the oldest unless another is picked.
 function DuplicatesDialog({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const can = useCan();
   const [groups, setGroups] = useState<DuplicateCopy[][] | null>(null);
@@ -88,15 +66,12 @@ function DuplicatesDialog({ onClose, onChanged }: { onClose: () => void; onChang
     load();
   }, [load]);
 
-  const mayDelete = (c: DuplicateCopy) => can(c.space === "media" ? "media.delete" : "drive.delete");
+  const mayDelete = can("drive.delete");
   const extras = (i: number) => (groups?.[i] ?? []).filter((_, j) => j !== (keep[i] ?? 0));
   const remove = async (copies: DuplicateCopy[]) => {
     setBusy(true);
     try {
-      for (const space of ["media", "drive"] as Space[]) {
-        const paths = copies.filter((c) => c.space === space).map((c) => c.path);
-        if (paths.length) await filesIn(space).remove(paths);
-      }
+      await files.remove(copies.map((c) => c.path));
       notify(`Deleted ${copies.length === 1 ? "1 copy" : `${copies.length} copies`}`);
       onChanged();
     } catch (e) {
@@ -121,15 +96,15 @@ function DuplicatesDialog({ onClose, onChanged }: { onClose: () => void; onChang
                 <div className="dup-head">
                   <b>{baseName(g[keep[i] ?? 0].path)}</b>
                   <small>{bytes(g[0].size)} each</small>
-                  <button type="button" className="btn text" disabled={busy || !extras(i).every(mayDelete)} onClick={() => remove(extras(i))}>Delete other copies</button>
+                  <button type="button" className="btn text" disabled={busy || !mayDelete} onClick={() => remove(extras(i))}>Delete other copies</button>
                 </div>
                 <ul className="item-list">
                   {g.map((c, j) => (
-                    <li key={`${c.space}/${c.path}`} className="item-row">
+                    <li key={c.path} className="item-row">
                       <input type="radio" name={`keep-${i}`} aria-label={`Keep ${c.path}`} checked={(keep[i] ?? 0) === j} onChange={() => setKeep({ ...keep, [i]: j })} />
                       <span className="person">
                         <span className="scan-target">{c.path}</span>
-                        <small>{SPACE_NAMES[c.space]}, {new Date(c.modified * 1000).toLocaleDateString()}{(keep[i] ?? 0) === j ? ", kept" : ""}</small>
+                        <small>{new Date(c.modified * 1000).toLocaleDateString()}{(keep[i] ?? 0) === j ? ", kept" : ""}</small>
                       </span>
                     </li>
                   ))}
@@ -139,7 +114,7 @@ function DuplicatesDialog({ onClose, onChanged }: { onClose: () => void; onChang
           </div>
           <div className="edit-actions">
             <button type="button" className="btn text" onClick={onClose}>Close</button>
-            <button type="button" className="btn primary danger-fill" disabled={busy || !all.length || !all.every(mayDelete)} onClick={() => remove(all)}>
+            <button type="button" className="btn primary danger-fill" disabled={busy || !all.length || !mayDelete} onClick={() => remove(all)}>
               {busy && <span className="spinner small on-accent" />}Delete all other copies
             </button>
           </div>
@@ -153,7 +128,7 @@ function DuplicatesDialog({ onClose, onChanged }: { onClose: () => void; onChang
 
 export interface Sharer {
   // Asks how long a link to these should last, and makes it.
-  open: (space: Space, paths: string[]) => void;
+  open: (paths: string[]) => void;
   // The button that lists the links made, for the page's actions.
   button: ReactNode;
   // The dialogs, wherever the page puts them.
@@ -169,23 +144,23 @@ const LASTS: Option<number>[] = [
 
 // useShares makes share links and lists them to end them.
 function useShares(): Sharer {
-  const [making, setMaking] = useState<{ space: Space; paths: string[] } | null>(null);
+  const [making, setMaking] = useState<string[] | null>(null);
   const [listing, setListing] = useState(false);
   const button = (
     <button type="button" className="icon-btn" aria-label="Shared links" title="Shared links" onClick={() => setListing(true)}><Icon name="link" /></button>
   );
   const ui = (
     <>
-      {making && <ShareDialog {...making} onClose={() => setMaking(null)} />}
+      {making && <ShareDialog paths={making} onClose={() => setMaking(null)} />}
       {listing && <SharesDialog onClose={() => setListing(false)} />}
     </>
   );
-  return { open: (space, paths) => setMaking({ space, paths }), button, ui };
+  return { open: setMaking, button, ui };
 }
 
 const shareName = (s: { paths: string[] }) => (s.paths.length === 1 ? baseName(s.paths[0]) : plural(s.paths.length, "item"));
 
-function ShareDialog({ space, paths, onClose }: { space: Space; paths: string[]; onClose: () => void }) {
+function ShareDialog({ paths, onClose }: { paths: string[]; onClose: () => void }) {
   const [days, setDays] = useState(7);
   const [password, setPassword] = useState("");
   const [url, setUrl] = useState("");
@@ -194,7 +169,7 @@ function ShareDialog({ space, paths, onClose }: { space: Space; paths: string[];
   const make = async () => {
     setBusy(true);
     try {
-      setUrl((await api.share({ space, paths, password, days })).url);
+      setUrl((await api.share({ paths, password, days })).url);
     } catch (e) {
       notify(message(e), "bad");
     }
@@ -279,10 +254,10 @@ const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export interface Converter {
-  // Asks how to convert these files, all of one kind, from one space.
-  open: (space: Space, paths: string[]) => void;
+  // Asks how to convert these files, all of one kind.
+  open: (paths: string[]) => void;
   // Asks what to put behind photos once their background is removed.
-  cutout: (space: Space, paths: string[]) => void;
+  cutout: (paths: string[]) => void;
   // The conversions under way and done, at the bottom right.
   panel: ReactNode;
 }
@@ -291,8 +266,8 @@ export interface Converter {
 // panel that follows it. `onFinished` runs when a conversion lands.
 function useConvert(onFinished: () => void): Converter {
   const [state, setState] = useState<ConvertState | null>(null);
-  const [asking, setAsking] = useState<{ space: Space; paths: string[]; kind: ConvertKind } | null>(null);
-  const [cutting, setCutting] = useState<{ space: Space; paths: string[] } | null>(null);
+  const [asking, setAsking] = useState<{ paths: string[]; kind: ConvertKind } | null>(null);
+  const [cutting, setCutting] = useState<string[] | null>(null);
   const [hidden, setHidden] = useState(false);
   const [small, setSmall] = useState(false);
   const notify = useNotify();
@@ -321,11 +296,11 @@ function useConvert(onFinished: () => void): Converter {
     return () => clearInterval(t);
   }, [left, load]);
 
-  const open = (space: Space, paths: string[]) => {
+  const open = (paths: string[]) => {
     const kinds = new Set(paths.map(convertKind));
     const [kind] = [...kinds];
     if (kinds.size !== 1 || !kind) return notify("Pick photos, videos or PDFs of one kind to convert", "bad");
-    setAsking({ space, paths, kind });
+    setAsking({ paths, kind });
   };
 
   const clear = async () => {
@@ -363,14 +338,14 @@ function useConvert(onFinished: () => void): Converter {
     notify(`Converting ${plural(n, "file")}`);
     await load();
   };
-  const cutout = (space: Space, paths: string[]) => {
+  const cutout = (paths: string[]) => {
     if (!paths.every((p) => convertKind(p) === "photo")) return notify("Pick photos to remove their background", "bad");
-    setCutting({ space, paths });
+    setCutting(paths);
   };
   const dialog = (
     <>
       {asking && state && <ConvertDialog {...asking} kinds={state.kinds} onClose={() => setAsking(null)} onStarted={started} />}
-      {cutting && <CutoutDialog {...cutting} onClose={() => setCutting(null)} onStarted={started} />}
+      {cutting && <CutoutDialog paths={cutting} onClose={() => setCutting(null)} onStarted={started} />}
     </>
   );
   return { open, cutout, panel: <>{panel}{dialog}</> };
@@ -391,7 +366,7 @@ function JobRow({ job, onCancel }: { job: ConvertJob; onCancel: () => void }) {
       {busy ? (
         <button type="button" className="icon-btn small" aria-label={`Cancel ${name}`} onClick={onCancel}><Icon name="close" size={16} /></button>
       ) : job.state === "done" && job.output ? (
-        <a className="icon-btn small" href={fileUrl(job.output, true, job.space)} target="_blank" rel="noopener" aria-label={`Open ${name}`}><Icon name="open_in_new" size={16} /></a>
+        <a className="icon-btn small" href={fileUrl(job.output, true)} target="_blank" rel="noopener" aria-label={`Open ${name}`}><Icon name="open_in_new" size={16} /></a>
       ) : <span />}
     </li>
   );
@@ -404,14 +379,14 @@ const BACKGROUNDS: Option<string>[] = [
 
 // CutoutDialog asks what goes behind a photo's subject once its background is
 // removed. Each result is saved beside its photo.
-function CutoutDialog({ space, paths, onClose, onStarted }: { space: Space; paths: string[]; onClose: () => void; onStarted: (n: number) => void }) {
+function CutoutDialog({ paths, onClose, onStarted }: { paths: string[]; onClose: () => void; onStarted: (n: number) => void }) {
   const [to, setTo] = useState("cutout");
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
   const submit = async () => {
     setBusy(true);
     try {
-      onStarted((await api.startConvert({ space, paths, to, size: 0, quality: "high" })).queued);
+      onStarted((await api.startConvert({ paths, to, size: 0, quality: "high" })).queued);
     } catch (e) {
       notify(message(e), "bad");
       setBusy(false);
@@ -437,8 +412,7 @@ function CutoutDialog({ space, paths, onClose, onStarted }: { space: Space; path
 
 // ConvertDialog asks what to make of the picked files: a format, a size and a
 // quality. Each copy is saved beside its original.
-function ConvertDialog({ space, paths, kind, kinds, onClose, onStarted }: {
-  space: Space;
+function ConvertDialog({ paths, kind, kinds, onClose, onStarted }: {
   paths: string[];
   kind: ConvertKind;
   kinds: ConvertState["kinds"];
@@ -457,7 +431,7 @@ function ConvertDialog({ space, paths, kind, kinds, onClose, onStarted }: {
   const submit = async () => {
     setBusy(true);
     try {
-      const { queued } = await api.startConvert({ space, paths, to, size, quality });
+      const { queued } = await api.startConvert({ paths, to, size, quality });
       onStarted(queued);
     } catch (e) {
       notify(message(e), "bad");

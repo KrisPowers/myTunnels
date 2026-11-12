@@ -117,14 +117,11 @@ const CONTENT: Record<string, ReactNode> = {
   ),
   storage: (
     <>
-      <Doc title="Photos and videos">
-        <p><b>Storage</b> keeps your files on this host, in myTunnels' own data folder rather than one you pick. Its <b>Photos and videos</b> tab shows them newest first, by month, like a photo library. Open one to see it full size and step through with the arrow keys; tick several to download, convert or delete them together. Uploads keep the date each was last changed on the device they came from.</p>
-      </Doc>
-      <Doc title="Files">
-        <p>The <b>Files</b> tab keeps documents, spreadsheets, presentations and PDFs, in folders of your own. A chip for each kind shows only that kind. PDFs and text files open in a new tab; the rest download, to open in the app that made them.</p>
+      <Doc title="One place">
+        <p><b>Storage</b> keeps your files on this host, in myTunnels' own data folder rather than one you pick: documents, spreadsheets, presentations, PDFs, archives, photos and videos together, in folders of your own. A chip for each kind shows only that kind. Photos and videos show their picture and open full size, a step away from the next with the arrow keys. PDFs and text files open in a new tab; the rest download, to open in the app that made them. Uploads keep the date each was last changed on the device they came from.</p>
       </Doc>
       <Doc title="Convert">
-        <p><b>Convert</b>, in a file's menu or for the photos and videos you tick, makes a copy in another format or smaller: photos as JPEG or WebP, videos as MP4 that every browser plays, PDFs compressed. The copy is saved beside the original with its date, and the original is never changed. Conversions run one at a time; a panel at the bottom right follows them.</p>
+        <p><b>Convert</b>, in a file's menu, makes a copy in another format or smaller: photos as JPEG or WebP, videos as MP4 that every browser plays, PDFs compressed. The copy is saved beside the original with its date, and the original is never changed. Conversions run one at a time; a panel at the bottom right follows them.</p>
       </Doc>
       <Doc title="From anywhere">
         <p>Storage is part of this dashboard. Publish the dashboard through a tunnel, under <b>Runs on</b>, to reach it away from home.</p>

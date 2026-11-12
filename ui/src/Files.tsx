@@ -1,12 +1,11 @@
 import { useLayoutEffect, useRef, useState, type MouseEvent as PointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { bytes, message, upload, type ConvertKind, type Space } from "./api";
+import { bytes, message, upload, type ConvertKind } from "./api";
 import { useDismiss } from "./dismiss";
 import { Icon, type IconName } from "./Icon";
 import { Dialog, TextField, useNotify } from "./ui";
 
-// The pieces Storage's tabs share: uploads, right-click menus and the name
-// dialog.
+// Storage's pieces: uploads, right-click menus and the name dialog.
 
 export const extOf = (name: string) => {
   const dot = name.lastIndexOf(".");
@@ -139,9 +138,9 @@ export function ContextMenu({ at, items, onClose }: { at: Menu; items: MenuItem[
   );
 }
 
-// useUploads sends picked files into `space` one at a time, keeping the list
+// useUploads sends picked files into Storage one at a time, keeping the list
 // the Uploads panel shows. `done` runs after each batch.
-export function useUploads(space: Space, done: () => unknown, after?: (item: Picked, path: string) => Promise<unknown>) {
+export function useUploads(done: () => unknown, after?: (item: Picked, path: string) => Promise<unknown>) {
   const [list, setList] = useState<Upload[]>([]);
   const cancelled = useRef(new Set<number>());
   const nextId = useRef(1);
@@ -153,7 +152,7 @@ export function useUploads(space: Space, done: () => unknown, after?: (item: Pic
       if (cancelled.current.has(b.id)) continue;
       patch(b.id, { state: "sending" });
       try {
-        await upload(b.item.file, b.path, false, (sent) => patch(b.id, { sent }), () => cancelled.current.has(b.id), space, true);
+        await upload(b.item.file, b.path, false, (sent) => patch(b.id, { sent }), () => cancelled.current.has(b.id), true);
         await after?.(b.item, b.path);
         patch(b.id, { state: "done", sent: b.item.file.size });
       } catch (e) {
