@@ -251,12 +251,14 @@ Podman works too, through its Docker-compatible API: mount Podman's socket in pl
 
 **Storage** is a home cloud for your files, not tied to any folder you pick: everything uploaded is
 kept by myTunnels under `/data/drive`, in one place like Google Drive. Documents, spreadsheets,
-presentations, PDFs, archives, photos and videos sit together in folders of your own. Each kind has
-its colour and a chip to show only that kind; files show as cards or as a list, by name or by when
-they last changed, drawn a cluster at a time as the page scrolls.
+presentations, PDFs, archives, photos and videos sit together in folders of your own, each
+folder's files grouped by month, newest first, and drawn a cluster at a time as the page scrolls.
+**Show** picks which kinds appear; within a month they go by name or by when they last changed, or
+show as a list.
 
-Photos and videos show their own picture; open one to see it full size and step through the
-folder's others with the arrow keys. The browser makes a small preview of each as it goes up, and
+Photos and videos are square pictures, like a photo library; open one to see it full size and step
+through the folder's others with the arrow keys, or tick several to download, share, convert or
+delete them together. Every other kind is a card in its own colour. The browser makes a small preview of each as it goes up, and
 every upload keeps the date it was last changed on the device it came from. PDFs and text files
 open in a new tab, the rest download. **New** makes a folder or uploads files, which can also be
 dragged onto the page; right-click an item to open, download, share, convert, rename or delete it.

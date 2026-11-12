@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent as PointerEvent } from "react";
 import { bytes, fileUrl, files, message, saveThumb, type FileEntry, type Listing } from "./api";
-import { Dropdown, type Option } from "./Dropdown";
+import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { ContextMenu, convertKind, dropped, extOf, NameDialog, ownMenu, useUploads, type Menu, type MenuItem, type Picked } from "./Files";
 import { Icon, type IconName } from "./Icon";
 import { isPhoto, isVideo, makeThumb, Thumb, Viewer } from "./Media";
@@ -21,6 +21,7 @@ const KINDS: Record<Kind, { label: string; icon: IconName; exts: string[] }> = {
   archive: { label: "Archives", icon: "folder_zip", exts: ["zip", "7z", "rar"] },
 };
 const ORDER = Object.keys(KINDS) as Kind[];
+const SHOW: Option<Kind>[] = ORDER.map((k) => ({ value: k, label: KINDS[k].label, icon: KINDS[k].icon }));
 
 const kindOf = (name: string) => ORDER.find((k) => KINDS[k].exts.includes(extOf(name)));
 const isMedia = (name: string) => isPhoto(name) || isVideo(name);
@@ -30,6 +31,13 @@ const ACCEPT = ORDER.flatMap((k) => KINDS[k].exts.map((e) => "." + e)).join(",")
 
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 const when = (at: number) => new Date(at * 1000).toLocaleDateString([], { dateStyle: "medium" });
+const dayOf = (at: number) => new Date(at * 1000).toLocaleDateString([], { dateStyle: "long" });
+const monthOf = (at: number) => new Date(at * 1000).toLocaleDateString([], { month: "long", year: "numeric" });
+// Months in order, the newest first.
+const monthKey = (at: number) => {
+  const d = new Date(at * 1000);
+  return d.getFullYear() * 12 + d.getMonth();
+};
 
 // How many files are drawn at first, and added as the end of them comes near.
 const CLUSTER = 120;
@@ -46,18 +54,21 @@ function remembered(): "grid" | "list" {
 }
 
 // DrivePage is Storage: documents, photos and videos on this host, together in
-// folders. Photos and videos show their picture and open in a viewer; each
-// other kind has its own colour.
+// folders, the files grouped by month. Photos and videos are square tiles that
+// open in a viewer and can be picked together; each other kind is a card in
+// its own colour.
 export function DrivePage({ convert, shares, tools, extra, onReload }: StorageProps) {
   const can = useCan();
   const [path, setPath] = useState("");
   const [listing, setListing] = useState<Listing | null>(null);
   const [problem, setProblem] = useState("");
-  const [kind, setKind] = useState<Kind | null>(null);
+  // The kinds shown; none picked shows every kind.
+  const [kinds, setKinds] = useState<Kind[]>([]);
   const [sort, setSort] = useState<Sort>("modified");
   const [view, setView] = useState(remembered);
   const [menu, setMenu] = useState<(Menu & { entry: FileEntry | null }) | null>(null);
-  const [asking, setAsking] = useState<null | "folder" | { rename: FileEntry } | { remove: FileEntry }>(null);
+  const [asking, setAsking] = useState<null | "folder" | { rename: FileEntry } | { remove: FileEntry[] }>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [viewing, setViewing] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const [drawn, setDrawn] = useState(CLUSTER);
@@ -76,6 +87,7 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
   useEffect(() => {
     setListing(null);
     setDrawn(CLUSTER);
+    setSelected(new Set());
     load();
     onReload(load);
   }, [load, onReload]);
@@ -89,10 +101,25 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
   const entries = listing?.entries ?? [];
   const folders = entries.filter((e) => e.dir).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   const docs = entries
-    .filter((e) => !e.dir && kindOf(e.name) && (!kind || kindOf(e.name) === kind))
-    .sort((a, b) => (sort === "name" ? a.name.localeCompare(b.name, undefined, { numeric: true }) : b.modified - a.modified));
+    .filter((e) => !e.dir && kindOf(e.name) && (!kinds.length || kinds.includes(kindOf(e.name)!)))
+    .sort((a, b) => monthKey(b.modified) - monthKey(a.modified)
+      || (sort === "name" ? a.name.localeCompare(b.name, undefined, { numeric: true }) : b.modified - a.modified));
   const media = docs.filter((e) => isMedia(e.name));
-  const rows = [...(kind ? [] : folders), ...docs];
+  const months: [string, FileEntry[]][] = [];
+  for (const e of docs.slice(0, drawn)) {
+    const label = monthOf(e.modified);
+    const last = months[months.length - 1];
+    if (last && last[0] === label) last[1].push(e);
+    else months.push([label, [e]]);
+  }
+  const toggle = (name: string) => {
+    const next = new Set(selected);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    setSelected(next);
+  };
+  const picked = [...selected].map((name) => join(path, name));
+  const rows = [...(kinds.length ? [] : folders), ...docs];
 
   // Files are drawn a cluster at a time, the next as the last comes into view.
   const more = drawn < (view === "grid" ? docs.length : rows.length);
@@ -166,7 +193,8 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
     { label: "Extract here", icon: "folder_zip", hidden: kindOf(entry.name) !== "archive" || !can("drive.edit"), run: () => extract(entry) },
     { label: "Compress to ZIP", icon: "folder_zip", hidden: !can("drive.edit"), run: () => run(() => files.compress([join(path, entry.name)]), `Packed ${entry.name}`) },
     { label: "Rename", icon: "edit", hidden: !can("drive.edit"), run: () => setAsking({ rename: entry }) },
-    { label: "Delete", icon: "delete", danger: true, hidden: !can("drive.delete"), run: () => setAsking({ remove: entry }) },
+    { label: selected.has(entry.name) ? "Unselect" : "Select", icon: "check_circle", hidden: !isMedia(entry.name), run: () => toggle(entry.name) },
+    { label: "Delete", icon: "delete", danger: true, hidden: !can("drive.delete"), run: () => setAsking({ remove: [entry] }) },
   ] : [
     { label: "New folder", icon: "create_new_folder", hidden: !can("drive.edit"), run: () => setAsking("folder") },
     { label: "Upload files", icon: "upload_file", hidden: !can("drive.edit"), run: () => input.current?.click() },
@@ -198,6 +226,18 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
           )}
         </div>
         <div className="page-actions">
+          {selected.size > 0 ? (
+            <>
+              <span className="m-picked">{selected.size} selected</span>
+              <button type="button" className="icon-btn" aria-label="Download" title="Download" onClick={() => media.filter((e) => selected.has(e.name)).forEach(download)}><Icon name="download" /></button>
+              <button type="button" className="icon-btn" aria-label="Share link" title="Share link" onClick={() => shares.open(picked)}><Icon name="link" /></button>
+              {can("drive.edit") && picked.every(convertKind) && <button type="button" className="icon-btn" aria-label="Convert" title="Convert" onClick={() => convert.open(picked)}><Icon name="swap_horiz" /></button>}
+              {can("drive.delete") && <button type="button" className="icon-btn danger" aria-label="Delete" title="Delete" onClick={() => setAsking({ remove: media.filter((e) => selected.has(e.name)) })}><Icon name="delete" /></button>}
+              <button type="button" className="icon-btn" aria-label="Clear selection" title="Clear selection" onClick={() => setSelected(new Set())}><Icon name="close" /></button>
+            </>
+          ) : (
+            <>
+          <div className="ex-pick"><MultiDropdown label="Show" values={kinds} options={SHOW} allLabel="Every kind" onChange={setKinds} /></div>
           <div className="ex-pick"><Dropdown label="Sort by" value={sort} options={SORTS} onChange={setSort} /></div>
           {tools}
           <button type="button" className="icon-btn" aria-label={view === "grid" ? "List" : "Grid"} title={view === "grid" ? "List" : "Grid"} onClick={() => {
@@ -213,6 +253,8 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
             const r = e.currentTarget.getBoundingClientRect();
             setMenu({ x: r.left, y: r.bottom + 4, on: false, entry: null });
           }}><Icon name="add" size={18} />New</button>}
+            </>
+          )}
         </div>
       </div>
       {crumbs.length > 0 && (
@@ -227,13 +269,6 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
           ))}
         </div>
       )}
-      <div className="d-chips" role="group" aria-label="Type">
-        {ORDER.map((k) => (
-          <button key={k} type="button" className={"d-chip " + k + (kind === k ? " on" : "")} aria-pressed={kind === k} onClick={() => setKind(kind === k ? null : k)}>
-            <Icon name={kind === k ? "check" : KINDS[k].icon} size={18} />{KINDS[k].label}
-          </button>
-        ))}
-      </div>
 
       {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
       {listing && (
@@ -241,13 +276,13 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
           {folders.length === 0 && docs.length === 0 ? (
             <div className="card welcome">
               <Icon name="cloud" size={40} />
-              <h2>{kind ? `No ${KINDS[kind].label.toLowerCase()} here` : path ? "This folder is empty" : "Your files"}</h2>
+              <h2>{kinds.length ? "Nothing of those kinds here" : path ? "This folder is empty" : "Your files"}</h2>
               <p className="muted">Documents, photos and videos, kept on this host. Upload them, or drag them onto this page.</p>
               {can("drive.edit") && <button type="button" className="btn primary" onClick={() => input.current?.click()}><Icon name="upload_file" size={18} />Upload files</button>}
             </div>
           ) : view === "grid" ? (
             <>
-              {folders.length > 0 && !kind && (
+              {folders.length > 0 && !kinds.length && (
                 <section className="d-section">
                   <h2>Folders</h2>
                   <ul className="d-folders">
@@ -261,32 +296,50 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
                   </ul>
                 </section>
               )}
-              {docs.length > 0 && (
-                <section className="d-section">
-                  <h2>Files</h2>
-                  <ul className="d-files">
-                    {docs.slice(0, drawn).map((d) => {
-                      const k = kindOf(d.name)!;
-                      return (
-                        <li key={d.name}>
-                          <button type="button" className={"d-file " + k} onClick={() => open(d)} onContextMenu={(ev) => contextMenu(ev, d)} title={`${d.name}\n${bytes(d.size)}`}>
-                            {isMedia(d.name) ? (
-                              <span className="d-cover picture">
-                                <Thumb path={join(path, d.name)} />
-                                {isVideo(d.name) && <Icon name="play_circle" size={22} className="m-badge" />}
-                              </span>
-                            ) : (
-                              <span className="d-cover"><Icon name={KINDS[k].icon} size={56} /><span className="d-ext">{extOf(d.name)}</span></span>
-                            )}
-                            <span className="d-name"><Icon name={KINDS[k].icon} size={18} /><span>{d.name}</span></span>
-                            <small>{when(d.modified)}</small>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </section>
-              )}
+              {months.map(([label, list]) => {
+                const pictures = list.filter((e) => isMedia(e.name));
+                const cards = list.filter((e) => !isMedia(e.name));
+                return (
+                  <section key={label} className="m-month">
+                    <h2>{label}</h2>
+                    {pictures.length > 0 && (
+                      <ul className="m-grid">
+                        {pictures.map((e) => {
+                          const on = selected.has(e.name);
+                          return (
+                            <li key={e.name} className={"m-tile" + (on ? " on" : "") + (selected.size ? " picking" : "")} onContextMenu={(ev) => contextMenu(ev, e)}>
+                              <button type="button" className="m-open" title={`${e.name}\n${dayOf(e.modified)}`}
+                                onClick={() => (selected.size ? toggle(e.name) : open(e))}>
+                                <Thumb path={join(path, e.name)} />
+                                {isVideo(e.name) && <Icon name="play_circle" size={22} className="m-badge" />}
+                              </button>
+                              <button type="button" className="m-check" aria-label={on ? `Unselect ${e.name}` : `Select ${e.name}`} aria-pressed={on} onClick={() => toggle(e.name)}>
+                                <Icon name="check" size={16} />
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                    {cards.length > 0 && (
+                      <ul className="d-files">
+                        {cards.map((d) => {
+                          const k = kindOf(d.name)!;
+                          return (
+                            <li key={d.name}>
+                              <button type="button" className={"d-file " + k} onClick={() => open(d)} onContextMenu={(ev) => contextMenu(ev, d)} title={`${d.name}\n${bytes(d.size)}`}>
+                                <span className="d-cover"><Icon name={KINDS[k].icon} size={56} /><span className="d-ext">{extOf(d.name)}</span></span>
+                                <span className="d-name"><Icon name={KINDS[k].icon} size={18} /><span>{d.name}</span></span>
+                                <small>{when(d.modified)}</small>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </section>
+                );
+              })}
             </>
           ) : (
             <div className="card">
@@ -337,7 +390,7 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
       {viewing !== null && media[viewing] && (
         <Viewer dir={path} items={media} at={viewing} onMove={setViewing} onClose={() => setViewing(null)}
           onDownload={(name) => download(media.find((e) => e.name === name)!)}
-          onDelete={(name) => setAsking({ remove: media.find((e) => e.name === name)! })} />
+          onDelete={(name) => setAsking({ remove: [media.find((e) => e.name === name)!] })} />
       )}
       {asking === "folder" && (
         <NameDialog title="New folder" label="Folder name" initial="Untitled folder" action="Create" onClose={() => setAsking(null)}
@@ -356,15 +409,16 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
           }} />
       )}
       {asking && typeof asking === "object" && "remove" in asking && (
-        <Dialog title={`Delete ${asking.remove.name}?`} onClose={() => setAsking(null)}>
-          <p className="muted">{asking.remove.dir ? "The folder and everything in it are" : "It is"} removed from this host for good.</p>
+        <Dialog title={asking.remove.length === 1 ? `Delete ${asking.remove[0].name}?` : `Delete ${asking.remove.length} items?`} onClose={() => setAsking(null)}>
+          <p className="muted">{asking.remove.some((e) => e.dir) ? "The folder and everything in it are" : asking.remove.length === 1 ? "It is" : "They are"} removed from this host for good.</p>
           <div className="edit-actions">
             <button type="button" className="btn text" onClick={() => setAsking(null)}>Cancel</button>
             <button type="button" className="btn primary danger-fill" autoFocus onClick={() => {
-              const target = asking.remove;
+              const targets = asking.remove;
               setAsking(null);
               setViewing(null);
-              run(() => files.remove([join(path, target.name)]), `Deleted ${target.name}`);
+              setSelected(new Set());
+              run(() => files.remove(targets.map((e) => join(path, e.name))), targets.length === 1 ? `Deleted ${targets[0].name}` : `Deleted ${targets.length} items`);
             }}>Delete</button>
           </div>
         </Dialog>
