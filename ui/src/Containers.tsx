@@ -125,7 +125,7 @@ type Item = { key: string; name: string; project: string | null; on: boolean; c:
 // ContainerList is the catalog of containers, a row each with what it is, its
 // state, its address and its use, and one menu. Compose projects of two or
 // more fold under their name. It refreshes on its own; tunnels and other
-// forwards to ports elsewhere are on Forward.
+// forwards to ports elsewhere are on Routes.
 function ContainerList({ routes, forwards }: { routes: Route[] | null; forwards: Forward[] }) {
   const can = useCan();
   const seeContainers = can("containers.view");
@@ -338,7 +338,7 @@ function actionsOf(c: (Container | ContainerDetail) & { deploy?: string | null }
   return [
     ...(page ? [] : [
       { label: "Logs", icon: "terminal" as IconName, onClick: () => go(`${pageOf(c.name)}/logs`) },
-      ...(can("tunnels.view") ? [{ label: "Forward", icon: "swap_horiz" as IconName, onClick: () => go(`${pageOf(c.name)}/forward`) }] : []),
+      ...(can("tunnels.view") ? [{ label: "Routes", icon: "alt_route" as IconName, onClick: () => go(`${pageOf(c.name)}/routes`) }] : []),
     ]),
     ...(manage && !c.own && on && !page ? [{ label: "Stop", icon: "stop" as IconName, onClick: () => run([c], "stop") }] : []),
     ...(manage && !c.own && c.state === "paused" && !page ? [{ label: "Resume", icon: "play_arrow" as IconName, onClick: () => run([c], "unpause") }] : []),
@@ -354,7 +354,7 @@ function actionsOf(c: (Container | ContainerDetail) & { deploy?: string | null }
 
 const TABS: [string, string, IconName][] = [
   ["overview", "Overview", "info"],
-  ["forward", "Forward", "swap_horiz"],
+  ["routes", "Routes", "alt_route"],
   ["images", "Images", "layers"],
   ["logs", "Logs", "terminal"],
   ["resources", "Resources", "tune"],
@@ -367,8 +367,8 @@ const AUTO_START: Record<string, string> = { "on-failure": "When it fails", "unl
 // and address in the heading, with Open, the one button its state calls for,
 // and a menu for the rest; then its sub-pages.
 function ContainerPage({ name, tab: asked, more, routes, forwards, users, providers, onChanged }: { name: string; tab: string; more: string[] } & Shared) {
-  // Its Tunnel page became Forward.
-  const tab = asked === "tunnel" ? "forward" : asked;
+  // Its Tunnel page became Forward, then Routes.
+  const tab = asked === "tunnel" || asked === "forward" ? "routes" : asked;
   const [c, setC] = useState<ContainerDetail | null>(null);
   // The repository it is built from: undefined until known, null for none.
   const [d, setD] = useState<Deploy | null | undefined>(undefined);
@@ -402,7 +402,7 @@ function ContainerPage({ name, tab: asked, more, routes, forwards, users, provid
   // container from a repository that is not made yet shows its builds.
   const head = c ?? listed.get(name) ?? (d ? pending(d) : undefined);
   const made = !!head?.id;
-  const tabs = TABS.filter(([k]) => (k !== "forward" || can("tunnels.view"))
+  const tabs = TABS.filter(([k]) => (k !== "routes" || can("tunnels.view"))
     && (made || !["overview", "logs", "resources"].includes(k))
     && (k !== "settings" || (!!d && can("containers.deploy"))));
   const current = tabs.some(([k]) => k === tab) ? tab : tabs[0][0];
@@ -450,7 +450,7 @@ function ContainerPage({ name, tab: asked, more, routes, forwards, users, provid
               <span className="ct-source"><Icon name="git" size={16} /><span className="mono">{sourceOf(d)}</span>, {d.branch}{d.running && <>, build {d.running.number}</>}</span>
             ) : <span className="mono">{head.image}</span>}
             {reaching.map((r) => (
-              <a key={r.id} className="ct-address" href={`${base}/forward/${r.id}`}><span className={"dot " + (r.enabled ? "ok" : "")} />{r.hostname}</a>
+              <a key={r.id} className="ct-address" href={`${base}/routes/${r.id}`}><span className={"dot " + (r.enabled ? "ok" : "")} />{r.hostname}</a>
             ))}
           </div>
         </div>
@@ -472,9 +472,9 @@ function ContainerPage({ name, tab: asked, more, routes, forwards, users, provid
       <div className="page-body stack" key={current}>
         {problem && made && !c && <Callout tone="bad" icon="error">{problem}</Callout>}
         {current === "overview" && (c ? <Overview c={c} /> : <div className="repo-loading"><span className="spinner" /></div>)}
-        {current === "forward" && !routes && <div className="repo-loading"><span className="spinner" /></div>}
-        {current === "forward" && routes && (
-          <ContainerForward c={head} pick={more[0] ?? ""} base={`${base}/forward`} routes={reaching} forwards={forwardsOf(head, forwards)}
+        {current === "routes" && !routes && <div className="repo-loading"><span className="spinner" /></div>}
+        {current === "routes" && routes && (
+          <ContainerForward c={head} pick={more[0] ?? ""} base={`${base}/routes`} routes={reaching} forwards={forwardsOf(head, forwards)}
             users={users} providers={providers} onChanged={onChanged} />
         )}
         {current === "images" && (more[0] === "build" && d ? <BuildLog d={d} number={Number(more[1])} back={`${base}/images`} />
@@ -508,8 +508,8 @@ function ContainerForward({ c, pick, base, routes, forwards, users, providers, o
   const list = (
     <section className="card">
       <div className="card-head">
-        <div className="card-titles"><h2>Forward</h2></div>
-        {can("tunnels.create") && <button type="button" className="icon-btn" aria-label="Forward a port" title="Forward a port" onClick={() => setAdding(true)}><Icon name="add" /></button>}
+        <div className="card-titles"><h2>Routes</h2></div>
+        {can("tunnels.create") && <button type="button" className="icon-btn" aria-label="New route" title="New route" onClick={() => setAdding(true)}><Icon name="add" /></button>}
       </div>
       {routes.length || forwards.length ? (
         <ForwardRows items={[...routes.map((r) => ({ r })), ...forwards.map((f) => ({ f }))]} hrefOf={(r) => `${base}/${r.id}`} picked={picked?.id} onChanged={onChanged} />
@@ -520,7 +520,7 @@ function ContainerForward({ c, pick, base, routes, forwards, users, providers, o
     <>
       {picked ? <TunnelDetail route={picked} top={list} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go(base)} /> : list}
       {adding && (
-        <Dialog title="Forward a port" wide onClose={() => setAdding(false)}>
+        <Dialog title="New route" wide onClose={() => setAdding(false)}>
           <ForwardComposer users={users} providers={providers} sub={routes.length ? "" : c.name} container={{ name: c.name, reach: reachOf(c) }}
             onDone={async (r) => {
               await onChanged();
