@@ -22,6 +22,10 @@ import { NewUser, UserPage } from "./Users";
 import { SecurityPage } from "./Security";
 import { Callout, Notices, Tooltips, useNotify } from "./ui";
 
+// Pages whose id picks one container, tunnel, device or account, a page of its
+// own; on the rest it is a tab or section, which changes in place.
+const ONE_OF: string[] = ["containers", "tunnels", "devices", "users"];
+
 export function App() {
   return (
     <Notices>
@@ -240,7 +244,8 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
         </nav>
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
 
-        <main className="page" key={view + id}>
+        {/* A new page fades in; a tab or section of the same page changes in place. */}
+        <main className="page" key={ONE_OF.includes(view) ? view + id : view}>
           {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
           {view === "apps" && <AppsPage />}
           {view === "storage" && <StoragePage tab={id} />}
