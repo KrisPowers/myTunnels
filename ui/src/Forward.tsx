@@ -43,8 +43,8 @@ const FUNNEL_PORTS = [443, 8443, 10000];
 // A container, as a forward to it needs it.
 export interface Target { name: string; reach: Reach[] }
 
-// ForwardComposer opens a port by whichever way is picked in its first field:
-// a tunnel, the router or Tailscale. For a container, the port is its own.
+// ForwardComposer opens a port by whichever way is picked in the switch at its
+// top: a tunnel, the router or Tailscale. For a container, the port is its own.
 export function ForwardComposer({ users, providers, container, port, sub, onDone }: {
   users: User[];
   providers: OAuthProvider[];
@@ -65,11 +65,13 @@ export function ForwardComposer({ users, providers, container, port, sub, onDone
     setMethod(m);
   };
   const lead = (
-    <div className="tf static method">
-      <div className="tf-box">
-        <Dropdown label="Forward by" value={method} options={options} onChange={pick} />
-        <span className="tf-label">Forward by</span>
-      </div>
+    <div className="seg-tabs method-tabs" role="tablist" aria-label="Route by">
+      {options.map((o) => (
+        <button key={o.value} type="button" role="tab" aria-selected={o.value === method} className={o.value === method ? "on" : undefined}
+          disabled={o.disabled} title={o.hint} onClick={() => pick(o.value)}>
+          {o.icon && <Icon name={o.icon} size={18} />}{o.label}
+        </button>
+      ))}
     </div>
   );
   if (method === "tunnel") {
@@ -134,11 +136,9 @@ function OpenComposer({ method, lead, container, port: startPort, onAdded }: {
   return (
     <form className="stack" onSubmit={submit}>
       <div className="card composer">
-        <div className="composer-row composer-lead">
-          {lead}
-          <TextField className="grow" label="Name" placeholder="Minecraft" autoComplete="off" value={name} onChange={(v) => setName(v.slice(0, 100))} />
-        </div>
+        <div className="composer-row composer-lead">{lead}</div>
         <div className="composer-row">
+          <TextField className="grow" label="Name" placeholder="Minecraft" autoComplete="off" value={name} onChange={(v) => setName(v.slice(0, 100))} />
           {web ? (
             <div className="tf static port">
               <div className="tf-box">
@@ -403,7 +403,7 @@ export function ForwardPage({ id, port, routes, forwards, status, users, provide
             <input type="search" placeholder="Search" aria-label="Search forwards" value={q} onChange={(e) => setQ(e.target.value)} spellCheck={false} />
           </label>
           <div className="ex-pick"><Dropdown label="Show" value={show} options={SHOW} onChange={setShow} /></div>
-          {can("tunnels.create") && <button type="button" className="icon-btn" aria-label="Forward a port" title="Forward a port" onClick={() => go("#/routes/new")}><Icon name="add" /></button>}
+          {can("tunnels.create") && <button type="button" className="icon-btn" aria-label="New route" title="New route" onClick={() => go("#/routes/new")}><Icon name="add" /></button>}
         </div>
       </div>
       <div className="page-body stack">
@@ -421,7 +421,7 @@ export function ForwardPage({ id, port, routes, forwards, status, users, provide
         ))}
       </div>
       {adding && (
-        <Dialog title="Forward a port" wide onClose={close}>
+        <Dialog title="New route" wide onClose={close}>
           <ForwardComposer users={users} providers={providers} port={port} onDone={async (r) => {
             await onChanged();
             go(r ? `#/tunnels/${r.id}` : "#/routes");
