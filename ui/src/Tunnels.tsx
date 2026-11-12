@@ -629,9 +629,9 @@ export function TunnelPage({ route, users, providers, onChanged }: { route: Rout
           </div>
         </div>
       </div>
-      <SubNav back="#/remote" backLabel="Remote Access" base={`#/tunnels/${route.id}`} items={[]} current="" />
+      <SubNav back="#/endpoints" backLabel="Endpoints" base={`#/tunnels/${route.id}`} items={[]} current="" />
       <div className="page-body">
-        <TunnelsView routes={[route]} pick={route.id} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go("#/remote")} />
+        <TunnelsView routes={[route]} pick={route.id} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go("#/endpoints")} />
       </div>
     </>
   );

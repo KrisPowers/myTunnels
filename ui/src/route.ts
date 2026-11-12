@@ -1,7 +1,7 @@
 // Where the page is, kept in the URL hash: `#/` the containers,
-// `#/remote` every tunnel, router port and Tailscale forward, with
-// `#/remote/new` adding one (`#/remote/new/<port>` to that port, where
-// `#/new` and `#/forward` now go), `#/tunnels/<id>/<page>` one tunnel; `#/security/<tab>`, Security,
+// `#/endpoints` every tunnel, router port and Tailscale forward, with
+// `#/endpoints/new` adding one (`#/endpoints/new/<port>` to that port, where
+// `#/new`, `#/forward` and `#/remote` now go), `#/tunnels/<id>/<page>` one tunnel; `#/security/<tab>`, Security,
 // whose Users and Devices tabs are also `#/users` and `#/devices`, with
 // `/<id>/<page>` for one of them; `#/apps`, the apps catalog;
 // `#/settings/<section>`, Preferences among them; and
@@ -34,8 +34,8 @@ export function readHash(): Place {
   if (first === "hardware") return { view: "dashboard", id: "", page: "", more: [] };
   // Adding a tunnel became adding a forward.
   if (first === "new") return { view: "forward", id: "new", page: second, more: [] };
-  // Forward became Remote Access.
-  if (first === "remote" || first === "forward") return { view: "forward", id: second, page: third, more: [] };
+  // Forward, then Remote Access, became Endpoints.
+  if (first === "endpoints" || first === "remote" || first === "forward") return { view: "forward", id: second, page: third, more: [] };
   // Media, Drive and Convert became Storage's tabs and its Convert action.
   if (first === "media" || first === "convert") return { view: "storage", id: "", page: "", more: [] };
   if (first === "drive") return { view: "storage", id: "files", page: "", more: [] };
