@@ -853,7 +853,7 @@ a.result:hover { background: var(--hover); }
 
 /* ---- a container's usage: widgets on a grid ---- */
 .widgets { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); grid-auto-flow: dense; gap: 16px; }
-.widget { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); animation: rise .2s var(--ease) both; }
+.widget { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); }
 .widget.wide { grid-column: span 2; }
 .widget.full { grid-column: 1 / -1; }
 .widget-head { display: flex; align-items: center; gap: 10px; padding: 16px 20px 8px; }
@@ -1483,11 +1483,10 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
 .sec-now { margin-left: auto; color: var(--text); font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sec-now .legend { font-size: 13px; font-weight: 400; }
 .dash-sec .chart-plot { height: 280px; }
-/* A picked tab's chart and figure fade up into place; the threads' strip
-   keeps its room on every tab and only fades. */
-.trend-in { display: block; animation: trend-in .26s var(--ease) both; }
+/* A picked tab's chart and figure change in place; the threads' strip keeps
+   its room on every tab and only fades. */
+.trend-in { display: block; }
 .sec-now > .trend-in { display: inline-block; }
-@keyframes trend-in { from { opacity: 0; transform: translateY(6px); } }
 .trend-extra { display: grid; gap: 14px; transition: opacity .2s var(--ease); }
 .trend-extra.off { opacity: 0; pointer-events: none; }
 /* On the page's ground, what the chart masks with the panel colour takes the page's. */
