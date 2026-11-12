@@ -1316,7 +1316,23 @@ a.tn-row:hover { background: var(--hover); text-decoration: none; }
 /* ---- Media: photos and videos, a grid by month and a viewer ---- */
 /* Media and Drive fill the window, so a right-click anywhere on them is theirs. */
 .drive { min-height: calc(100vh - var(--head) - 80px); }
+.m-picked { margin-right: 4px; color: var(--text-2); font-weight: 500; }
+.m-month + .m-month { margin-top: 28px; }
+.m-month h2 { margin-bottom: 12px; font-size: 16px; font-weight: 500; }
+.m-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 4px; }
+.m-tile { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: var(--radius); background: var(--card); transition: background .15s; }
+.m-open { display: block; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.m-open img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .2s var(--ease), border-radius .2s var(--ease); }
+.m-tile.on { background: var(--accent-bg); }
+.m-tile.on .m-open img { transform: scale(.86); border-radius: var(--round); }
 .m-badge { position: absolute; right: 8px; top: 8px; color: #fff; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6)); pointer-events: none; }
+.m-check {
+  position: absolute; left: 8px; top: 8px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0;
+  border: 2px solid #fff; border-radius: 50%; background: rgba(0, 0, 0, .25); color: transparent; cursor: pointer;
+  opacity: 0; transition: opacity .15s, background .15s;
+}
+.m-tile:hover .m-check, .m-tile.picking .m-check, .m-check:focus-visible { opacity: 1; }
+.m-tile.on .m-check { border-color: var(--accent); background: var(--accent); color: var(--on-accent); opacity: 1; }
 .m-none { display: grid; place-items: center; align-content: center; gap: 12px; width: 100%; height: 100%; color: var(--text-3); text-align: center; }
 .m-none.big { max-width: 360px; color: #c4c7c5; }
 .m-drop {
@@ -1343,14 +1359,14 @@ a.tn-row:hover { background: var(--hover); text-decoration: none; }
 .m-step.next { right: 12px; }
 
 /* ---- Drive: documents in folders, each kind in its own colour ---- */
-.d-file.photo, .d-row-name.photo, .d-chip.photo { --k: var(--s3); }
-.d-file.video, .d-row-name.video, .d-chip.video { --k: var(--accent); }
-.d-file.doc, .d-row-name.doc, .d-chip.doc { --k: var(--s1); }
-.d-file.sheet, .d-row-name.sheet, .d-chip.sheet { --k: var(--ok); }
-.d-file.slides, .d-row-name.slides, .d-chip.slides { --k: var(--s2); }
-.d-file.pdf, .d-row-name.pdf, .d-chip.pdf { --k: var(--bad); }
-.d-file.text, .d-row-name.text, .d-chip.text { --k: var(--text-2); }
-.d-file.archive, .d-row-name.archive, .d-chip.archive { --k: var(--warn); }
+.d-file.photo, .d-row-name.photo { --k: var(--s3); }
+.d-file.video, .d-row-name.video { --k: var(--accent); }
+.d-file.doc, .d-row-name.doc { --k: var(--s1); }
+.d-file.sheet, .d-row-name.sheet { --k: var(--ok); }
+.d-file.slides, .d-row-name.slides { --k: var(--s2); }
+.d-file.pdf, .d-row-name.pdf { --k: var(--bad); }
+.d-file.text, .d-row-name.text { --k: var(--text-2); }
+.d-file.archive, .d-row-name.archive { --k: var(--warn); }
 /* The title is the folder's path, each folder on the way a step back. */
 .st-crumbs { display: flex; align-items: center; margin: -8px 0 16px -8px; overflow-x: auto; scrollbar-width: none; font-size: 16px; }
 .d-crumb {
@@ -1359,16 +1375,9 @@ a.tn-row:hover { background: var(--hover); text-decoration: none; }
 }
 button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .d-crumb.on { color: var(--text); cursor: default; }
-.d-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
-.d-chip {
-  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px 0 10px; border: 0;
-  border-radius: 16px; background: var(--btn); color: var(--text); font: 500 13px var(--font); cursor: pointer;
-}
-.d-chip .icon { color: var(--k); }
-.d-chip:hover { background: var(--btn-hover); }
-.d-chip.on { border-color: transparent; background: var(--accent-bg); color: var(--on-accent-bg); }
-.d-chip.on .icon { color: inherit; }
 .d-section + .d-section { margin-top: 24px; }
+.d-section + .m-month { margin-top: 24px; }
+.m-grid + .d-files { margin-top: 12px; }
 .d-section h2 { margin-bottom: 12px; color: var(--text-2); font-size: 14px; font-weight: 500; }
 .d-folders, .d-files { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .d-folder {
@@ -1385,9 +1394,6 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
   position: relative; display: grid; place-items: center; height: 140px; margin: 8px 8px 10px; border-radius: var(--round);
   background: color-mix(in srgb, var(--k) 12%, var(--raised)); color: var(--k);
 }
-/* A photo or video shows its own picture, filling the cover. */
-.d-cover.picture { overflow: hidden; }
-.d-cover.picture img { width: 100%; height: 100%; object-fit: cover; }
 .d-ext {
   position: absolute; right: 10px; bottom: 8px; padding: 1px 6px; border-radius: var(--radius);
   background: var(--k); color: var(--bg); font: 600 10px var(--font); letter-spacing: .04em; text-transform: uppercase;
@@ -1404,6 +1410,7 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 .d-table td:first-child { max-width: 0; width: 100%; }
 
 @media (max-width: 900px) {
+  .m-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 2px; }
   .m-stage { padding: 0 0 16px; }
   .m-step { width: 44px; height: 44px; }
   .d-folders, .d-files { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
