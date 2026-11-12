@@ -7,7 +7,7 @@ export const DOCS: [string, string, IconName][] = [
   ["dashboard", "Dashboard", "dashboard"],
   ["containers", "Containers", "deployed_code"],
   ["storage", "Storage", "cloud"],
-  ["forward", "Routes", "route"],
+  ["forward", "Routes", "alt_route"],
   ["access", "Access Control", "shield"],
   ["devices", "Devices", "devices"],
   ["users", "Users", "group"],
@@ -54,7 +54,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>The browser reaches Cloudflare, which sends the visit down the tunnel to the connector running inside myTunnels. myTunnels checks the tunnel's access layers, then hands the request to the app on its local port. WebSockets work the same way.</p>
       </Doc>
       <Doc title="Connecting Cloudflare">
-        <p>Setup asks only for the host account. Cloudflare is connected the first time a tunnel needs it: picking <b>Tunnel</b> under <b>Forward by</b>, or <b>Connect</b> under Settings, Cloudflare, opens <b>Connect Cloudflare</b>, and it opens again each time until it is connected. <b>Open Cloudflare</b> makes a token with the right permissions; paste it back and the tunnel and connector are set up.</p>
+        <p>Setup asks only for the host account. Cloudflare is connected the first time a tunnel needs it: picking <b>Tunnel</b> in <b>New route</b>, or <b>Connect</b> under Settings, Cloudflare, opens <b>Connect Cloudflare</b>, and it opens again each time until it is connected. <b>Open Cloudflare</b> makes a token with the right permissions; paste it back and the tunnel and connector are set up.</p>
       </Doc>
       <Doc title="Changing the Cloudflare connection">
         <p>Settings, Cloudflare holds the account and tunnel. A new API token can replace the old one at any time. Switching to another account or tunnel needs every tunnel removed first, since their DNS records live in the old one.</p>
@@ -80,10 +80,10 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Containers</b> is the catalog of containers, a row each with what it is in a tile tinted by its state, its name over where it comes from, its address, and its CPU and memory while it runs. Compose projects with more than one container fold under their name. Search, or pick <b>All</b> or <b>Running</b>; it refreshes on its own. The plus, here and in the header, adds a <b>Container from GitHub</b> or <b>from an image</b>, or a <b>Forward</b>.</p>
       </Doc>
       <Doc title="One container">
-        <p>A container and its forwards are one page. Its heading holds its state, image and address, <b>Open</b>, the one button its state calls for (start, stop or resume) and a menu for the rest. Under it: <b>Overview</b> (its CPU, memory, network and disk while it runs, then what it runs, its state, ports, networks and mounts), <b>Forward</b>, <b>Images</b>, <b>Logs</b> and <b>Resources</b>: its CPU limit and priority, memory limit, reserved memory and swap, how many processes it may run and its <b>Auto-start</b>. Set to unless stopped by hand or always, it comes back on its own after a crash or a restart of the machine, once Docker runs again. A change applies at once and is given back when the container is made again.</p>
+        <p>A container and its forwards are one page. Its heading holds its state, image and address, <b>Open</b>, the one button its state calls for (start, stop or resume) and a menu for the rest. Under it: <b>Overview</b> (its CPU, memory, network and disk while it runs, then what it runs, its state, ports, networks and mounts), <b>Routes</b>, <b>Images</b>, <b>Logs</b> and <b>Resources</b>: its CPU limit and priority, memory limit, reserved memory and swap, how many processes it may run and its <b>Auto-start</b>. Set to unless stopped by hand or always, it comes back on its own after a crash or a restart of the machine, once Docker runs again. A change applies at once and is given back when the container is made again.</p>
       </Doc>
       <Doc title="Its forwards">
-        <p><b>Forward</b> lists every way the container is reached, a tunnel, a router port or Tailscale, each with its state, where it goes and who reaches it. A tunnel's activity sits under the list and its controls at the side: Open, its live switch, a menu to change the address or remove it, and its access control. The plus forwards a port the same way Routes does; the port is the container's own, asked only when it has more than one. A router or Tailscale forward reaches only a port the container publishes on this computer.</p>
+        <p><b>Routes</b> lists every way the container is reached, a tunnel, a router port or Tailscale, each with its state, where it goes and who reaches it. A tunnel's activity sits under the list and its controls at the side: Open, its live switch, a menu to change the address or remove it, and its access control. The plus forwards a port the same way Routes does; the port is the container's own, asked only when it has more than one. A router or Tailscale forward reaches only a port the container publishes on this computer.</p>
       </Doc>
       <Doc title="From a repository">
         <p><b>Container from GitHub</b> makes a container from code: give any https address (GitHub and the like, with a token for a private one), then its branch, its name and how it updates: <b>When the branch changes</b>, <b>On a timer</b> (every hour to every week), or <b>Only when I press Update</b>. <b>Update</b>, in its heading, builds the latest commit at any time.</p>
@@ -134,7 +134,7 @@ const CONTENT: Record<string, ReactNode> = {
   forward: (
     <>
       <Doc title="Three ways">
-        <p><b>Routes</b> is every opening in one list: tunnels, router ports and Tailscale, a row each with its address, where it goes, who reaches it and whether it is open. Search, or show one way at a time. The plus, here and in the header, forwards a port; its first field, <b>Forward by</b>, picks the way:</p>
+        <p><b>Routes</b> is every opening in one list: tunnels, router ports and Tailscale, a row each with its address, where it goes, who reaches it and whether it is open. Search, or show one way at a time. The plus, here and in the header, opens <b>New route</b>; the switch at its top picks the way:</p>
         <ul>
           <li><b>Tunnel</b> gives the app an address on your domain through Cloudflare Tunnel, without opening a port on the router, with the full Access Control below.</li>
           <li><b>Port forward</b> opens the port on this PC first: a rule in Windows Firewall, which Windows asks administrator rights for, and a relay when the app is on another port or another machine. Then it asks the router, by UPnP, to send the same port of your public address here. Most routers keep UPnP off; the row then says <b>Router not forwarded</b>, the port still reaches this PC from your network, and the router's own settings can forward it. There is no sign-in or password on either.</li>

@@ -614,7 +614,7 @@ export function TunnelPage({ route, users, providers, onChanged }: { route: Rout
     if (!containers) return;
     api.containers().then((list) => {
       const c = list.find((c) => tunnelsOf(c, [route]).length > 0);
-      if (c) go(`#/containers/${encodeURIComponent(c.name)}/forward/${route.id}`);
+      if (c) go(`#/containers/${encodeURIComponent(c.name)}/routes/${route.id}`);
     }).catch(() => {});
   }, [containers, route.id, route.target_host, route.target_port]);
 

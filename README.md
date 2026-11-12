@@ -81,15 +81,15 @@ on your network. Setup asks only for the host account: an email, a username and 
 for the panel. Either the email or the username signs in, and both can be changed under
 **Settings, Account**.
 
-Cloudflare is connected the first time something needs it: picking **Tunnel** under
-**Forward by**, or **Connect** under **Settings, Cloudflare**. It asks again each time until it
+Cloudflare is connected the first time something needs it: picking **Tunnel** in
+**New route**, or **Connect** under **Settings, Cloudflare**. It asks again each time until it
 is connected. **Open Cloudflare** goes to the token page with the permissions already picked
 (Account, Cloudflare Tunnel, Edit; Zone, DNS, Edit; Zone, Zone, Read). Create the token, paste
 it back, and the tunnel is created and the connector started. A token that sees more than one
 account asks which one.
 
-Then, on **Containers**, open a container, and on its **Forward** page press the plus: keep
-**Tunnel** under **Forward by**, type the subdomain, pick the domain, choose who can open it and
+Then, on **Containers**, open a container, and on its **Routes** page press the plus: keep
+**Tunnel** at the top, type the subdomain, pick the domain, choose who can open it and
 press **Publish**. The plus on **Routes** opens any other port the same way.
 
 To manage myTunnels from anywhere, publish the dashboard itself: under **Local app**, set
@@ -145,7 +145,7 @@ does and Docker Desktop does not.
 
 **Routes** is every opening in one list: Cloudflare tunnels, router port forwards and
 Tailscale, a row each with its address, where it goes, who reaches it and whether it is open.
-The plus asks first how to forward:
+The plus opens **New route**, whose switch at the top picks the way:
 
 - **Tunnel**: an address on your domain through Cloudflare Tunnel, with no port opened on the
   router, behind the tunnel's Access Control (home network, a tunnel password, sign-in).
@@ -172,7 +172,7 @@ name, with start, stop and restart for all of them. Search, or pick **All** or *
 catalog refreshes on its own.
 
 The plus at the top, here and in the header, adds a **Container from Git**, **from GitHub** or
-**from an image**, or a **Forward**. The menu beside it deletes every
+**from an image**, or a **Route**. The menu beside it deletes every
 image no container uses.
 
 A container and its forwards are one page. Its heading holds its state, image and address,
@@ -181,7 +181,7 @@ pause, kill and delete. Under it:
 
 - **Overview**: its CPU over time, memory, network and disk while it runs, then what it runs,
   its state and restarts, its ports, networks and mounts.
-- **Forward**: every way it is reached, a tunnel, a router port or Tailscale, each with its
+- **Routes**: every way it is reached, a tunnel, a router port or Tailscale, each with its
   state, where it goes and who reaches it, and the picked tunnel's activity under them. That
   tunnel's controls sit at the side: Open, its live switch, a menu to change the address or
   remove it, and its access control. The plus forwards a port as Routes does; the

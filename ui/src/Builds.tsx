@@ -196,7 +196,7 @@ export function NewMenu() {
   const can = useCan();
   const [adding, setAdding] = useState<Kind | "">("");
   const actions: MenuAction[] = [
-    ...(can("tunnels.create") ? [{ label: "Forward", hint: "A tunnel, a router port or Tailscale", icon: "swap_horiz" as IconName, onClick: () => go("#/routes/new") }] : []),
+    ...(can("tunnels.create") ? [{ label: "Route", hint: "A tunnel, a router port or Tailscale", icon: "alt_route" as IconName, onClick: () => go("#/routes/new") }] : []),
     ...(can("containers.deploy") ? [
       { label: "Container from GitHub", hint: "Built from any https repository", icon: "code" as IconName, onClick: () => setAdding("url") },
       { label: "Container from an image", hint: "Runs a Docker image, such as nginx", icon: "layers" as IconName, onClick: () => setAdding("image") },
