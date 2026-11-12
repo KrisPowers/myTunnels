@@ -1386,6 +1386,10 @@ button.d-crumb:hover { background: var(--hover); color: var(--text); }
 }
 .d-folder span, .d-name span, .d-row-name span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .d-folder:hover, .d-file:hover { background: var(--card-2); }
+/* Picked items, and the folder items are dragged over. */
+.d-folder.on, .d-file.on, .d-folder.drop { border-color: var(--accent); background: var(--accent-bg); }
+.d-table tr.on td, .d-table tr.drop td { background: var(--accent-bg); }
+.d-crumb.drop { background: var(--accent-bg); color: var(--accent); }
 .d-file {
   display: grid; width: 100%; padding: 0 0 12px; border: 1px solid var(--line); border-radius: var(--card-round); overflow: hidden;
   background: var(--card); color: var(--text); font: inherit; text-align: left; cursor: pointer;
