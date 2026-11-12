@@ -361,8 +361,8 @@ const SHOW: Option<Show>[] = [
 ];
 
 // ForwardPage is every opening in one list: tunnels, router ports and
-// Tailscale, with the plus to add one. `#/remote/new` opens it adding,
-// `#/remote/new/<port>` to that port.
+// Tailscale, with the plus to add one. `#/routes/new` opens it adding,
+// `#/routes/new/<port>` to that port.
 export function ForwardPage({ id, port, routes, forwards, status, users, providers, onChanged }: {
   id: string;
   port: string;
@@ -377,7 +377,7 @@ export function ForwardPage({ id, port, routes, forwards, status, users, provide
   const [q, setQ] = useState("");
   const [show, setShow] = useState<Show>("all");
   const adding = id === "new" && can("tunnels.create");
-  const close = () => go("#/remote");
+  const close = () => go("#/routes");
 
   const items: Opening[] = [
     ...(routes ?? []).map((r) => ({ r })),
@@ -394,7 +394,7 @@ export function ForwardPage({ id, port, routes, forwards, status, users, provide
     <>
       <div className="page-head">
         <div className="page-head-main">
-          <h1>Remote Access</h1>
+          <h1>Routes</h1>
           {routes && <div className="page-sub"><span><b>{live}</b> of {items.length} open{tunnels && status && !status.connections ? ", connector offline" : ""}</span></div>}
         </div>
         <div className="page-actions">
@@ -403,7 +403,7 @@ export function ForwardPage({ id, port, routes, forwards, status, users, provide
             <input type="search" placeholder="Search" aria-label="Search forwards" value={q} onChange={(e) => setQ(e.target.value)} spellCheck={false} />
           </label>
           <div className="ex-pick"><Dropdown label="Show" value={show} options={SHOW} onChange={setShow} /></div>
-          {can("tunnels.create") && <button type="button" className="icon-btn" aria-label="Forward a port" title="Forward a port" onClick={() => go("#/remote/new")}><Icon name="add" /></button>}
+          {can("tunnels.create") && <button type="button" className="icon-btn" aria-label="Forward a port" title="Forward a port" onClick={() => go("#/routes/new")}><Icon name="add" /></button>}
         </div>
       </div>
       <div className="page-body stack">
@@ -424,7 +424,7 @@ export function ForwardPage({ id, port, routes, forwards, status, users, provide
         <Dialog title="Forward a port" wide onClose={close}>
           <ForwardComposer users={users} providers={providers} port={port} onDone={async (r) => {
             await onChanged();
-            go(r ? `#/tunnels/${r.id}` : "#/remote");
+            go(r ? `#/tunnels/${r.id}` : "#/routes");
           }} />
         </Dialog>
       )}
