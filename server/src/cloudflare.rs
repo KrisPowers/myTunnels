@@ -107,7 +107,43 @@ impl<'a> Cloudflare<'a> {
         Ok((result, envelope.result_info))
     }
 
-    async fn all<T: DeserializeOwned>(&self, path: &str) -> Result<Vec<T>> {
+    /// Any call, for the API's other parts such as mail's.
+    pub async fn request<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> Result<T> {
+        Ok(self.call(method, path, body).await?.0)
+    }
+
+    /// A PUT of a multipart form, as a Worker's upload is.
+    pub async fn put_form(&self, path: &str, boundary: &str, body: Vec<u8>) -> Result<()> {
+        let resp = self
+            .http
+            .put(format!("{API}{path}"))
+            .bearer_auth(self.token)
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(body)
+            .send()
+            .await
+            .context("Cloudflare API is unreachable")?;
+        let status = resp.status();
+        let envelope: Envelope<Value> = resp
+            .json()
+            .await
+            .with_context(|| format!("Unexpected Cloudflare response ({status})"))?;
+        if !envelope.success {
+            let errors: Vec<String> = envelope.errors.iter().map(|e| e.message.clone()).collect();
+            bail!("Cloudflare: {}", errors.join("; "));
+        }
+        Ok(())
+    }
+
+    pub async fn all<T: DeserializeOwned>(&self, path: &str) -> Result<Vec<T>> {
         let sep = if path.contains('?') { '&' } else { '?' };
         let mut out = Vec::new();
         for page in 1..=100 {

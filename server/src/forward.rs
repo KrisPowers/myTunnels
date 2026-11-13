@@ -185,23 +185,26 @@ async fn run_tailscale(args: &[String]) -> Result<String> {
 /// What `tailscale serve` or `tailscale funnel` is told to open or close it.
 fn serve_args(f: &Forward, on: bool) -> Vec<String> {
     let mut args = vec![if f.public { "funnel" } else { "serve" }.to_owned()];
-    let port = if f.protocol == "tcp" {
-        format!("--tcp={}", f.public_port)
-    } else {
-        format!("--https={}", f.public_port)
+    let port = match f.protocol.as_str() {
+        "tcp" => format!("--tcp={}", f.public_port),
+        // Tailscale ends TLS with its own certificate, and tells the app
+        // who connected in a PROXY header; mail's IMAP and SMTP use it.
+        "tls" => format!("--tls-terminated-tcp={}", f.public_port),
+        _ => format!("--https={}", f.public_port),
     };
     if on {
         let host = f.target_host.as_deref().unwrap_or("127.0.0.1");
         // Apps on https usually carry a certificate of their own making.
         let scheme = match f.protocol.as_str() {
             "https" => "https+insecure",
+            "tls" => "tcp",
             other => other,
         };
-        args.extend([
-            "--bg".to_owned(),
-            port,
-            format!("{scheme}://{host}:{}", f.target_port),
-        ]);
+        args.push("--bg".to_owned());
+        if f.protocol == "tls" {
+            args.extend(["--yes".to_owned(), "--proxy-protocol=2".to_owned()]);
+        }
+        args.extend([port, format!("{scheme}://{host}:{}", f.target_port)]);
     } else {
         args.extend([port, "off".to_owned()]);
     }
@@ -209,7 +212,7 @@ fn serve_args(f: &Forward, on: bool) -> Vec<String> {
 }
 
 /// This machine's name on the tailnet while Tailscale is connected.
-async fn tailnet_name() -> Option<String> {
+pub async fn tailnet_name() -> Option<String> {
     if let Some((at, name)) = lock(&TAILNET).clone() {
         if at.elapsed() < Duration::from_secs(30) {
             return name;
@@ -269,7 +272,7 @@ fn address(f: &Forward, tailnet: Option<&str>, ip: Option<IpAddr>) -> Option<Str
     let port = f.public_port;
     match (f.method.as_str(), f.protocol.as_str()) {
         ("port", _) => ip.map(|ip| format!("{ip}:{port}")),
-        (_, "tcp") => tailnet.map(|n| format!("{n}:{port}")),
+        (_, "tcp" | "tls") => tailnet.map(|n| format!("{n}:{port}")),
         _ if port == 443 => tailnet.map(|n| format!("https://{n}")),
         _ => tailnet.map(|n| format!("https://{n}:{port}")),
     }
@@ -313,6 +316,11 @@ pub fn spawn(state: AppState) {
     });
 }
 
+/// This network's public IPv4 address, as the router or the internet said.
+pub fn public_ip(state: &AppState) -> Option<IpAddr> {
+    (*lock(&PUBLIC_IP)).or_else(|| state.public_ips().into_iter().find(IpAddr::is_ipv4))
+}
+
 // ---- the API ----
 
 pub async fn list(State(state): State<AppState>) -> ApiResult<Json<Vec<Value>>> {
@@ -322,8 +330,7 @@ pub async fn list(State(state): State<AppState>) -> ApiResult<Json<Vec<Value>>> 
     } else {
         None
     };
-    let public =
-        (*lock(&PUBLIC_IP)).or_else(|| state.public_ips().into_iter().find(IpAddr::is_ipv4));
+    let public = public_ip(&state);
     let lan = own_ip(SocketAddr::from(([1, 1, 1, 1], 80))).ok();
     let problems = lock(&PROBLEMS).clone();
     let routed = lock(&ROUTED).clone();
@@ -390,7 +397,7 @@ pub async fn create(
 ) -> ApiResult<Json<Forward>> {
     let kinds: &[&str] = match body.method.as_str() {
         "port" => &["tcp", "udp", "both"],
-        "tailscale" => &["http", "https", "tcp"],
+        "tailscale" => &["http", "https", "tcp", "tls"],
         _ => return Err(ApiError::bad("Forward through the router or Tailscale")),
     };
     if !kinds.contains(&body.protocol.as_str()) {
@@ -420,6 +427,11 @@ pub async fn create(
         enabled: true,
         created_at: now(),
     };
+    add(&state, f).await.map(Json)
+}
+
+/// Opens a forward and keeps it.
+pub async fn add(state: &AppState, f: Forward) -> ApiResult<Forward> {
     check_funnel(&f)?;
     // The router keeps TCP and UDP apart, and both takes each; Tailscale has
     // one of each port.
@@ -439,7 +451,7 @@ pub async fn create(
         .map_err(|e| ApiError::bad(format!("{e:#}")))?;
     state.db.insert_forward(&f)?;
     tracing::info!("opened port {} by {}", f.public_port, f.method);
-    Ok(Json(f))
+    Ok(f)
 }
 
 #[derive(Deserialize)]
@@ -494,13 +506,19 @@ pub async fn remove(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     let f = state.db.forward(&id)?.ok_or_else(ApiError::not_found)?;
+    take_down(&state, &f).await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// Closes a forward and forgets it.
+pub async fn take_down(state: &AppState, f: &Forward) -> ApiResult<()> {
     if f.enabled {
-        if let Err(err) = close(&f).await {
+        if let Err(err) = close(f).await {
             tracing::warn!("could not close port {}: {err:#}", f.public_port);
         }
     }
-    state.db.delete_forward(&id)?;
-    Ok(Json(json!({ "ok": true })))
+    state.db.delete_forward(&f.id)?;
+    Ok(())
 }
 
 #[cfg(test)]

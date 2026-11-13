@@ -1541,3 +1541,10 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
   .dash-sec { padding-left: 0; }
   .dash-sec:first-child { padding-top: 28px; }
 }
+
+/* Mail */
+.mail-pick { width: 260px; }
+.mail-pick .dropdown { width: 100%; }
+.mail-bar { height: 4px; margin: 0 20px 12px; border-radius: 2px; background: var(--seg); overflow: hidden; }
+.mail-bar > span { display: block; height: 100%; background: var(--accent); transition: width .4s var(--ease); }
+.mail-none { padding: 12px 20px; }

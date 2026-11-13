@@ -161,6 +161,29 @@ Router and Tailscale forwards can **Close after** an hour, a day or a week, and 
 switched off. A way whose app is missing (cloudflared, Tailscale) is listed but cannot be picked
 until it is installed from **Apps**.
 
+## Mail
+
+**Mail** is a mail server for addresses on your own domains, on this computer: it receives mail,
+keeps each account's mailboxes in `mail.db` beside the gateway's database, and sends mail signed
+with DKIM. Outlook, Apple Mail, Thunderbird and phones use it over IMAP and SMTP. The domain has
+to be on the connected Cloudflare account, which holds its MX, SPF, DKIM and DMARC records and the
+server's address, `mail.<domain>`; setup keeps them in place.
+
+Setup picks how each part is reached, in any mix:
+
+| Part | Port forward | Cloudflare and Tailscale |
+| --- | --- | --- |
+| Receiving | Port 25 forwarded here, MX pointing at this network | Email Routing hands mail to a Worker, which posts it through the tunnel |
+| Mail apps | IMAP 993 and SMTP 465, with a Let's Encrypt certificate proved through Cloudflare DNS | IMAP 443 and SMTP 8443 through Tailscale Funnel |
+| Sending | Direct to each recipient's server on port 25, or through a relay SMTP server | Cloudflare Email Sending (Workers Paid plan) |
+
+Every mail listener is on `127.0.0.1`; the ports it opens are rows named **Mail** on **Routes**,
+and a relay passes the sender's address on, so SPF still sees who connected. Mail apps find their
+settings from an address alone through `autodiscover.` and `autoconfig.` on each domain, served
+through the tunnel. Received mail is checked with SPF, DKIM and DMARC and filed in Junk when it
+fails. The Cloudflare token needs Workers Scripts, Email Routing Rules and Zone Settings edit for
+the Cloudflare ways; **Make a token on Cloudflare** asks for them.
+
 ## Containers
 
 **Containers** is the catalog of containers. It says how many run and their CPU and memory

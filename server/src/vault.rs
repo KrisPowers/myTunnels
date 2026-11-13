@@ -19,8 +19,16 @@ const PREFIX: &str = "enc1:";
 pub fn is_secret(key: &str) -> bool {
     matches!(
         key,
-        "cf_token" | "cf_tunnel_token" | "smtp" | "token_key" | "host_key"
+        "cf_token"
+            | "cf_tunnel_token"
+            | "smtp"
+            | "token_key"
+            | "host_key"
+            | "mail"
+            | "mail_cert"
+            | "mail_acme"
     ) || key.starts_with("oauth_")
+        || key.starts_with("mail_dkim:")
         || key.starts_with("totp:")
         || key.starts_with("totp_pending:")
         || key.starts_with("deploy_token:")

@@ -224,7 +224,7 @@ pub async fn sync_ingress(state: &AppState) -> Result<()> {
     let cf = state.cloudflare().map_err(|e| anyhow!(e.1))?;
     let api = Cloudflare::new(&state.http, &cf.token);
     let current = api.tunnel_config(&cf.account_id, &cf.tunnel_id).await?;
-    let ours: Vec<String> = state
+    let mut ours: Vec<String> = state
         .db
         .routes()?
         .into_iter()
@@ -232,6 +232,8 @@ pub async fn sync_ingress(state: &AppState) -> Result<()> {
         .filter(|r| r.enabled)
         .map(|r| r.hostname)
         .collect();
+    // Mail's own addresses, which the gateway answers itself.
+    ours.extend(crate::mailserver::web::hosts());
     let config = merge_ingress(current, &ours, &state.config.gate_service);
     api.put_config(&cf.account_id, &cf.tunnel_id, config).await
 }
