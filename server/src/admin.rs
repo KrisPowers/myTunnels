@@ -22,7 +22,8 @@ use crate::permissions::{self, Caller};
 use crate::state::AppState;
 use crate::util::{cookie, now, random_hex, valid_host, ApiError, ApiResult};
 use crate::{
-    codes, containers, convert, gate, metrics, passkey, pow, secret, share, storage, totp, tunnel,
+    codes, containers, convert, gate, mailserver, metrics, passkey, pow, secret, share, storage,
+    totp, tunnel,
 };
 
 const ADMIN_COOKIE: &str = "admin_session";
@@ -109,6 +110,23 @@ pub fn router(state: AppState) -> Router {
             "/forwards/{id}",
             patch(crate::forward::update).delete(crate::forward::remove),
         )
+        .route("/mail", get(mailserver::view))
+        .route("/mail/zones", get(mailserver::zones))
+        .route("/mail/setup", put(mailserver::setup))
+        .route("/mail/apply", post(mailserver::rerun))
+        .route("/mail/off", post(mailserver::off))
+        .route("/mail/options", patch(mailserver::options))
+        .route("/mail/domains", post(mailserver::add_domain))
+        .route("/mail/domains/{name}", delete(mailserver::remove_domain))
+        .route("/mail/accounts", post(mailserver::add_account))
+        .route(
+            "/mail/accounts/{address}",
+            patch(mailserver::edit_account).delete(mailserver::delete_account),
+        )
+        .route("/mail/aliases", put(mailserver::set_alias))
+        .route("/mail/aliases/{alias}", delete(mailserver::delete_alias))
+        .route("/mail/log", get(mailserver::log))
+        .route("/mail/retry", post(mailserver::retry))
         .route("/devices", get(list_devices))
         .route("/devices/{id}", patch(update_device).delete(delete_device))
         .route("/device", post(this_device))

@@ -71,6 +71,9 @@ async fn handle(
     mut req: Request,
 ) -> Response {
     let host = request_host(&req);
+    if crate::mailserver::web::serves(&host) {
+        return crate::mailserver::web::handle(&host, req).await;
+    }
     let snap = state.snapshot();
     let Some(route) = snap.routes.get(&host).cloned() else {
         return StatusCode::NOT_FOUND.into_response();

@@ -18,6 +18,7 @@ mod images;
 mod limits;
 mod machine;
 mod mail;
+mod mailserver;
 mod metrics;
 mod netinfo;
 mod oauth;
@@ -91,6 +92,9 @@ async fn main() -> Result<()> {
     convert::spawn(state.clone());
     deploy::spawn(state.clone());
     limits::spawn(state.clone());
+    if let Err(err) = mailserver::spawn(state.clone()) {
+        tracing::error!("mail did not start: {err:#}");
+    }
     tokio::spawn(prune_events(state.clone()));
 
     let admin = axum::serve(

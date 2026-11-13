@@ -8,7 +8,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::net::{TcpListener, TcpSocket, TcpStream, UdpSocket};
 use tokio::task::JoinHandle;
 
 use crate::db::Forward;
@@ -89,15 +89,54 @@ async fn start(f: &Forward) -> Result<()> {
     Ok(())
 }
 
+/// Who each relayed connection came from, by the port the relay connects
+/// to the app from, so an app here, such as mail, can see past the relay.
+static ORIGINS: LazyLock<Mutex<HashMap<u16, SocketAddr>>> = LazyLock::new(Mutex::default);
+
+/// Who a connection from this computer's `port` was relayed for.
+pub fn origin(port: u16) -> Option<SocketAddr> {
+    lock(&ORIGINS).get(&port).copied()
+}
+
+/// Connects to the app from a port noted first, so the app can ask who
+/// the connection is for as soon as it arrives.
+async fn dial(host: &str, port: u16, peer: SocketAddr) -> std::io::Result<(TcpStream, u16)> {
+    let addr = tokio::net::lookup_host((host, port))
+        .await?
+        .next()
+        .ok_or_else(|| std::io::Error::other("the app's address does not resolve"))?;
+    let socket = if addr.is_ipv4() {
+        TcpSocket::new_v4()?
+    } else {
+        TcpSocket::new_v6()?
+    };
+    let any: SocketAddr = if addr.is_ipv4() {
+        ([0, 0, 0, 0], 0).into()
+    } else {
+        (std::net::Ipv6Addr::UNSPECIFIED, 0).into()
+    };
+    socket.bind(any)?;
+    let local = socket.local_addr()?.port();
+    lock(&ORIGINS).insert(local, peer);
+    match socket.connect(addr).await {
+        Ok(stream) => Ok((stream, local)),
+        Err(err) => {
+            lock(&ORIGINS).remove(&local);
+            Err(err)
+        }
+    }
+}
+
 async fn relay_tcp(listener: TcpListener, host: String, port: u16) {
     loop {
-        let Ok((mut inbound, _)) = listener.accept().await else {
+        let Ok((mut inbound, peer)) = listener.accept().await else {
             continue;
         };
         let host = host.clone();
         tokio::spawn(async move {
-            if let Ok(mut app) = TcpStream::connect((host.as_str(), port)).await {
+            if let Ok((mut app, local)) = dial(&host, port, peer).await {
                 let _ = tokio::io::copy_bidirectional(&mut inbound, &mut app).await;
+                lock(&ORIGINS).remove(&local);
             }
         });
     }

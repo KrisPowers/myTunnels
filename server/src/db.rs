@@ -247,7 +247,8 @@ pub struct Forward {
     pub name: String,
     pub target_host: Option<String>,
     pub target_port: u16,
-    /// `tcp`, `udp` or `both` for the router; `http`, `https` or `tcp` for Tailscale.
+    /// `tcp`, `udp` or `both` for the router; `http`, `https`, `tcp` or `tls`
+    /// (TLS ended by Tailscale) for Tailscale.
     pub protocol: String,
     /// The port it is reached on: the router's, or the tailnet machine's.
     pub public_port: u16,

@@ -158,6 +158,21 @@ pub const GROUPS: &[Group] = &[
         ],
     },
     Group {
+        label: "Mail",
+        permissions: &[
+            p(
+                "mail.view",
+                "View mail",
+                "The Mail page: how it is set up, its accounts and activity",
+            ),
+            p(
+                "mail.manage",
+                "Set up mail",
+                "Setup, domains, accounts and aliases",
+            ),
+        ],
+    },
+    Group {
         label: "Apps",
         permissions: &[p(
             "apps.install",
@@ -289,6 +304,8 @@ pub fn needed(method: &Method, path: &str) -> Need {
         "drive" if read => any(&["drive.view"]),
         "drive" if at(2) == "delete" => any(&["drive.delete"]),
         "drive" => any(&["drive.edit"]),
+        "mail" if read => any(&["mail.view", "mail.manage"]),
+        "mail" => any(&["mail.manage"]),
         "convert" if read => any(&["drive.view"]),
         "convert" => any(&["drive.edit"]),
         _ => any(&[]),

@@ -37,7 +37,7 @@ pub fn save(db: &Db, smtp: &Smtp) -> Result<()> {
     db.set_setting("smtp", &serde_json::to_string(smtp)?)
 }
 
-fn transport(smtp: &Smtp) -> Result<AsyncSmtpTransport<Tokio1Executor>> {
+pub fn transport(smtp: &Smtp) -> Result<AsyncSmtpTransport<Tokio1Executor>> {
     let host = smtp.host.trim();
     let builder = match smtp.security.as_str() {
         "tls" => AsyncSmtpTransport::<Tokio1Executor>::relay(host)?,
