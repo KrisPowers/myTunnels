@@ -799,3 +799,76 @@ impl Key {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn arguments_keep_sections_and_literals_whole() {
+        let toks = parse_args(
+            b"1:* (UID BODY.PEEK[HEADER.FIELDS (FROM TO)]<0.10>) {5}\r\nhello \"a \\\"b\\\"\"",
+        )
+        .unwrap();
+        assert_eq!(toks[0].text(), "1:*");
+        let items = toks[1].list().unwrap();
+        assert_eq!(items[1].text(), "BODY.PEEK[HEADER.FIELDS (FROM TO)]<0.10>");
+        assert_eq!(toks[2].text(), "hello");
+        assert_eq!(toks[3].text(), "a \"b\"");
+        assert_eq!(literal_suffix(b"A1 APPEND INBOX {42+}"), Some((42, true)));
+    }
+
+    #[test]
+    fn sequence_sets_and_patterns() {
+        let set = seq_set("1,3:5,9:*").unwrap();
+        assert!(set.contains(4, 20) && set.contains(20, 20) && !set.contains(2, 20));
+        assert!(pattern(b"*", b"Sent/2024"));
+        assert!(pattern(b"%", b"Sent") && !pattern(b"%", b"Sent/2024"));
+        assert!(pattern(b"Sent/%", b"Sent/2024"));
+    }
+
+    #[test]
+    fn sections_name_and_cut_what_was_asked() {
+        let items = fetch_items(&Token::Atom("BODY.PEEK[HEADER.FIELDS (From To)]".into())).unwrap();
+        let Item::Section(s) = &items[0] else {
+            panic!("not a section")
+        };
+        assert!(s.peek);
+        assert_eq!(s.label, "BODY[HEADER.FIELDS (\"FROM\" \"TO\")]");
+        let raw = b"From: sam@example.com\r\nTo: lee@example.com\r\nSubject: hi\r\n\r\nbody\r\n";
+        let p = message::parse(raw);
+        assert_eq!(
+            extract(&p, raw, s),
+            b"From: sam@example.com\r\nTo: lee@example.com\r\n\r\n"
+        );
+        let items = fetch_items(&Token::Atom("BODY[TEXT]<1.2>".into())).unwrap();
+        let Item::Section(text) = &items[0] else {
+            panic!("not a section")
+        };
+        assert_eq!(extract(&p, raw, text), b"od");
+        assert_eq!(
+            body_structure(&p, raw, false),
+            "(\"TEXT\" \"PLAIN\" (\"CHARSET\" \"us-ascii\") NIL NIL \"7BIT\" 6 1)"
+        );
+    }
+
+    #[test]
+    fn search_keys_combine() {
+        let toks = parse_args(b"OR SEEN FLAGGED NOT DELETED").unwrap();
+        let key = search_keys(&toks).unwrap();
+        let info = Info {
+            uid: 1,
+            flags: vec![store::SEEN.into()],
+            date: 0,
+            size: 10,
+        };
+        let none = || None;
+        let c = Candidate {
+            seq: 1,
+            max_seq: 1,
+            max_uid: 1,
+            info: &info,
+            raw: &none,
+        };
+        assert!(key.test(&c, &mut None));
+    }
+}

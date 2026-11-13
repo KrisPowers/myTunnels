@@ -407,3 +407,24 @@ fn path(arg: &str, prefix: &str) -> Option<(String, Vec<(String, String)>)> {
     Some((addr.to_owned(), params))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paths_and_their_parameters() {
+        let (addr, params) =
+            path("FROM:<sam@example.com> SIZE=1000 BODY=8BITMIME", "FROM:").unwrap();
+        assert_eq!(addr, "sam@example.com");
+        assert_eq!(params[0], ("SIZE".to_owned(), "1000".to_owned()));
+        assert_eq!(
+            path("to:<@relay.example.net:lee@example.com>", "TO:")
+                .unwrap()
+                .0,
+            "lee@example.com"
+        );
+        assert_eq!(path("FROM:<>", "FROM:").unwrap().0, "");
+        assert!(path("FROM:sam@example.com", "FROM:").is_none());
+        assert!(path("TO:<not an address>", "TO:").is_none());
+    }
+}

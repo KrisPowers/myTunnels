@@ -854,3 +854,62 @@ impl Store {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn store() -> Store {
+        let path =
+            std::env::temp_dir().join(format!("mail-test-{}.db", crate::util::random_hex(6)));
+        let s = Store::open(&path).unwrap();
+        s.add_account("sam@example.com", "Sam", "hash").unwrap();
+        s
+    }
+
+    #[test]
+    fn messages_move_between_mailboxes() {
+        let s = store();
+        let a = "sam@example.com";
+        let (uid, _) = s
+            .append(a, "inbox", b"Subject: one\r\n\r\nx", &[], 0)
+            .unwrap();
+        s.append(a, "INBOX", b"Subject: two\r\n\r\ny", &["\\seen".into()], 0)
+            .unwrap();
+        assert_eq!(uid, 1);
+        let st = s.status(a, "INBOX").unwrap();
+        assert_eq!((st.messages, st.unseen, st.uid_next), (2, 1, 3));
+        let (old, new, _) = s.move_to(a, "INBOX", "Archive", &[1]).unwrap();
+        assert_eq!((old, new), (vec![1], vec![1]));
+        assert_eq!(s.snapshot(a, "INBOX").unwrap().messages.len(), 1);
+        assert_eq!(s.read(a, "Archive", 1).unwrap(), b"Subject: one\r\n\r\nx");
+        s.set_flags(a, "INBOX", &[2], FlagOp::Add, &["\\Deleted".into()])
+            .unwrap();
+        assert_eq!(s.expunge(a, "INBOX", None).unwrap(), vec![2]);
+        assert_eq!(s.status(a, "INBOX").unwrap().messages, 0);
+    }
+
+    #[test]
+    fn mailboxes_rename_with_their_children() {
+        let s = store();
+        let a = "sam@example.com";
+        s.create(a, "Work").unwrap();
+        s.create(a, "Work/2024").unwrap();
+        assert!(s.delete(a, "Work").is_err());
+        s.rename(a, "Work", "Jobs").unwrap();
+        let names: Vec<String> = s.list(a).unwrap().into_iter().map(|b| b.name).collect();
+        assert!(names.contains(&"Jobs/2024".to_owned()) && !names.contains(&"Work".to_owned()));
+        assert_eq!(names[0], "INBOX");
+        assert_eq!(s.special(a, "\\Sent").as_deref(), Some("Sent"));
+    }
+
+    #[test]
+    fn flags_are_tidied() {
+        let f = normalize(&[
+            "\\SEEN".into(),
+            "\\Recent".into(),
+            "$Risky".into(),
+            "\\seen".into(),
+        ]);
+        assert_eq!(f, ["\\Seen", "$Risky"]);
+    }
+}

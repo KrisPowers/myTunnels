@@ -440,3 +440,30 @@ pub async fn send_raw(
         .collect())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spf_keeps_what_others_put_in_it() {
+        let want = vec!["a:mail.example.com".to_owned()];
+        let drop = vec![CLOUDFLARE_SPF.to_owned()];
+        assert_eq!(
+            merge_spf(
+                "v=spf1 include:_spf.mx.cloudflare.net include:other.example.net -all",
+                &want,
+                &drop
+            ),
+            "v=spf1 include:other.example.net a:mail.example.com -all"
+        );
+        assert_eq!(merge_spf("", &want, &[]), "v=spf1 a:mail.example.com ~all");
+        assert_eq!(
+            merge_spf(
+                "v=spf1 a:mail.example.com redirect=_spf.example.net",
+                &want,
+                &[]
+            ),
+            "v=spf1 a:mail.example.com redirect=_spf.example.net"
+        );
+    }
+}

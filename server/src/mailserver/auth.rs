@@ -787,3 +787,51 @@ pub async fn dmarc(from_domain: &str, spf: &str, spf_domain: &str, dkim: &[Dkim]
     res
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_signature_covers_the_body_and_its_headers() {
+        let key = RsaPrivateKey::new(&mut rand::rngs::OsRng, 1024).unwrap();
+        let raw = b"From: sam@example.com\r\nTo: lee@example.com\r\nSubject: hi\r\n\r\nhello  there \r\n\r\n";
+        let mut signed = sign(&key, "example.com", "mail", raw).unwrap();
+        signed.extend_from_slice(raw);
+        let (head, body) = message::split_header(&signed);
+        let header = message::parse_header(head);
+        let field = &header[0];
+        let t = tags(&field.value).unwrap();
+        let bh = B64.decode(strip_ws(tag(&t, "bh"))).unwrap();
+        assert_eq!(
+            Sha256::digest(canon_body(body, true)).as_slice(),
+            bh.as_slice()
+        );
+        let signed_names = strip_ws(tag(&t, "h"));
+        let names: Vec<&str> = signed_names.split(':').collect();
+        let digest = header_hash(&header, &names, &without_b(&field.raw), true);
+        let b = B64.decode(strip_ws(tag(&t, "b"))).unwrap();
+        assert!(RsaPublicKey::from(&key)
+            .verify(Pkcs1v15Sign::new::<Sha256>(), &digest, &b)
+            .is_ok());
+        assert!(record(&key).starts_with("v=DKIM1; k=rsa; p="));
+    }
+
+    #[test]
+    fn relaxed_canonical_forms() {
+        assert_eq!(
+            canon_header(b"Subject :  a \r\n\t b\r\n", true),
+            b"subject:a b\r\n"
+        );
+        assert_eq!(canon_body(b"a  b \r\n\r\n\r\n", true), b"a b\r\n");
+        assert_eq!(canon_body(b"", false), b"\r\n");
+    }
+
+    #[test]
+    fn domains_and_networks() {
+        assert_eq!(org_domain("mail.example.co.uk"), "example.co.uk");
+        assert_eq!(org_domain("a.b.example.com"), "example.com");
+        let ip: IpAddr = "203.0.113.9".parse().unwrap();
+        assert!(matches(ip, "203.0.113.0".parse().unwrap(), 24, 128));
+        assert!(!matches(ip, "203.0.114.0".parse().unwrap(), 24, 128));
+    }
+}

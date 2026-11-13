@@ -689,3 +689,42 @@ pub fn parse_date(v: &str) -> Option<i64> {
     Some(days_from_civil(y, m, d) * 86_400 + h * 3600 + mi * 60 + s - offset)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dates_round_trip() {
+        let ts = 1_136_214_245; // 2006-01-02 15:04:05 UTC
+        assert_eq!(imap_date(ts), " 2-Jan-2006 15:04:05 +0000");
+        assert_eq!(rfc_date(ts), "Mon, 2 Jan 2006 15:04:05 +0000");
+        assert_eq!(parse_date(&rfc_date(ts)), Some(ts));
+        assert_eq!(parse_date(" 2-Jan-2006 15:04:05 +0000"), Some(ts));
+        assert_eq!(parse_date("Mon, 2 Jan 2006 08:04:05 -0700"), Some(ts));
+        assert_eq!(parse_day("2-Jan-2006"), Some(ts - 15 * 3600 - 4 * 60 - 5));
+    }
+
+    #[test]
+    fn multipart_parts_are_found() {
+        let raw = normalize_crlf(
+            b"From: a@example.com\nContent-Type: multipart/mixed; boundary=\"b\"\n\npre\n--b\nContent-Type: text/plain\n\nhello\n--b\nContent-Type: application/octet-stream; name=\"run.exe\"\nContent-Transfer-Encoding: base64\n\naGk=\n--b--\n",
+        );
+        let p = parse(&raw);
+        assert_eq!(p.children.len(), 2);
+        assert_eq!(&raw[p.children[0].body.clone()], b"hello");
+        assert_eq!(p.children[1].decoded(&raw), b"hi");
+        assert_eq!(risky_files(&raw), ["run.exe"]);
+    }
+
+    #[test]
+    fn headers_and_addresses_decode() {
+        assert_eq!(
+            decode_header("=?utf-8?q?caf=C3=A9?= =?utf-8?b?IQ==?="),
+            "café!"
+        );
+        let list = addresses("\"Sam, Doe\" <sam@example.com>, lee@example.org");
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].name, "Sam, Doe");
+        assert_eq!(list[1].email, "lee@example.org");
+    }
+}

@@ -1084,3 +1084,187 @@ pub async fn retry(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     view(State(state)).await
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    fn sample() -> Arc<Mail> {
+        let dir = std::env::temp_dir().join(format!("mail-e2e-{}", random_hex(6)));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut config = crate::config::Config::from_env();
+        config.data_dir = dir.clone();
+        let db = crate::db::Db::open(&dir.join("gateway.db"), crate::vault::Vault::new(&[7; 32]))
+            .unwrap();
+        let state = AppState::new(config, db).unwrap();
+        let settings = Settings {
+            domains: vec![Domain {
+                name: "example.com".into(),
+                zone_id: "z1".into(),
+            }],
+            on: true,
+            save_sent: true,
+            ..Settings::default()
+        };
+        let mail = Arc::new(Mail {
+            store: Store::open(&dir.join("mail.db")).unwrap(),
+            state,
+            settings: RwLock::new(settings),
+            wake: Notify::new(),
+            job: Mutex::new(Job::default()),
+            keys: Mutex::new(HashMap::new()),
+        });
+        let hash = crate::secret::hash("Sample-pass-1").unwrap();
+        mail.store
+            .add_account("sam@example.com", "Sam", &hash)
+            .unwrap();
+        mail
+    }
+
+    /// Sends `line` and reads until a line starting with `until`, returning
+    /// everything read.
+    async fn say<R: tokio::io::AsyncBufRead + Unpin, W: tokio::io::AsyncWrite + Unpin>(
+        r: &mut R,
+        w: &mut W,
+        line: &str,
+        until: &str,
+    ) -> String {
+        if !line.is_empty() {
+            w.write_all(format!("{line}\r\n").as_bytes()).await.unwrap();
+        }
+        let mut all = String::new();
+        loop {
+            let mut l = String::new();
+            if r.read_line(&mut l).await.unwrap() == 0 {
+                return all;
+            }
+            all.push_str(&l);
+            if l.starts_with(until) {
+                return all;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_mail_app_reads_what_arrived() {
+        let mail = sample();
+        mail.deliver_local(
+            "sam@example.com",
+            false,
+            b"From: Lee <lee@example.org>\r\nTo: sam@example.com\r\nSubject: hi\r\n\r\nhello there\r\n",
+        )
+        .unwrap();
+        let (client, server) = tokio::io::duplex(1 << 16);
+        tokio::spawn(imap::serve(
+            mail.clone(),
+            Box::new(server),
+            IpAddr::from([127, 0, 0, 1]),
+        ));
+        let (r, mut w) = tokio::io::split(client);
+        let mut r = BufReader::new(r);
+        assert!(say(&mut r, &mut w, "", "* OK").await.contains("IMAP4rev1"));
+        let bad = say(&mut r, &mut w, "a LOGIN sam@example.com wrong", "a ").await;
+        assert!(bad.contains("a NO"));
+        let ok = say(
+            &mut r,
+            &mut w,
+            "b LOGIN sam@example.com Sample-pass-1",
+            "b ",
+        )
+        .await;
+        assert!(ok.contains("b OK"), "{ok}");
+        let list = say(&mut r, &mut w, "c LIST \"\" \"*\"", "c ").await;
+        assert!(
+            list.contains("\\Sent") && list.contains("\"INBOX\""),
+            "{list}"
+        );
+        let sel = say(&mut r, &mut w, "d SELECT INBOX", "d ").await;
+        assert!(
+            sel.contains("* 1 EXISTS") && sel.contains("d OK [READ-WRITE]"),
+            "{sel}"
+        );
+        let env = say(&mut r, &mut w, "e UID FETCH 1:* (FLAGS ENVELOPE)", "e ").await;
+        assert!(
+            env.contains("UID 1")
+                && env.contains("\"hi\"")
+                && env.contains("\"lee\" \"example.org\""),
+            "{env}"
+        );
+        let body = say(&mut r, &mut w, "f FETCH 1 BODY[TEXT]", "f ").await;
+        assert!(
+            body.contains("hello there") && body.contains("\\Seen"),
+            "{body}"
+        );
+        let search = say(&mut r, &mut w, "g SEARCH UNSEEN", "g ").await;
+        assert!(search.contains("* SEARCH\r\n"), "{search}");
+        say(&mut r, &mut w, "h STORE 1 +FLAGS.SILENT (\\Deleted)", "h ").await;
+        let gone = say(&mut r, &mut w, "i EXPUNGE", "i ").await;
+        assert!(gone.contains("* 1 EXPUNGE"), "{gone}");
+        say(&mut r, &mut w, "j LOGOUT", "j ").await;
+    }
+
+    #[tokio::test]
+    async fn a_mail_app_sends_to_a_local_account() {
+        let mail = sample();
+        let (client, server) = tokio::io::duplex(1 << 16);
+        tokio::spawn(smtp::serve(
+            mail.clone(),
+            Box::new(server),
+            IpAddr::from([127, 0, 0, 1]),
+            smtp::Mode::Submission,
+            true,
+        ));
+        let (r, mut w) = tokio::io::split(client);
+        let mut r = BufReader::new(r);
+        say(&mut r, &mut w, "", "220 ").await;
+        assert!(say(&mut r, &mut w, "EHLO client.example.com", "250 ")
+            .await
+            .contains("AUTH PLAIN"));
+        assert!(say(&mut r, &mut w, "MAIL FROM:<sam@example.com>", "530")
+            .await
+            .starts_with("530"));
+        use base64::Engine;
+        let creds =
+            base64::engine::general_purpose::STANDARD.encode("\0sam@example.com\0Sample-pass-1");
+        assert!(say(&mut r, &mut w, &format!("AUTH PLAIN {creds}"), "2")
+            .await
+            .starts_with("235"));
+        assert!(say(&mut r, &mut w, "MAIL FROM:<lee@example.org>", "5")
+            .await
+            .starts_with("553"));
+        say(&mut r, &mut w, "MAIL FROM:<sam@example.com>", "250").await;
+        assert!(say(&mut r, &mut w, "RCPT TO:<nobody@example.com>", "5")
+            .await
+            .starts_with("550"));
+        say(&mut r, &mut w, "RCPT TO:<sam+notes@example.com>", "250").await;
+        say(&mut r, &mut w, "DATA", "354").await;
+        let done = say(
+            &mut r,
+            &mut w,
+            "From: sam@example.com\r\nTo: sam+notes@example.com\r\nSubject: note\r\n\r\n..dotted\r\n.",
+            "250",
+        )
+        .await;
+        assert!(done.starts_with("250"), "{done}");
+        say(&mut r, &mut w, "QUIT", "221").await;
+        let inbox = mail.store.snapshot("sam@example.com", "INBOX").unwrap();
+        assert_eq!(inbox.messages.len(), 1);
+        let raw = mail
+            .store
+            .read("sam@example.com", "INBOX", inbox.messages[0].uid)
+            .unwrap();
+        let text = String::from_utf8_lossy(&raw);
+        assert!(
+            text.contains("Message-ID: <") && text.contains("\r\n.dotted\r\n"),
+            "{text}"
+        );
+        assert_eq!(
+            mail.store
+                .snapshot("sam@example.com", "Sent")
+                .unwrap()
+                .messages
+                .len(),
+            1
+        );
+    }
+}
