@@ -16,6 +16,7 @@ import { go, readHash } from "./route";
 import { SETTINGS, Settings } from "./Settings";
 import { Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
+import { MailPage } from "./Mail";
 import { StoragePage } from "./Storage";
 import { target, TunnelPage } from "./Tunnels";
 import { NewUser, UserPage } from "./Users";
@@ -193,6 +194,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
     ["containers", "Containers", "deployed_code", "#/", can("containers.view")],
     ["forward", "Routes", "alt_route", "#/routes", can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("drive.view")],
+    ["mail", "Mail", "mail", "#/mail", can("mail.view") || can("mail.manage")],
     ["apps", "Apps", "apps", "#/apps", true],
     ["security", "Security", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
   ];
@@ -249,6 +251,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
           {view === "apps" && <AppsPage />}
           {view === "storage" && <StoragePage />}
+          {view === "mail" && <MailPage tab={id} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} forwards={forwards ?? []}
             users={users ?? []} providers={providers} onChanged={load} />}
           {view === "forward" && <ForwardPage id={id} port={page} routes={apps} forwards={forwards} status={status}

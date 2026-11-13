@@ -545,7 +545,8 @@ export interface Forward {
   target_host: string | null;
   target_port: number;
   // tcp, udp or both at the router; http, https or tcp through Tailscale.
-  protocol: "tcp" | "udp" | "both" | "http" | "https";
+  // tls is TLS ended by Tailscale, as mail's ports use.
+  protocol: "tcp" | "udp" | "both" | "http" | "https" | "tls";
   public_port: number;
   // Tailscale only: open to the internet through Funnel.
   public: boolean;
@@ -563,6 +564,45 @@ export interface Forward {
 }
 
 export type NewForward = Pick<Forward, "method" | "name" | "target_host" | "target_port" | "protocol" | "public_port" | "public"> & { expires_in: number };
+
+export type MailReceive = "port" | "cloudflare";
+export type MailApps = "port" | "tailscale";
+export type MailSend = "direct" | "relay" | "cloudflare";
+export interface MailRelay { host: string; port: number; security: string; username: string; password_set?: boolean }
+export interface MailSettings {
+  // The first is the primary: the server is mail. on it.
+  domains: { name: string; zone_id: string }[];
+  receive: MailReceive;
+  apps: MailApps;
+  send: MailSend;
+  relay: MailRelay | null;
+  reject_dmarc: boolean;
+  save_sent: boolean;
+  on: boolean;
+}
+export interface MailStep { name: string; ok: boolean; detail: string }
+// Setup as it runs: its step, how many are done of how many, and each outcome.
+export interface MailJob { running: boolean; step: string; done: number; total: number; steps: MailStep[]; at: number }
+export interface MailAccount { address: string; name: string; apps: boolean; created_at: number; messages: number; size: number }
+export interface MailState {
+  settings: MailSettings;
+  hostname: string;
+  job: MailJob;
+  accounts: MailAccount[];
+  aliases: { alias: string; target: string }[];
+  queued: number;
+  certificate: number | null;
+  // Where mail apps find IMAP and SMTP.
+  servers: { imap_host: string; imap_port: number; smtp_host: string; smtp_port: number } | null;
+}
+export interface MailLog { at: number; dir: "in" | "out"; from: string; to: string; size: number; status: string; detail: string }
+export interface MailSetupBody {
+  zone_id: string | null;
+  receive: MailReceive;
+  apps: MailApps;
+  send: MailSend;
+  relay: { host: string; port: number; security: string; username: string; password: string | null } | null;
+}
 
 export interface Auth {
   authenticated: boolean;
@@ -618,6 +658,23 @@ export const api = {
   saveSmtp: (body: Omit<Smtp, "password_set"> & { password?: string }) => call<TwoFactor>("/twofactor/smtp", "PUT", body),
   testMail: () => call<{ ok: boolean; to: string }>("/twofactor/test", "POST"),
   saveTwoFactor: (enabled: boolean) => call<TwoFactor>("/twofactor", "PUT", { enabled }),
+
+  mail: () => call<MailState>("/mail"),
+  mailZones: () => call<Zone[]>("/mail/zones"),
+  setupMail: (body: MailSetupBody) => call<MailState>("/mail/setup", "PUT", body),
+  rerunMail: () => call<MailState>("/mail/apply", "POST"),
+  mailOff: () => call<MailState>("/mail/off", "POST"),
+  mailOptions: (patch: Partial<{ reject_dmarc: boolean; save_sent: boolean }>) => call<MailState>("/mail/options", "PATCH", patch),
+  addMailDomain: (zone_id: string) => call<MailState>("/mail/domains", "POST", { zone_id }),
+  removeMailDomain: (name: string) => call<MailState>(`/mail/domains/${encodeURIComponent(name)}`, "DELETE"),
+  addMailAccount: (body: { address: string; name: string; password: string }) => call<MailState>("/mail/accounts", "POST", body),
+  editMailAccount: (address: string, patch: Partial<{ name: string; password: string; apps: boolean }>) =>
+    call<MailState>(`/mail/accounts/${encodeURIComponent(address)}`, "PATCH", patch),
+  removeMailAccount: (address: string) => call<MailState>(`/mail/accounts/${encodeURIComponent(address)}`, "DELETE"),
+  setMailAlias: (alias: string, target: string) => call<MailState>("/mail/aliases", "PUT", { alias, target }),
+  removeMailAlias: (alias: string) => call<MailState>(`/mail/aliases/${encodeURIComponent(alias)}`, "DELETE"),
+  mailLog: () => call<MailLog[]>("/mail/log"),
+  retryMail: () => call<MailState>("/mail/retry", "POST"),
 
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),
@@ -794,13 +851,17 @@ export function editOf(r: Route): RouteEdit {
 }
 
 // The Cloudflare page that creates an API token with exactly the permissions
-// this app needs, already filled in: Cloudflare Tunnel edit, DNS edit, Zone read.
+// this app needs, already filled in: Cloudflare Tunnel edit, DNS edit, Zone
+// read, and for Mail, Workers Scripts, Email Routing Rules and Zone Settings edit.
 export const TOKEN_URL =
   "https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=" +
   encodeURIComponent(JSON.stringify([
     { key: "argotunnel", type: "edit" },
     { key: "dns", type: "edit" },
     { key: "zone", type: "read" },
+    { key: "workers_scripts", type: "edit" },
+    { key: "email_routing_rules", type: "edit" },
+    { key: "zone_settings", type: "edit" },
   ])) +
   "&accountId=*&zoneId=all&name=myTunnels";
 
