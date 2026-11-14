@@ -165,16 +165,27 @@ until it is installed from **Apps**.
 
 **Mail** is a mail server for addresses on your own domains, on this computer: it receives mail,
 keeps each account's mailboxes in `mail.db` beside the gateway's database, and sends mail signed
-with DKIM. Outlook, Apple Mail, Thunderbird and phones use it over IMAP and SMTP. The domain has
-to be on the connected Cloudflare account, which holds its MX, SPF, DKIM and DMARC records and the
-server's address, `mail.<domain>`; setup keeps them in place.
+with DKIM. Outlook, Apple Mail, Thunderbird and phones use it over IMAP and SMTP.
+
+Setup goes a step at a time: the domain, then how mail arrives, how mail apps connect and how mail
+leaves, then a last look before it runs. Each domain's DNS records (MX, SPF, DKIM, DMARC and the
+server's address, `mail.<domain>`) are kept one of two ways:
+
+- **Any DNS host**: you add them where the domain's DNS is. The **Domains** tab lists each record
+  with its value to copy and checks DNS for it, so each one turns green as it appears.
+- **Cloudflare**: the domain is a zone on the connected Cloudflare account and setup writes the
+  records itself. A domain can be moved between the two from its menu.
+
+Any number of domains can be added. Each has its own accounts and aliases under **Accounts**, and
+can be given **managers**: dashboard accounts with **View mail** that run that domain's accounts
+and aliases (passwords, mail apps on or off) without being able to set mail up.
 
 Setup picks how each part is reached, in any mix:
 
 | Part | Port forward | Cloudflare and Tailscale |
 | --- | --- | --- |
 | Receiving | Port 25 forwarded here, MX pointing at this network | Email Routing hands mail to a Worker, which posts it through the tunnel |
-| Mail apps | IMAP 993 and SMTP 465, with a Let's Encrypt certificate proved through Cloudflare DNS | IMAP 443 and SMTP 8443 through Tailscale Funnel |
+| Mail apps | IMAP 993 and SMTP 465, with a Let's Encrypt certificate, proved through Cloudflare DNS or, for a domain kept by hand, over port 80 while it is made | IMAP 443 and SMTP 8443 through Tailscale Funnel |
 | Sending | Direct to each recipient's server on port 25, or through a relay SMTP server | Cloudflare Email Sending (Workers Paid plan) |
 
 Every mail listener is on `127.0.0.1`; the ports it opens are rows named **Mail** on **Routes**,
@@ -182,7 +193,8 @@ and a relay passes the sender's address on, so SPF still sees who connected. Mai
 settings from an address alone through `autodiscover.` and `autoconfig.` on each domain, served
 through the tunnel. Received mail is checked with SPF, DKIM and DMARC and filed in Junk when it
 fails. The Cloudflare token needs Workers Scripts, Email Routing Rules and Zone Settings edit for
-the Cloudflare ways; **Make a token on Cloudflare** asks for them.
+the Cloudflare ways, which need every domain on Cloudflare; **Make a token on Cloudflare** asks for
+them.
 
 ## Containers
 
