@@ -163,12 +163,12 @@ pub const GROUPS: &[Group] = &[
             p(
                 "mail.view",
                 "View mail",
-                "The Mail page: how it is set up, its accounts and activity",
+                "The Mail page: how it is set up, its accounts and activity; a domain's managers also run its accounts",
             ),
             p(
                 "mail.manage",
                 "Set up mail",
-                "Setup, domains, accounts and aliases",
+                "Setup, domains and who manages them, every account and alias",
             ),
         ],
     },
@@ -305,6 +305,9 @@ pub fn needed(method: &Method, path: &str) -> Need {
         "drive" if at(2) == "delete" => any(&["drive.delete"]),
         "drive" => any(&["drive.edit"]),
         "mail" if read => any(&["mail.view", "mail.manage"]),
+        // A domain's managers run its accounts and aliases; the call checks
+        // which domain.
+        "mail" if matches!(at(1), "accounts" | "aliases") => any(&["mail.view", "mail.manage"]),
         "mail" => any(&["mail.manage"]),
         "convert" if read => any(&["drive.view"]),
         "convert" => any(&["drive.edit"]),

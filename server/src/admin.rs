@@ -112,12 +112,16 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/mail", get(mailserver::view))
         .route("/mail/zones", get(mailserver::zones))
+        .route("/mail/records", get(mailserver::records))
         .route("/mail/setup", put(mailserver::setup))
         .route("/mail/apply", post(mailserver::rerun))
         .route("/mail/off", post(mailserver::off))
         .route("/mail/options", patch(mailserver::options))
         .route("/mail/domains", post(mailserver::add_domain))
-        .route("/mail/domains/{name}", delete(mailserver::remove_domain))
+        .route(
+            "/mail/domains/{name}",
+            patch(mailserver::edit_domain).delete(mailserver::remove_domain),
+        )
         .route("/mail/accounts", post(mailserver::add_account))
         .route(
             "/mail/accounts/{address}",
