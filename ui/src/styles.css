@@ -1548,3 +1548,39 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
 .mail-bar { height: 4px; margin: 0 20px 12px; border-radius: 2px; background: var(--seg); overflow: hidden; }
 .mail-bar > span { display: block; height: 100%; background: var(--accent); transition: width .4s var(--ease); }
 .mail-none { padding: 12px 20px; }
+
+/* Mail setup, a step at a time: the numbered steps along the top, one
+   question below them, Back and Continue at the foot. */
+.wizard { overflow: visible; }
+.dialog .wizard { border: 0; }
+.wizard-steps { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; padding: 16px 20px; list-style: none; border-bottom: 1px solid var(--line); }
+.wizard-steps button { display: inline-flex; align-items: center; gap: 10px; padding: 0; border: 0; background: none; color: var(--text-2); font: inherit; cursor: pointer; }
+.wizard-steps button:disabled { cursor: default; }
+.wizard-steps .on button { color: var(--text); font-weight: 600; }
+.wizard-steps li:not(.on):not(.done) .how-num { background: var(--seg); color: var(--text-2); }
+.wizard-body { display: grid; gap: 18px; padding: 24px 20px 4px; }
+.wizard-body .step-head { margin-bottom: 0; }
+.step-head h2 { font-size: 20px; font-weight: 600; line-height: 1.3; }
+.wizard-foot { margin: 0; padding: 16px 20px 20px; }
+.wizard-review .setting:first-child { border-top: 0; }
+.choice { justify-items: start; gap: 6px; padding: 18px; text-align: left; }
+.choice > .icon { color: var(--accent); }
+.choice > .muted { font-size: 12.5px; line-height: 1.45; }
+.choice:disabled { opacity: .5; cursor: default; }
+.choice:disabled:hover { border-color: var(--line); }
+
+/* What is left to do, numbered, each ticked once done. */
+.how.mail-next { margin: 0; padding: 4px 20px 20px; }
+.how-num.done { background: var(--ok); color: var(--on-accent); }
+.mail-servers { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 12px; justify-items: start; }
+
+/* A domain's records, each to copy, with whether DNS answers with it yet. */
+.mail-bar-row { display: flex; justify-content: flex-end; gap: 8px; }
+.mail-records td { vertical-align: top; padding-top: 12px; padding-bottom: 12px; height: auto; }
+.mail-records td.mail-value { white-space: normal; }
+.mail-records .copy-text { overflow-wrap: anywhere; white-space: normal; text-align: left; }
+.mail-records .dot { margin-top: 6px; }
+.chip .chip-x { display: inline-grid; place-items: center; margin: 0 -4px 0 2px; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; opacity: .7; }
+.chip .chip-x:hover { opacity: 1; }
+.card-head h2 > .chip { text-transform: none; }
+.ct-row-main > .chip { flex-shrink: 0; text-transform: none; }
