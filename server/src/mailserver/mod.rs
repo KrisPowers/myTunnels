@@ -11,6 +11,12 @@
 //! - **Sending**: straight to each recipient's server, through another
 //!   SMTP server, or through Cloudflare Email Sending.
 //!
+//! Each domain's DNS records are either added by hand wherever its DNS is
+//! hosted, with the page listing them and checking each one, or kept on
+//! Cloudflare, which setup writes itself. The Cloudflare ways above need
+//! every domain on Cloudflare. A domain can be given managers: dashboard
+//! accounts that run its mail accounts and aliases.
+//!
 //! Every listener is on this computer's loopback; the port forwards and
 //! Funnel are rows on the Routes page like any other.
 
@@ -34,7 +40,8 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
+use axum::http::StatusCode;
 use axum::Json;
 use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey, LineEnding};
 use rsa::RsaPrivateKey;
@@ -46,6 +53,7 @@ use tokio::sync::Notify;
 use crate::cloudflare::Cloudflare;
 use crate::db::Forward;
 use crate::mail::Smtp;
+use crate::permissions::Caller;
 use crate::state::AppState;
 use crate::util::{lock, now, random_hex, ApiError, ApiResult};
 use store::Store;
@@ -91,7 +99,20 @@ pub enum Send {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Domain {
     pub name: String,
+    /// The Cloudflare zone its records are kept in, or empty when they are
+    /// added by hand wherever its DNS is hosted.
+    #[serde(default)]
     pub zone_id: String,
+    /// Dashboard accounts, by ID, that run this domain's mail accounts and
+    /// aliases without setting mail up.
+    #[serde(default)]
+    pub managers: Vec<String>,
+}
+
+impl Domain {
+    pub fn on_cloudflare(&self) -> bool {
+        !self.zone_id.is_empty()
+    }
 }
 
 fn yes() -> bool {
@@ -151,9 +172,31 @@ impl Settings {
     }
 
     pub fn is_local(&self, domain: &str) -> bool {
+        self.domain(domain).is_some()
+    }
+
+    fn domain(&self, name: &str) -> Option<&Domain> {
         self.domains
             .iter()
-            .any(|d| d.name.eq_ignore_ascii_case(domain))
+            .find(|d| d.name.eq_ignore_ascii_case(name))
+    }
+
+    /// Whether anything picked needs the Cloudflare account.
+    fn needs_cloudflare(&self) -> bool {
+        self.receive == Receive::Cloudflare
+            || self.send == Send::Cloudflare
+            || self.domains.iter().any(Domain::on_cloudflare)
+    }
+
+    /// Whether `caller` runs the accounts and aliases at `address`'s
+    /// domain: anyone who sets mail up, or one of the domain's managers.
+    fn runs(&self, caller: &Caller, address: &str) -> bool {
+        if caller.is_admin() || caller.can("mail.manage") {
+            return true;
+        }
+        let domain = address.rsplit_once('@').map_or("", |(_, d)| d);
+        self.domain(domain)
+            .is_some_and(|d| d.managers.iter().any(|m| m == caller.id()))
     }
 
     /// Whether the server's name must point at this network: something
@@ -515,9 +558,22 @@ async fn forwards(mail: &Mail, s: &Settings) -> Result<String> {
 
 async fn address_record(mail: &Mail, s: &Settings) -> Result<String> {
     let d = s.primary().ok_or_else(|| anyhow!("no domain"))?;
+    let host = s.hostname();
+    if !d.on_cloudflare() {
+        // Kept by hand: the address is noted, and the name checked.
+        if !s.needs_address() {
+            return Ok("not needed".into());
+        }
+        let ip = crate::forward::public_ip(&mail.state)
+            .ok_or_else(|| anyhow!("this network's public address is not known yet"))?;
+        mail.update(|m| m.address = ip.to_string())?;
+        return match dns::ips(&host).await {
+            Ok(found) if found.contains(&ip) => Ok(format!("{host} → {ip}")),
+            _ => Err(anyhow!("add an A record at your DNS host: {host} → {ip}")),
+        };
+    }
     let cfs = cloud::settings(mail)?;
     let cf = Cloudflare::new(&mail.state.http, &cfs.token);
-    let host = s.hostname();
     if !s.needs_address() {
         cloud::remove(&cf, &d.zone_id, "A", &host, |r| r.comment == cloud::MARK).await?;
         return Ok("not needed".into());
@@ -536,18 +592,151 @@ async fn address_record(mail: &Mail, s: &Settings) -> Result<String> {
     Ok(format!("{host} → {ip}"))
 }
 
+// ---- records kept by hand ----
+
+/// One DNS record mail needs, and whether DNS already answers with it.
+#[derive(Serialize)]
+pub struct Want {
+    kind: &'static str,
+    name: String,
+    value: String,
+    priority: Option<u16>,
+    found: bool,
+}
+
+/// A TXT value without the spaces and quotes DNS hosts add or drop.
+fn squash(v: &str) -> String {
+    v.chars()
+        .filter(|c| !c.is_whitespace() && *c != '"')
+        .collect()
+}
+
+async fn txt(name: &str) -> Vec<String> {
+    dns::txt(name).await.unwrap_or_default()
+}
+
+/// Every record the domain needs for this setup, checked against what DNS
+/// answers now.
+async fn wanted(mail: &Mail, s: &Settings, d: &Domain) -> Result<Vec<Want>> {
+    let host = s.hostname();
+    let mut out = Vec::new();
+    if s.receive == Receive::Port {
+        let found = dns::mx(&d.name)
+            .await
+            .is_ok_and(|l| l.iter().any(|(_, h)| h.eq_ignore_ascii_case(&host)));
+        out.push(Want {
+            kind: "MX",
+            name: d.name.clone(),
+            value: host.clone(),
+            priority: Some(10),
+            found,
+        });
+    }
+    if s.primary().is_some_and(|p| p.name == d.name) && s.needs_address() {
+        if let Some(ip) = crate::forward::public_ip(&mail.state) {
+            let found = dns::ips(&host).await.is_ok_and(|l| l.contains(&ip));
+            out.push(Want {
+                kind: "A",
+                name: host.clone(),
+                value: ip.to_string(),
+                priority: None,
+                found,
+            });
+        }
+    }
+    let key = mail.make_dkim_key(&d.name).await?;
+    let dkim = auth::record(&key);
+    let name = format!("{SELECTOR}._domainkey.{}", d.name);
+    let found = txt(&name).await.iter().any(|t| squash(t) == squash(&dkim));
+    out.push(Want {
+        kind: "TXT",
+        name,
+        value: dkim,
+        priority: None,
+        found,
+    });
+    let mut spf = Vec::new();
+    if s.send == Send::Direct {
+        spf.push(format!("a:{host}"));
+    }
+    if s.send == Send::Cloudflare || s.receive == Receive::Cloudflare {
+        spf.push(cloud::CLOUDFLARE_SPF.to_owned());
+    }
+    if !spf.is_empty() {
+        let existing = txt(&d.name)
+            .await
+            .into_iter()
+            .find(|t| t.to_ascii_lowercase().starts_with("v=spf1"));
+        let found = existing.as_ref().is_some_and(|e| {
+            let e = e.to_ascii_lowercase();
+            spf.iter().all(|w| e.split_whitespace().any(|t| t == w))
+        });
+        out.push(Want {
+            kind: "TXT",
+            name: d.name.clone(),
+            value: cloud::merge_spf(existing.as_deref().unwrap_or(""), &spf, &[]),
+            priority: None,
+            found,
+        });
+    }
+    let name = format!("_dmarc.{}", d.name);
+    let existing = txt(&name)
+        .await
+        .into_iter()
+        .find(|t| t.starts_with("v=DMARC1"));
+    out.push(Want {
+        kind: "TXT",
+        name,
+        found: existing.is_some(),
+        value: existing.unwrap_or_else(|| cloud::DMARC.into()),
+        priority: None,
+    });
+    Ok(out)
+}
+
+/// Setup's step for a domain whose records are added by hand: which are
+/// still missing. The server's own address has its own step.
+async fn check_by_hand(mail: &Mail, s: &Settings, d: &Domain) -> Result<String> {
+    let missing: Vec<String> = wanted(mail, s, d)
+        .await?
+        .into_iter()
+        .filter(|w| !w.found && w.kind != "A")
+        .map(|w| format!("{} {}", w.kind, w.name))
+        .collect();
+    if missing.is_empty() {
+        Ok("every record is in place".into())
+    } else {
+        Err(anyhow!("add at your DNS host: {}", missing.join(", ")))
+    }
+}
+
+/// Points `host` at the tunnel, for what reaches mail through it.
+async fn tunnel_cname(cf: &Cloudflare<'_>, tunnel_id: &str, zone: &str, host: &str) -> Result<()> {
+    cloud::upsert(
+        cf,
+        zone,
+        json!({ "type": "CNAME", "name": host, "content": format!("{tunnel_id}.cfargotunnel.com"), "proxied": true }),
+        |r| r.kind == "CNAME",
+    )
+    .await
+}
+
 /// Puts everything the settings ask for in place, step by step.
 async fn apply(mail: Arc<Mail>) {
     let s = mail.settings();
     let n = s.domains.len();
-    let total = 4
-        + n * 3
+    let on_cf = s.domains.iter().filter(|d| d.on_cloudflare()).count();
+    let total = (n + on_cf)
+        + 1
         + match s.receive {
-            Receive::Port => n,
+            Receive::Port => on_cf,
             Receive::Cloudflare => 2 + n,
         }
         + usize::from(s.apps == Apps::Port || s.receive == Receive::Port)
-        + if s.send == Send::Cloudflare { n } else { 0 };
+        + 1
+        + on_cf * 2
+        + if s.send == Send::Cloudflare { n } else { 0 }
+        + usize::from(s.needs_cloudflare());
     if !mail.begin(total) {
         return;
     }
@@ -564,36 +753,36 @@ async fn run(mail: &Mail, s: &Settings) {
             mail.record(&name, done)
         }};
     }
-    let cfs = match cloud::settings(mail) {
-        Ok(c) => c,
-        Err(e) => {
-            mail.record("Cloudflare", Err(e));
-            return;
+    // Cloudflare only when a domain is kept there or a Cloudflare way is picked.
+    let parts = if s.needs_cloudflare() {
+        match cloud::settings(mail) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                mail.record("Cloudflare", Err(e));
+                return;
+            }
         }
+    } else {
+        None
     };
-    let cf = Cloudflare::new(&mail.state.http, &cfs.token);
-    let tunnel = format!("{}.cfargotunnel.com", cfs.tunnel_id);
-    let cname = |host: String, zone: String| {
-        let cf = &cf;
-        let tunnel = tunnel.clone();
-        async move {
-            cloud::upsert(
-                cf,
-                &zone,
-                json!({ "type": "CNAME", "name": host, "content": tunnel, "proxied": true }),
-                |r| r.kind == "CNAME",
-            )
-            .await
-        }
-    };
+    let cf = parts
+        .as_ref()
+        .map(|c| (Cloudflare::new(&mail.state.http, &c.token), c));
     let host = s.hostname();
 
     for d in &s.domains {
+        let Some((cf, _)) = cf.as_ref().filter(|_| d.on_cloudflare()) else {
+            step!(
+                format!("Records for {}", d.name),
+                check_by_hand(mail, s, d).await
+            );
+            continue;
+        };
         step!(format!("DKIM for {}", d.name), {
             let key = mail.make_dkim_key(&d.name).await?;
             let name = format!("{SELECTOR}._domainkey.{}", d.name);
             cloud::upsert(
-                &cf,
+                cf,
                 &d.zone_id,
                 json!({ "type": "TXT", "name": name, "content": auth::record(&key) }),
                 |_| true,
@@ -603,7 +792,7 @@ async fn run(mail: &Mail, s: &Settings) {
         });
         step!(
             format!("DMARC for {}", d.name),
-            cloud::dmarc(&cf, &d.zone_id, &d.name).await
+            cloud::dmarc(cf, &d.zone_id, &d.name).await
         );
     }
     step!(format!("Address of {host}"), address_record(mail, s).await);
@@ -611,15 +800,18 @@ async fn run(mail: &Mail, s: &Settings) {
     match s.receive {
         Receive::Port => {
             for d in &s.domains {
+                let Some((cf, _)) = cf.as_ref().filter(|_| d.on_cloudflare()) else {
+                    continue;
+                };
                 step!(format!("Receiving for {}", d.name), {
-                    let _ = cloud::catch_all(&cf, &d.zone_id, false).await;
-                    cloud::disable_routing(&cf, &d.zone_id).await?;
-                    cloud::remove(&cf, &d.zone_id, "MX", &d.name, |r| {
+                    let _ = cloud::catch_all(cf, &d.zone_id, false).await;
+                    cloud::disable_routing(cf, &d.zone_id).await?;
+                    cloud::remove(cf, &d.zone_id, "MX", &d.name, |r| {
                         !r.content.eq_ignore_ascii_case(&host)
                     })
                     .await?;
                     cloud::upsert(
-                        &cf,
+                        cf,
                         &d.zone_id,
                         json!({ "type": "MX", "name": d.name, "content": host, "priority": 10 }),
                         |_| true,
@@ -628,18 +820,22 @@ async fn run(mail: &Mail, s: &Settings) {
                     Ok(format!("MX → {host}, port 25"))
                 });
             }
-            if let Some(p) = s.primary() {
-                let _ = cloud::remove(&cf, &p.zone_id, "CNAME", &s.inbound_host(), |r| {
+            if let (Some((cf, _)), Some(p)) = (&cf, s.primary().filter(|p| p.on_cloudflare())) {
+                let _ = cloud::remove(cf, &p.zone_id, "CNAME", &s.inbound_host(), |r| {
                     r.comment == cloud::MARK
                 })
                 .await;
             }
         }
         Receive::Cloudflare => {
+            // Setup only takes this way with every domain on Cloudflare.
+            let Some((cf, cfs)) = &cf else {
+                return;
+            };
             let inbound = s.inbound_host();
             step!("Email Worker".into(), {
                 cloud::deploy_worker(
-                    &cf,
+                    cf,
                     &cfs.account_id,
                     &format!("https://{inbound}/inbound"),
                     &s.secret,
@@ -649,19 +845,19 @@ async fn run(mail: &Mail, s: &Settings) {
             });
             step!(format!("Tunnel address {inbound}"), {
                 let p = s.primary().ok_or_else(|| anyhow!("no domain"))?;
-                cname(inbound.clone(), p.zone_id.clone()).await?;
+                tunnel_cname(cf, &cfs.tunnel_id, &p.zone_id, &inbound).await?;
                 Ok(inbound.clone())
             });
             for d in &s.domains {
                 step!(format!("Email Routing for {}", d.name), {
-                    cloud::remove(&cf, &d.zone_id, "MX", &d.name, |r| r.comment == cloud::MARK)
+                    cloud::remove(cf, &d.zone_id, "MX", &d.name, |r| r.comment == cloud::MARK)
                         .await?;
-                    cloud::enable_routing(&cf, &d.zone_id, &d.name)
+                    cloud::enable_routing(cf, &d.zone_id, &d.name)
                         .await
                         .map_err(|e| {
                             anyhow!("{e:#} (remove MX records another mail provider left first)")
                         })?;
-                    cloud::catch_all(&cf, &d.zone_id, true).await?;
+                    cloud::catch_all(cf, &d.zone_id, true).await?;
                     Ok(format!("all mail for @{} → this server", d.name))
                 });
             }
@@ -675,21 +871,22 @@ async fn run(mail: &Mail, s: &Settings) {
         });
     }
     step!("Ports".into(), forwards(mail, s).await);
-    for d in &s.domains {
+
+    let Some((cf, cfs)) = &cf else {
+        return;
+    };
+    let a = format!("a:{host}");
+    let cloudflare_spf = cloud::CLOUDFLARE_SPF.to_owned();
+    for d in s.domains.iter().filter(|d| d.on_cloudflare()) {
         step!(format!("Mail app settings for {}", d.name), {
             for h in [
                 format!("autodiscover.{}", d.name),
                 format!("autoconfig.{}", d.name),
             ] {
-                cname(h, d.zone_id.clone()).await?;
+                tunnel_cname(cf, &cfs.tunnel_id, &d.zone_id, &h).await?;
             }
             Ok("found from the address alone".into())
         });
-    }
-
-    let a = format!("a:{host}");
-    let cloudflare_spf = cloud::CLOUDFLARE_SPF.to_owned();
-    for d in &s.domains {
         let mut want = Vec::new();
         let mut drop = Vec::new();
         if s.send == Send::Direct {
@@ -704,11 +901,13 @@ async fn run(mail: &Mail, s: &Settings) {
         }
         step!(
             format!("SPF for {}", d.name),
-            cloud::spf(&cf, &d.zone_id, &d.name, &want, &drop).await
+            cloud::spf(cf, &d.zone_id, &d.name, &want, &drop).await
         );
-        if s.send == Send::Cloudflare {
+    }
+    if s.send == Send::Cloudflare {
+        for d in &s.domains {
             step!(format!("Email Sending for {}", d.name), {
-                cloud::enable_sending(&cf, &d.zone_id, &d.name)
+                cloud::enable_sending(cf, &d.zone_id, &d.name)
                     .await
                     .map_err(|e| anyhow!("{e:#} (Email Sending needs the Workers Paid plan)"))?;
                 Ok("mail leaves through Cloudflare".into())
@@ -727,7 +926,17 @@ fn mail() -> ApiResult<Arc<Mail>> {
     get().ok_or_else(|| ApiError::bad("Mail did not start"))
 }
 
-pub async fn view(State(_): State<AppState>) -> ApiResult<Json<Value>> {
+fn forbidden(what: &str) -> ApiError {
+    ApiError(
+        StatusCode::FORBIDDEN,
+        format!("Only mail's admins and the managers of {what} can change it"),
+    )
+}
+
+pub async fn view(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+) -> ApiResult<Json<Value>> {
     let mail = mail()?;
     let s = mail.settings();
     let servers = s.app_servers(&mail).await;
@@ -738,6 +947,31 @@ pub async fn view(State(_): State<AppState>) -> ApiResult<Json<Value>> {
         r["password"] = Value::Null;
     }
     let host = s.hostname();
+    // The domains this caller runs, and for those who set mail up, who
+    // could be made a domain's manager.
+    let manages: Vec<&str> = s
+        .domains
+        .iter()
+        .filter(|d| s.runs(&caller, &format!("@{}", d.name)))
+        .map(|d| d.name.as_str())
+        .collect();
+    let people: Vec<Value> = if caller.is_admin() || caller.can("mail.manage") {
+        state
+            .db
+            .users()?
+            .into_iter()
+            .map(|u| {
+                let name = if u.name.is_empty() {
+                    u.username
+                } else {
+                    u.name
+                };
+                json!({ "id": u.id, "name": name })
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     Ok(Json(json!({
         "settings": settings,
         "hostname": host,
@@ -747,7 +981,24 @@ pub async fn view(State(_): State<AppState>) -> ApiResult<Json<Value>> {
         "queued": mail.store.queued()?.len(),
         "certificate": cert::issued(&mail, &host),
         "servers": servers.map(|(ih, ip, sh, sp)| json!({ "imap_host": ih, "imap_port": ip, "smtp_host": sh, "smtp_port": sp })),
+        "manages": manages,
+        "people": people,
     })))
+}
+
+/// The records every domain needs, checked against DNS now.
+pub async fn records(State(_): State<AppState>) -> ApiResult<Json<Value>> {
+    let mail = mail()?;
+    let s = mail.settings();
+    let mut out = Vec::new();
+    for d in &s.domains {
+        out.push(json!({
+            "domain": d.name,
+            "cloudflare": d.on_cloudflare(),
+            "records": wanted(&mail, &s, d).await?,
+        }));
+    }
+    Ok(Json(json!(out)))
 }
 
 pub async fn zones(State(state): State<AppState>) -> ApiResult<Json<Value>> {
@@ -770,8 +1021,10 @@ pub struct RelayIn {
 
 #[derive(Deserialize)]
 pub struct SetupIn {
-    /// The domain to set up first, when none is yet.
+    /// The domain to set up first, when none is yet: a Cloudflare zone, or
+    /// a name whose records are added by hand.
     zone_id: Option<String>,
+    domain: Option<String>,
     receive: Receive,
     apps: Apps,
     send: Send,
@@ -789,7 +1042,48 @@ async fn zone_named(state: &AppState, zone_id: &str) -> ApiResult<Domain> {
     Ok(Domain {
         name: zone.name.to_ascii_lowercase(),
         zone_id: zone.id,
+        managers: Vec::new(),
     })
+}
+
+/// A domain whose records are added by hand.
+fn by_hand(name: &str) -> ApiResult<Domain> {
+    let name = name
+        .trim()
+        .trim_start_matches('@')
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    let ok = name.len() <= 253
+        && name.contains('.')
+        && name.split('.').all(|l| {
+            !l.is_empty()
+                && l.len() <= 63
+                && !l.starts_with('-')
+                && !l.ends_with('-')
+                && l.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        });
+    if !ok {
+        return Err(ApiError::bad("Enter a domain, such as example.com"));
+    }
+    Ok(Domain {
+        name,
+        zone_id: String::new(),
+        managers: Vec::new(),
+    })
+}
+
+/// The Cloudflare ways need every domain's records on Cloudflare.
+fn cloudflare_ways(s: &Settings) -> ApiResult<()> {
+    if s.receive != Receive::Cloudflare && s.send != Send::Cloudflare {
+        return Ok(());
+    }
+    match s.domains.iter().find(|d| !d.on_cloudflare()) {
+        Some(d) => Err(ApiError::bad(format!(
+            "{} keeps its records by hand; receiving and sending through Cloudflare need every domain on Cloudflare",
+            d.name
+        ))),
+        None => Ok(()),
+    }
 }
 
 fn start(mail: &Arc<Mail>) {
@@ -798,6 +1092,7 @@ fn start(mail: &Arc<Mail>) {
 
 pub async fn setup(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Json(body): Json<SetupIn>,
 ) -> ApiResult<Json<Value>> {
     let mail = mail()?;
@@ -805,9 +1100,13 @@ pub async fn setup(
         return Err(ApiError::conflict("Setup is already running"));
     }
     let mut s = mail.settings();
-    if let Some(z) = body.zone_id.filter(|z| !z.is_empty()) {
-        let d = zone_named(&state, &z).await?;
-        s.domains.retain(|o| o.zone_id != d.zone_id);
+    let first = match (body.zone_id.filter(|z| !z.is_empty()), body.domain) {
+        (Some(z), _) => Some(zone_named(&state, &z).await?),
+        (None, Some(n)) if !n.trim().is_empty() => Some(by_hand(&n)?),
+        _ => None,
+    };
+    if let Some(d) = first {
+        s.domains.retain(|o| !o.name.eq_ignore_ascii_case(&d.name));
         s.domains.insert(0, d);
     }
     if s.domains.is_empty() {
@@ -836,27 +1135,34 @@ pub async fn setup(
     s.receive = body.receive;
     s.apps = body.apps;
     s.send = body.send;
+    cloudflare_ways(&s)?;
     if s.secret.is_empty() {
         s.secret = random_hex(32);
     }
     s.on = true;
     mail.save(s)?;
     start(&mail);
-    view(State(state)).await
+    view(State(state), Extension(caller)).await
 }
 
-pub async fn rerun(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+pub async fn rerun(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+) -> ApiResult<Json<Value>> {
     let mail = mail()?;
     if !mail.settings().ready() {
         return Err(ApiError::bad("Set mail up first"));
     }
     start(&mail);
-    view(State(state)).await
+    view(State(state), Extension(caller)).await
 }
 
 /// Stops mail: its ports close and Cloudflare stops handing it mail. DNS
 /// records, accounts and mail are kept.
-pub async fn off(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+pub async fn off(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+) -> ApiResult<Json<Value>> {
     let mail = mail()?;
     let s = mail.settings();
     for f in mail
@@ -871,7 +1177,7 @@ pub async fn off(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     if s.receive == Receive::Cloudflare {
         if let Ok(cfs) = cloud::settings(&mail) {
             let cf = Cloudflare::new(&state.http, &cfs.token);
-            for d in &s.domains {
+            for d in s.domains.iter().filter(|d| d.on_cloudflare()) {
                 if let Err(err) = cloud::catch_all(&cf, &d.zone_id, false).await {
                     tracing::warn!("Email Routing is still on for {}: {err:#}", d.name);
                 }
@@ -882,33 +1188,108 @@ pub async fn off(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         m.on = false;
         m.forwards.clear();
     })?;
-    let _ = crate::tunnel::sync_ingress(&state).await;
-    view(State(state)).await
+    if s.needs_cloudflare() {
+        let _ = crate::tunnel::sync_ingress(&state).await;
+    }
+    view(State(state), Extension(caller)).await
 }
 
 #[derive(Deserialize)]
 pub struct DomainIn {
-    zone_id: String,
+    /// A Cloudflare zone, or a name whose records are added by hand.
+    zone_id: Option<String>,
+    name: Option<String>,
 }
 
 pub async fn add_domain(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Json(body): Json<DomainIn>,
 ) -> ApiResult<Json<Value>> {
     let mail = mail()?;
-    let d = zone_named(&state, &body.zone_id).await?;
-    if mail.settings().is_local(&d.name) {
+    let d = match (body.zone_id.filter(|z| !z.is_empty()), body.name) {
+        (Some(z), _) => zone_named(&state, &z).await?,
+        (None, Some(n)) => by_hand(&n)?,
+        (None, None) => return Err(ApiError::bad("Enter a domain")),
+    };
+    let mut s = mail.settings();
+    if s.is_local(&d.name) {
         return Err(ApiError::conflict(format!("{} is already here", d.name)));
     }
-    mail.update(|m| m.domains.push(d))?;
-    if mail.settings().ready() {
+    s.domains.push(d);
+    cloudflare_ways(&s)?;
+    let ready = s.ready();
+    mail.save(s)?;
+    if ready {
         start(&mail);
     }
-    view(State(state)).await
+    view(State(state), Extension(caller)).await
+}
+
+#[derive(Deserialize)]
+pub struct DomainEdit {
+    /// Moves its records onto Cloudflare, to the zone of the same name, or
+    /// back to being kept by hand.
+    cloudflare: Option<bool>,
+    /// Dashboard account IDs.
+    managers: Option<Vec<String>>,
+}
+
+pub async fn edit_domain(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(name): Path<String>,
+    Json(body): Json<DomainEdit>,
+) -> ApiResult<Json<Value>> {
+    let mail = mail()?;
+    let mut s = mail.settings();
+    let Some(i) = s
+        .domains
+        .iter()
+        .position(|d| d.name.eq_ignore_ascii_case(&name))
+    else {
+        return Err(ApiError::not_found());
+    };
+    let mut moved = false;
+    if let Some(on) = body.cloudflare {
+        if on != s.domains[i].on_cloudflare() {
+            s.domains[i].zone_id = if on {
+                let cf = state.cloudflare()?;
+                Cloudflare::new(&state.http, &cf.token)
+                    .zones(&cf.account_id)
+                    .await?
+                    .into_iter()
+                    .find(|z| z.name.eq_ignore_ascii_case(&name))
+                    .map(|z| z.id)
+                    .ok_or_else(|| {
+                        ApiError::bad(format!("{name} is not on this Cloudflare account"))
+                    })?
+            } else {
+                String::new()
+            };
+            moved = true;
+        }
+    }
+    if let Some(ids) = body.managers {
+        for id in &ids {
+            if state.db.user(id)?.is_none() {
+                return Err(ApiError::bad("One of those accounts no longer exists"));
+            }
+        }
+        s.domains[i].managers = ids;
+    }
+    cloudflare_ways(&s)?;
+    let ready = s.ready();
+    mail.save(s)?;
+    if moved && ready {
+        start(&mail);
+    }
+    view(State(state), Extension(caller)).await
 }
 
 pub async fn remove_domain(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Path(name): Path<String>,
 ) -> ApiResult<Json<Value>> {
     let mail = mail()?;
@@ -925,7 +1306,7 @@ pub async fn remove_domain(
             "The first domain names the server; remove the others first",
         ));
     }
-    if s.receive == Receive::Cloudflare {
+    if s.receive == Receive::Cloudflare && s.domains[i].on_cloudflare() {
         if let Ok(cfs) = cloud::settings(&mail) {
             let _ = cloud::catch_all(
                 &Cloudflare::new(&state.http, &cfs.token),
@@ -941,7 +1322,7 @@ pub async fn remove_domain(
             m.on = false;
         }
     })?;
-    view(State(state)).await
+    view(State(state), Extension(caller)).await
 }
 
 #[derive(Deserialize)]
@@ -952,6 +1333,7 @@ pub struct OptionsIn {
 
 pub async fn options(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Json(body): Json<OptionsIn>,
 ) -> ApiResult<Json<Value>> {
     mail()?.update(|m| {
@@ -962,7 +1344,7 @@ pub async fn options(
             m.save_sent = v;
         }
     })?;
-    view(State(state)).await
+    view(State(state), Extension(caller)).await
 }
 
 #[derive(Deserialize)]
@@ -982,6 +1364,7 @@ fn hash(password: &str) -> ApiResult<String> {
 
 pub async fn add_account(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Json(body): Json<AccountIn>,
 ) -> ApiResult<Json<Value>> {
     let mail = mail()?;
@@ -997,14 +1380,18 @@ pub async fn add_account(
     if !ok_local {
         return Err(ApiError::bad("That is not an email address"));
     }
-    if !mail.settings().is_local(domain) {
+    let s = mail.settings();
+    if !s.is_local(domain) {
         return Err(ApiError::bad("Use one of this server's domains"));
+    }
+    if !s.runs(&caller, &address) {
+        return Err(forbidden(domain));
     }
     let h = hash(&body.password)?;
     mail.store
         .add_account(&address, body.name.trim(), &h)
         .map_err(|e| ApiError::conflict(e.to_string()))?;
-    view(State(state)).await
+    view(State(state), Extension(caller)).await
 }
 
 #[derive(Deserialize)]
@@ -1016,12 +1403,16 @@ pub struct AccountEdit {
 
 pub async fn edit_account(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Path(address): Path<String>,
     Json(body): Json<AccountEdit>,
 ) -> ApiResult<Json<Value>> {
     let mail = mail()?;
     if !mail.store.exists(&address) {
         return Err(ApiError::not_found());
+    }
+    if !mail.settings().runs(&caller, &address) {
+        return Err(forbidden(&address));
     }
     let h = body.password.as_deref().map(hash).transpose()?;
     mail.store.edit_account(
@@ -1030,15 +1421,20 @@ pub async fn edit_account(
         h.as_deref(),
         body.apps,
     )?;
-    view(State(state)).await
+    view(State(state), Extension(caller)).await
 }
 
 pub async fn delete_account(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Path(address): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    mail()?.store.delete_account(&address)?;
-    view(State(state)).await
+    let mail = mail()?;
+    if !mail.settings().runs(&caller, &address) {
+        return Err(forbidden(&address));
+    }
+    mail.store.delete_account(&address)?;
+    view(State(state), Extension(caller)).await
 }
 
 #[derive(Deserialize)]
@@ -1050,38 +1446,53 @@ pub struct AliasIn {
 
 pub async fn set_alias(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Json(body): Json<AliasIn>,
 ) -> ApiResult<Json<Value>> {
     let mail = mail()?;
     let alias = body.alias.trim().to_ascii_lowercase();
+    let target = body.target.trim();
     let domain = alias.rsplit_once('@').map_or("", |(_, d)| d);
-    if !mail.settings().is_local(domain) {
+    let s = mail.settings();
+    if !s.is_local(domain) {
         return Err(ApiError::bad("Use one of this server's domains"));
     }
-    if !mail.store.exists(body.target.trim()) {
+    if !mail.store.exists(target) {
         return Err(ApiError::bad("Send it to one of the accounts"));
     }
-    mail.store.set_alias(&alias, body.target.trim())?;
-    view(State(state)).await
+    // Both ends must be the caller's to run.
+    if !s.runs(&caller, &alias) || !s.runs(&caller, target) {
+        return Err(forbidden(domain));
+    }
+    mail.store.set_alias(&alias, target)?;
+    view(State(state), Extension(caller)).await
 }
 
 pub async fn delete_alias(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Path(alias): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    mail()?.store.delete_alias(&alias)?;
-    view(State(state)).await
+    let mail = mail()?;
+    if !mail.settings().runs(&caller, &alias) {
+        return Err(forbidden(&alias));
+    }
+    mail.store.delete_alias(&alias)?;
+    view(State(state), Extension(caller)).await
 }
 
 pub async fn log(State(_): State<AppState>) -> ApiResult<Json<Value>> {
     Ok(Json(json!(mail()?.store.logs(200)?)))
 }
 
-pub async fn retry(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+pub async fn retry(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+) -> ApiResult<Json<Value>> {
     let mail = mail()?;
     mail.store.retry_all()?;
     mail.wake.notify_one();
-    view(State(state)).await
+    view(State(state), Extension(caller)).await
 }
 
 #[cfg(test)]
@@ -1101,6 +1512,7 @@ mod tests {
             domains: vec![Domain {
                 name: "example.com".into(),
                 zone_id: "z1".into(),
+                managers: Vec::new(),
             }],
             on: true,
             save_sent: true,
@@ -1143,6 +1555,29 @@ mod tests {
                 return all;
             }
         }
+    }
+
+    #[test]
+    fn domains_by_hand_are_checked() {
+        let d = by_hand(" @Example.COM. ").unwrap();
+        assert_eq!(d.name, "example.com");
+        assert!(!d.on_cloudflare());
+        for bad in ["example", "-a.com", "a..com", "a b.com", ""] {
+            assert!(by_hand(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn cloudflare_ways_need_every_domain_there() {
+        let mut s = Settings {
+            domains: vec![by_hand("a.com").unwrap()],
+            ..Settings::default()
+        };
+        assert!(cloudflare_ways(&s).is_ok() && !s.needs_cloudflare());
+        s.receive = Receive::Cloudflare;
+        assert!(cloudflare_ways(&s).is_err());
+        s.domains[0].zone_id = "z1".into();
+        assert!(cloudflare_ways(&s).is_ok());
     }
 
     #[tokio::test]

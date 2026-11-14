@@ -13,6 +13,8 @@ use crate::state::CfSettings;
 pub const MARK: &str = "myTunnels mail";
 /// Cloudflare's SPF, for Email Routing and Email Sending.
 pub const CLOUDFLARE_SPF: &str = "include:_spf.mx.cloudflare.net";
+/// The DMARC policy a domain is given when it has none of its own.
+pub const DMARC: &str = "v=DMARC1; p=quarantine; adkim=r; aspf=r";
 /// The Email Worker deployed to the account.
 const WORKER: &str = "email-inbound";
 const WORKER_JS: &str = include_str!("worker.js");
@@ -209,7 +211,7 @@ pub async fn dmarc(cf: &Cloudflare<'_>, zone: &str, domain: &str) -> Result<Stri
     {
         return Ok(r.content);
     }
-    let policy = "v=DMARC1; p=quarantine; adkim=r; aspf=r";
+    let policy = DMARC;
     upsert(
         cf,
         zone,

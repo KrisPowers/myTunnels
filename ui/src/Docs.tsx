@@ -49,19 +49,20 @@ const CONTENT: Record<string, ReactNode> = {
   mail: (
     <>
       <Doc title="What it does">
-        <p><b>Mail</b> is a mail server for addresses on your own domains: it receives mail, keeps each account's mailboxes on this computer, and sends mail, signed with DKIM. Outlook, Apple Mail, Thunderbird and phones read and send it over IMAP and SMTP. Its DNS records (MX, SPF, DKIM, DMARC and the server's address) are kept on Cloudflare for you, so the domain must be on the connected Cloudflare account.</p>
+        <p><b>Mail</b> is a mail server for addresses on your own domains: it receives mail, keeps each account's mailboxes on this computer, and sends mail, signed with DKIM. Outlook, Apple Mail, Thunderbird and phones read and send it over IMAP and SMTP.</p>
+        <p>Each domain's DNS records (MX, SPF, DKIM, DMARC and the server's address) are kept one of two ways. With <b>Any DNS host</b>, you add them where the domain's DNS is: <b>Domains</b> lists each record with its value to copy, and each turns green once DNS answers with it. With <b>Cloudflare</b>, the domain is on the connected Cloudflare account and setup writes them for you. A domain's menu moves it between the two.</p>
       </Doc>
       <Doc title="Picking the ways in and out">
-        <p>Setup asks how each part is reached, and any mix works:</p>
+        <p>Setup goes a step at a time: the domain, how mail arrives, how mail apps connect, how mail leaves, then a last look. Any mix works, except that the Cloudflare ways need every domain on Cloudflare:</p>
         <ul>
           <li><b>Receiving, Port forward</b>: the traditional way. Port 25 is forwarded to this computer and the domain's MX record points at <code>mail.</code> on it, which follows this network's public address. <b>Cloudflare</b>: Email Routing takes the mail and a Worker posts it here through the tunnel, with no port open.</li>
-          <li><b>Mail apps, Port forward</b>: IMAP on 993 and SMTP on 465, with a Let's Encrypt certificate proved through Cloudflare DNS. <b>Tailscale</b>: IMAP on 443 and SMTP on 8443 through Tailscale Funnel, with Tailscale's certificate.</li>
+          <li><b>Mail apps, Port forward</b>: IMAP on 993 and SMTP on 465, with a Let's Encrypt certificate, proved through Cloudflare DNS, or over port 80 while it is made for a domain kept by hand. <b>Tailscale</b>: IMAP on 443 and SMTP on 8443 through Tailscale Funnel, with Tailscale's certificate.</li>
           <li><b>Sending, Direct</b>: from this computer to each recipient's server on port 25. Many internet providers block that; <b>Relay</b> sends through another SMTP server instead, and <b>Cloudflare</b> through Email Sending, which needs the Workers Paid plan.</li>
         </ul>
-        <p>The ports it opens are rows on <b>Routes</b>, named <b>Mail</b>. <b>Change setup</b> in the page's menu switches any part; the ports and records follow.</p>
+        <p>The ports it opens are rows on <b>Routes</b>, named <b>Mail</b>. <b>Change how mail moves</b> switches any part; the ports and records follow.</p>
       </Doc>
       <Doc title="Accounts">
-        <p>Add accounts under <b>Accounts</b>, with an address on one of the domains and a password. Mail apps sign in with the full address. <b>Aliases</b> send another address, or <code>@domain</code> for everything else at it, to an account. Mail for <code>postmaster</code> and <code>abuse</code> goes to the first account. Mail apps find their settings from the address alone, through <code>autodiscover.</code> and <code>autoconfig.</code> on each domain.</p>
+        <p><b>Accounts</b> lists each domain with its accounts and aliases. Add an account from the domain's plus, with an address and a password; <b>Turn mail apps off</b> keeps an account from signing in to IMAP and SMTP while its mail still arrives. A domain's <b>Managers</b>, set on <b>Domains</b>, are dashboard accounts with View mail that run its accounts and aliases without setting mail up. Mail apps sign in with the full address. <b>Aliases</b> send another address, or <code>@domain</code> for everything else at it, to an account. Mail for <code>postmaster</code> and <code>abuse</code> goes to the first account. Mail apps find their settings from the address alone, through <code>autodiscover.</code> and <code>autoconfig.</code> on each domain.</p>
       </Doc>
       <Doc title="Checks on mail that comes in">
         <p>Each message is checked with SPF, DKIM and DMARC. Mail that fails, or claims to be from your own domains without proof, goes to Junk; <b>Refuse spoofed mail</b> turns away mail whose sender's policy says reject. Attachments that can run code are marked <code>$Risky</code>, newsletters <code>$Marketing</code>. <b>Activity</b> lists what came in and went out.</p>

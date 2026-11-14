@@ -569,9 +569,12 @@ export type MailReceive = "port" | "cloudflare";
 export type MailApps = "port" | "tailscale";
 export type MailSend = "direct" | "relay" | "cloudflare";
 export interface MailRelay { host: string; port: number; security: string; username: string; password_set?: boolean }
+// A domain: its records kept on Cloudflare in zone_id, or added by hand when
+// it is empty; managers are dashboard account IDs that run its accounts.
+export interface MailDomain { name: string; zone_id: string; managers: string[] }
 export interface MailSettings {
   // The first is the primary: the server is mail. on it.
-  domains: { name: string; zone_id: string }[];
+  domains: MailDomain[];
   receive: MailReceive;
   apps: MailApps;
   send: MailSend;
@@ -594,10 +597,19 @@ export interface MailState {
   certificate: number | null;
   // Where mail apps find IMAP and SMTP.
   servers: { imap_host: string; imap_port: number; smtp_host: string; smtp_port: number } | null;
+  // The domains whose accounts this caller runs.
+  manages: string[];
+  // Who could be made a domain's manager; only for those who set mail up.
+  people: { id: string; name: string }[];
 }
+// A record mail needs, and whether DNS answers with it yet.
+export interface MailRecord { kind: string; name: string; value: string; priority: number | null; found: boolean }
+export interface MailRecords { domain: string; cloudflare: boolean; records: MailRecord[] }
 export interface MailLog { at: number; dir: "in" | "out"; from: string; to: string; size: number; status: string; detail: string }
 export interface MailSetupBody {
+  // The first domain: a Cloudflare zone, or a name whose records are added by hand.
   zone_id: string | null;
+  domain: string | null;
   receive: MailReceive;
   apps: MailApps;
   send: MailSend;
@@ -665,7 +677,10 @@ export const api = {
   rerunMail: () => call<MailState>("/mail/apply", "POST"),
   mailOff: () => call<MailState>("/mail/off", "POST"),
   mailOptions: (patch: Partial<{ reject_dmarc: boolean; save_sent: boolean }>) => call<MailState>("/mail/options", "PATCH", patch),
-  addMailDomain: (zone_id: string) => call<MailState>("/mail/domains", "POST", { zone_id }),
+  mailRecords: () => call<MailRecords[]>("/mail/records"),
+  addMailDomain: (body: { zone_id: string } | { name: string }) => call<MailState>("/mail/domains", "POST", body),
+  editMailDomain: (name: string, patch: Partial<{ cloudflare: boolean; managers: string[] }>) =>
+    call<MailState>(`/mail/domains/${encodeURIComponent(name)}`, "PATCH", patch),
   removeMailDomain: (name: string) => call<MailState>(`/mail/domains/${encodeURIComponent(name)}`, "DELETE"),
   addMailAccount: (body: { address: string; name: string; password: string }) => call<MailState>("/mail/accounts", "POST", body),
   editMailAccount: (address: string, patch: Partial<{ name: string; password: string; apps: boolean }>) =>

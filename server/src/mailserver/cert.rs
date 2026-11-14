@@ -1,11 +1,14 @@
 //! The certificate mail apps and other servers see on this server's own
-//! ports: from Let's Encrypt, proved through a TXT record on Cloudflare,
-//! so no port has to be opened for it. Renewed after 60 days.
+//! ports: from Let's Encrypt, proved through a TXT record when the primary
+//! domain is on Cloudflare, so no port has to be opened for it, or over HTTP
+//! on port 80 when its records are kept by hand. Renewed after 60 days.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
+use axum::extract::Path;
 use instant_acme::{
     Account, AccountCredentials, AuthorizationStatus, ChallengeType, Identifier, LetsEncrypt,
     NewAccount, NewOrder, OrderStatus, RetryPolicy,
@@ -18,7 +21,8 @@ use tokio_rustls::TlsAcceptor;
 
 use super::{cloud, net, Mail};
 use crate::cloudflare::Cloudflare;
-use crate::util::{lock, now};
+use crate::db::Forward;
+use crate::util::{lock, now, random_hex};
 
 const KEY: &str = "mail_cert";
 const ACCOUNT: &str = "mail_acme";
@@ -136,7 +140,14 @@ async fn account(mail: &Mail) -> Result<Account> {
     Ok(account)
 }
 
+/// The loopback port Let's Encrypt's HTTP check is answered on, reached from
+/// port 80 only while a certificate is being made.
+const HTTP_PORT: u16 = 2080;
+
 async fn order(mail: &Mail, host: &str, zone: &str) -> Result<(String, String)> {
+    if zone.is_empty() {
+        return order_http(mail, host).await;
+    }
     let s = cloud::settings(mail)?;
     let cf = Cloudflare::new(&mail.state.http, &s.token);
     let account = account(mail).await?;
@@ -175,4 +186,86 @@ async fn order(mail: &Mail, host: &str, zone: &str) -> Result<(String, String)> 
     let key = order.finalize().await?;
     let chain = order.poll_certificate(&RetryPolicy::default()).await?;
     Ok((chain, key))
+}
+
+/// For a domain whose records are kept by hand, Let's Encrypt fetches a
+/// token over HTTP from the server's name instead: port 80 is forwarded
+/// here for the check and closed again after.
+async fn order_http(mail: &Mail, host: &str) -> Result<(String, String)> {
+    let account = account(mail).await?;
+    let ids = [Identifier::Dns(host.to_owned())];
+    let mut order = account.new_order(&NewOrder::new(&ids)).await?;
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", HTTP_PORT))
+        .await
+        .context("the certificate check's port is in use")?;
+    let answers: Arc<std::sync::Mutex<HashMap<String, String>>> = Arc::default();
+    let served = answers.clone();
+    let app = axum::Router::new().route(
+        "/.well-known/acme-challenge/{token}",
+        axum::routing::get(move |Path(token): Path<String>| {
+            let served = served.clone();
+            async move {
+                lock(&served)
+                    .get(&token)
+                    .cloned()
+                    .ok_or(axum::http::StatusCode::NOT_FOUND)
+            }
+        }),
+    );
+    let server = tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    let forward = Forward {
+        id: random_hex(8),
+        method: "port".into(),
+        name: "Mail: certificate check".into(),
+        target_host: None,
+        target_port: HTTP_PORT,
+        protocol: "tcp".into(),
+        public_port: 80,
+        public: false,
+        // Closes on its own if this is cut short.
+        expires_at: now() + 900,
+        enabled: true,
+        created_at: now(),
+    };
+    let forward = match crate::forward::add(&mail.state, forward).await {
+        Ok(f) => f,
+        Err(e) => {
+            server.abort();
+            bail!("port 80 could not be opened for the check: {}", e.1);
+        }
+    };
+    let done = async {
+        let mut auths = order.authorizations();
+        while let Some(auth) = auths.next().await {
+            let mut auth = auth?;
+            match auth.status {
+                AuthorizationStatus::Valid => continue,
+                AuthorizationStatus::Pending => {}
+                other => bail!("Let's Encrypt says the name is {other:?}"),
+            }
+            let mut challenge = auth
+                .challenge(ChallengeType::Http01)
+                .ok_or_else(|| anyhow!("Let's Encrypt offered no HTTP check"))?;
+            lock(&answers).insert(
+                challenge.token.clone(),
+                challenge.key_authorization().as_str().to_owned(),
+            );
+            challenge.set_ready().await?;
+        }
+        let status = order.poll_ready(&RetryPolicy::default()).await?;
+        if status != OrderStatus::Ready {
+            bail!(
+                "Let's Encrypt could not reach {host} on port 80 ({status:?}); check its A record"
+            );
+        }
+        let key = order.finalize().await?;
+        let chain = order.poll_certificate(&RetryPolicy::default()).await?;
+        Ok((chain, key))
+    }
+    .await;
+    let _ = crate::forward::take_down(&mail.state, &forward).await;
+    server.abort();
+    done
 }
