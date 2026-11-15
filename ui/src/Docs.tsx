@@ -7,7 +7,7 @@ export const DOCS: [string, string, IconName][] = [
   ["dashboard", "Dashboard", "dashboard"],
   ["containers", "Containers", "deployed_code"],
   ["storage", "Storage", "cloud"],
-  ["forward", "Routes", "signpost"],
+  ["forward", "Routes", "wifi_cog"],
   ["mail", "Mail", "mail"],
   ["access", "Access Control", "shield"],
   ["devices", "Devices", "devices"],

@@ -88,7 +88,6 @@ const paths = {
   select_all: "M280-280v-400h400v400H280Zm80-80h240v-240H360v240ZM200-200v80q-33 0-56.5-23.5T120-200h80Zm-80-80v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm80-160h-80q0-33 23.5-56.5T200-840v80Zm80 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80q0 33-23.5 56.5T760-120Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80q33 0 56.5 23.5T840-760h-80Z",
   sell: "M856-390 570-104q-12 12-27 18t-30 6q-15 0-30-6t-27-18L103-457q-11-11-17-25.5T80-513v-287q0-33 23.5-56.5T160-880h287q16 0 31 6.5t26 17.5l352 353q12 12 17.5 27t5.5 30q0 15-5.5 29.5T856-390ZM513-160l286-286-353-354H160v286l353 354ZM260-640q25 0 42.5-17.5T320-700q0-25-17.5-42.5T260-760q-25 0-42.5 17.5T200-700q0 25 17.5 42.5T260-640Zm220 160Z",
   settings: "m370-80-16-128q-13-5-24.5-12T307-235l-119 50L78-375l103-78q-1-7-1-13.5v-27q0-6.5 1-13.5L78-585l110-190 119 50q11-8 23-15t24-12l16-128h220l16 128q13 5 24.5 12t22.5 15l119-50 110 190-103 78q1 7 1 13.5v27q0 6.5-2 13.5l103 78-110 190-118-50q-11 8-23 15t-24 12L590-80H370Zm70-80h79l14-106q31-8 57.5-23.5T639-327l99 41 39-68-86-65q5-14 7-29.5t2-31.5q0-16-2-31.5t-7-29.5l86-65-39-68-99 42q-22-23-48.5-38.5T533-694l-13-106h-79l-14 106q-31 8-57.5 23.5T321-633l-99-41-39 68 86 64q-5 15-7 30t-2 32q0 16 2 31t7 30l-86 65 39 68 99-42q22 23 48.5 38.5T427-266l13 106Zm42-180q58 0 99-41t41-99q0-58-41-99t-99-41q-59 0-99.5 41T342-480q0 58 40.5 99t99.5 41Zm-2-140Z",
-  signpost: "M440-80v-160H240L120-360l120-120h200v-80H160v-240h280v-80h80v80h200l120 120-120 120H520v80h280v240H520v160h-80ZM240-640h447l40-40-40-40H240v80Zm33 320h447v-80H273l-40 40 40 40Zm-33-320v-80 80Zm480 320v-80 80Z",
   shield: "M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Z",
   slideshow: "m380-300 280-180-280-180v360ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z",
   sort: "M120-240v-80h240v80H120Zm0-200v-80h480v80H120Zm0-200v-80h720v80H120Z",
@@ -104,12 +103,23 @@ const paths = {
   warning: "m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm302-40q17 0 28.5-11.5T520-280q0-17-11.5-28.5T480-320q-17 0-28.5 11.5T440-280q0 17 11.5 28.5T480-240Zm-40-120h80v-200h-80v200Zm40-100Z",
 } as const;
 
-export type IconName = keyof typeof paths;
+// Lucide (lucide.dev, ISC), stroked in its 24-unit box, for shapes Material lacks.
+const strokes = {
+  wifi_cog: "M14.305 19.53l.923 -.382M15.228 16.852l-.923 -.383M16.852 15.228l-.383 -.923M16.852 20.772l-.383 .924M19.148 15.228l.383 -.923M19.53 21.696l-.382 -.924M2 8.82a15 15 0 0120 0M20.772 16.852l.924 -.383M20.772 19.148l.924 .383M5 12.859a10 10 0 0110.18-2.342M8.5 16.429a5 5 0 011.998-1.2M15 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0",
+} as const;
+
+export type IconName = keyof typeof paths | keyof typeof strokes;
 
 export function Icon({ name, size = 20, className }: { name: IconName; size?: number; className?: string }) {
+  const cls = "icon" + (className ? " " + className : "");
+  if (name in strokes) return (
+    <svg className={cls} width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d={strokes[name as keyof typeof strokes]} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
   return (
-    <svg className={"icon" + (className ? " " + className : "")} width={size} height={size} viewBox="0 -960 960 960" aria-hidden="true" focusable="false">
-      <path d={paths[name]} />
+    <svg className={cls} width={size} height={size} viewBox="0 -960 960 960" aria-hidden="true" focusable="false">
+      <path d={paths[name as keyof typeof paths]} />
     </svg>
   );
 }
