@@ -8,7 +8,7 @@ import {
 import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
-import { AddMenu, Callout, Card, Copy, Dialog, MoreMenu, Row, Switch, TextField, useNotify, type MenuAction } from "./ui";
+import { AddMenu, ArmedButton, Callout, Card, Copy, Dialog, MoreMenu, Row, Switch, TextField, useNotify, type MenuAction } from "./ui";
 
 // A way mail is received, reached by mail apps or sent, with what it means at
 // a glance: each fact is a drawback, ticked when the way has it.
@@ -280,11 +280,9 @@ function Setup({ state, onState }: { state: MailState; onState: (s: MailState) =
   );
 }
 
-function Overview({ state, records, onState, onChange }: { state: MailState; records: MailRecords[] | null; onState: (s: MailState) => void; onChange: () => void }) {
+function Overview({ state, records, onState }: { state: MailState; records: MailRecords[] | null; onState: (s: MailState) => void }) {
   const can = useCan();
   const act = useAct(onState);
-  const s = state.settings;
-  const manage = can("mail.manage");
   const missing = (records ?? []).reduce((n, d) => n + d.records.filter((r) => !r.found).length, 0);
   return (
     <div className="page-body stack">
@@ -303,16 +301,13 @@ function Overview({ state, records, onState, onChange }: { state: MailState; rec
           <Icon name="arrow_forward" size={18} />
         </a>
       )}
-      <Card title="How mail moves" action={manage ? <button type="button" className="btn" onClick={onChange}><Icon name="tune" size={18} />Change</button> : undefined}>
-        <Row title="Receiving"><span className="chip">{labelOf(RECEIVE, s.receive)}</span></Row>
-        <Row title="Mail apps"><span className="chip">{labelOf(APPS, s.apps)}</span></Row>
-        <Row title="Sending" sub={s.send === "relay" && s.relay ? `${s.relay.host}:${s.relay.port}` : undefined}><span className="chip">{labelOf(SEND, s.send)}</span></Row>
-        {state.queued > 0 && (
-          <Row title={`${state.queued} waiting to send`}>
-            {manage && <button type="button" className="btn" onClick={() => act(api.retryMail, "Trying now")}><Icon name="refresh" size={18} />Try now</button>}
-          </Row>
-        )}
-      </Card>
+      {state.queued > 0 && (
+        <div className="mail-todo">
+          <Icon name="upload" size={20} />
+          <span>{state.queued} waiting to send</span>
+          {can("mail.manage") && <button type="button" className="btn small" onClick={() => act(api.retryMail, "Trying now")}><Icon name="refresh" size={16} />Try now</button>}
+        </div>
+      )}
       <Card title="Signing in" sub="In Outlook, Gmail or any app with IMAP, with the full address and its password">
         {state.servers ? (
           <>
@@ -321,13 +316,42 @@ function Overview({ state, records, onState, onChange }: { state: MailState; rec
           </>
         ) : <Row title="Waiting for Tailscale" sub="Mail apps reach this server once Tailscale is connected" />}
       </Card>
+    </div>
+  );
+}
+
+// ---- settings ----
+
+// Settings is how mail moves and what it does, to see, and to change for those who set mail up.
+function Settings({ state, onState, onChange }: { state: MailState; onState: (s: MailState) => void; onChange: () => void }) {
+  const can = useCan();
+  const act = useAct(onState);
+  const s = state.settings;
+  const manage = can("mail.manage");
+  return (
+    <div className="page-body stack">
+      <Card title="How mail moves" action={manage ? <button type="button" className="btn" onClick={onChange}><Icon name="tune" size={18} />Change</button> : undefined}>
+        <Row title="Receiving" sub={RECEIVE.find((o) => o.value === s.receive)?.hint}><span className="chip">{labelOf(RECEIVE, s.receive)}</span></Row>
+        <Row title="Mail apps" sub={APPS.find((o) => o.value === s.apps)?.hint}><span className="chip">{labelOf(APPS, s.apps)}</span></Row>
+        <Row title="Sending" sub={s.send === "relay" && s.relay ? `${s.relay.host}:${s.relay.port}` : SEND.find((o) => o.value === s.send)?.hint}>
+          <span className="chip">{labelOf(SEND, s.send)}</span>
+        </Row>
+      </Card>
+      <Card title="Incoming mail">
+        <Row title="Refuse spoofed mail" sub="Turn away what its sender's DMARC rejects, rather than file it in Junk">
+          <Switch label="Refuse spoofed mail" disabled={!manage} on={s.reject_dmarc} onChange={(v) => act(() => api.mailOptions({ reject_dmarc: v }))} />
+        </Row>
+        <Row title="Keep sent mail" sub="A copy in Sent of what mail apps send">
+          <Switch label="Keep sent mail" disabled={!manage} on={s.save_sent} onChange={(v) => act(() => api.mailOptions({ save_sent: v }))} />
+        </Row>
+      </Card>
       {manage && (
-        <Card title="Options">
-          <Row title="Refuse spoofed mail" sub="Turn away what its sender's DMARC rejects, rather than file it in Junk">
-            <Switch label="Refuse spoofed mail" on={s.reject_dmarc} onChange={(v) => act(() => api.mailOptions({ reject_dmarc: v }))} />
+        <Card title="Server">
+          <Row title="Run setup again" sub="Opens the ports and writes the records once more">
+            <button type="button" className="btn" disabled={state.job.running} onClick={() => act(api.rerunMail, "Setting up again")}><Icon name="refresh" size={18} />Run</button>
           </Row>
-          <Row title="Keep sent mail" sub="A copy in Sent of what mail apps send">
-            <Switch label="Keep sent mail" on={s.save_sent} onChange={(v) => act(() => api.mailOptions({ save_sent: v }))} />
+          <Row title="Turn off" sub="Stops mail and closes its ports; accounts and mail are kept">
+            <ArmedButton icon="block" label="Turn off" armedLabel="Close its ports" onConfirm={() => act(api.mailOff, "Mail is off")} />
           </Row>
         </Card>
       )}
@@ -789,14 +813,15 @@ const TABS: [string, string, IconName][] = [
   ["domains", "Domains", "public"],
   ["accounts", "Accounts", "group"],
   ["activity", "Activity", "history"],
+  ["settings", "Settings", "settings"],
 ];
 
 // MailPage is the IMAP and SMTP server: set up a step at a time the first
-// time, then how mail moves, its domains, the accounts at them, and activity.
+// time, then what is left to do, its domains, the accounts at them, activity,
+// and its settings.
 export function MailPage({ tab }: { tab: string }) {
   const can = useCan();
   const [state, setState] = useState<MailState | null>(null);
-  const act = useAct(setState);
   const [problem, setProblem] = useState("");
   const [changing, setChanging] = useState(false);
   const [records, setRecords] = useState<MailRecords[] | null>(null);
@@ -848,14 +873,6 @@ export function MailPage({ tab }: { tab: string }) {
             </div>
           )}
         </div>
-        {live && manage && (
-          <div className="page-actions">
-            <MoreMenu label="Mail actions" actions={[
-              { label: "Run setup again", icon: "refresh", onClick: () => act(api.rerunMail, "Setting up again") },
-              { label: "Turn off", icon: "block", danger: true, confirm: "Close its ports", onClick: () => act(api.mailOff, "Mail is off") },
-            ]} />
-          </div>
-        )}
       </div>
       {!live ? (
         <div className="page-body">
@@ -873,10 +890,11 @@ export function MailPage({ tab }: { tab: string }) {
               </a>
             ))}
           </nav>
-          {current === "overview" && <Overview state={state} records={records} onState={setState} onChange={() => setChanging(true)} />}
+          {current === "overview" && <Overview state={state} records={records} onState={setState} />}
           {current === "domains" && <Domains state={state} records={records} checking={checking} onCheck={check} onState={setState} />}
           {current === "accounts" && <Accounts state={state} onState={setState} />}
           {current === "activity" && <Activity />}
+          {current === "settings" && <Settings state={state} onState={setState} onChange={() => setChanging(true)} />}
         </>
       )}
       {changing && (
