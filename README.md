@@ -168,13 +168,15 @@ keeps each account's mailboxes in `mail.db` beside the gateway's database, and s
 with DKIM. Outlook, Apple Mail, Thunderbird and phones use it over IMAP and SMTP.
 
 Setup goes a step at a time: the domain, then how mail arrives, how mail apps connect and how mail
-leaves, then a last look before it runs. Each domain's DNS records (MX, SPF, DKIM, DMARC and the
-server's address, `mail.<domain>`) are kept one of two ways:
+leaves. Each way shows at a glance whether it exposes a port, depends on a third party, is usage
+limited, is often blocked on home connections or needs a paid plan. A domain is typed in, and its
+DNS records (MX, SPF, DKIM, DMARC and the server's address, `mail.<domain>`) are added where its
+DNS is hosted: **Domains** lists each record with its value to copy and checks DNS for it, so each
+one turns green as it appears.
 
-- **Any DNS host**: you add them where the domain's DNS is. The **Domains** tab lists each record
-  with its value to copy and checks DNS for it, so each one turns green as it appears.
-- **Cloudflare**: the domain is a zone on the connected Cloudflare account and setup writes the
-  records itself. A domain can be moved between the two from its menu.
+Cloudflare is optional. **Import**, **Cloudflare** on **Domains** (or **Import from Cloudflare**
+at setup) connects with a token and brings in domains from the account, and their records are then
+kept in sync there. A domain's menu turns that sync on or off.
 
 Any number of domains can be added. Each has its own accounts and aliases under **Accounts**, and
 can be given **managers**: dashboard accounts with **View mail** that run that domain's accounts
