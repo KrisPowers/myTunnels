@@ -318,19 +318,16 @@ a.result:hover { background: var(--hover); }
 }
 .badge.big { width: 56px; height: 56px; margin: 0; font-size: 24px; }
 
-/* A value that copies itself when clicked: plain text, underlined with dots. */
+/* A value that copies itself when clicked: plain text with a copy icon, a
+   soft highlight behind it on hover, no underline. */
 .copy {
-  display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none;
-  color: inherit; font: inherit; cursor: pointer; transition: color .15s;
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; margin: -3px -6px; padding: 3px 6px; border: 0; border-radius: 6px;
+  background: none; color: inherit; font: inherit; cursor: pointer; transition: color .15s, background .15s;
 }
-.copy-text {
-  padding-bottom: 2px;
-  background: linear-gradient(to right, currentColor 65%, transparent 0) left bottom / 8px 1px repeat-x;
-}
-.copy:hover .copy-text, .copy.done .copy-text { background: linear-gradient(currentColor, currentColor) left bottom / 100% 1px no-repeat; }
-.copy-icon { opacity: .65; }
-.copy:hover { color: var(--text); }
+.copy-icon { opacity: .5; transition: opacity .15s; }
+.copy:hover { background: var(--hover); color: var(--text); }
 .copy:hover .copy-icon { opacity: 1; }
+.copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .copy.done { color: var(--ok); }
 
 .filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
