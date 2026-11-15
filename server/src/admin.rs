@@ -50,6 +50,10 @@ pub fn router(state: AppState) -> Router {
         .route("/settings", get(settings))
         .route("/settings/cloudflare", put(save_cloudflare))
         .route("/settings/network", put(save_network))
+        .route(
+            "/settings/registrars/{host}",
+            put(save_registrar).delete(remove_registrar),
+        )
         .route("/cloudflare/accounts", post(cloudflare_accounts))
         .route("/zones", get(zones))
         .route("/status", get(status))
@@ -121,6 +125,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/mail/domains/{name}",
             patch(mailserver::edit_domain).delete(mailserver::remove_domain),
+        )
+        .route(
+            "/mail/domains/{name}/dns",
+            get(mailserver::zone::list).post(mailserver::zone::create),
+        )
+        .route(
+            "/mail/domains/{name}/dns/{id}",
+            put(mailserver::zone::update).delete(mailserver::zone::remove),
         )
         .route("/mail/accounts", post(mailserver::add_account))
         .route(
@@ -1055,7 +1067,59 @@ async fn settings(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         "upstream_host": state.snapshot().upstream_host,
         "default_upstream_host": state.config.default_upstream_host,
         "trusted_networks": db.setting("trusted_networks")?.unwrap_or_default(),
+        "registrars": crate::registrar::HOSTS
+            .iter()
+            .map(|h| (h.to_string(), json!(crate::registrar::connected(&state, h))))
+            .collect::<serde_json::Map<_, _>>(),
     })))
+}
+
+#[derive(Deserialize)]
+struct RegistrarBody {
+    key: String,
+    #[serde(default)]
+    secret: String,
+    #[serde(default)]
+    user: String,
+}
+
+/// Connects a registrar whose DNS is changed through its API, once its keys work.
+async fn save_registrar(
+    State(state): State<AppState>,
+    Path(host): Path<String>,
+    Json(body): Json<RegistrarBody>,
+) -> ApiResult<Json<Value>> {
+    if !crate::registrar::HOSTS.contains(&host.as_str()) {
+        return Err(ApiError::not_found());
+    }
+    let keys = crate::registrar::Keys {
+        key: body.key.trim().to_owned(),
+        secret: body.secret.trim().to_owned(),
+        user: body.user.trim().to_owned(),
+    };
+    if keys.key.is_empty()
+        || (host == "namecheap" && keys.user.is_empty())
+        || (host != "namecheap" && keys.secret.is_empty())
+    {
+        return Err(ApiError::bad("Enter every key"));
+    }
+    crate::registrar::check(&state, &host, &keys).await?;
+    state.db.set_setting(
+        &host,
+        &serde_json::to_string(&keys).map_err(anyhow::Error::from)?,
+    )?;
+    settings(State(state)).await
+}
+
+async fn remove_registrar(
+    State(state): State<AppState>,
+    Path(host): Path<String>,
+) -> ApiResult<Json<Value>> {
+    if !crate::registrar::HOSTS.contains(&host.as_str()) {
+        return Err(ApiError::not_found());
+    }
+    state.db.delete_setting(&host)?;
+    settings(State(state)).await
 }
 
 #[derive(Deserialize)]

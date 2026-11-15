@@ -33,6 +33,7 @@ mod queue;
 mod smtp;
 mod store;
 pub mod web;
+pub mod zone;
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -107,14 +108,11 @@ pub struct Domain {
     /// aliases without setting mail up.
     #[serde(default)]
     pub managers: Vec<String>,
-    /// Where its DNS is hosted when its records are added by hand, such as
-    /// `squarespace`, so the dashboard can link there; empty for anywhere.
+    /// The registrar its records are at, read and changed through its API,
+    /// such as `porkbun`; empty when they are added by hand anywhere.
     #[serde(default)]
     pub host: String,
 }
-
-/// The DNS hosts a domain kept by hand can name.
-const HOSTS: [&str; 4] = ["squarespace", "godaddy", "namecheap", "porkbun"];
 
 impl Domain {
     pub fn on_cloudflare(&self) -> bool {
@@ -1054,9 +1052,9 @@ async fn zone_named(state: &AppState, zone_id: &str) -> ApiResult<Domain> {
     })
 }
 
-/// A domain whose records are added by hand, at `host` when it names one.
+/// A domain whose records are added by hand, or kept at the registrar `host`.
 fn by_hand(name: &str, host: &str) -> ApiResult<Domain> {
-    if !host.is_empty() && !HOSTS.contains(&host) {
+    if !host.is_empty() && !crate::registrar::HOSTS.contains(&host) {
         return Err(ApiError::bad("Pick where the domain's DNS is hosted"));
     }
     let name = name
@@ -1227,6 +1225,10 @@ pub async fn add_domain(
         (None, Some(n)) => by_hand(&n, &body.host)?,
         (None, None) => return Err(ApiError::bad("Enter a domain")),
     };
+    if !d.host.is_empty() {
+        // The registrar must answer for it before it is added.
+        crate::registrar::list(&state, crate::registrar::Zone::Registrar(&d.host), &d.name).await?;
+    }
     let mut s = mail.settings();
     if s.is_local(&d.name) {
         return Err(ApiError::conflict(format!("{} is already here", d.name)));
@@ -1247,6 +1249,8 @@ pub struct DomainEdit {
     cloudflare: Option<bool>,
     /// Dashboard account IDs.
     managers: Option<Vec<String>>,
+    /// Makes it the primary domain, which names the server.
+    primary: Option<bool>,
 }
 
 pub async fn edit_domain(
@@ -1291,6 +1295,11 @@ pub async fn edit_domain(
             }
         }
         s.domains[i].managers = ids;
+    }
+    if body.primary == Some(true) && i > 0 {
+        let d = s.domains.remove(i);
+        s.domains.insert(0, d);
+        moved = true;
     }
     cloudflare_ways(&s)?;
     let ready = s.ready();
@@ -1580,7 +1589,7 @@ mod tests {
         for bad in ["example", "-a.com", "a..com", "a b.com", ""] {
             assert!(by_hand(bad, "").is_err(), "{bad}");
         }
-        assert_eq!(by_hand("a.com", "squarespace").unwrap().host, "squarespace");
+        assert_eq!(by_hand("a.com", "porkbun").unwrap().host, "porkbun");
         assert!(by_hand("a.com", "nowhere").is_err());
     }
 
