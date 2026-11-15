@@ -181,7 +181,12 @@ fn run_installer(token: &str, path: &std::path::Path) -> Result<()> {
     let quote = |p: &std::path::Path| p.display().to_string().replace('\'', "''");
     // An earlier update still holding update.txt gets a log of its own.
     let mut log = config::home().join("update.txt");
-    if std::fs::OpenOptions::new().create(true).append(true).open(&log).is_err() {
+    if std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log)
+        .is_err()
+    {
         log = config::home().join(format!("update-{}.txt", crate::util::now()));
     }
     let script = format!(
