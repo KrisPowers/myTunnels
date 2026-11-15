@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useCloudflare } from "./Cloudflare";
 import { api, bytes, message, type DnsRecord, type DnsZone, type MailAccount, type MailDomain, type MailRecords, type MailState, type Registrar } from "./api";
 import { Dropdown, MultiDropdown } from "./Dropdown";
@@ -275,6 +276,7 @@ const TABS: [string, string, IconName][] = [
 
 function DomainPage({ domain, tab, state, onState }: { domain: MailDomain; tab: string; state: MailState; onState: (s: MailState) => void }) {
   const [managing, setManaging] = useState(false);
+  const [bar, setBar] = useState<HTMLElement | null>(null);
   const primary = state.settings.domains[0]?.name === domain.name;
   const actions = useActions(domain, primary, state, onState, () => setManaging(true));
   const current = TABS.some(([k]) => k === tab) ? tab : "dns";
@@ -287,9 +289,12 @@ function DomainPage({ domain, tab, state, onState }: { domain: MailDomain; tab: 
         </div>
         {actions.length > 0 && <div className="page-actions"><MoreMenu label={`Actions for ${domain.name}`} actions={actions} /></div>}
       </div>
-      <SubNav back="#/domains" backLabel="Domains" base={href(domain.name)} items={TABS} current={current} />
+      <div className="sub-nav-row">
+        <SubNav back="#/domains" backLabel="Domains" base={href(domain.name)} items={TABS} current={current} />
+        <div className="sub-nav-actions" ref={setBar} />
+      </div>
       <div className="page-body stack">
-        {current === "dns" && <Dns domain={domain.name} />}
+        {current === "dns" && <Dns domain={domain.name} bar={bar} />}
         {current === "mail" && <Addresses domain={domain.name} state={state} onState={onState} />}
         {current === "activity" && <MailActivity domain={domain.name} />}
         {current === "settings" && (
@@ -310,10 +315,10 @@ const KINDS = ["A", "AAAA", "CNAME", "MX", "TXT"];
 // A record's name within its domain: @ for the domain itself.
 const within = (name: string, domain: string) => (name === domain ? "@" : name.endsWith("." + domain) ? name.slice(0, -domain.length - 1) : name);
 
-// Dns is the domain's records: its real zone, to add to, change and remove
-// from, with any mail needs that DNS lacks; or, for DNS kept elsewhere, what
-// mail needs there.
-function Dns({ domain }: { domain: string }) {
+// Dns is the domain's records, by type: its real zone, to add to, change and
+// remove from, with any mail needs that DNS lacks; or, for DNS kept
+// elsewhere, what mail needs there. Its buttons sit beside the tabs, in `bar`.
+function Dns({ domain, bar }: { domain: string; bar: HTMLElement | null }) {
   const can = useCan();
   const notify = useNotify();
   const [zone, setZone] = useState<DnsZone | null>(null);
@@ -342,39 +347,44 @@ function Dns({ domain }: { domain: string }) {
       notify(message(e), "bad");
     }
   };
+  // Records by type, in the order types are usually read: addresses, aliases, mail, text.
+  const order = (k: string) => (KINDS.indexOf(k) < 0 ? 99 : KINDS.indexOf(k));
+  const kinds = [...new Set((zone?.records ?? []).map((r) => r.kind))].sort((a, b) => order(a) - order(b));
+  const buttons = (
+    <>
+      <button type="button" className="icon-btn" aria-label="Refresh" title="Refresh" disabled={loading} onClick={load}>
+        {loading ? <span className="spinner small" /> : <Icon name="refresh" />}
+      </button>
+      {edit && <button type="button" className="btn primary" onClick={() => setOpen("new")}><Icon name="add" size={18} />Add record</button>}
+    </>
+  );
   return (
     <>
-      <div className="mail-bar-row">
-        <button type="button" className="icon-btn" aria-label="Refresh" title="Refresh" disabled={loading} onClick={load}>
-          {loading ? <span className="spinner small" /> : <Icon name="refresh" />}
-        </button>
-        {edit && <button type="button" className="btn primary" onClick={() => setOpen("new")}><Icon name="add" size={18} />Add record</button>}
-      </div>
+      {bar && createPortal(buttons, bar)}
       {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
       {zone && (
         <div className="card">
           {zone.records.length === 0 ? <p className="empty-note mail-none">No records.</p> : (
-            <div className="table-wrap">
-              <table className="table dns-table">
-                <thead>
-                  <tr><th>Type</th><th>Name</th><th className="grow">Value</th><th /></tr>
-                </thead>
-                <tbody>
-                  {zone.records.map((r, i) => (
-                    <tr key={r.id || `need-${i}`} className={r.missing ? "missing" : undefined} onClick={() => setOpen(r)}>
-                      <td><span className="chip mono">{r.kind}</span></td>
-                      <td className="mono dns-name" title={r.name}>{within(r.name, domain)}</td>
-                      <td className="mono dns-value" title={r.content}>{r.priority !== null && <span className="muted">{r.priority} </span>}{r.content}</td>
-                      <td className="dns-act" onClick={(e) => e.stopPropagation()}>
-                        {r.missing && edit ? <button type="button" className="btn small" onClick={() => addMissing(r)}><Icon name="add" size={16} />Add</button>
-                          : r.missing ? <span className="dot warn" title="Not in DNS yet" />
-                          : !zone.editable ? <span className="dot ok" title="In DNS" /> : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ul className="dns-list">
+              {kinds.map((k) => [
+                <li key={k} className="dns-group">{k}<span>{zone.records.filter((r) => r.kind === k).length}</span></li>,
+                ...zone.records.filter((r) => r.kind === k).map((r, i) => (
+                  <li key={r.id || `${k}-need-${i}`} className={"dns-row" + (r.missing ? " missing" : "")}>
+                    <button type="button" className="dns-main" onClick={() => setOpen(r)}>
+                      <span className="dns-name" title={r.name}>{within(r.name, domain)}</span>
+                      <span className="dns-value" title={r.content}>{r.priority !== null && <span className="dns-prio">{r.priority}</span>}{r.content}</span>
+                    </button>
+                    <span className="dns-act">
+                      {r.missing && edit ? <button type="button" className="btn small" onClick={() => addMissing(r)}><Icon name="add" size={16} />Add</button>
+                        : r.missing ? <span className="dot warn" title="Not in DNS yet" />
+                        : !zone.editable ? <span className="dot ok" title="In DNS" />
+                        : edit ? <button type="button" className="icon-btn small" aria-label={`Edit ${within(r.name, domain)}`} title="Edit" onClick={() => setOpen(r)}><Icon name="edit" size={18} /></button>
+                        : null}
+                    </span>
+                  </li>
+                )),
+              ])}
+            </ul>
           )}
         </div>
       )}
@@ -387,7 +397,31 @@ function Dns({ domain }: { domain: string }) {
   );
 }
 
-// RecordDialog shows a record in full, and changes or removes it where the zone is editable.
+// Field is one part of a record: its value as text with a small edit icon,
+// and a click anywhere on it turns it into the field to change it.
+function Field({ label, value, editing, onEdit, children }: { label: string; value: string; editing: boolean; onEdit?: () => void; children: ReactNode }) {
+  if (editing) return <>{children}</>;
+  // Where it cannot be changed, the value is there to copy, to add at the DNS host.
+  if (!onEdit) {
+    return (
+      <div className="field-view">
+        <span className="field-view-text"><small>{label}</small><Copy text={value || "@"} /></span>
+      </div>
+    );
+  }
+  return (
+    <button type="button" className="field-view" onClick={onEdit}>
+      <span className="field-view-text">
+        <small>{label}</small>
+        <span className="mono">{value || "@"}</span>
+      </span>
+      <Icon name="edit" size={18} />
+    </button>
+  );
+}
+
+// RecordDialog shows a record, each part changed by clicking it, and removes
+// it; a new record starts as fields.
 function RecordDialog({ domain, record, editable, onClose, onSaved }: {
   domain: string; record: DnsRecord | null; editable: boolean; onClose: () => void; onSaved: (z: DnsZone) => void;
 }) {
@@ -396,7 +430,10 @@ function RecordDialog({ domain, record, editable, onClose, onSaved }: {
   const [name, setName] = useState(record ? within(record.name, domain) : "");
   const [content, setContent] = useState(record?.content ?? "");
   const [priority, setPriority] = useState(String(record?.priority ?? 10));
+  const [editing, setEditing] = useState<string[]>(record ? [] : ["kind", "name", "content", "priority"]);
   const [busy, setBusy] = useState(false);
+  const can = editable && (!record || KINDS.includes(record.kind));
+  const open = (part: string) => (can ? () => setEditing((e) => [...e, part]) : undefined);
   const run = async (work: () => Promise<DnsZone>, done: string) => {
     setBusy(true);
     try {
@@ -408,37 +445,43 @@ function RecordDialog({ domain, record, editable, onClose, onSaved }: {
     }
   };
   const body = () => ({ kind, name: name.trim() || "@", content: content.trim(), priority: kind === "MX" ? Number(priority) || 10 : null });
-  if (record && (!editable || !KINDS.includes(record.kind))) {
-    return (
-      <Dialog title={`${record.kind} ${within(record.name, domain)}`} onClose={onClose}>
-        <div className="stack dns-full">
-          <Copy text={record.content} />
-          {record.priority !== null && <span className="muted">Priority {record.priority}</span>}
-        </div>
-      </Dialog>
-    );
-  }
   return (
-    <Dialog title={record ? "Edit record" : "Add record"} onClose={onClose}>
-      <form onSubmit={(e) => {
+    <Dialog title={record ? `${record.kind} ${within(record.name, domain)}` : "Add record"} onClose={onClose}>
+      <form className="record-form" onSubmit={(e) => {
         e.preventDefault();
         run(() => (record ? api.editDns(domain, record.id, body()) : api.addDns(domain, body())), record ? "Record saved" : "Record added");
       }}>
-        <div className="tf static">
-          <div className="tf-box">
-            <Dropdown label="Type" value={kind} options={KINDS.map((k) => ({ value: k, label: k }))} onChange={setKind} />
-            <span className="tf-label">Type</span>
+        <Field label="Type" value={kind} editing={editing.includes("kind")} onEdit={open("kind")}>
+          <div className="tf static">
+            <div className="tf-box">
+              <Dropdown label="Type" value={kind} options={KINDS.map((k) => ({ value: k, label: k }))} onChange={setKind} />
+              <span className="tf-label">Type</span>
+            </div>
           </div>
-        </div>
-        <TextField label="Name" mono autoComplete="off" value={name} onChange={setName} placeholder="@" trailing={<span className="muted">.{domain}</span>} />
-        <TextField label="Value" mono autoComplete="off" value={content} onChange={setContent} />
-        {kind === "MX" && <TextField label="Priority" mono inputMode="numeric" value={priority} onChange={(v) => setPriority(v.replace(/[^0-9]/g, "").slice(0, 5))} />}
-        <div className="edit-actions">
-          {record && <span className="edit-actions-start"><ArmedButton icon="delete" label="Remove" armedLabel="Remove for good"
-            onConfirm={() => run(() => api.removeDns(domain, record.id), "Record removed")} /></span>}
-          <button type="button" className="btn text" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={busy || !content.trim()}>{busy ? <span className="spinner small on-accent" /> : <Icon name="check" size={18} />}Save</button>
-        </div>
+        </Field>
+        <Field label="Name" value={name} editing={editing.includes("name")} onEdit={open("name")}>
+          <TextField label="Name" mono autoFocus={!!record} autoComplete="off" value={name} onChange={setName} placeholder="@" trailing={<span className="muted">.{domain}</span>} />
+        </Field>
+        <Field label="Value" value={content} editing={editing.includes("content")} onEdit={open("content")}>
+          <TextField label="Value" mono autoFocus={!!record} autoComplete="off" value={content} onChange={setContent} />
+        </Field>
+        {kind === "MX" && (
+          <Field label="Priority" value={priority} editing={editing.includes("priority")} onEdit={open("priority")}>
+            <TextField label="Priority" mono autoFocus={!!record} inputMode="numeric" value={priority} onChange={(v) => setPriority(v.replace(/[^0-9]/g, "").slice(0, 5))} />
+          </Field>
+        )}
+        {can && (
+          <div className="edit-actions">
+            {record && <span className="edit-actions-start"><ArmedButton icon="delete" label="Remove" armedLabel="Remove for good"
+              onConfirm={() => run(() => api.removeDns(domain, record.id), "Record removed")} /></span>}
+            {editing.length > 0 && (
+              <>
+                <button type="button" className="btn text" onClick={onClose}>Cancel</button>
+                <button className="btn primary" disabled={busy || !content.trim()}>{busy ? <span className="spinner small on-accent" /> : <Icon name="check" size={18} />}Save</button>
+              </>
+            )}
+          </div>
+        )}
       </form>
     </Dialog>
   );

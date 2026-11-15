@@ -1601,18 +1601,49 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
 @media (max-width: 560px) { .wizard-fields { grid-template-columns: minmax(0, 1fr); } }
 
 
-/* A domain's records: one line each, long values cut short, the whole
-   record opening on a click. */
-.dns-table { table-layout: fixed; }
-.dns-table th:nth-child(1) { width: 96px; }
-.dns-table th:nth-child(2) { width: 28%; }
-.dns-table th:nth-child(4) { width: 96px; }
-.dns-table td { overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
-.dns-table tbody tr { cursor: pointer; }
-.dns-table tr.missing td { color: var(--text-2); }
-.dns-table .dns-act { text-align: right; }
-.dns-full .copy { align-items: flex-start; }
-.dns-full .copy-text { overflow-wrap: anywhere; white-space: normal; text-align: left; }
+/* A page's tabs with its buttons on the same line, at the right. */
+.sub-nav-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.sub-nav-row > .sub-nav { margin-bottom: 0; }
+.sub-nav-actions { display: flex; align-items: center; gap: 8px; }
+.sub-nav-actions:empty { display: none; }
+
+/* A domain's records, under a heading per type: the name, then the value,
+   quieter, on one line, cut short when long. */
+.dns-list { margin: 0; padding: 0; list-style: none; }
+.dns-group {
+  display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 20px; background: var(--card-2);
+  color: var(--text-2); font-size: 12px; font-weight: 600; letter-spacing: .04em;
+}
+.dns-group:not(:first-child) { border-top: 1px solid var(--line); }
+.dns-group span { color: var(--text-3); font-weight: 500; }
+.dns-row { display: flex; align-items: center; gap: 8px; padding-right: 12px; border-top: 1px solid var(--line); }
+.dns-row:hover { background: var(--hover); }
+.dns-main {
+  flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(80px, 200px) minmax(0, 1fr); align-items: center; gap: 16px;
+  height: 46px; padding: 0 0 0 20px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.dns-name { overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.dns-value { overflow: hidden; color: var(--text-2); font: 12.5px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.dns-prio { margin-right: 8px; color: var(--text-3); }
+.dns-row.missing .dns-name { color: var(--text-2); }
+.dns-act { display: flex; justify-content: flex-end; min-width: 32px; }
+
+/* A record's parts shown as text, each with an edit icon; a click turns it into its field. */
+.record-form { display: grid; gap: 8px; }
+.record-form .tf { margin-bottom: 8px; }
+.field-view {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid transparent;
+  border-radius: var(--radius); background: var(--card-2); color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+button.field-view:hover { border-color: var(--line-strong); }
+div.field-view { cursor: default; }
+.field-view > .icon { flex-shrink: 0; color: var(--text-3); }
+.field-view:hover > .icon { color: var(--text); }
+.field-view-text .copy { justify-self: start; margin: 0; padding: 0; }
+.field-view-text .copy-text { overflow-wrap: anywhere; white-space: normal; text-align: left; }
+.field-view-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.field-view-text small { color: var(--text-3); font-size: 11.5px; }
+.field-view-text .mono { overflow-wrap: anywhere; font-size: 13px; }
 .chip .chip-x { display: inline-grid; place-items: center; margin: 0 -4px 0 2px; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; opacity: .7; }
 .chip .chip-x:hover { opacity: 1; }
 .card-head h2 > .chip { text-transform: none; }
