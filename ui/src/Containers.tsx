@@ -338,7 +338,7 @@ function actionsOf(c: (Container | ContainerDetail) & { deploy?: string | null }
   return [
     ...(page ? [] : [
       { label: "Logs", icon: "terminal" as IconName, onClick: () => go(`${pageOf(c.name)}/logs`) },
-      ...(can("tunnels.view") ? [{ label: "Routes", icon: "signpost" as IconName, onClick: () => go(`${pageOf(c.name)}/routes`) }] : []),
+      ...(can("tunnels.view") ? [{ label: "Routes", icon: "wifi_cog" as IconName, onClick: () => go(`${pageOf(c.name)}/routes`) }] : []),
     ]),
     ...(manage && !c.own && on && !page ? [{ label: "Stop", icon: "stop" as IconName, onClick: () => run([c], "stop") }] : []),
     ...(manage && !c.own && c.state === "paused" && !page ? [{ label: "Resume", icon: "play_arrow" as IconName, onClick: () => run([c], "unpause") }] : []),
@@ -354,7 +354,7 @@ function actionsOf(c: (Container | ContainerDetail) & { deploy?: string | null }
 
 const TABS: [string, string, IconName][] = [
   ["overview", "Overview", "info"],
-  ["routes", "Routes", "signpost"],
+  ["routes", "Routes", "wifi_cog"],
   ["images", "Images", "layers"],
   ["logs", "Logs", "terminal"],
   ["resources", "Resources", "tune"],
