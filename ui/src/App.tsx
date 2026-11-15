@@ -17,7 +17,6 @@ import { SETTINGS, Settings } from "./Settings";
 import { Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
 import { DomainsPage } from "./Domains";
-import { MailPage } from "./Mail";
 import { StoragePage } from "./Storage";
 import { target, TunnelPage } from "./Tunnels";
 import { NewUser, UserPage } from "./Users";
@@ -196,7 +195,6 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
     ["forward", "Routes", "wifi_cog", "#/routes", can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("drive.view")],
     ["domains", "Domains", "public", "#/domains", can("mail.view") || can("mail.manage")],
-    ["mail", "Mail", "mail", "#/mail", can("mail.view") || can("mail.manage")],
     ["apps", "Apps", "apps", "#/apps", true],
     ["security", "Security", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
   ];
@@ -254,7 +252,6 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "apps" && <AppsPage />}
           {view === "storage" && <StoragePage />}
           {view === "domains" && <DomainsPage id={id} tab={page} />}
-          {view === "mail" && <MailPage tab={id} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} forwards={forwards ?? []}
             users={users ?? []} providers={providers} onChanged={load} />}
           {view === "forward" && <ForwardPage id={id} port={page} routes={apps} forwards={forwards} status={status}

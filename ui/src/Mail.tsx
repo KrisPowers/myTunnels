@@ -3,7 +3,7 @@ import { NeedsContext } from "./Apps";
 import { useCloudflareReady } from "./Cloudflare";
 import {
   api, message,
-  type MailApps, type MailLog, type MailReceive, type MailRecords, type MailSend, type MailState, type Zone,
+  type MailApps, type MailLog, type MailReceive, type MailSend, type MailState, type Zone,
 } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
@@ -216,61 +216,67 @@ function Wizard({ state, onDone, onCancel }: { state: MailState; onDone: (s: Mai
   );
 }
 
-// ---- overview ----
+// ---- status ----
 
-// Setup shows its step while it runs, and afterwards only the steps that failed.
-function Setup({ state, onState }: { state: MailState; onState: (s: MailState) => void }) {
+// MailStatus shows setup while it runs, then only the steps that failed and
+// mail waiting to send.
+export function MailStatus({ state, onState }: { state: MailState; onState: (s: MailState) => void }) {
   const can = useCan();
   const act = useAct(onState);
+  const manage = can("mail.manage");
   const { job } = state;
-  const failed = job.steps.filter((s) => !s.ok);
-  if (job.running) {
-    const percent = job.total ? Math.min(100, Math.round((job.done / job.total) * 100)) : 0;
-    return (
-      <Card title={`${job.step || "Starting"} · ${percent}%`}>
-        <div className="mail-bar" aria-hidden><span style={{ width: `${percent}%` }} /></div>
-      </Card>
-    );
-  }
-  if (!failed.length) return null;
+  const failed = job.running ? [] : job.steps.filter((s) => !s.ok);
+  const percent = job.total ? Math.min(100, Math.round((job.done / job.total) * 100)) : 0;
   return (
-    <Card title={`${plural(failed.length, "setup step")} failed`}
-      action={can("mail.manage") ? <button type="button" className="btn" onClick={() => act(api.rerunMail, "Setting up again")}><Icon name="refresh" size={18} />Run again</button> : undefined}>
-      {failed.map((s, i) => (
-        <Row key={i} title={<span className="mail-state"><span className="dot bad" />{s.name}</span>} sub={s.detail || undefined} />
-      ))}
-    </Card>
-  );
-}
-
-function Overview({ state, records, onState }: { state: MailState; records: MailRecords[] | null; onState: (s: MailState) => void }) {
-  const can = useCan();
-  const act = useAct(onState);
-  const missing = (records ?? []).reduce((n, d) => n + d.records.filter((r) => !r.found).length, 0);
-  return (
-    <div className="page-body stack">
-      <Setup state={state} onState={onState} />
-      {missing > 0 && (
-        <a className="mail-todo" href="#/domains">
-          <Icon name="dns" size={20} />
-          <span>{plural(missing, "DNS record")} to add</span>
-          <Icon name="arrow_forward" size={18} />
-        </a>
+    <>
+      {job.running && (
+        <Card title={`${job.step || "Starting"} · ${percent}%`}>
+          <div className="mail-bar" aria-hidden><span style={{ width: `${percent}%` }} /></div>
+        </Card>
       )}
-      {state.accounts.length === 0 && (
-        <a className="mail-todo" href="#/domains">
-          <Icon name="person" size={20} />
-          <span>No addresses yet</span>
-          <Icon name="arrow_forward" size={18} />
-        </a>
+      {failed.length > 0 && (
+        <Card title={`${plural(failed.length, "setup step")} failed`}
+          action={manage ? <button type="button" className="btn" onClick={() => act(api.rerunMail, "Setting up again")}><Icon name="refresh" size={18} />Run again</button> : undefined}>
+          {failed.map((s, i) => (
+            <Row key={i} title={<span className="mail-state"><span className="dot bad" />{s.name}</span>} sub={s.detail || undefined} />
+          ))}
+        </Card>
       )}
       {state.queued > 0 && (
         <div className="mail-todo">
           <Icon name="upload" size={20} />
           <span>{state.queued} waiting to send</span>
-          {can("mail.manage") && <button type="button" className="btn small" onClick={() => act(api.retryMail, "Trying now")}><Icon name="refresh" size={16} />Try now</button>}
+          {manage && <button type="button" className="btn small" onClick={() => act(api.retryMail, "Trying now")}><Icon name="refresh" size={16} />Try now</button>}
         </div>
       )}
+    </>
+  );
+}
+
+// ---- settings ----
+
+// MailSettings is the mail server for the domains: set up a step at a time
+// the first time, then how mail moves, how mail apps sign in, and what it does.
+export function MailSettings({ state, onState }: { state: MailState; onState: (s: MailState) => void }) {
+  const can = useCan();
+  const act = useAct(onState);
+  const [changing, setChanging] = useState(false);
+  const s = state.settings;
+  const manage = can("mail.manage");
+  if (!s.on) {
+    if (!manage) return <Callout icon="info">Mail is not set up yet.</Callout>;
+    if (!s.domains.length) return <Callout icon="public">Add a domain to set mail up.</Callout>;
+    return <Wizard state={state} onDone={onState} />;
+  }
+  return (
+    <>
+      <Card title="How mail moves" action={manage ? <button type="button" className="btn" onClick={() => setChanging(true)}><Icon name="tune" size={18} />Change</button> : undefined}>
+        <Row title="Receiving" sub={RECEIVE.find((o) => o.value === s.receive)?.hint}><span className="chip">{labelOf(RECEIVE, s.receive)}</span></Row>
+        <Row title="Mail apps" sub={APPS.find((o) => o.value === s.apps)?.hint}><span className="chip">{labelOf(APPS, s.apps)}</span></Row>
+        <Row title="Sending" sub={s.send === "relay" && s.relay ? `${s.relay.host}:${s.relay.port}` : SEND.find((o) => o.value === s.send)?.hint}>
+          <span className="chip">{labelOf(SEND, s.send)}</span>
+        </Row>
+      </Card>
       <Card title="Signing in" sub="In Outlook, Gmail or any app with IMAP, with the full address and its password">
         {state.servers ? (
           <>
@@ -278,27 +284,6 @@ function Overview({ state, records, onState }: { state: MailState; records: Mail
             <Row title="SMTP"><Copy text={`${state.servers.smtp_host}:${state.servers.smtp_port}`} /></Row>
           </>
         ) : <Row title="Waiting for Tailscale" sub="Mail apps reach this server once Tailscale is connected" />}
-      </Card>
-    </div>
-  );
-}
-
-// ---- settings ----
-
-// Settings is how mail moves and what it does, to see, and to change for those who set mail up.
-function Settings({ state, onState, onChange }: { state: MailState; onState: (s: MailState) => void; onChange: () => void }) {
-  const can = useCan();
-  const act = useAct(onState);
-  const s = state.settings;
-  const manage = can("mail.manage");
-  return (
-    <div className="page-body stack">
-      <Card title="How mail moves" action={manage ? <button type="button" className="btn" onClick={onChange}><Icon name="tune" size={18} />Change</button> : undefined}>
-        <Row title="Receiving" sub={RECEIVE.find((o) => o.value === s.receive)?.hint}><span className="chip">{labelOf(RECEIVE, s.receive)}</span></Row>
-        <Row title="Mail apps" sub={APPS.find((o) => o.value === s.apps)?.hint}><span className="chip">{labelOf(APPS, s.apps)}</span></Row>
-        <Row title="Sending" sub={s.send === "relay" && s.relay ? `${s.relay.host}:${s.relay.port}` : SEND.find((o) => o.value === s.send)?.hint}>
-          <span className="chip">{labelOf(SEND, s.send)}</span>
-        </Row>
       </Card>
       <Card title="Incoming mail">
         <Row title="Refuse spoofed mail" sub="Turn away what its sender's DMARC rejects, rather than file it in Junk">
@@ -318,7 +303,15 @@ function Settings({ state, onState, onChange }: { state: MailState; onState: (s:
           </Row>
         </Card>
       )}
-    </div>
+      {changing && (
+        <Dialog title="Change how mail moves" wide onClose={() => setChanging(false)}>
+          <Wizard state={state} onCancel={() => setChanging(false)} onDone={(next) => {
+            onState(next);
+            setChanging(false);
+          }} />
+        </Dialog>
+      )}
+    </>
   );
 }
 
@@ -326,7 +319,7 @@ function Settings({ state, onState, onChange }: { state: MailState; onState: (s:
 
 const TONE: Record<string, string> = { delivered: "ok", sent: "ok", junk: "warn", queued: "", rejected: "bad", failed: "bad", bounced: "bad" };
 
-function Activity() {
+export function MailActivity({ domain }: { domain: string }) {
   const [log, setLog] = useState<MailLog[] | null>(null);
   useEffect(() => {
     const load = () => api.mailLog().then(setLog).catch(() => {});
@@ -335,17 +328,17 @@ function Activity() {
     return () => clearInterval(t);
   }, []);
   if (!log) return null;
+  const mine = log.filter((e) => domainOf(e.from) === domain || domainOf(e.to) === domain);
   return (
-    <div className="page-body stack">
-      <div className="card">
-        {log.length === 0 ? <p className="empty-note mail-none">Nothing has come in or gone out yet.</p> : (
+    <div className="card">
+        {mine.length === 0 ? <p className="empty-note mail-none">Nothing has come in or gone out yet.</p> : (
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr><th>Time</th><th /><th>From</th><th>To</th><th className="grow">Outcome</th></tr>
               </thead>
               <tbody>
-                {log.map((e, i) => (
+                {mine.map((e, i) => (
                   <tr key={i}>
                     <td className="log-time">{new Date(e.at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
                     <td title={e.dir === "in" ? "Received" : "Sent"}><Icon name={e.dir === "in" ? "download" : "upload"} size={18} /></td>
@@ -358,108 +351,6 @@ function Activity() {
             </table>
           </div>
         )}
-      </div>
     </div>
-  );
-}
-
-// ---- the page ----
-
-const TABS: [string, string, IconName][] = [
-  ["overview", "Overview", "dashboard"],
-  ["activity", "Activity", "history"],
-  ["settings", "Settings", "settings"],
-];
-
-// MailPage is the IMAP and SMTP server for the domains on the Domains page:
-// set up a step at a time the first time, then what is left to do, activity,
-// and its settings. Addresses are added inside each domain.
-export function MailPage({ tab }: { tab: string }) {
-  const can = useCan();
-  const [state, setState] = useState<MailState | null>(null);
-  const [problem, setProblem] = useState("");
-  const [changing, setChanging] = useState(false);
-  const [records, setRecords] = useState<MailRecords[] | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setState(await api.mail());
-      setProblem("");
-    } catch (e) {
-      setProblem(message(e));
-    }
-  }, []);
-  const running = !!state?.job.running;
-  useEffect(() => {
-    load();
-    const t = setInterval(load, running ? 1500 : 10_000);
-    return () => clearInterval(t);
-  }, [load, running]);
-  const live = !!state && state.settings.on && state.settings.domains.length > 0;
-  // DNS is asked again when the domains or the ways change, and after setup runs.
-  const shape = state ? JSON.stringify([state.settings.domains.map((d) => [d.name, d.zone_id]), state.settings.receive, state.settings.send, state.settings.apps]) : "";
-  const check = useCallback(async () => {
-    try {
-      setRecords(await api.mailRecords());
-    } catch {
-      setRecords(null);
-    }
-  }, []);
-  useEffect(() => {
-    if (live && !running) check();
-  }, [live, running, shape, check]);
-
-  if (!state) return problem ? <div className="page-body"><Callout tone="bad" icon="error">{problem}</Callout></div> : null;
-  const current = TABS.some(([k]) => k === tab) ? tab : "overview";
-  const manage = can("mail.manage");
-
-  return (
-    <>
-      <div className="page-head">
-        <div className="page-head-main">
-          <h1>Mail</h1>
-          {live && (
-            <div className="page-sub">
-              <span><b>{state.settings.domains.length}</b> {state.settings.domains.length === 1 ? "domain" : "domains"}</span>
-              <span><b>{state.accounts.length}</b> {state.accounts.length === 1 ? "account" : "accounts"}</span>
-            </div>
-          )}
-        </div>
-      </div>
-      {!live ? (
-        <div className="page-body">
-          {!manage ? <Callout icon="info">Mail is not set up yet.</Callout>
-            : state.settings.domains.length === 0 ? (
-              <div className="card mail-start">
-                <Icon name="public" size={28} />
-                <b>Add a domain first</b>
-                <a className="btn primary" href="#/domains"><Icon name="add" size={18} />Add domain</a>
-              </div>
-            ) : <Wizard state={state} onDone={setState} />}
-        </div>
-      ) : (
-        <>
-          <nav className="sub-nav" aria-label="Mail">
-            {TABS.map(([key, label, icon]) => (
-              <a key={key} className={"sub-nav-item" + (current === key ? " on" : "")} href={`#/mail/${key}`} aria-current={current === key ? "page" : undefined}>
-                <Icon name={icon} size={18} />
-                <span>{label}</span>
-              </a>
-            ))}
-          </nav>
-          {current === "overview" && <Overview state={state} records={records} onState={setState} />}
-          {current === "activity" && <Activity />}
-          {current === "settings" && <Settings state={state} onState={setState} onChange={() => setChanging(true)} />}
-        </>
-      )}
-      {changing && (
-        <Dialog title="Change how mail moves" wide onClose={() => setChanging(false)}>
-          <Wizard state={state} onCancel={() => setChanging(false)} onDone={(s) => {
-            setState(s);
-            setChanging(false);
-          }} />
-        </Dialog>
-      )}
-    </>
   );
 }

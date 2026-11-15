@@ -1232,7 +1232,6 @@ pub async fn add_domain(
         return Err(ApiError::conflict(format!("{} is already here", d.name)));
     }
     s.domains.push(d);
-    cloudflare_ways(&s)?;
     let ready = s.ready();
     mail.save(s)?;
     if ready {
