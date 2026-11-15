@@ -481,18 +481,19 @@ export interface MenuAction {
 
 // MoreMenu is the three dots that hold a page's less frequent actions, or
 // another icon, such as a plus for what can be added.
-export function MoreMenu({ label, actions, icon = "more_vert" }: { label: string; actions: MenuAction[]; icon?: IconName }) {
+// With `text`, it is a labelled button rather than an icon alone.
+export function MoreMenu({ label, actions, icon = "more_vert", text }: { label: string; actions: MenuAction[]; icon?: IconName; text?: string }) {
   const rich = actions.some((a) => a.hint);
   const pop = usePopover(rich ? 300 : 240);
   const [armed, setArmed] = useState("");
   return (
     <div className="menu-wrap" ref={pop.anchor}>
-      <button type="button" className="icon-btn" aria-label={label} title={label} aria-expanded={pop.open}
+      <button type="button" className={text ? "btn" : "icon-btn"} aria-label={text ? undefined : label} title={text ? undefined : label} aria-expanded={pop.open}
         onClick={() => {
           setArmed("");
           pop.setOpen((o) => !o);
         }}>
-        <Icon name={icon} />
+        <Icon name={icon} size={text ? 18 : undefined} />{text}
       </button>
       {pop.open && createPortal(
         <div ref={pop.panel} className={"menu pop-menu" + (rich ? " rich" : "")} style={pop.style} role="menu">
