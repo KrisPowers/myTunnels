@@ -1,30 +1,27 @@
 import { useCallback, useEffect, useState } from "react";
 import { useCloudflare } from "./Cloudflare";
-import { api, bytes, message, type MailAccount, type MailDomain, type MailRecords, type MailState } from "./api";
+import { api, bytes, message, type DnsRecord, type DnsZone, type MailAccount, type MailDomain, type MailRecords, type MailState, type Registrar } from "./api";
 import { Dropdown, MultiDropdown } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { cleanDomain, DOMAIN, domainOf, MailActivity, MailSettings, MailStatus, plural, useAct, useZones } from "./Mail";
 import { useCan } from "./me";
 import { go } from "./route";
-import { AddMenu, Callout, Card, Copy, Dialog, MoreMenu, SubNav, TextField, type MenuAction } from "./ui";
+import { ConnectRegistrar } from "./Registrars";
+import { AddMenu, ArmedButton, Callout, Copy, Dialog, MoreMenu, SubNav, TextField, useNotify, type MenuAction } from "./ui";
 
-// Where a domain's DNS is hosted: records added by hand anywhere, synced with
-// Cloudflare, or added by hand at a registrar whose DNS page is linked.
-type Host = "" | "cloudflare" | "squarespace" | "godaddy" | "namecheap" | "porkbun";
-interface HostWay { value: Host; label: string; icon: IconName; hint: string; link?: (domain: string) => string }
-
-const HOSTS: HostWay[] = [
-  { value: "", label: "DNS records", icon: "dns", hint: "Added wherever its DNS is" },
-  { value: "cloudflare", label: "Cloudflare", icon: "cloud", hint: "Synced for you" },
-  { value: "squarespace", label: "Squarespace", icon: "public", hint: "Added in Squarespace",
-    link: (d) => `https://account.squarespace.com/domains/managed/${d}/dns/dns-settings` },
-  { value: "godaddy", label: "GoDaddy", icon: "public", hint: "Added in GoDaddy", link: () => "https://dcc.godaddy.com/control/portfolio" },
-  { value: "namecheap", label: "Namecheap", icon: "public", hint: "Added in Namecheap",
-    link: (d) => `https://ap.www.namecheap.com/Domains/DomainControlPanel/${d}/advancedns` },
-  { value: "porkbun", label: "Porkbun", icon: "public", hint: "Added in Porkbun", link: () => "https://porkbun.com/account/domainsSpeedy" },
+// Where a domain's DNS is hosted: records added by hand anywhere, or its real
+// zone, read and changed here, on Cloudflare or at a registrar.
+type Host = "" | "cloudflare" | Registrar;
+const HOSTS: { value: Host; label: string; icon: IconName; hint: string }[] = [
+  { value: "", label: "DNS records", icon: "dns", hint: "Added by hand wherever its DNS is" },
+  { value: "cloudflare", label: "Cloudflare", icon: "cloud", hint: "Read and changed here" },
+  { value: "porkbun", label: "Porkbun", icon: "public", hint: "Read and changed here" },
+  { value: "godaddy", label: "GoDaddy", icon: "public", hint: "Read and changed here" },
+  { value: "namecheap", label: "Namecheap", icon: "public", hint: "Read and changed here" },
 ];
+const isRegistrar = (h: Host): h is Registrar => h === "porkbun" || h === "godaddy" || h === "namecheap";
 
-const hostOf = (d: MailDomain): HostWay => HOSTS.find((h) => h.value === (d.zone_id ? "cloudflare" : d.host || "")) ?? HOSTS[0];
+const hostOf = (d: MailDomain) => HOSTS.find((h) => h.value === (d.zone_id ? "cloudflare" : d.host || "")) ?? HOSTS[0];
 const href = (name: string, tab?: string) => `#/domains/${encodeURIComponent(name)}${tab ? "/" + tab : ""}`;
 
 // useDomains loads the domains, their addresses and whether DNS answers with each record.
@@ -69,7 +66,7 @@ function useDomains() {
 
 export function DomainsPage({ id, tab }: { id: string; tab: string }) {
   const can = useCan();
-  const { state, setState, problem, records, checking, check } = useDomains();
+  const { state, setState, problem, records } = useDomains();
   const [adding, setAdding] = useState(false);
   const domain = id ? state?.settings.domains.find((d) => d.name === id.toLowerCase()) : undefined;
   useEffect(() => {
@@ -78,8 +75,7 @@ export function DomainsPage({ id, tab }: { id: string; tab: string }) {
 
   if (!state) return problem ? <div className="page-body"><Callout tone="bad" icon="error">{problem}</Callout></div> : null;
   if (domain) {
-    return <DomainPage domain={domain} tab={tab} state={state} onState={setState}
-      list={records?.find((r) => r.domain === domain.name)} checking={checking} onCheck={check} />;
+    return <DomainPage domain={domain} tab={tab} state={state} onState={setState} />;
   }
   const domains = state.settings.domains;
   const manage = can("mail.manage");
@@ -120,6 +116,8 @@ function useActions(domain: MailDomain, primary: boolean, state: MailState, onSt
   if (!can("mail.manage")) return [];
   const synced = !!domain.zone_id;
   return [
+    ...(!primary ? [{ label: "Make primary", icon: "star" as IconName, hint: "The mail server is named after it",
+      onClick: () => act(() => api.editMailDomain(domain.name, { primary: true }), `${domain.name} is the primary domain`) }] : []),
     { label: "Managers", icon: "group", onClick: onManagers },
     synced
       ? { label: "Stop syncing with Cloudflare", icon: "cloud", onClick: () => act(() => api.editMailDomain(domain.name, { cloudflare: false }), `${domain.name} keeps its records by hand`) }
@@ -151,7 +149,7 @@ function DomainRow({ domain, primary, list, state, onState }: {
           <Icon name="public" />
         </span>
         <span className="ct-name-text">
-          <b>{domain.name}{primary && <span className="chip">Primary</span>}</b>
+          <b>{domain.name}</b>
           <small>{[hostOf(domain).label, missing === null ? "Checking DNS" : missing ? `${plural(missing, "record")} to add` : "DNS ready", plural(addresses, "address", "addresses")].join(" · ")}</small>
         </span>
       </a>
@@ -167,6 +165,7 @@ function AddDomain({ state, onState, onClose }: { state: MailState; onState: (s:
   const act = useAct(onState);
   const cloudflare = useCloudflare();
   const [host, setHost] = useState<Host>("");
+  const [connecting, setConnecting] = useState<Registrar | null>(null);
   const [name, setName] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -183,7 +182,7 @@ function AddDomain({ state, onState, onClose }: { state: MailState; onState: (s:
     if (synced) {
       for (const id of picked) done = (await act(() => api.addMailDomain({ zone_id: id }))) && done;
     } else {
-      done = await act(() => api.addMailDomain({ name: domain, host }), `Added ${domain}`);
+      done = await act(() => api.addMailDomain({ name: domain, host: host || undefined }), `Added ${domain}`);
     }
     if (done) onClose();
     else setBusy(false);
@@ -195,8 +194,12 @@ function AddDomain({ state, onState, onClose }: { state: MailState; onState: (s:
         <div className="tf static">
           <div className="tf-box">
             <Dropdown label="DNS host" value={host} options={HOSTS.map((h) => ({ value: h.value, label: h.label, icon: h.icon, hint: h.hint }))}
-              onChange={(v) => {
+              onChange={async (v) => {
                 if (v === "cloudflare" && !cloudflare(() => setHost("cloudflare"))) return;
+                if (isRegistrar(v)) {
+                  const saved = await api.settings().catch(() => null);
+                  if (saved && !saved.registrars?.[v]) return setConnecting(v);
+                }
                 setHost(v);
               }} />
             <span className="tf-label">DNS host</span>
@@ -225,6 +228,10 @@ function AddDomain({ state, onState, onClose }: { state: MailState; onState: (s:
           </button>
         </div>
       </div>
+      {connecting && <ConnectRegistrar host={connecting} onClose={() => setConnecting(null)} onDone={() => {
+        setHost(connecting);
+        setConnecting(null);
+      }} />}
     </Dialog>
   );
 }
@@ -260,88 +267,180 @@ function ManagersDialog({ domain, state, onState, onClose }: { domain: MailDomai
 // ---- one domain ----
 
 const TABS: [string, string, IconName][] = [
-  ["addresses", "Addresses", "mail"],
-  ["activity", "Activity", "history"],
   ["dns", "DNS", "dns"],
+  ["mail", "Mail", "mail"],
+  ["activity", "Activity", "history"],
   ["settings", "Settings", "settings"],
 ];
 
-function DomainPage({ domain, tab, state, onState, list, checking, onCheck }: {
-  domain: MailDomain; tab: string; state: MailState; onState: (s: MailState) => void;
-  list: MailRecords | undefined; checking: boolean; onCheck: () => void;
-}) {
+function DomainPage({ domain, tab, state, onState }: { domain: MailDomain; tab: string; state: MailState; onState: (s: MailState) => void }) {
   const [managing, setManaging] = useState(false);
   const primary = state.settings.domains[0]?.name === domain.name;
   const actions = useActions(domain, primary, state, onState, () => setManaging(true));
-  const current = TABS.some(([k]) => k === tab) ? tab : "addresses";
+  const current = TABS.some(([k]) => k === tab) ? tab : "dns";
   return (
     <>
       <div className="page-head">
         <div className="page-head-main">
           <h1>{domain.name}</h1>
-          <div className="page-sub">
-            <span>{hostOf(domain).label}</span>
-            {primary && <span>Primary</span>}
-          </div>
+          <div className="page-sub"><span>{hostOf(domain).label}</span></div>
         </div>
         {actions.length > 0 && <div className="page-actions"><MoreMenu label={`Actions for ${domain.name}`} actions={actions} /></div>}
       </div>
       <SubNav back="#/domains" backLabel="Domains" base={href(domain.name)} items={TABS} current={current} />
       <div className="page-body stack">
-        {current === "addresses" && (
+        {current === "dns" && <Dns domain={domain.name} />}
+        {current === "mail" && <Addresses domain={domain.name} state={state} onState={onState} />}
+        {current === "activity" && <MailActivity domain={domain.name} />}
+        {current === "settings" && (
           <>
-            <MailStatus state={state} onState={onState} />
-            <Addresses domain={domain.name} state={state} onState={onState} />
+            <MailStatus state={state} onState={onState} domain={domain.name} />
+            <MailSettings state={state} onState={onState} />
           </>
         )}
-        {current === "activity" && <MailActivity domain={domain.name} />}
-        {current === "dns" && <Dns domain={domain} list={list} checking={checking} onCheck={onCheck} />}
-        {current === "settings" && <MailSettings state={state} onState={onState} />}
       </div>
       {managing && <ManagersDialog domain={domain} state={state} onState={onState} onClose={() => setManaging(false)} />}
     </>
   );
 }
 
-function Dns({ domain, list, checking, onCheck }: { domain: MailDomain; list: MailRecords | undefined; checking: boolean; onCheck: () => void }) {
-  const host = hostOf(domain);
+// ---- DNS ----
+
+const KINDS = ["A", "AAAA", "CNAME", "MX", "TXT"];
+// A record's name within its domain: @ for the domain itself.
+const within = (name: string, domain: string) => (name === domain ? "@" : name.endsWith("." + domain) ? name.slice(0, -domain.length - 1) : name);
+
+// Dns is the domain's records: its real zone, to add to, change and remove
+// from, with any mail needs that DNS lacks; or, for DNS kept elsewhere, what
+// mail needs there.
+function Dns({ domain }: { domain: string }) {
+  const can = useCan();
+  const notify = useNotify();
+  const [zone, setZone] = useState<DnsZone | null>(null);
+  const [problem, setProblem] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState<DnsRecord | "new" | null>(null);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setZone(await api.dns(domain));
+      setProblem("");
+    } catch (e) {
+      setProblem(message(e));
+    }
+    setLoading(false);
+  }, [domain]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const edit = !!zone?.editable && can("mail.manage");
+  const addMissing = async (r: DnsRecord) => {
+    try {
+      setZone(await api.addDns(domain, { kind: r.kind, name: r.name, content: r.content, priority: r.priority }));
+      notify(`Added ${r.kind} ${within(r.name, domain)}`);
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+  };
   return (
-    <Card title="Records" sub={domain.zone_id ? "Kept in sync on Cloudflare" : `Add these ${host.link ? `in ${host.label}` : "where the domain's DNS is"}; each turns green once DNS answers with it`}
-      action={
-        <span className="mail-bar-row">
-          {host.link && <a className="btn" href={host.link(domain.name)} target="_blank" rel="noreferrer"><Icon name="open_in_new" size={18} />{host.label}</a>}
-          <button type="button" className="btn" disabled={checking} onClick={onCheck}>
-            {checking ? <span className="spinner small" /> : <Icon name="refresh" size={18} />}Check
-          </button>
-        </span>
-      }>
-      {list ? <RecordsTable list={list} /> : <p className="empty-note mail-none"><span className="spinner small" /> Checking DNS</p>}
-    </Card>
+    <>
+      <div className="mail-bar-row">
+        <button type="button" className="icon-btn" aria-label="Refresh" title="Refresh" disabled={loading} onClick={load}>
+          {loading ? <span className="spinner small" /> : <Icon name="refresh" />}
+        </button>
+        {edit && <button type="button" className="btn primary" onClick={() => setOpen("new")}><Icon name="add" size={18} />Add record</button>}
+      </div>
+      {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
+      {zone && (
+        <div className="card">
+          {zone.records.length === 0 ? <p className="empty-note mail-none">No records.</p> : (
+            <div className="table-wrap">
+              <table className="table dns-table">
+                <thead>
+                  <tr><th>Type</th><th>Name</th><th className="grow">Value</th><th /></tr>
+                </thead>
+                <tbody>
+                  {zone.records.map((r, i) => (
+                    <tr key={r.id || `need-${i}`} className={r.missing ? "missing" : undefined} onClick={() => setOpen(r)}>
+                      <td><span className="chip mono">{r.kind}</span></td>
+                      <td className="mono dns-name" title={r.name}>{within(r.name, domain)}</td>
+                      <td className="mono dns-value" title={r.content}>{r.priority !== null && <span className="muted">{r.priority} </span>}{r.content}</td>
+                      <td className="dns-act" onClick={(e) => e.stopPropagation()}>
+                        {r.missing && edit ? <button type="button" className="btn small" onClick={() => addMissing(r)}><Icon name="add" size={16} />Add</button>
+                          : r.missing ? <span className="dot warn" title="Not in DNS yet" />
+                          : !zone.editable ? <span className="dot ok" title="In DNS" /> : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+      {open && <RecordDialog domain={domain} record={open === "new" ? null : open} editable={edit && (open === "new" || !open.missing)}
+        onClose={() => setOpen(null)} onSaved={(z) => {
+          setZone(z);
+          setOpen(null);
+        }} />}
+    </>
   );
 }
 
-function RecordsTable({ list }: { list: MailRecords }) {
+// RecordDialog shows a record in full, and changes or removes it where the zone is editable.
+function RecordDialog({ domain, record, editable, onClose, onSaved }: {
+  domain: string; record: DnsRecord | null; editable: boolean; onClose: () => void; onSaved: (z: DnsZone) => void;
+}) {
+  const notify = useNotify();
+  const [kind, setKind] = useState(record && KINDS.includes(record.kind) ? record.kind : "A");
+  const [name, setName] = useState(record ? within(record.name, domain) : "");
+  const [content, setContent] = useState(record?.content ?? "");
+  const [priority, setPriority] = useState(String(record?.priority ?? 10));
+  const [busy, setBusy] = useState(false);
+  const run = async (work: () => Promise<DnsZone>, done: string) => {
+    setBusy(true);
+    try {
+      onSaved(await work());
+      notify(done);
+    } catch (e) {
+      notify(message(e), "bad");
+      setBusy(false);
+    }
+  };
+  const body = () => ({ kind, name: name.trim() || "@", content: content.trim(), priority: kind === "MX" ? Number(priority) || 10 : null });
+  if (record && (!editable || !KINDS.includes(record.kind))) {
+    return (
+      <Dialog title={`${record.kind} ${within(record.name, domain)}`} onClose={onClose}>
+        <div className="stack dns-full">
+          <Copy text={record.content} />
+          {record.priority !== null && <span className="muted">Priority {record.priority}</span>}
+        </div>
+      </Dialog>
+    );
+  }
   return (
-    <div className="table-wrap">
-      <table className="table mail-records">
-        <thead>
-          <tr><th /><th>Type</th><th>Name</th><th className="grow">Value</th></tr>
-        </thead>
-        <tbody>
-          {list.records.map((r) => (
-            <tr key={r.kind + r.name}>
-              <td title={r.found ? "In DNS" : "Not in DNS yet"}><span className={"dot " + (r.found ? "ok" : "warn")} /></td>
-              <td><span className="chip mono">{r.kind}</span></td>
-              <td><Copy text={r.name} /></td>
-              <td className="mail-value">
-                {r.priority !== null && <span className="muted">Priority {r.priority} · </span>}
-                <Copy text={r.value} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Dialog title={record ? "Edit record" : "Add record"} onClose={onClose}>
+      <form onSubmit={(e) => {
+        e.preventDefault();
+        run(() => (record ? api.editDns(domain, record.id, body()) : api.addDns(domain, body())), record ? "Record saved" : "Record added");
+      }}>
+        <div className="tf static">
+          <div className="tf-box">
+            <Dropdown label="Type" value={kind} options={KINDS.map((k) => ({ value: k, label: k }))} onChange={setKind} />
+            <span className="tf-label">Type</span>
+          </div>
+        </div>
+        <TextField label="Name" mono autoComplete="off" value={name} onChange={setName} placeholder="@" trailing={<span className="muted">.{domain}</span>} />
+        <TextField label="Value" mono autoComplete="off" value={content} onChange={setContent} />
+        {kind === "MX" && <TextField label="Priority" mono inputMode="numeric" value={priority} onChange={(v) => setPriority(v.replace(/[^0-9]/g, "").slice(0, 5))} />}
+        <div className="edit-actions">
+          {record && <span className="edit-actions-start"><ArmedButton icon="delete" label="Remove" armedLabel="Remove for good"
+            onConfirm={() => run(() => api.removeDns(domain, record.id), "Record removed")} /></span>}
+          <button type="button" className="btn text" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={busy || !content.trim()}>{busy ? <span className="spinner small on-accent" /> : <Icon name="check" size={18} />}Save</button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 

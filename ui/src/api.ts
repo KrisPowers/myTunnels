@@ -139,7 +139,16 @@ export interface Settings {
   upstream_host: string;
   default_upstream_host: string;
   trusted_networks: string;
+  // Whether each registrar whose DNS is changed through its API is connected.
+  registrars: Record<Registrar, boolean>;
 }
+
+export type Registrar = "porkbun" | "godaddy" | "namecheap";
+// A domain's DNS record. One mail needs that DNS does not have yet is `missing`, with no ID.
+export interface DnsRecord { id: string; kind: string; name: string; content: string; priority: number | null; ttl: number; missing: boolean }
+// A domain's records: its real zone when `editable`, otherwise the records mail needs at its DNS host.
+export interface DnsZone { editable: boolean; records: DnsRecord[] }
+export interface DnsRecordIn { kind: string; name: string; content: string; priority: number | null }
 
 // Hardware: each part, its readings and health, as the server last read them.
 export type Health = "ok" | "warn" | "bad" | "empty" | "unknown";
@@ -569,8 +578,8 @@ export type MailReceive = "port" | "cloudflare";
 export type MailApps = "port" | "tailscale";
 export type MailSend = "direct" | "relay" | "cloudflare";
 export interface MailRelay { host: string; port: number; security: string; username: string; password_set?: boolean }
-// A domain: its records kept on Cloudflare in zone_id, or added by hand when
-// it is empty; managers are dashboard account IDs that run its accounts.
+// A domain: its records on Cloudflare in zone_id, at the registrar `host`, or
+// added by hand when both are empty; managers are dashboard account IDs that run its addresses.
 export interface MailDomain { name: string; zone_id: string; managers: string[]; host: string }
 export interface MailSettings {
   // The first is the primary: the server is mail. on it.
@@ -678,8 +687,13 @@ export const api = {
   mailOff: () => call<MailState>("/mail/off", "POST"),
   mailOptions: (patch: Partial<{ reject_dmarc: boolean; save_sent: boolean }>) => call<MailState>("/mail/options", "PATCH", patch),
   mailRecords: () => call<MailRecords[]>("/mail/records"),
+  dns: (domain: string) => call<DnsZone>(`/mail/domains/${encodeURIComponent(domain)}/dns`),
+  addDns: (domain: string, r: DnsRecordIn) => call<DnsZone>(`/mail/domains/${encodeURIComponent(domain)}/dns`, "POST", r),
+  editDns: (domain: string, id: string, r: DnsRecordIn) =>
+    call<DnsZone>(`/mail/domains/${encodeURIComponent(domain)}/dns/${encodeURIComponent(id)}`, "PUT", r),
+  removeDns: (domain: string, id: string) => call<DnsZone>(`/mail/domains/${encodeURIComponent(domain)}/dns/${encodeURIComponent(id)}`, "DELETE"),
   addMailDomain: (body: { zone_id: string } | { name: string; host?: string }) => call<MailState>("/mail/domains", "POST", body),
-  editMailDomain: (name: string, patch: Partial<{ cloudflare: boolean; managers: string[] }>) =>
+  editMailDomain: (name: string, patch: Partial<{ cloudflare: boolean; managers: string[]; primary: boolean }>) =>
     call<MailState>(`/mail/domains/${encodeURIComponent(name)}`, "PATCH", patch),
   removeMailDomain: (name: string) => call<MailState>(`/mail/domains/${encodeURIComponent(name)}`, "DELETE"),
   addMailAccount: (body: { address: string; name: string; password: string }) => call<MailState>("/mail/accounts", "POST", body),
@@ -728,6 +742,8 @@ export const api = {
   accounts: (token: string | null) => call<Account[]>("/cloudflare/accounts", "POST", { api_token: token }),
   connect: (token: string | null, accountId: string, tunnelName: string) =>
     call("/settings/cloudflare", "PUT", { api_token: token, account_id: accountId, tunnel_name: tunnelName }),
+  saveRegistrar: (host: Registrar, keys: { key: string; secret: string; user: string }) => call<Settings>(`/settings/registrars/${host}`, "PUT", keys),
+  removeRegistrar: (host: Registrar) => call<Settings>(`/settings/registrars/${host}`, "DELETE"),
   saveNetwork: (upstreamHost: string, trustedNetworks: string) =>
     call("/settings/network", "PUT", { upstream_host: upstreamHost, trusted_networks: trustedNetworks }),
   zones: () => call<Zone[]>("/zones"),

@@ -1601,11 +1601,18 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
 @media (max-width: 560px) { .wizard-fields { grid-template-columns: minmax(0, 1fr); } }
 
 
-/* A domain's records, each to copy, with whether DNS answers with it yet. */
-.mail-records td { vertical-align: top; padding-top: 12px; padding-bottom: 12px; height: auto; }
-.mail-records td.mail-value { white-space: normal; }
-.mail-records .copy-text { overflow-wrap: anywhere; white-space: normal; text-align: left; }
-.mail-records .dot { margin-top: 6px; }
+/* A domain's records: one line each, long values cut short, the whole
+   record opening on a click. */
+.dns-table { table-layout: fixed; }
+.dns-table th:nth-child(1) { width: 96px; }
+.dns-table th:nth-child(2) { width: 28%; }
+.dns-table th:nth-child(4) { width: 96px; }
+.dns-table td { overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.dns-table tbody tr { cursor: pointer; }
+.dns-table tr.missing td { color: var(--text-2); }
+.dns-table .dns-act { text-align: right; }
+.dns-full .copy { align-items: flex-start; }
+.dns-full .copy-text { overflow-wrap: anywhere; white-space: normal; text-align: left; }
 .chip .chip-x { display: inline-grid; place-items: center; margin: 0 -4px 0 2px; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; opacity: .7; }
 .chip .chip-x:hover { opacity: 1; }
 .card-head h2 > .chip { text-transform: none; }

@@ -218,14 +218,16 @@ function Wizard({ state, onDone, onCancel }: { state: MailState; onDone: (s: Mai
 
 // ---- status ----
 
-// MailStatus shows setup while it runs, then only the steps that failed and
-// mail waiting to send.
-export function MailStatus({ state, onState }: { state: MailState; onState: (s: MailState) => void }) {
+// MailStatus shows setup while it runs, then only the steps that failed for
+// `domain` or for the server as a whole, and mail waiting to send.
+export function MailStatus({ state, onState, domain }: { state: MailState; onState: (s: MailState) => void; domain: string }) {
   const can = useCan();
   const act = useAct(onState);
   const manage = can("mail.manage");
   const { job } = state;
-  const failed = job.running ? [] : job.steps.filter((s) => !s.ok);
+  const others = state.settings.domains.map((d) => d.name).filter((n) => n !== domain);
+  const mine = (name: string) => name.includes(domain) || !others.some((o) => name.includes(o));
+  const failed = job.running ? [] : job.steps.filter((s) => !s.ok && mine(s.name));
   const percent = job.total ? Math.min(100, Math.round((job.done / job.total) * 100)) : 0;
   return (
     <>
