@@ -49,12 +49,12 @@ const CONTENT: Record<string, ReactNode> = {
   domains: (
     <>
       <Doc title="Adding a domain">
-        <p><b>Add domain</b> asks where its DNS is hosted. <b>DNS records</b> works with any host: you add the records yourself. <b>Cloudflare</b> connects with a token and syncs the records for you. <b>Squarespace</b>, <b>GoDaddy</b>, <b>Namecheap</b> and <b>Porkbun</b> are added by hand too, with a button to their DNS page; none of them lets another app write records.</p>
-        <p>A domain's menu turns Cloudflare sync on or off, sets its <b>Managers</b> (dashboard accounts with View mail that run its addresses without setting mail up), or removes it. The first domain is the primary: the server is <code>mail.</code> on it.</p>
+        <p><b>Add domain</b> asks where its DNS is hosted. With <b>Cloudflare</b>, <b>Porkbun</b>, <b>GoDaddy</b> or <b>Namecheap</b>, its real records are read and changed here through the host's API; each connects once, under <b>Settings</b>, <b>Connections</b>. With <b>DNS records</b>, any other host works and you add what mail needs there yourself.</p>
+        <p>A domain's menu holds <b>Make primary</b> (the mail server is <code>mail.</code> on the primary domain), Cloudflare sync, its <b>Managers</b> (dashboard accounts with View mail that run its addresses without setting mail up), and removing it.</p>
       </Doc>
       <Doc title="Inside a domain">
-        <p><b>Addresses</b> lists its mail addresses and aliases. <b>New address</b> takes a name and a password; mail apps sign in with the full address. <b>Turn mail apps off</b> keeps an address from signing in to IMAP and SMTP while its mail still arrives. <b>New alias</b> sends another address, or <code>@domain</code> for everything else at it, to an address. Mail for <code>postmaster</code> and <code>abuse</code> goes to the first address.</p>
-        <p><b>DNS</b> lists each record the domain needs (MX, SPF, DKIM, DMARC, the server's address, and <code>autodiscover.</code> and <code>autoconfig.</code> for mail apps), with its value to copy. Each turns green once DNS answers with it.</p>
+        <p><b>DNS</b> lists its records, one line each. A click opens one in full to change or remove it; <b>Add record</b> adds A, AAAA, CNAME, MX or TXT. Records mail needs that DNS lacks are listed with an <b>Add</b> button. For DNS kept elsewhere, it lists what mail needs there, each checked against DNS.</p>
+        <p><b>Mail</b> lists its addresses and aliases. <b>New address</b> takes a name and a password; mail apps sign in with the full address. <b>Turn mail apps off</b> keeps an address from signing in to IMAP and SMTP while its mail still arrives. <b>New alias</b> sends another address, or <code>@domain</code> for everything else at it, to an address. Mail for <code>postmaster</code> and <code>abuse</code> goes to the first address.</p>
       </Doc>
       <Doc title="Mail">
         <p>Each domain is served by a mail server on this computer: it receives mail, keeps each address's mailboxes here, and sends mail signed with DKIM. Outlook, Gmail, Apple Mail, Thunderbird and phones read and send it over IMAP and SMTP.</p>

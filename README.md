@@ -164,22 +164,25 @@ until it is installed from **Apps**.
 ## Domains
 
 **Domains** holds the domains this computer serves. **Add domain** asks where each one's DNS is
-hosted: **DNS records** for any host, where you add the records yourself; **Cloudflare**, which
-connects with a token and syncs them; or **Squarespace**, **GoDaddy**, **Namecheap** or
-**Porkbun**, added by hand with a button to their DNS page, since none of them lets another app
-write records.
+hosted. With **Cloudflare**, **Porkbun**, **GoDaddy** or **Namecheap**, its real records are read
+and changed here through the host's API; each connects once, with a token or keys, under
+**Settings**, **Connections** (Cloudflare under its own section). With **DNS records**, any other
+host works and you add what mail needs there yourself.
 
 Inside a domain:
 
-- **Addresses**: its mail addresses and aliases.
+- **DNS**: its records, one line each; a click opens one in full to change or remove it, and
+  **Add record** adds A, AAAA, CNAME, MX or TXT. Records mail needs that DNS does not have yet are
+  listed with an **Add** button. For DNS kept elsewhere, it lists what mail needs there, each
+  checked against DNS.
+- **Mail**: its mail addresses and aliases.
 - **Activity**: the mail that came in and went out for it.
-- **DNS**: each record it needs (MX, SPF, DKIM, DMARC, the server's address `mail.<domain>`, and
-  `autodiscover.` and `autoconfig.`), each to copy, turning green once DNS answers with it.
 - **Settings**: the mail server, set up a step at a time, then how mail moves, how mail apps
   sign in, and its options.
 
-A domain's menu turns Cloudflare sync on or off, sets its **managers** (dashboard accounts with
-**View mail** that run its addresses without being able to set mail up) or removes it.
+A domain's menu holds **Make primary** (the mail server is `mail.` on the primary domain),
+Cloudflare sync on or off, its **managers** (dashboard accounts with **View mail** that run its
+addresses without being able to set mail up), and removing it.
 
 ### Mail
 
