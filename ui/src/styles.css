@@ -271,6 +271,7 @@ main.page { animation: fade .15s both; }
 .welcome h2 { font-size: 20px; font-weight: 600; }
 .welcome p { max-width: 460px; color: var(--text-2); }
 .welcome .btn { margin-top: 10px; }
+.welcome-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 
 .callout {
   display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin-bottom: 16px;
@@ -1544,7 +1545,6 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
 .mail-bar > span { display: block; height: 100%; background: var(--accent); transition: width .4s var(--ease); }
 .mail-none { padding: 16px 20px; }
 .mail-state { display: inline-flex; align-items: center; gap: 10px; }
-.mail-bar-row { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* Something left to do: one line that leads to where it is done. */
 .mail-todo {

@@ -295,7 +295,7 @@ function DomainPage({ domain, tab, state, onState }: { domain: MailDomain; tab: 
       </div>
       <div className="page-body stack">
         {current === "dns" && <Dns domain={domain.name} bar={bar} />}
-        {current === "mail" && <Addresses domain={domain.name} state={state} onState={onState} />}
+        {current === "mail" && <Addresses domain={domain.name} state={state} onState={onState} bar={bar} />}
         {current === "activity" && <MailActivity domain={domain.name} />}
         {current === "settings" && (
           <>
@@ -489,7 +489,9 @@ function RecordDialog({ domain, record, editable, onClose, onSaved }: {
 
 // ---- addresses ----
 
-function Addresses({ domain, state, onState }: { domain: string; state: MailState; onState: (s: MailState) => void }) {
+// Addresses lists the domain's mailboxes and aliases, its buttons beside the
+// tabs; with none yet, the page is just the way to add the first.
+function Addresses({ domain, state, onState, bar }: { domain: string; state: MailState; onState: (s: MailState) => void; bar: HTMLElement | null }) {
   const act = useAct(onState);
   const [adding, setAdding] = useState(false);
   const [alias, setAlias] = useState(false);
@@ -498,22 +500,31 @@ function Addresses({ domain, state, onState }: { domain: string; state: MailStat
   const accounts = state.accounts.filter((a) => domainOf(a.address) === domain);
   const aliases = state.aliases.filter((x) => domainOf(x.alias) === domain);
   const targets = state.accounts.filter((a) => state.manages.includes(domainOf(a.address))).map((a) => a.address);
+  const none = accounts.length === 0 && aliases.length === 0;
+  const buttons = runs && (
+    <>
+      {targets.length > 0 && <button type="button" className="btn" onClick={() => setAlias(true)}><Icon name="call_split" size={18} />New alias</button>}
+      <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="add" size={18} />New address</button>
+    </>
+  );
   return (
     <>
-      {runs && (
-        <div className="mail-bar-row">
-          {targets.length > 0 && <button type="button" className="btn" onClick={() => setAlias(true)}><Icon name="call_split" size={18} />New alias</button>}
-          <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="add" size={18} />New address</button>
+      {none ? (
+        <div className="welcome">
+          <Icon name="mail" size={48} />
+          {buttons && <div className="welcome-actions">{buttons}</div>}
         </div>
+      ) : (
+        <>
+          {bar && buttons && createPortal(buttons, bar)}
+          <div className="card">
+            <ul className="results ct-list">
+              {accounts.map((a) => <AccountRow key={a.address} account={a} runs={runs} onState={onState} onPassword={() => setPassword(a.address)} />)}
+              {aliases.map((x) => <AliasRow key={x.alias} alias={x.alias} target={x.target} runs={runs} onState={onState} />)}
+            </ul>
+          </div>
+        </>
       )}
-      <div className="card">
-        {accounts.length === 0 && aliases.length === 0 ? <p className="empty-note mail-none">No addresses yet.</p> : (
-          <ul className="results ct-list">
-            {accounts.map((a) => <AccountRow key={a.address} account={a} runs={runs} onState={onState} onPassword={() => setPassword(a.address)} />)}
-            {aliases.map((x) => <AliasRow key={x.alias} alias={x.alias} target={x.target} runs={runs} onState={onState} />)}
-          </ul>
-        )}
-      </div>
       {adding && <NewAddress domain={domain} onClose={() => setAdding(false)}
         onSave={(address, name, pass) => act(() => api.addMailAccount({ address, name, password: pass }), `Added ${address}`)} />}
       {alias && <NewAlias accounts={targets} domain={domain} onClose={() => setAlias(false)}
