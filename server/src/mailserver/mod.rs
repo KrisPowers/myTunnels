@@ -107,7 +107,14 @@ pub struct Domain {
     /// aliases without setting mail up.
     #[serde(default)]
     pub managers: Vec<String>,
+    /// Where its DNS is hosted when its records are added by hand, such as
+    /// `squarespace`, so the dashboard can link there; empty for anywhere.
+    #[serde(default)]
+    pub host: String,
 }
+
+/// The DNS hosts a domain kept by hand can name.
+const HOSTS: [&str; 4] = ["squarespace", "godaddy", "namecheap", "porkbun"];
 
 impl Domain {
     pub fn on_cloudflare(&self) -> bool {
@@ -1043,11 +1050,15 @@ async fn zone_named(state: &AppState, zone_id: &str) -> ApiResult<Domain> {
         name: zone.name.to_ascii_lowercase(),
         zone_id: zone.id,
         managers: Vec::new(),
+        host: String::new(),
     })
 }
 
-/// A domain whose records are added by hand.
-fn by_hand(name: &str) -> ApiResult<Domain> {
+/// A domain whose records are added by hand, at `host` when it names one.
+fn by_hand(name: &str, host: &str) -> ApiResult<Domain> {
+    if !host.is_empty() && !HOSTS.contains(&host) {
+        return Err(ApiError::bad("Pick where the domain's DNS is hosted"));
+    }
     let name = name
         .trim()
         .trim_start_matches('@')
@@ -1069,6 +1080,7 @@ fn by_hand(name: &str) -> ApiResult<Domain> {
         name,
         zone_id: String::new(),
         managers: Vec::new(),
+        host: host.to_owned(),
     })
 }
 
@@ -1102,7 +1114,7 @@ pub async fn setup(
     let mut s = mail.settings();
     let first = match (body.zone_id.filter(|z| !z.is_empty()), body.domain) {
         (Some(z), _) => Some(zone_named(&state, &z).await?),
-        (None, Some(n)) if !n.trim().is_empty() => Some(by_hand(&n)?),
+        (None, Some(n)) if !n.trim().is_empty() => Some(by_hand(&n, "")?),
         _ => None,
     };
     if let Some(d) = first {
@@ -1199,6 +1211,9 @@ pub struct DomainIn {
     /// A Cloudflare zone, or a name whose records are added by hand.
     zone_id: Option<String>,
     name: Option<String>,
+    /// Where its DNS is hosted, for a domain kept by hand.
+    #[serde(default)]
+    host: String,
 }
 
 pub async fn add_domain(
@@ -1209,7 +1224,7 @@ pub async fn add_domain(
     let mail = mail()?;
     let d = match (body.zone_id.filter(|z| !z.is_empty()), body.name) {
         (Some(z), _) => zone_named(&state, &z).await?,
-        (None, Some(n)) => by_hand(&n)?,
+        (None, Some(n)) => by_hand(&n, &body.host)?,
         (None, None) => return Err(ApiError::bad("Enter a domain")),
     };
     let mut s = mail.settings();
@@ -1513,6 +1528,7 @@ mod tests {
                 name: "example.com".into(),
                 zone_id: "z1".into(),
                 managers: Vec::new(),
+                host: String::new(),
             }],
             on: true,
             save_sent: true,
@@ -1559,18 +1575,20 @@ mod tests {
 
     #[test]
     fn domains_by_hand_are_checked() {
-        let d = by_hand(" @Example.COM. ").unwrap();
+        let d = by_hand(" @Example.COM. ", "").unwrap();
         assert_eq!(d.name, "example.com");
         assert!(!d.on_cloudflare());
         for bad in ["example", "-a.com", "a..com", "a b.com", ""] {
-            assert!(by_hand(bad).is_err(), "{bad}");
+            assert!(by_hand(bad, "").is_err(), "{bad}");
         }
+        assert_eq!(by_hand("a.com", "squarespace").unwrap().host, "squarespace");
+        assert!(by_hand("a.com", "nowhere").is_err());
     }
 
     #[test]
     fn cloudflare_ways_need_every_domain_there() {
         let mut s = Settings {
-            domains: vec![by_hand("a.com").unwrap()],
+            domains: vec![by_hand("a.com", "").unwrap()],
             ..Settings::default()
         };
         assert!(cloudflare_ways(&s).is_ok() && !s.needs_cloudflare());
