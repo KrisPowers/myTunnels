@@ -169,22 +169,26 @@ connects with a token and syncs them; or **Squarespace**, **GoDaddy**, **Nameche
 **Porkbun**, added by hand with a button to their DNS page, since none of them lets another app
 write records.
 
-Inside a domain, **Addresses** holds its mail addresses and aliases, and **DNS** lists each record
-it needs (MX, SPF, DKIM, DMARC, the server's address `mail.<domain>`, and `autodiscover.` and
-`autoconfig.`), each to copy, turning green once DNS answers with it. A domain's menu turns
-Cloudflare sync on or off, sets its **managers** (dashboard accounts with **View mail** that run
-its addresses without being able to set mail up) or removes it.
+Inside a domain:
 
-## Mail
+- **Addresses**: its mail addresses and aliases.
+- **Activity**: the mail that came in and went out for it.
+- **DNS**: each record it needs (MX, SPF, DKIM, DMARC, the server's address `mail.<domain>`, and
+  `autodiscover.` and `autoconfig.`), each to copy, turning green once DNS answers with it.
+- **Settings**: the mail server, set up a step at a time, then how mail moves, how mail apps
+  sign in, and its options.
 
-**Mail** is a mail server for addresses on your own domains, on this computer: it receives mail,
-keeps each account's mailboxes in `mail.db` beside the gateway's database, and sends mail signed
-with DKIM. Outlook, Apple Mail, Thunderbird and phones use it over IMAP and SMTP.
+A domain's menu turns Cloudflare sync on or off, sets its **managers** (dashboard accounts with
+**View mail** that run its addresses without being able to set mail up) or removes it.
 
-It serves the domains on the **Domains** page and the addresses added inside each one. Setup
-needs a domain first, then goes a step at a time: how mail arrives, how mail apps connect and how
-mail leaves. Each way shows at a glance whether it exposes a port, depends on a third party, is
-usage limited, is often blocked on home connections or needs a paid plan.
+### Mail
+
+The mail server runs on this computer: it receives mail, keeps each address's mailboxes in
+`mail.db` beside the gateway's database, and sends mail signed with DKIM. Outlook, Gmail, Apple
+Mail, Thunderbird and phones use it over IMAP and SMTP. Setup goes a step at a time: how mail
+arrives, how mail apps connect and how mail leaves. Each way shows at a glance whether it exposes
+a port, depends on a third party, is usage limited, is often blocked on home connections or needs
+a paid plan.
 
 Setup picks how each part is reached, in any mix:
 

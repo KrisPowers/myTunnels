@@ -9,7 +9,6 @@ export const DOCS: [string, string, IconName][] = [
   ["storage", "Storage", "cloud"],
   ["forward", "Routes", "wifi_cog"],
   ["domains", "Domains", "public"],
-  ["mail", "Mail", "mail"],
   ["access", "Access Control", "shield"],
   ["devices", "Devices", "devices"],
   ["users", "Users", "group"],
@@ -57,25 +56,20 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Addresses</b> lists its mail addresses and aliases. <b>New address</b> takes a name and a password; mail apps sign in with the full address. <b>Turn mail apps off</b> keeps an address from signing in to IMAP and SMTP while its mail still arrives. <b>New alias</b> sends another address, or <code>@domain</code> for everything else at it, to an address. Mail for <code>postmaster</code> and <code>abuse</code> goes to the first address.</p>
         <p><b>DNS</b> lists each record the domain needs (MX, SPF, DKIM, DMARC, the server's address, and <code>autodiscover.</code> and <code>autoconfig.</code> for mail apps), with its value to copy. Each turns green once DNS answers with it.</p>
       </Doc>
-    </>
-  ),
-  mail: (
-    <>
-      <Doc title="What it does">
-        <p><b>Mail</b> is a mail server for addresses on your own domains: it receives mail, keeps each account's mailboxes on this computer, and sends mail, signed with DKIM. Outlook, Apple Mail, Thunderbird and phones read and send it over IMAP and SMTP.</p>
-        <p>It serves the domains on the <b>Domains</b> page, and the addresses added inside each of them.</p>
+      <Doc title="Mail">
+        <p>Each domain is served by a mail server on this computer: it receives mail, keeps each address's mailboxes here, and sends mail signed with DKIM. Outlook, Gmail, Apple Mail, Thunderbird and phones read and send it over IMAP and SMTP.</p>
       </Doc>
       <Doc title="Picking the ways in and out">
-        <p>Setup needs a domain on the Domains page first, then goes a step at a time: how mail arrives, how mail apps connect, how mail leaves. Each way is ticked or crossed for whether it exposes a port, depends on a third party, is usage limited, is often blocked at home, or needs a paid plan. Any mix works, except that the Cloudflare ways need every domain synced with Cloudflare:</p>
+        <p>A domain's <b>Settings</b> tab sets mail up a step at a time: how mail arrives, how mail apps connect, how mail leaves. Each way is ticked or crossed for whether it exposes a port, depends on a third party, is usage limited, is often blocked at home, or needs a paid plan. Any mix works, except that the Cloudflare ways need every domain synced with Cloudflare:</p>
         <ul>
           <li><b>Receiving, Port forward</b>: the traditional way. Port 25 is forwarded to this computer and the domain's MX record points at <code>mail.</code> on it, which follows this network's public address. <b>Cloudflare</b>: Email Routing takes the mail and a Worker posts it here through the tunnel, with no port open.</li>
           <li><b>Mail apps, Port forward</b>: IMAP on 993 and SMTP on 465, with a Let's Encrypt certificate, proved through Cloudflare DNS, or over port 80 while it is made for a domain kept by hand. <b>Tailscale</b>: IMAP on 443 and SMTP on 8443 through Tailscale Funnel, with Tailscale's certificate.</li>
           <li><b>Sending, Direct</b>: from this computer to each recipient's server on port 25. Many internet providers block that; <b>Relay</b> sends through another SMTP server instead, and <b>Cloudflare</b> through Email Sending, which needs the Workers Paid plan.</li>
         </ul>
-        <p>The ports it opens are rows on <b>Routes</b>, named <b>Mail</b>. Mail's <b>Settings</b> tab shows how mail moves, with <b>Change</b> to switch any part (the ports and records follow), the switches for incoming mail, and <b>Run setup again</b> and <b>Turn off</b>.</p>
+        <p>The ports it opens are rows on <b>Routes</b>, named <b>Mail</b>. Afterwards, <b>Settings</b> shows how mail moves and how mail apps sign in, with <b>Change</b> to switch any part (the ports and records follow), the switches for incoming mail, and <b>Run setup again</b> and <b>Turn off</b>.</p>
       </Doc>
       <Doc title="Checks on mail that comes in">
-        <p>Each message is checked with SPF, DKIM and DMARC. Mail that fails, or claims to be from your own domains without proof, goes to Junk; <b>Refuse spoofed mail</b> turns away mail whose sender's policy says reject. Attachments that can run code are marked <code>$Risky</code>, newsletters <code>$Marketing</code>. <b>Activity</b> lists what came in and went out.</p>
+        <p>Each message is checked with SPF, DKIM and DMARC. Mail that fails, or claims to be from your own domains without proof, goes to Junk; <b>Refuse spoofed mail</b> turns away mail whose sender's policy says reject. Attachments that can run code are marked <code>$Risky</code>, newsletters <code>$Marketing</code>. A domain's <b>Activity</b> lists what came in and went out for it.</p>
       </Doc>
     </>
   ),
