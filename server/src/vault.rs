@@ -27,6 +27,9 @@ pub fn is_secret(key: &str) -> bool {
             | "mail"
             | "mail_cert"
             | "mail_acme"
+            | "porkbun"
+            | "godaddy"
+            | "namecheap"
     ) || key.starts_with("oauth_")
         || key.starts_with("mail_dkim:")
         || key.starts_with("totp:")

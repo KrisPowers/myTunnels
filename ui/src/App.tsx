@@ -202,7 +202,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   useEffect(() => {
     if (view === "containers" && !id && !can("containers.view") && home !== "#/") go(home);
   });
-  const settings = SETTINGS.filter(([k]) => can("settings.manage") || !["cloudflare", "network", "connector"].includes(k));
+  const settings = SETTINGS.filter(([k]) => can("settings.manage") || !["cloudflare", "connections", "network", "connector"].includes(k));
   const sections = view === "settings" ? settings : view === "docs" ? DOCS : null;
   const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
     <NavItem key={key} to={to} icon={icon} label={label}
