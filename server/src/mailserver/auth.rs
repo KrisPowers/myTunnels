@@ -584,7 +584,7 @@ async fn verify_one(header: &[Field], sig: &Field, body: &[u8]) -> Dkim {
     }
     let digest = header_hash(header, &names, &without_b(&sig.raw), hc == "relaxed");
     res.status = if key
-        .verify(Pkcs1v15Sign::new::<Sha256>(), &digest, &b)
+        .verify(Pkcs1v15Sign::new::<rsa::sha2::Sha256>(), &digest, &b)
         .is_ok()
     {
         "pass"
@@ -658,7 +658,7 @@ pub fn sign(key: &RsaPrivateKey, domain: &str, selector: &str, raw: &[u8]) -> Re
         names.join(":")
     );
     let digest = header_hash(&header, &names, sig.as_bytes(), true);
-    let signature = key.sign(Pkcs1v15Sign::new::<Sha256>(), &digest)?;
+    let signature = key.sign(Pkcs1v15Sign::new::<rsa::sha2::Sha256>(), &digest)?;
     let b = B64.encode(signature);
     let mut out = sig;
     let mut rest = b.as_str();
@@ -811,7 +811,7 @@ mod tests {
         let digest = header_hash(&header, &names, &without_b(&field.raw), true);
         let b = B64.decode(strip_ws(tag(&t, "b"))).unwrap();
         assert!(RsaPublicKey::from(&key)
-            .verify(Pkcs1v15Sign::new::<Sha256>(), &digest, &b)
+            .verify(Pkcs1v15Sign::new::<rsa::sha2::Sha256>(), &digest, &b)
             .is_ok());
         assert!(record(&key).starts_with("v=DKIM1; k=rsa; p="));
     }

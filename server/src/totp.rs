@@ -3,7 +3,7 @@
 //! the dashboard and to tunnels asks for a code from the app, or one of its
 //! recovery codes, each good once.
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use rand::{Rng, RngCore};
 use serde_json::Value;
 use sha1::Sha1;

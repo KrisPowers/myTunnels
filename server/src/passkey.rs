@@ -330,7 +330,7 @@ fn verify(key: &Key, message: &[u8], signature: &[u8]) -> bool {
             let Ok(sig) = rsa::pkcs1v15::Signature::try_from(signature) else {
                 return false;
             };
-            rsa::pkcs1v15::VerifyingKey::<Sha256>::new(public)
+            rsa::pkcs1v15::VerifyingKey::<rsa::sha2::Sha256>::new(public)
                 .verify(message, &sig)
                 .is_ok()
         }

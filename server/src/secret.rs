@@ -3,8 +3,7 @@
 use std::sync::OnceLock;
 
 use anyhow::{anyhow, Result};
-use argon2::password_hash::rand_core::OsRng;
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use argon2::Argon2;
 
 use crate::util::sha256_hex;
@@ -12,19 +11,16 @@ use crate::util::sha256_hex;
 pub const RULE: &str = "Use 10 or more characters with upper and lower case, a number and a symbol";
 
 pub fn hash(password: &str) -> Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
     Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map(|h| h.to_string())
         .map_err(|e| anyhow!("could not hash password: {e}"))
 }
 
 pub fn verify(password: &str, hash: &str) -> bool {
-    PasswordHash::new(hash).is_ok_and(|parsed| {
-        Argon2::default()
-            .verify_password(password.as_bytes(), &parsed)
-            .is_ok()
-    })
+    Argon2::default()
+        .verify_password(password.as_bytes(), hash)
+        .is_ok()
 }
 
 /// Checks against `hash`, or against a stand-in when there is none, so a wrong
