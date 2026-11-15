@@ -8,6 +8,7 @@ export const DOCS: [string, string, IconName][] = [
   ["containers", "Containers", "deployed_code"],
   ["storage", "Storage", "cloud"],
   ["forward", "Routes", "wifi_cog"],
+  ["domains", "Domains", "public"],
   ["mail", "Mail", "mail"],
   ["access", "Access Control", "shield"],
   ["devices", "Devices", "devices"],
@@ -46,24 +47,32 @@ function Doc({ title, children }: { title: string; children: ReactNode }) {
 }
 
 const CONTENT: Record<string, ReactNode> = {
+  domains: (
+    <>
+      <Doc title="Adding a domain">
+        <p><b>Add domain</b> asks where its DNS is hosted. <b>DNS records</b> works with any host: you add the records yourself. <b>Cloudflare</b> connects with a token and syncs the records for you. <b>Squarespace</b>, <b>GoDaddy</b>, <b>Namecheap</b> and <b>Porkbun</b> are added by hand too, with a button to their DNS page; none of them lets another app write records.</p>
+        <p>A domain's menu turns Cloudflare sync on or off, sets its <b>Managers</b> (dashboard accounts with View mail that run its addresses without setting mail up), or removes it. The first domain is the primary: the server is <code>mail.</code> on it.</p>
+      </Doc>
+      <Doc title="Inside a domain">
+        <p><b>Addresses</b> lists its mail addresses and aliases. <b>New address</b> takes a name and a password; mail apps sign in with the full address. <b>Turn mail apps off</b> keeps an address from signing in to IMAP and SMTP while its mail still arrives. <b>New alias</b> sends another address, or <code>@domain</code> for everything else at it, to an address. Mail for <code>postmaster</code> and <code>abuse</code> goes to the first address.</p>
+        <p><b>DNS</b> lists each record the domain needs (MX, SPF, DKIM, DMARC, the server's address, and <code>autodiscover.</code> and <code>autoconfig.</code> for mail apps), with its value to copy. Each turns green once DNS answers with it.</p>
+      </Doc>
+    </>
+  ),
   mail: (
     <>
       <Doc title="What it does">
         <p><b>Mail</b> is a mail server for addresses on your own domains: it receives mail, keeps each account's mailboxes on this computer, and sends mail, signed with DKIM. Outlook, Apple Mail, Thunderbird and phones read and send it over IMAP and SMTP.</p>
-        <p>A domain is typed in, and its DNS records (MX, SPF, DKIM, DMARC and the server's address) are added where its DNS is hosted: <b>Domains</b> lists each record with its value to copy, and each turns green once DNS answers with it.</p>
-        <p>Cloudflare is optional. <b>Import</b>, <b>Cloudflare</b> on Domains, or <b>Import from Cloudflare</b> at setup, connects with a token and brings in domains from the account; their records are then kept in sync there. A domain's menu turns that sync on or off.</p>
+        <p>It serves the domains on the <b>Domains</b> page, and the addresses added inside each of them.</p>
       </Doc>
       <Doc title="Picking the ways in and out">
-        <p>Setup goes a step at a time: the domain, how mail arrives, how mail apps connect, how mail leaves. Each way is ticked or crossed for whether it exposes a port, depends on a third party, is usage limited, is often blocked at home, or needs a paid plan. Any mix works, except that the Cloudflare ways need every domain imported from Cloudflare:</p>
+        <p>Setup needs a domain on the Domains page first, then goes a step at a time: how mail arrives, how mail apps connect, how mail leaves. Each way is ticked or crossed for whether it exposes a port, depends on a third party, is usage limited, is often blocked at home, or needs a paid plan. Any mix works, except that the Cloudflare ways need every domain synced with Cloudflare:</p>
         <ul>
           <li><b>Receiving, Port forward</b>: the traditional way. Port 25 is forwarded to this computer and the domain's MX record points at <code>mail.</code> on it, which follows this network's public address. <b>Cloudflare</b>: Email Routing takes the mail and a Worker posts it here through the tunnel, with no port open.</li>
           <li><b>Mail apps, Port forward</b>: IMAP on 993 and SMTP on 465, with a Let's Encrypt certificate, proved through Cloudflare DNS, or over port 80 while it is made for a domain kept by hand. <b>Tailscale</b>: IMAP on 443 and SMTP on 8443 through Tailscale Funnel, with Tailscale's certificate.</li>
           <li><b>Sending, Direct</b>: from this computer to each recipient's server on port 25. Many internet providers block that; <b>Relay</b> sends through another SMTP server instead, and <b>Cloudflare</b> through Email Sending, which needs the Workers Paid plan.</li>
         </ul>
         <p>The ports it opens are rows on <b>Routes</b>, named <b>Mail</b>. Mail's <b>Settings</b> tab shows how mail moves, with <b>Change</b> to switch any part (the ports and records follow), the switches for incoming mail, and <b>Run setup again</b> and <b>Turn off</b>.</p>
-      </Doc>
-      <Doc title="Accounts">
-        <p><b>Accounts</b> lists every account and alias, under a heading per domain when there are several. <b>New account</b> takes an address and a password; <b>Turn mail apps off</b> keeps an account from signing in to IMAP and SMTP while its mail still arrives. A domain's <b>Managers</b>, set from its menu on <b>Domains</b>, are dashboard accounts with View mail that run its accounts and aliases without setting mail up. Mail apps sign in with the full address. <b>Aliases</b> send another address, or <code>@domain</code> for everything else at it, to an account. Mail for <code>postmaster</code> and <code>abuse</code> goes to the first account. Mail apps find their settings from the address alone, through <code>autodiscover.</code> and <code>autoconfig.</code> on each domain.</p>
       </Doc>
       <Doc title="Checks on mail that comes in">
         <p>Each message is checked with SPF, DKIM and DMARC. Mail that fails, or claims to be from your own domains without proof, goes to Junk; <b>Refuse spoofed mail</b> turns away mail whose sender's policy says reject. Attachments that can run code are marked <code>$Risky</code>, newsletters <code>$Marketing</code>. <b>Activity</b> lists what came in and went out.</p>

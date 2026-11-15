@@ -571,7 +571,7 @@ export type MailSend = "direct" | "relay" | "cloudflare";
 export interface MailRelay { host: string; port: number; security: string; username: string; password_set?: boolean }
 // A domain: its records kept on Cloudflare in zone_id, or added by hand when
 // it is empty; managers are dashboard account IDs that run its accounts.
-export interface MailDomain { name: string; zone_id: string; managers: string[] }
+export interface MailDomain { name: string; zone_id: string; managers: string[]; host: string }
 export interface MailSettings {
   // The first is the primary: the server is mail. on it.
   domains: MailDomain[];
@@ -678,7 +678,7 @@ export const api = {
   mailOff: () => call<MailState>("/mail/off", "POST"),
   mailOptions: (patch: Partial<{ reject_dmarc: boolean; save_sent: boolean }>) => call<MailState>("/mail/options", "PATCH", patch),
   mailRecords: () => call<MailRecords[]>("/mail/records"),
-  addMailDomain: (body: { zone_id: string } | { name: string }) => call<MailState>("/mail/domains", "POST", body),
+  addMailDomain: (body: { zone_id: string } | { name: string; host?: string }) => call<MailState>("/mail/domains", "POST", body),
   editMailDomain: (name: string, patch: Partial<{ cloudflare: boolean; managers: string[] }>) =>
     call<MailState>(`/mail/domains/${encodeURIComponent(name)}`, "PATCH", patch),
   removeMailDomain: (name: string) => call<MailState>(`/mail/domains/${encodeURIComponent(name)}`, "DELETE"),

@@ -16,6 +16,7 @@ import { go, readHash } from "./route";
 import { SETTINGS, Settings } from "./Settings";
 import { Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
+import { DomainsPage } from "./Domains";
 import { MailPage } from "./Mail";
 import { StoragePage } from "./Storage";
 import { target, TunnelPage } from "./Tunnels";
@@ -25,7 +26,7 @@ import { Callout, Notices, Tooltips, useNotify } from "./ui";
 
 // Pages whose id picks one container, tunnel, device or account, a page of its
 // own; on the rest it is a tab or section, which changes in place.
-const ONE_OF: string[] = ["containers", "tunnels", "devices", "users"];
+const ONE_OF: string[] = ["containers", "tunnels", "devices", "users", "domains"];
 
 export function App() {
   return (
@@ -194,6 +195,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
     ["containers", "Containers", "deployed_code", "#/", can("containers.view")],
     ["forward", "Routes", "wifi_cog", "#/routes", can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("drive.view")],
+    ["domains", "Domains", "public", "#/domains", can("mail.view") || can("mail.manage")],
     ["mail", "Mail", "mail", "#/mail", can("mail.view") || can("mail.manage")],
     ["apps", "Apps", "apps", "#/apps", true],
     ["security", "Security", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
@@ -251,6 +253,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
           {view === "apps" && <AppsPage />}
           {view === "storage" && <StoragePage />}
+          {view === "domains" && <DomainsPage id={id} tab={page} />}
           {view === "mail" && <MailPage tab={id} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} forwards={forwards ?? []}
             users={users ?? []} providers={providers} onChanged={load} />}

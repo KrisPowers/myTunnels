@@ -161,26 +161,30 @@ Router and Tailscale forwards can **Close after** an hour, a day or a week, and 
 switched off. A way whose app is missing (cloudflared, Tailscale) is listed but cannot be picked
 until it is installed from **Apps**.
 
+## Domains
+
+**Domains** holds the domains this computer serves. **Add domain** asks where each one's DNS is
+hosted: **DNS records** for any host, where you add the records yourself; **Cloudflare**, which
+connects with a token and syncs them; or **Squarespace**, **GoDaddy**, **Namecheap** or
+**Porkbun**, added by hand with a button to their DNS page, since none of them lets another app
+write records.
+
+Inside a domain, **Addresses** holds its mail addresses and aliases, and **DNS** lists each record
+it needs (MX, SPF, DKIM, DMARC, the server's address `mail.<domain>`, and `autodiscover.` and
+`autoconfig.`), each to copy, turning green once DNS answers with it. A domain's menu turns
+Cloudflare sync on or off, sets its **managers** (dashboard accounts with **View mail** that run
+its addresses without being able to set mail up) or removes it.
+
 ## Mail
 
 **Mail** is a mail server for addresses on your own domains, on this computer: it receives mail,
 keeps each account's mailboxes in `mail.db` beside the gateway's database, and sends mail signed
 with DKIM. Outlook, Apple Mail, Thunderbird and phones use it over IMAP and SMTP.
 
-Setup goes a step at a time: the domain, then how mail arrives, how mail apps connect and how mail
-leaves. Each way shows at a glance whether it exposes a port, depends on a third party, is usage
-limited, is often blocked on home connections or needs a paid plan. A domain is typed in, and its
-DNS records (MX, SPF, DKIM, DMARC and the server's address, `mail.<domain>`) are added where its
-DNS is hosted: **Domains** lists each record with its value to copy and checks DNS for it, so each
-one turns green as it appears.
-
-Cloudflare is optional. **Import**, **Cloudflare** on **Domains** (or **Import from Cloudflare**
-at setup) connects with a token and brings in domains from the account, and their records are then
-kept in sync there. A domain's menu turns that sync on or off.
-
-Any number of domains can be added. Each has its own accounts and aliases under **Accounts**, and
-can be given **managers**: dashboard accounts with **View mail** that run that domain's accounts
-and aliases (passwords, mail apps on or off) without being able to set mail up.
+It serves the domains on the **Domains** page and the addresses added inside each one. Setup
+needs a domain first, then goes a step at a time: how mail arrives, how mail apps connect and how
+mail leaves. Each way shows at a glance whether it exposes a port, depends on a third party, is
+usage limited, is often blocked on home connections or needs a paid plan.
 
 Setup picks how each part is reached, in any mix:
 

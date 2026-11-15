@@ -6,11 +6,11 @@
 // `/<id>/<page>` for one of them; `#/apps`, the apps catalog;
 // `#/settings/<section>`, Preferences among them; and
 // `#/docs/<section>`; `#/dashboard`, the host and its containers, where `#/hardware` now goes;
-// `#/storage`, documents, photos and videos together; `#/mail/<tab>`, the
-// mail server; `#/containers`,
+// `#/storage`, documents, photos and videos together; `#/domains/<name>/<tab>`,
+// the domains and the addresses at each; `#/mail/<tab>`, the mail server; `#/containers`,
 // with `/<name>/<page>/...` for one, its tunnel and images among its pages.
 
-export type View = "tunnels" | "dashboard" | "apps" | "containers" | "forward" | "storage" | "mail" | "devices" | "users" | "security" | "settings" | "docs";
+export type View = "tunnels" | "dashboard" | "apps" | "containers" | "forward" | "storage" | "domains" | "mail" | "devices" | "users" | "security" | "settings" | "docs";
 
 export interface Place {
   view: View;
@@ -41,7 +41,10 @@ export function readHash(): Place {
   if (first === "media" || first === "drive" || first === "convert" || first === "storage") return { view: "storage", id: "", page: "", more: [] };
   // Images became each container's Images page.
   if (first === "images") return { view: "containers", id: "", page: "", more: [] };
+  // Mail's Domains and Accounts tabs became the Domains page.
+  if (first === "mail" && (second === "domains" || second === "accounts")) return { view: "domains", id: "", page: "", more: [] };
   if (first === "mail") return { view: "mail", id: second, page: "", more: [] };
+  if (first === "domains") return { view: "domains", id: second, page: third, more: [] };
   if (first === "devices" || first === "users" || first === "settings" || first === "docs" || first === "containers" || first === "security") return { view: first, id: second, page: third, more };
   // One tunnel has a page of its own; the list of them is Containers'.
   if (first === "tunnels" && second) return { view: "tunnels", id: second, page: third, more: [] };
