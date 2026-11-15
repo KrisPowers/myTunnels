@@ -1600,13 +1600,6 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
 .way-facts li.has .icon { color: var(--warn); }
 @media (max-width: 560px) { .wizard-fields { grid-template-columns: minmax(0, 1fr); } }
 
-/* Where a domain's DNS is hosted, a tile each, three across. */
-.ways.hosts { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-
-/* Mail before any domain exists: one line and the way to add one. */
-.mail-start { display: grid; justify-items: center; gap: 12px; max-width: 420px; margin-inline: auto; padding: 32px 20px; text-align: center; }
-.mail-start > .icon { color: var(--accent); }
-
 
 /* A domain's records, each to copy, with whether DNS answers with it yet. */
 .mail-records td { vertical-align: top; padding-top: 12px; padding-bottom: 12px; height: auto; }

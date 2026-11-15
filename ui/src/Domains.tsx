@@ -3,7 +3,7 @@ import { useCloudflare } from "./Cloudflare";
 import { api, bytes, message, type MailAccount, type MailDomain, type MailRecords, type MailState } from "./api";
 import { Dropdown, MultiDropdown } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
-import { cleanDomain, DOMAIN, domainOf, plural, useAct, useZones } from "./Mail";
+import { cleanDomain, DOMAIN, domainOf, MailActivity, MailSettings, MailStatus, plural, useAct, useZones } from "./Mail";
 import { useCan } from "./me";
 import { go } from "./route";
 import { AddMenu, Callout, Card, Copy, Dialog, MoreMenu, SubNav, TextField, type MenuAction } from "./ui";
@@ -41,11 +41,12 @@ function useDomains() {
       setProblem(message(e));
     }
   }, []);
+  const running = !!state?.job.running;
   useEffect(() => {
     load();
-    const t = setInterval(load, 10_000);
+    const t = setInterval(load, running ? 1500 : 10_000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, running]);
   const check = useCallback(async () => {
     setChecking(true);
     try {
@@ -174,10 +175,7 @@ function AddDomain({ state, onState, onClose }: { state: MailState; onState: (s:
   const taken = state.settings.domains.map((d) => d.name);
   const free = (zones ?? []).filter((z) => !taken.includes(z.name.toLowerCase()));
   const domain = cleanDomain(name);
-  // Mail through Cloudflare needs every domain synced there.
-  const cfWays = state.settings.receive === "cloudflare" || state.settings.send === "cloudflare";
-  const blocked = cfWays && !synced;
-  const ok = !blocked && (synced ? picked.length > 0 : DOMAIN.test(domain) && !taken.includes(domain));
+  const ok = synced ? picked.length > 0 : DOMAIN.test(domain) && !taken.includes(domain);
 
   const add = async () => {
     setBusy(true);
@@ -192,22 +190,18 @@ function AddDomain({ state, onState, onClose }: { state: MailState; onState: (s:
   };
 
   return (
-    <Dialog title="Add domain" wide onClose={onClose}>
+    <Dialog title="Add domain" onClose={onClose}>
       <div className="stack">
-        <div className="ways hosts" role="radiogroup" aria-label="Where its DNS is">
-          {HOSTS.map((h) => (
-            <button key={h.value} type="button" role="radio" aria-checked={host === h.value}
-              className={"way" + (host === h.value ? " on" : "")}
-              onClick={() => {
-                if (h.value === "cloudflare" && !cloudflare(() => setHost("cloudflare"))) return;
-                setHost(h.value);
-              }}>
-              <span className="way-head"><Icon name={h.icon} size={22} /><b>{h.label}</b></span>
-              <span className="way-hint">{h.hint}</span>
-            </button>
-          ))}
+        <div className="tf static">
+          <div className="tf-box">
+            <Dropdown label="DNS host" value={host} options={HOSTS.map((h) => ({ value: h.value, label: h.label, icon: h.icon, hint: h.hint }))}
+              onChange={(v) => {
+                if (v === "cloudflare" && !cloudflare(() => setHost("cloudflare"))) return;
+                setHost(v);
+              }} />
+            <span className="tf-label">DNS host</span>
+          </div>
         </div>
-        {blocked && <Callout tone="warn" icon="cloud">Mail moves through Cloudflare, so domains need to sync with it.</Callout>}
         {synced ? (
           zones === null ? <div className="muted"><span className="spinner small" /> Loading your Cloudflare domains</div>
           : free.length === 0 ? <Callout icon="cloud">Every domain on this Cloudflare account is already here.</Callout>
@@ -267,7 +261,9 @@ function ManagersDialog({ domain, state, onState, onClose }: { domain: MailDomai
 
 const TABS: [string, string, IconName][] = [
   ["addresses", "Addresses", "mail"],
+  ["activity", "Activity", "history"],
   ["dns", "DNS", "dns"],
+  ["settings", "Settings", "settings"],
 ];
 
 function DomainPage({ domain, tab, state, onState, list, checking, onCheck }: {
@@ -292,8 +288,15 @@ function DomainPage({ domain, tab, state, onState, list, checking, onCheck }: {
       </div>
       <SubNav back="#/domains" backLabel="Domains" base={href(domain.name)} items={TABS} current={current} />
       <div className="page-body stack">
-        {current === "addresses" && <Addresses domain={domain.name} state={state} onState={onState} />}
+        {current === "addresses" && (
+          <>
+            <MailStatus state={state} onState={onState} />
+            <Addresses domain={domain.name} state={state} onState={onState} />
+          </>
+        )}
+        {current === "activity" && <MailActivity domain={domain.name} />}
         {current === "dns" && <Dns domain={domain} list={list} checking={checking} onCheck={onCheck} />}
+        {current === "settings" && <MailSettings state={state} onState={onState} />}
       </div>
       {managing && <ManagersDialog domain={domain} state={state} onState={onState} onClose={() => setManaging(false)} />}
     </>
