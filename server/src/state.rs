@@ -25,6 +25,7 @@ pub struct Snapshot {
     pub hub: Option<String>,
     pub upstream_host: String,
     pub trusted: Vec<Cidr>,
+    pub redirects: Vec<crate::redirect::Redirect>,
 }
 
 /// One kind of session. Each is a signed token (see `token`); the store keeps only
@@ -219,6 +220,7 @@ impl AppState {
                 hub: None,
                 upstream_host: String::new(),
                 trusted: Vec::new(),
+                redirects: Vec::new(),
             })),
         }));
         state.reload()?;
@@ -262,6 +264,7 @@ impl AppState {
             hub,
             upstream_host,
             trusted,
+            redirects: crate::redirect::load(&self.db),
         });
         *self.snapshot.write().unwrap_or_else(|e| e.into_inner()) = snapshot;
         Ok(())

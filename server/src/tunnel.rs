@@ -234,6 +234,12 @@ pub async fn sync_ingress(state: &AppState) -> Result<()> {
         .collect();
     // Mail's own addresses, which the gateway answers itself.
     ours.extend(crate::mailserver::web::hosts());
+    // Redirects, which the gateway answers itself.
+    for host in crate::redirect::hosts(&crate::redirect::load(&state.db)) {
+        if !ours.contains(&host) {
+            ours.push(host);
+        }
+    }
     let config = merge_ingress(current, &ours, &state.config.gate_service);
     api.put_config(&cf.account_id, &cf.tunnel_id, config).await
 }
