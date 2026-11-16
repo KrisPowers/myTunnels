@@ -149,6 +149,9 @@ export interface DnsRecord { id: string; kind: string; name: string; content: st
 // A domain's records: its real zone when `editable`, otherwise the records mail needs at its DNS host.
 export interface DnsZone { editable: boolean; records: DnsRecord[] }
 export interface DnsRecordIn { kind: string; name: string; content: string; priority: number | null }
+export interface RedirectIn { host: string; path: string; to: string; permanent: boolean; keep_path: boolean }
+export interface Redirect extends RedirectIn { id: string; domain: string }
+export interface Redirects { redirects: Redirect[] }
 
 // Hardware: each part, its readings and health, as the server last read them.
 export type Health = "ok" | "warn" | "bad" | "empty" | "unknown";
@@ -692,6 +695,12 @@ export const api = {
   editDns: (domain: string, id: string, r: DnsRecordIn) =>
     call<DnsZone>(`/mail/domains/${encodeURIComponent(domain)}/dns/${encodeURIComponent(id)}`, "PUT", r),
   removeDns: (domain: string, id: string) => call<DnsZone>(`/mail/domains/${encodeURIComponent(domain)}/dns/${encodeURIComponent(id)}`, "DELETE"),
+  redirects: (domain: string) => call<Redirects>(`/mail/domains/${encodeURIComponent(domain)}/redirects`),
+  addRedirect: (domain: string, r: RedirectIn) => call<Redirects>(`/mail/domains/${encodeURIComponent(domain)}/redirects`, "POST", r),
+  editRedirect: (domain: string, id: string, r: RedirectIn) =>
+    call<Redirects>(`/mail/domains/${encodeURIComponent(domain)}/redirects/${encodeURIComponent(id)}`, "PUT", r),
+  removeRedirect: (domain: string, id: string) =>
+    call<Redirects>(`/mail/domains/${encodeURIComponent(domain)}/redirects/${encodeURIComponent(id)}`, "DELETE"),
   addMailDomain: (body: { zone_id: string } | { name: string; host?: string }) => call<MailState>("/mail/domains", "POST", body),
   editMailDomain: (name: string, patch: Partial<{ cloudflare: boolean; managers: string[]; primary: boolean }>) =>
     call<MailState>(`/mail/domains/${encodeURIComponent(name)}`, "PATCH", patch),
