@@ -108,6 +108,7 @@ const paths = {
 // Lucide (lucide.dev, ISC), stroked in its 24-unit box, for shapes Material lacks.
 const strokes = {
   wifi_cog: "M14.305 19.53l.923 -.382M15.228 16.852l-.923 -.383M16.852 15.228l-.383 -.923M16.852 20.772l-.383 .924M19.148 15.228l.383 -.923M19.53 21.696l-.382 -.924M2 8.82a15 15 0 0120 0M20.772 16.852l.924 -.383M20.772 19.148l.924 .383M5 12.859a10 10 0 0110.18-2.342M8.5 16.429a5 5 0 011.998-1.2M15 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0",
+  corner_up_right: "M15 14l5-5-5-5M4 20v-7a4 4 0 014-4h12",
 } as const;
 
 export type IconName = keyof typeof paths | keyof typeof strokes;

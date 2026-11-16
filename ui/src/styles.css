@@ -1627,6 +1627,7 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
 .dns-prio { margin-right: 8px; color: var(--text-3); }
 .dns-row.missing .dns-name { color: var(--text-2); }
 .dns-act { display: flex; justify-content: flex-end; min-width: 32px; }
+.redirect-arrow { margin-right: 8px; color: var(--text-3); vertical-align: -2px; }
 
 /* A record's parts shown as text, each with an edit icon; a click turns it into its field. */
 .record-form { display: grid; gap: 8px; }

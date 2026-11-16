@@ -26,6 +26,7 @@ mod passkey;
 mod permissions;
 mod pow;
 mod proxy;
+mod redirect;
 mod registrar;
 mod secret;
 mod service;

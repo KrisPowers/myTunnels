@@ -134,6 +134,14 @@ pub fn router(state: AppState) -> Router {
             "/mail/domains/{name}/dns/{id}",
             put(mailserver::zone::update).delete(mailserver::zone::remove),
         )
+        .route(
+            "/mail/domains/{name}/redirects",
+            get(crate::redirect::list).post(crate::redirect::create),
+        )
+        .route(
+            "/mail/domains/{name}/redirects/{id}",
+            put(crate::redirect::update).delete(crate::redirect::remove),
+        )
         .route("/mail/accounts", post(mailserver::add_account))
         .route(
             "/mail/accounts/{address}",
@@ -1718,7 +1726,14 @@ async fn delete_route(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     let route = state.db.route(&id)?.ok_or_else(ApiError::not_found)?;
-    if let (Ok(cf), Some(record_id)) = (state.cloudflare(), &route.dns_record_id) {
+    // A redirect on the same hostname keeps its record.
+    let redirected = state
+        .snapshot()
+        .redirects
+        .iter()
+        .any(|r| r.host == route.hostname);
+    if let (Ok(cf), Some(record_id), false) = (state.cloudflare(), &route.dns_record_id, redirected)
+    {
         if let Err(err) = Cloudflare::new(&state.http, &cf.token)
             .delete_dns(&route.zone_id, record_id)
             .await

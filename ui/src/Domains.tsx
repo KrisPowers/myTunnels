@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useCloudflare } from "./Cloudflare";
-import { api, bytes, message, type DnsRecord, type DnsZone, type MailAccount, type MailDomain, type MailRecords, type MailState, type Registrar } from "./api";
+import { api, bytes, message, type DnsRecord, type DnsZone, type MailAccount, type MailDomain, type MailRecords, type MailState, type Redirect, type Redirects, type Registrar } from "./api";
 import { Dropdown, MultiDropdown } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { cleanDomain, DOMAIN, domainOf, MailActivity, MailSettings, MailStatus, plural, useAct, useZones } from "./Mail";
 import { useCan } from "./me";
 import { go } from "./route";
 import { ConnectRegistrar } from "./Registrars";
-import { AddMenu, ArmedButton, Callout, Copy, Dialog, MoreMenu, SubNav, TextField, useNotify, type MenuAction } from "./ui";
+import { AddMenu, ArmedButton, Callout, Copy, Dialog, MoreMenu, Row, SubNav, Switch, TextField, useNotify, type MenuAction } from "./ui";
 
 // Where a domain's DNS is hosted: records added by hand anywhere, or its real
 // zone, read and changed here, on Cloudflare or at a registrar.
@@ -269,6 +269,7 @@ function ManagersDialog({ domain, state, onState, onClose }: { domain: MailDomai
 
 const TABS: [string, string, IconName][] = [
   ["dns", "DNS", "dns"],
+  ["redirects", "Redirects", "corner_up_right"],
   ["mail", "Mail", "mail"],
   ["activity", "Activity", "history"],
   ["settings", "Settings", "settings"],
@@ -279,7 +280,9 @@ function DomainPage({ domain, tab, state, onState }: { domain: MailDomain; tab: 
   const [bar, setBar] = useState<HTMLElement | null>(null);
   const primary = state.settings.domains[0]?.name === domain.name;
   const actions = useActions(domain, primary, state, onState, () => setManaging(true));
-  const current = TABS.some(([k]) => k === tab) ? tab : "dns";
+  // Redirects are answered through the tunnel, so need the domain on Cloudflare.
+  const tabs = TABS.filter(([k]) => k !== "redirects" || !!domain.zone_id);
+  const current = tabs.some(([k]) => k === tab) ? tab : "dns";
   return (
     <>
       <div className="page-head">
@@ -290,11 +293,12 @@ function DomainPage({ domain, tab, state, onState }: { domain: MailDomain; tab: 
         {actions.length > 0 && <div className="page-actions"><MoreMenu label={`Actions for ${domain.name}`} actions={actions} /></div>}
       </div>
       <div className="sub-nav-row">
-        <SubNav back="#/domains" backLabel="Domains" base={href(domain.name)} items={TABS} current={current} />
+        <SubNav back="#/domains" backLabel="Domains" base={href(domain.name)} items={tabs} current={current} />
         <div className="sub-nav-actions" ref={setBar} />
       </div>
       <div className="page-body stack">
         {current === "dns" && <Dns domain={domain.name} bar={bar} />}
+        {current === "redirects" && <RedirectList domain={domain.name} bar={bar} />}
         {current === "mail" && <Addresses domain={domain.name} state={state} onState={onState} bar={bar} />}
         {current === "activity" && <MailActivity domain={domain.name} />}
         {current === "settings" && (
@@ -478,6 +482,117 @@ function RecordDialog({ domain, record, editable, onClose, onSaved }: {
               <>
                 <button type="button" className="btn text" onClick={onClose}>Cancel</button>
                 <button className="btn primary" disabled={busy || !content.trim()}>{busy ? <span className="spinner small on-accent" /> : <Icon name="check" size={18} />}Save</button>
+              </>
+            )}
+          </div>
+        )}
+      </form>
+    </Dialog>
+  );
+}
+
+// ---- redirects ----
+
+// RedirectList is the domain's redirects, as many as are wanted, each answered
+// by the gateway; its button sits beside the tabs.
+function RedirectList({ domain, bar }: { domain: string; bar: HTMLElement | null }) {
+  const can = useCan()("mail.manage");
+  const [list, setList] = useState<Redirect[] | null>(null);
+  const [problem, setProblem] = useState("");
+  const [open, setOpen] = useState<Redirect | "new" | null>(null);
+  useEffect(() => {
+    api.redirects(domain).then((r) => setList(r.redirects), (e) => setProblem(message(e)));
+  }, [domain]);
+  const from = (r: Redirect) => within(r.host, domain) + (r.path || "");
+  const add = can && <button type="button" className="btn primary" onClick={() => setOpen("new")}><Icon name="add" size={18} />Add redirect</button>;
+  return (
+    <>
+      {problem && <Callout tone="bad" icon="error">{problem}</Callout>}
+      {list && (list.length === 0 ? (
+        <div className="welcome">
+          <Icon name="corner_up_right" size={48} />
+          {add && <div className="welcome-actions">{add}</div>}
+        </div>
+      ) : (
+        <>
+          {bar && add && createPortal(add, bar)}
+          <div className="card">
+            <ul className="dns-list">
+              {list.map((r) => (
+                <li key={r.id} className="dns-row">
+                  <button type="button" className="dns-main" onClick={() => setOpen(r)}>
+                    <span className="dns-name" title={r.host + r.path}>{from(r)}</span>
+                    <span className="dns-value" title={r.to}><Icon name="arrow_forward" size={14} className="redirect-arrow" />{r.to}</span>
+                  </button>
+                  <span className="dns-act">
+                    {can && <button type="button" className="icon-btn small" aria-label={`Edit ${from(r)}`} title="Edit" onClick={() => setOpen(r)}><Icon name="edit" size={18} /></button>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      ))}
+      {open && <RedirectDialog domain={domain} redirect={open === "new" ? null : open} editable={can}
+        onClose={() => setOpen(null)} onSaved={(r) => {
+          setList(r.redirects);
+          setOpen(null);
+        }} />}
+    </>
+  );
+}
+
+// RedirectDialog shows a redirect, each part changed by clicking it, and
+// removes it; a new one starts as fields.
+function RedirectDialog({ domain, redirect, editable, onClose, onSaved }: {
+  domain: string; redirect: Redirect | null; editable: boolean; onClose: () => void; onSaved: (r: Redirects) => void;
+}) {
+  const notify = useNotify();
+  const [host, setHost] = useState(redirect ? within(redirect.host, domain) : "");
+  const [path, setPath] = useState(redirect?.path ?? "");
+  const [to, setTo] = useState(redirect?.to ?? "");
+  const [permanent, setPermanent] = useState(redirect?.permanent ?? true);
+  const [keep, setKeep] = useState(redirect?.keep_path ?? false);
+  const [editing, setEditing] = useState<string[]>(redirect ? [] : ["host", "path", "to"]);
+  const [busy, setBusy] = useState(false);
+  const open = (part: string) => (editable ? () => setEditing((e) => [...e, part]) : undefined);
+  const changed = editing.length > 0 || permanent !== redirect?.permanent || keep !== redirect?.keep_path;
+  const run = async (work: () => Promise<Redirects>, done: string) => {
+    setBusy(true);
+    try {
+      onSaved(await work());
+      notify(done);
+    } catch (e) {
+      notify(message(e), "bad");
+      setBusy(false);
+    }
+  };
+  const body = () => ({ host: host.trim() || "@", path: path.trim(), to: to.trim(), permanent, keep_path: keep });
+  return (
+    <Dialog title={redirect ? within(redirect.host, domain) + redirect.path : "Add redirect"} onClose={onClose}>
+      <form className="record-form" onSubmit={(e) => {
+        e.preventDefault();
+        run(() => (redirect ? api.editRedirect(domain, redirect.id, body()) : api.addRedirect(domain, body())), redirect ? "Redirect saved" : "Redirect added");
+      }}>
+        <Field label="From" value={host} editing={editing.includes("host")} onEdit={open("host")}>
+          <TextField label="From" mono autoFocus autoComplete="off" value={host} onChange={setHost} placeholder="@" trailing={<span className="muted">.{domain}</span>} />
+        </Field>
+        <Field label="Path" value={path || "Every path"} editing={editing.includes("path")} onEdit={open("path")}>
+          <TextField label="Path" mono autoFocus={!!redirect} autoComplete="off" value={path} onChange={setPath} placeholder="Every path" hint="/old for that page, /old/* for it and below" />
+        </Field>
+        <Field label="To" value={to} editing={editing.includes("to")} onEdit={open("to")}>
+          <TextField label="To" mono autoFocus={!!redirect} autoComplete="off" value={to} onChange={setTo} placeholder="https://" />
+        </Field>
+        <Row title="Permanent"><Switch label="Permanent" on={permanent} disabled={!editable} onChange={setPermanent} /></Row>
+        <Row title="Keep the path" sub="The rest of the path and query go along"><Switch label="Keep the path" on={keep} disabled={!editable} onChange={setKeep} /></Row>
+        {editable && (
+          <div className="edit-actions">
+            {redirect && <span className="edit-actions-start"><ArmedButton icon="delete" label="Remove" armedLabel="Remove for good"
+              onConfirm={() => run(() => api.removeRedirect(domain, redirect.id), "Redirect removed")} /></span>}
+            {changed && (
+              <>
+                <button type="button" className="btn text" onClick={onClose}>Cancel</button>
+                <button className="btn primary" disabled={busy || !to.trim()}>{busy ? <span className="spinner small on-accent" /> : <Icon name="check" size={18} />}Save</button>
               </>
             )}
           </div>

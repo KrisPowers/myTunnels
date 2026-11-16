@@ -75,6 +75,9 @@ async fn handle(
         return crate::mailserver::web::handle(&host, req).await;
     }
     let snap = state.snapshot();
+    if let Some(r) = crate::redirect::find(&snap.redirects, &host, req.uri().path()) {
+        return crate::redirect::answer(r, req.uri());
+    }
     let Some(route) = snap.routes.get(&host).cloned() else {
         return StatusCode::NOT_FOUND.into_response();
     };
