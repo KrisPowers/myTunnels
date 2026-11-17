@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent } from "react";
 import { AppsPage, InstallPill, NeedsContext } from "./Apps";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type Flag, type Forward, type Group, type Needs, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
-import { NewMenu } from "./Builds";
 import { CloudflareProvider } from "./Cloudflare";
 import { ContainersPage } from "./Containers";
 
@@ -222,9 +221,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           <a className="brand" href={home}><span className="brand-mark"><Icon name="public" size={18} /></span><span className="brand-name">myTunnels</span></a>
         </div>
         <Search routes={apps} devices={devices} />
-        <div className="header-actions">
-          <NewMenu />
-        </div>
+        <div className="header-actions" />
       </header>
 
       <div className="shell">
