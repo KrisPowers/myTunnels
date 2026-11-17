@@ -521,7 +521,7 @@ function ContainerForward({ c, pick, base, routes, forwards, users, providers, o
     <>
       {picked ? <TunnelDetail route={picked} top={list} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go(base)} /> : list}
       {adding && (
-        <NewRoute providers={providers} sub={routes.length ? "" : c.name} container={{ name: c.name, reach: reachOf(c) }} onClose={() => setAdding(false)}
+        <NewRoute users={users} providers={providers} sub={routes.length ? "" : c.name} container={{ name: c.name, reach: reachOf(c) }} onClose={() => setAdding(false)}
           onDone={async (r) => {
             await onChanged();
             setAdding(false);

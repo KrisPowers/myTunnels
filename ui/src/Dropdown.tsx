@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
+import { AppLogo } from "./AppLogo";
 import { useDismiss, usePlace } from "./dismiss";
 import { Icon, type IconName } from "./Icon";
 
@@ -9,6 +10,8 @@ export interface Option<T> {
   // A line under the label, saying what the choice does.
   hint?: string;
   icon?: IconName;
+  // A brand's mark from AppLogo, in place of an icon.
+  logo?: string;
   // Shown but not pickable, such as a choice whose app is not installed.
   disabled?: boolean;
 }
@@ -88,7 +91,7 @@ export function Dropdown<T extends string | number>({ label, value, options, onC
           setActive(Math.max(0, options.indexOf(current)));
           setOpen((o) => !o);
         }}>
-        {current?.icon && <Icon name={current.icon} size={18} />}
+        {current?.logo ? <AppLogo id={current.logo} size={18} /> : current?.icon && <Icon name={current.icon} size={18} />}
         <span className="dropdown-value">{current?.label ?? String(value)}</span>
         <svg className="dropdown-caret" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z" /></svg>
       </button>
@@ -99,7 +102,7 @@ export function Dropdown<T extends string | number>({ label, value, options, onC
             <li key={String(o.value)} role="option" aria-selected={o.value === value} aria-disabled={o.disabled || undefined}
               className={"dropdown-option" + (i === active && !o.disabled ? " active" : "") + (o.disabled ? " unpickable" : "")}
               onMouseEnter={() => setActive(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(o.value)}>
-              {o.icon && <Icon name={o.icon} size={20} className="dropdown-icon" />}
+              {o.logo ? <AppLogo id={o.logo} size={20} /> : o.icon && <Icon name={o.icon} size={20} className="dropdown-icon" />}
               <span className="dropdown-text">
                 <span>{o.label}</span>
                 {o.hint && <small>{o.hint}</small>}
