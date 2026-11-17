@@ -1,196 +1,18 @@
-import { useContext, useState, type FormEvent, type ReactNode } from "react";
-import { NeedsContext } from "./Apps";
-import { useCloudflare, useCloudflareReady } from "./Cloudflare";
-import { api, message, type Forward, type Needs, type OAuthProvider, type Port, type Route, type Status, type User } from "./api";
+import { useState } from "react";
+import { api, message, type Forward, type OAuthProvider, type Port, type Route, type Status, type User } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
 import { go } from "./route";
-import { AccessChips, target, TunnelComposer, type Reach } from "./Tunnels";
-import { Card, Dialog, MoreMenu, Row, Switch, TextField, useNotify, type MenuAction } from "./ui";
+import { NewRoute } from "./NewRoute";
+import { AccessChips, target } from "./Tunnels";
+import { MoreMenu, useNotify, type MenuAction } from "./ui";
 
 // The three ways a port is opened: a Cloudflare tunnel, the router, or Tailscale.
 export type Method = "tunnel" | "port" | "tailscale";
 
 const ICON: Record<Method, IconName> = { tunnel: "public", port: "router", tailscale: "lan" };
 const LABEL: Record<Method, string> = { tunnel: "Tunnel", port: "Port forward", tailscale: "Tailscale" };
-
-// Each way, with the ones whose app is not installed shown but not pickable.
-// A tunnel picked before Cloudflare is connected asks to connect it.
-function methods(needs: Needs | null, cloudflare: boolean): Option<Method>[] {
-  const missing = (app: keyof Needs) => !!needs && !needs[app];
-  return [
-    { value: "tunnel", label: LABEL.tunnel, icon: ICON.tunnel, disabled: missing("cloudflared"),
-      hint: missing("cloudflared") ? "Install cloudflared from Apps"
-        : cloudflare ? "An address on your domain, with sign-in and passwords" : "Connect Cloudflare first" },
-    { value: "port", label: LABEL.port, icon: ICON.port, hint: "Opens the port on this PC, and on the router when it lets it" },
-    { value: "tailscale", label: LABEL.tailscale, icon: ICON.tailscale, disabled: missing("tailscale"),
-      hint: missing("tailscale") ? "Install Tailscale from Apps" : "Your tailnet, or the internet through Funnel" },
-  ];
-}
-
-const CLOSE_AFTER: Option<number>[] = [
-  { value: 0, label: "Never" },
-  { value: 3_600, label: "1 hour" },
-  { value: 86_400, label: "1 day" },
-  { value: 7 * 86_400, label: "7 days" },
-];
-
-// The ports Funnel opens to the internet, and so the ones a web app on
-// Tailscale is offered.
-const FUNNEL_PORTS = [443, 8443, 10000];
-
-// A container, as a forward to it needs it.
-export interface Target { name: string; reach: Reach[] }
-
-// ForwardComposer opens a port by whichever way is picked in the switch at its
-// top: a tunnel, the router or Tailscale. For a container, the port is its own.
-export function ForwardComposer({ users, providers, container, port, sub, onDone }: {
-  users: User[];
-  providers: OAuthProvider[];
-  container?: Target;
-  port?: string;
-  sub?: string;
-  // Given the new tunnel, or nothing for a router or Tailscale forward.
-  onDone: (tunnel: Route | null) => Promise<void>;
-}) {
-  const needs = useContext(NeedsContext);
-  const ready = useCloudflareReady();
-  const cloudflare = useCloudflare();
-  const options = methods(needs, ready);
-  // A tunnel is the first choice only once Cloudflare is connected.
-  const [method, setMethod] = useState<Method>(() => options.find((o) => !o.disabled && (ready || o.value !== "tunnel"))?.value ?? "port");
-  const pick = (m: Method) => {
-    if (m === "tunnel" && !cloudflare(() => setMethod("tunnel"))) return;
-    setMethod(m);
-  };
-  const lead = (
-    <div className="seg-tabs method-tabs" role="tablist" aria-label="Route by">
-      {options.map((o) => (
-        <button key={o.value} type="button" role="tab" aria-selected={o.value === method} className={o.value === method ? "on" : undefined}
-          disabled={o.disabled} title={o.hint} onClick={() => pick(o.value)}>
-          {o.icon && <Icon name={o.icon} size={18} />}{o.label}
-        </button>
-      ))}
-    </div>
-  );
-  if (method === "tunnel") {
-    return <TunnelComposer lead={lead} users={users} providers={providers} container={container} port={port} sub={sub} onPublished={(r) => onDone(r)} />;
-  }
-  return <OpenComposer key={method} method={method} lead={lead} container={container} port={port} onAdded={() => onDone(null)} />;
-}
-
-// OpenComposer opens a port at the router or on Tailscale: the port it is
-// reached on, the app's port on this computer and how it speaks, then who
-// reaches it and for how long.
-function OpenComposer({ method, lead, container, port: startPort, onAdded }: {
-  method: "port" | "tailscale";
-  lead: ReactNode;
-  container?: Target;
-  port?: string;
-  onAdded: () => Promise<void>;
-}) {
-  // Only a port the container publishes here can be reached from outside it.
-  const published = (container?.reach ?? []).filter((r) => r.host === null);
-  const [pick, setPick] = useState(0);
-  const [port, setPort] = useState(/^\d{1,5}$/.test(startPort ?? "") ? startPort! : "");
-  const [outside, setOutside] = useState("");
-  const [webPort, setWebPort] = useState(443);
-  const [protocol, setProtocol] = useState<Forward["protocol"]>(method === "port" ? "tcp" : "http");
-  const [open, setOpen] = useState(false);
-  const [closeIn, setCloseIn] = useState(0);
-  const [name, setName] = useState(container?.name ?? "");
-  const [busy, setBusy] = useState(false);
-  const notify = useNotify();
-
-  const fixed = container ? published[Math.min(pick, published.length - 1)] : undefined;
-  const appPort = fixed ? fixed.port : Number(port);
-  const web = method === "tailscale" && protocol !== "tcp";
-  const publicPort = web ? webPort : Number(outside || appPort);
-  const funnelOk = !open || web || FUNNEL_PORTS.includes(publicPort);
-  const ready = appPort > 0 && publicPort > 0 && publicPort < 65536 && (!container || !!fixed) && funnelOk;
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!ready) return;
-    setBusy(true);
-    try {
-      const f = await api.addForward({
-        method, name: name.trim(), target_host: null, target_port: appPort,
-        protocol, public_port: publicPort, public: method === "tailscale" && open, expires_in: closeIn,
-      });
-      notify(`Forwarded port ${f.public_port}`);
-      await onAdded();
-    } catch (err) {
-      notify(message(err), "bad");
-      setBusy(false);
-    }
-  };
-
-  const protocols: Option<Forward["protocol"]>[] = method === "port"
-    ? [{ value: "tcp", label: "TCP" }, { value: "udp", label: "UDP" }, { value: "both", label: "TCP & UDP" }]
-    : [{ value: "http", label: "http" }, { value: "https", label: "https", hint: "Self-signed certificates are fine" }, { value: "tcp", label: "TCP", hint: "Any other app, such as SSH or a game" }];
-
-  return (
-    <form className="route-form" onSubmit={submit}>
-      {lead}
-      <div className="route-fields">
-        <TextField className="grow" label="Name" placeholder="Minecraft" autoComplete="off" value={name} onChange={(v) => setName(v.slice(0, 100))} />
-        {web ? (
-          <div className="tf static port">
-            <div className="tf-box">
-              <Dropdown label="Port" value={webPort} options={FUNNEL_PORTS.map((p) => ({ value: p, label: String(p) }))} onChange={setWebPort} />
-              <span className="tf-label">Port</span>
-            </div>
-          </div>
-        ) : (
-          <TextField className="port" label="Port" placeholder={appPort ? String(appPort) : "25565"} mono inputMode="numeric"
-            value={outside} onChange={(v) => setOutside(v.replace(/\D/g, "").slice(0, 5))} />
-        )}
-        <span className="route-sep"><Icon name="arrow_forward" size={18} /></span>
-        {container ? (
-          published.length > 1 ? (
-            <div className="tf static port">
-              <div className="tf-box">
-                <Dropdown label="App port" value={pick} options={published.map((r, i) => ({ value: i, label: r.label }))} onChange={setPick} />
-                <span className="tf-label">App port</span>
-              </div>
-            </div>
-          ) : fixed ? <span className="route-sep mono">{fixed.label}</span> : null
-        ) : (
-          <TextField className="port" label="App port" placeholder="8080" mono inputMode="numeric" value={port} onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
-        )}
-        <div className="tf static protocol">
-          <div className="tf-box">
-            <Dropdown label="Protocol" value={protocol} options={protocols} onChange={setProtocol} />
-            <span className="tf-label">Protocol</span>
-          </div>
-        </div>
-      </div>
-      {container && !published.length && <p className="empty-note">This container publishes no port on this computer, so nothing outside it can reach it.</p>}
-
-      <Card title="Access Control">
-        {method === "tailscale" ? (
-          <Row title="Open to the internet" sub="Through Funnel. Off, only devices on your tailnet reach it.">
-            <Switch label="Open to the internet" on={open} onChange={setOpen} />
-          </Row>
-        ) : (
-          <Row title="Who reaches it" sub="Devices on your network, and anyone on the internet once the router forwards it too. Neither asks for a sign-in or password." />
-        )}
-        {!funnelOk && <p className="empty-note card-pad">Funnel opens only ports 443, 8443 and 10000.</p>}
-        <Row title="Close after" sub="Closes on its own, and stays in the list switched off.">
-          <Dropdown label="Close after" value={closeIn} options={CLOSE_AFTER} onChange={setCloseIn} />
-        </Row>
-      </Card>
-
-      <div className="route-foot">
-        <button className="btn primary" disabled={busy || !ready}>
-          {busy && <span className="spinner small on-accent" />}Forward
-        </button>
-      </div>
-    </form>
-  );
-}
 
 // ---- the list ----
 
@@ -335,9 +157,9 @@ type Show = "all" | Method;
 
 const SHOW: Option<Show>[] = [
   { value: "all", label: "All" },
-  { value: "tunnel", label: "Tunnels" },
   { value: "port", label: "Port forwards" },
   { value: "tailscale", label: "Tailscale" },
+  { value: "tunnel", label: "Tunnels" },
 ];
 
 // ForwardPage is every opening in one list: tunnels, router ports and
@@ -401,12 +223,10 @@ export function ForwardPage({ id, port, routes, forwards, status, users, provide
         ))}
       </div>
       {adding && (
-        <Dialog title="New route" wide onClose={close}>
-          <ForwardComposer users={users} providers={providers} port={port} onDone={async (r) => {
-            await onChanged();
-            go(r ? `#/tunnels/${r.id}` : "#/routes");
-          }} />
-        </Dialog>
+        <NewRoute providers={providers} port={port} onClose={close} onDone={async (r) => {
+          await onChanged();
+          go(r ? `#/tunnels/${r.id}` : "#/routes");
+        }} />
       )}
     </>
   );

@@ -111,7 +111,7 @@ function LocalApp({ value, onChange }: { value: Target; onChange: (patch: Partia
 
 // ---- who may open it ----
 
-const SIGN_IN_FOR: Option<number>[] = [
+export const SIGN_IN_FOR: Option<number>[] = [
   { value: 3_600, label: "1 hour" },
   { value: 4 * 3_600, label: "4 hours" },
   { value: 12 * 3_600, label: "12 hours" },
@@ -120,7 +120,7 @@ const SIGN_IN_FOR: Option<number>[] = [
   { value: 30 * 86_400, label: "30 days" },
 ];
 
-const IDLE_FOR: Option<number>[] = [
+export const IDLE_FOR: Option<number>[] = [
   { value: 0, label: "Never" },
   { value: 15 * 60, label: "15 minutes" },
   { value: 3_600, label: "1 hour" },
@@ -197,7 +197,7 @@ export function AccessCard({ value, users, providers, hostname, onChange, onPass
   );
 }
 
-function PasswordHint({ value, empty }: { value: string; empty: string }) {
+export function PasswordHint({ value, empty }: { value: string; empty: string }) {
   if (!value) return <>{empty}</>;
   const rating = strength(value);
   return (
@@ -291,109 +291,6 @@ export function tunnelsOf(c: { name: string; ports: Port[] }, routes: Route[]) {
     (!r.target_host && published.some((p) => p.public === r.target_port))
     || (r.target_host === c.name && c.ports.some((p) => p.private === r.target_port))
   ));
-}
-
-const NO_ACCESS: Access = {
-  require_lan: false, require_password: false, require_login: false, require_code: false, oauth: [],
-  login_max: 7 * 86_400, login_idle: 0, policy_mode: "all",
-};
-
-// TunnelComposer publishes an address: the address and the app's port, then who
-// can open it. The app is on this computer; for a container, it is the
-// container, so its port is asked only when it has more than one. `lead` sits
-// on top, such as the pick of how to route.
-export function TunnelComposer({ users, providers, onPublished, port: startPort, container, sub: startSub = "", lead }: {
-  lead?: ReactNode;
-  users: User[];
-  providers: OAuthProvider[];
-  onPublished: (route: Route) => Promise<void>;
-  port?: string;
-  container?: { name: string; reach: Reach[] };
-  sub?: string;
-}) {
-  const [zones, setZones] = useState<Zone[] | null>(null);
-  const [zone, setZone] = useState("");
-  const [sub, setSub] = useState(startSub.toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/^-+/, "").slice(0, 63));
-  const [port, setPort] = useState(/^\d{1,5}$/.test(startPort ?? "") ? startPort! : "");
-  const [pick, setPick] = useState(0);
-  const [access, setAccess] = useState<Access>(NO_ACCESS);
-  const [busy, setBusy] = useState(false);
-  const notify = useNotify();
-
-  useEffect(() => {
-    api.zones().then((z) => {
-      setZones(z);
-      setZone((current) => current || z[0]?.id || "");
-    }).catch((e) => notify(message(e), "bad"));
-  }, [notify]);
-
-  const reach = container?.reach ?? [];
-  const fixed = reach[Math.min(pick, reach.length - 1)];
-  const passwordOk = !access.require_password || strength(access.password ?? "").ok;
-  const ready = !!sub && (!!fixed || !!port) && !!zone && passwordOk;
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!ready) return;
-    setBusy(true);
-    try {
-      const to: Target = { target_scheme: "http", target_host: container ? (fixed ? fixed.host : container.name) : null, preserve_host: false, verify_tls: false };
-      const route = await api.publish({ subdomain: sub, zone_id: zone, port: fixed ? fixed.port : Number(port), ...to, ...access });
-      notify(`Published ${route.hostname}`);
-      await onPublished(route);
-    } catch (err) {
-      notify(message(err), "bad");
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form className="route-form" onSubmit={submit}>
-      {lead}
-      <div className="route-fields">
-        <TextField className="grow" label="Subdomain" placeholder="app1" autoComplete="off" autoFocus={!startSub} value={sub}
-          onChange={(v) => setSub(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 63))} />
-        <span className="route-sep">.</span>
-        <div className="tf static grow">
-          <div className="tf-box">
-            {zones && zones.length > 0 ? (
-              <Dropdown label="Domain" value={zone} options={zones.map((z) => ({ value: z.id, label: z.name }))} onChange={setZone} />
-            ) : (
-              <span className="dropdown placeholder">{zones ? "No domains on this account" : "Loading domains"}</span>
-            )}
-            <span className="tf-label">Domain</span>
-          </div>
-        </div>
-        {reach.length > 1 && (
-          <>
-            <span className="route-sep"><Icon name="arrow_forward" size={18} /></span>
-            <div className="tf static port">
-              <div className="tf-box">
-                <Dropdown label="Port" value={pick} options={reach.map((r, i) => ({ value: i, label: r.label }))} onChange={setPick} />
-                <span className="tf-label">Port</span>
-              </div>
-            </div>
-          </>
-        )}
-        {!fixed && (
-          <>
-            <span className="route-sep"><Icon name="arrow_forward" size={18} /></span>
-            <TextField className="port" label="Port" placeholder="8080" mono inputMode="numeric" value={port}
-              onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
-          </>
-        )}
-      </div>
-
-      <AccessCard value={access} users={users} providers={providers} onChange={(patch) => setAccess((a) => ({ ...a, ...patch }))}
-        hostname={sub && zones ? `${sub}.${zones.find((z) => z.id === zone)?.name ?? ""}` : undefined} />
-
-      <div className="route-foot">
-        <button className="btn primary" disabled={busy || !ready}>
-          {busy && <span className="spinner small on-accent" />}Publish
-        </button>
-      </div>
-    </form>
-  );
 }
 
 // ---- one tunnel ----
