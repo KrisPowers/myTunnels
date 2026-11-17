@@ -81,7 +81,7 @@ export function ForwardComposer({ users, providers, container, port, sub, onDone
 }
 
 // OpenComposer opens a port at the router or on Tailscale: the port it is
-// reached on, the app's port and how it speaks, where the app runs, then who
+// reached on, the app's port on this computer and how it speaks, then who
 // reaches it and for how long.
 function OpenComposer({ method, lead, container, port: startPort, onAdded }: {
   method: "port" | "tailscale";
@@ -97,8 +97,6 @@ function OpenComposer({ method, lead, container, port: startPort, onAdded }: {
   const [outside, setOutside] = useState("");
   const [webPort, setWebPort] = useState(443);
   const [protocol, setProtocol] = useState<Forward["protocol"]>(method === "port" ? "tcp" : "http");
-  const [elsewhere, setElsewhere] = useState(false);
-  const [host, setHost] = useState("");
   const [open, setOpen] = useState(false);
   const [closeIn, setCloseIn] = useState(0);
   const [name, setName] = useState(container?.name ?? "");
@@ -110,7 +108,7 @@ function OpenComposer({ method, lead, container, port: startPort, onAdded }: {
   const web = method === "tailscale" && protocol !== "tcp";
   const publicPort = web ? webPort : Number(outside || appPort);
   const funnelOk = !open || web || FUNNEL_PORTS.includes(publicPort);
-  const ready = appPort > 0 && publicPort > 0 && publicPort < 65536 && (!elsewhere || !!host.trim()) && (!container || !!fixed) && funnelOk;
+  const ready = appPort > 0 && publicPort > 0 && publicPort < 65536 && (!container || !!fixed) && funnelOk;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -118,7 +116,7 @@ function OpenComposer({ method, lead, container, port: startPort, onAdded }: {
     setBusy(true);
     try {
       const f = await api.addForward({
-        method, name: name.trim(), target_host: elsewhere ? host.trim() : null, target_port: appPort,
+        method, name: name.trim(), target_host: null, target_port: appPort,
         protocol, public_port: publicPort, public: method === "tailscale" && open, expires_in: closeIn,
       });
       notify(`Forwarded port ${f.public_port}`);
@@ -134,66 +132,42 @@ function OpenComposer({ method, lead, container, port: startPort, onAdded }: {
     : [{ value: "http", label: "http" }, { value: "https", label: "https", hint: "Self-signed certificates are fine" }, { value: "tcp", label: "TCP", hint: "Any other app, such as SSH or a game" }];
 
   return (
-    <form className="stack" onSubmit={submit}>
-      <div className="card composer">
-        <div className="composer-row composer-lead">{lead}</div>
-        <div className="composer-row">
-          <TextField className="grow" label="Name" placeholder="Minecraft" autoComplete="off" value={name} onChange={(v) => setName(v.slice(0, 100))} />
-          {web ? (
+    <form className="route-form" onSubmit={submit}>
+      {lead}
+      <div className="route-fields">
+        <TextField className="grow" label="Name" placeholder="Minecraft" autoComplete="off" value={name} onChange={(v) => setName(v.slice(0, 100))} />
+        {web ? (
+          <div className="tf static port">
+            <div className="tf-box">
+              <Dropdown label="Port" value={webPort} options={FUNNEL_PORTS.map((p) => ({ value: p, label: String(p) }))} onChange={setWebPort} />
+              <span className="tf-label">Port</span>
+            </div>
+          </div>
+        ) : (
+          <TextField className="port" label="Port" placeholder={appPort ? String(appPort) : "25565"} mono inputMode="numeric"
+            value={outside} onChange={(v) => setOutside(v.replace(/\D/g, "").slice(0, 5))} />
+        )}
+        <span className="route-sep"><Icon name="arrow_forward" size={18} /></span>
+        {container ? (
+          published.length > 1 ? (
             <div className="tf static port">
               <div className="tf-box">
-                <Dropdown label="Port" value={webPort} options={FUNNEL_PORTS.map((p) => ({ value: p, label: String(p) }))} onChange={setWebPort} />
-                <span className="tf-label">Port</span>
+                <Dropdown label="App port" value={pick} options={published.map((r, i) => ({ value: i, label: r.label }))} onChange={setPick} />
+                <span className="tf-label">App port</span>
               </div>
             </div>
-          ) : (
-            <TextField className="port" label="Port" placeholder={appPort ? String(appPort) : "25565"} mono inputMode="numeric"
-              value={outside} onChange={(v) => setOutside(v.replace(/\D/g, "").slice(0, 5))} />
-          )}
-          <Icon name="arrow_forward" className="composer-arrow" />
-          {container ? (
-            published.length > 1 ? (
-              <div className="tf static port">
-                <div className="tf-box">
-                  <Dropdown label="App port" value={pick} options={published.map((r, i) => ({ value: i, label: r.label }))} onChange={setPick} />
-                  <span className="tf-label">App port</span>
-                </div>
-              </div>
-            ) : fixed ? <span className="composer-fixed mono">{fixed.label}</span> : null
-          ) : (
-            <TextField className="port" label="App port" placeholder="8080" mono inputMode="numeric" value={port} onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
-          )}
-          <div className="tf static protocol">
-            <div className="tf-box">
-              <Dropdown label="Protocol" value={protocol} options={protocols} onChange={setProtocol} />
-              <span className="tf-label">Protocol</span>
-            </div>
+          ) : fixed ? <span className="route-sep mono">{fixed.label}</span> : null
+        ) : (
+          <TextField className="port" label="App port" placeholder="8080" mono inputMode="numeric" value={port} onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
+        )}
+        <div className="tf static protocol">
+          <div className="tf-box">
+            <Dropdown label="Protocol" value={protocol} options={protocols} onChange={setProtocol} />
+            <span className="tf-label">Protocol</span>
           </div>
-          <button className="btn primary composer-go" disabled={busy || !ready}>
-            {busy ? <span className="spinner small on-accent" /> : <Icon name="add" size={18} />}Forward
-          </button>
         </div>
-        {container && !published.length && <p className="empty-note">This container publishes no port on this computer, so nothing outside it can reach it.</p>}
       </div>
-
-      {!container && (
-        <Card title="Local app">
-          <div className="card-pad">
-            <div className="edit-row">
-              <div className="tf static place">
-                <div className="tf-box">
-                  <Dropdown label="Runs on" value={elsewhere ? "machine" : "here"} onChange={(v) => setElsewhere(v === "machine")} options={[
-                    { value: "here", label: "This computer", hint: "The app runs on the machine myTunnels runs on", icon: "devices" },
-                    { value: "machine", label: "Another machine", hint: "A computer or device on your network", icon: "router" },
-                  ]} />
-                  <span className="tf-label">Runs on</span>
-                </div>
-              </div>
-              {elsewhere && <TextField className="grow" mono autoComplete="off" label="IP address" placeholder="192.168.1.20" value={host} onChange={setHost} />}
-            </div>
-          </div>
-        </Card>
-      )}
+      {container && !published.length && <p className="empty-note">This container publishes no port on this computer, so nothing outside it can reach it.</p>}
 
       <Card title="Access Control">
         {method === "tailscale" ? (
@@ -208,6 +182,12 @@ function OpenComposer({ method, lead, container, port: startPort, onAdded }: {
           <Dropdown label="Close after" value={closeIn} options={CLOSE_AFTER} onChange={setCloseIn} />
         </Row>
       </Card>
+
+      <div className="route-foot">
+        <button className="btn primary" disabled={busy || !ready}>
+          {busy && <span className="spinner small on-accent" />}Forward
+        </button>
+      </div>
     </form>
   );
 }

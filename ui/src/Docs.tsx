@@ -152,7 +152,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Convert</b>, in a file's menu, makes a copy in another format or smaller: photos as JPEG or WebP, videos as MP4 that every browser plays, PDFs compressed. The copy is saved beside the original with its date, and the original is never changed. Conversions run one at a time; a panel at the bottom right follows them.</p>
       </Doc>
       <Doc title="From anywhere">
-        <p>Storage is part of this dashboard. Publish the dashboard through a tunnel, under <b>Runs on</b>, to reach it away from home.</p>
+        <p>Storage is part of this dashboard. Point a tunnel at <b>This dashboard</b>, under <b>Change where it goes</b> in its menu, to reach it away from home.</p>
       </Doc>
     </>
   ),
@@ -171,13 +171,13 @@ const CONTENT: Record<string, ReactNode> = {
         <p>Pick <b>Tunnel</b>, type a subdomain, pick one of your domains, and enter the port the app listens on. Choose who can open it, then press <b>Publish</b>. The DNS record and the route are made for you, and removed with the tunnel.</p>
       </Doc>
       <Doc title="A router or Tailscale forward">
-        <p>Pick <b>Port forward</b> or <b>Tailscale</b>, give it a name, which the list shows it by, then the port it is reached on, the app's port and its protocol: TCP, UDP or TCP & UDP at the router; http, https or TCP on Tailscale, where TCP carries anything else, such as SSH. The app runs on this computer or another machine on your network, by its IP address. <b>Close after</b> closes it on its own after an hour, a day or a week; it stays in the list switched off, and its menu opens it again. The router is asked again every twenty minutes, so a router that restarts, or has UPnP turned on later, gets it.</p>
+        <p>Pick <b>Port forward</b> or <b>Tailscale</b>, give it a name, which the list shows it by, then the port it is reached on, the app's port and its protocol: TCP, UDP or TCP & UDP at the router; http, https or TCP on Tailscale, where TCP carries anything else, such as SSH. <b>Close after</b> closes it on its own after an hour, a day or a week; it stays in the list switched off, and its menu opens it again. The router is asked again every twenty minutes, so a router that restarts, or has UPnP turned on later, gets it.</p>
       </Doc>
       <Doc title="Where requests go">
-        <p>By default a tunnel sends requests to the port on this computer. Under <b>Local app</b> it can point at a container name or another machine instead, and use https when the app serves it itself. Self-signed certificates are accepted.</p>
+        <p>A new tunnel sends requests to the port on this computer. <b>Change where it goes</b>, in the tunnel's menu, points it at a container name or another machine instead, and uses https when the app serves it itself. Self-signed certificates are accepted.</p>
       </Doc>
       <Doc title="This dashboard">
-        <p>Pick <b>This dashboard</b> under <b>Runs on</b> to publish myTunnels itself, with no port, and manage it from anywhere. It takes the same access layers as any tunnel, and the dashboard's own sign-in, two-factor code included, still applies behind them.</p>
+        <p>Pick <b>This dashboard</b> under a tunnel's <b>Change where it goes</b> to publish myTunnels itself, with no port, and manage it from anywhere. It takes the same access layers as any tunnel, and the dashboard's own sign-in, two-factor code included, still applies behind them.</p>
       </Doc>
       <Doc title="How the app sees a visit">
         <p>Many apps only answer requests addressed to <code>localhost</code>. So myTunnels presents each visit to the app as if it were opened on this computer, and turns the app's redirects back into the public address. Apps set up with their public address should have <b>Pass the public address</b> turned on instead.</p>
