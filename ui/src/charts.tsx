@@ -29,7 +29,7 @@ function geometry(keep: number, values: (number | null)[], max: number) {
   return { line, area, y, offset };
 }
 
-export function Spark({ values, max, color, keep, times, every }: Span & { values: number[]; max: number; color: string }) {
+export function Spark({ values, max, color, keep, times, every }: Span & { values: (number | null)[]; max: number; color: string }) {
   const { line, area } = geometry(keep, values, max);
   return (
     <svg className="spark" viewBox={`1 0 ${keep - 2} 100`} preserveAspectRatio="none" style={{ color }} aria-hidden="true">

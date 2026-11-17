@@ -41,6 +41,8 @@ struct Sample {
     rx: u64,
     tx: u64,
     temp: Option<f32>,
+    /// Each core's temperature, where the system reports them.
+    temps: Vec<f32>,
 }
 
 #[derive(Clone, Serialize)]
@@ -250,6 +252,14 @@ async fn run(engine: bool) {
             rx: (rx as f64 / elapsed) as u64,
             tx: (tx as f64 / elapsed) as u64,
             temp: cpu_temp(&sensors, &cores).or_else(crate::hardware::cpu_temp),
+            temps: {
+                let own: Vec<f32> = cores.iter().filter_map(|c| c.temp).collect();
+                if own.is_empty() {
+                    crate::hardware::core_temps()
+                } else {
+                    own
+                }
+            },
         };
 
         let containers = if engine {
