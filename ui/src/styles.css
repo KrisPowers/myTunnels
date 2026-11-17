@@ -1511,14 +1511,14 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
 /* A small chart per thread or core, its name and figure over it. */
 .minis-group { display: grid; gap: 12px; }
 .minis-label { color: var(--text-2); font-size: 13px; font-weight: 600; }
-.minis { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 20px 28px; }
-.mini { display: grid; gap: 6px; min-width: 0; }
-.mini-head { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.minis { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.mini { display: grid; gap: 6px; min-width: 0; padding: 10px 12px 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.mini-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
 .mini-head span { color: var(--text-2); }
-.mini-head b { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mini-head b { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .mini[data-health="warn"] .mini-head b { color: var(--warn); }
 .mini[data-health="bad"] .mini-head b { color: var(--bad); }
-.mini .spark { height: 72px; overflow: hidden; }
+.mini .spark { height: 56px; overflow: hidden; }
 
 /* Storage: each volume's share of the space in one bar, its legend under it. */
 .usage-bar { display: flex; gap: 2px; height: 10px; border-radius: 5px; overflow: hidden; }
