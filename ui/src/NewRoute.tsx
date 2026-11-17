@@ -1,21 +1,20 @@
-import { useContext, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useContext, useEffect, useState, type FormEvent } from "react";
 import { NeedsContext } from "./Apps";
-import { useCloudflare, useCloudflareReady } from "./Cloudflare";
-import { api, message, strength, type Access, type Forward, type OAuthProvider, type Route, type Zone } from "./api";
+import { useCloudflare } from "./Cloudflare";
+import { api, message, strength, type Access, type Forward, type OAuthProvider, type Route, type User, type Zone } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
-import { Icon, type IconName } from "./Icon";
-import { ProviderLogo } from "./ProviderLogo";
-import { IDLE_FOR, PasswordHint, SIGN_IN_FOR, type Reach } from "./Tunnels";
-import { Dialog, TextField, useNotify } from "./ui";
+import { Icon } from "./Icon";
+import { AccessCard, type Reach } from "./Tunnels";
+import { Card, Dialog, Row, Switch, TextField, useNotify } from "./ui";
 
 // The ways a route is opened, the plain ones first: the router, Tailscale,
 // then a Cloudflare tunnel.
 export type Method = "port" | "tailscale" | "tunnel";
 
-const WAYS: { value: Method; label: string; icon: IconName }[] = [
+const WAYS: Option<Method>[] = [
   { value: "port", label: "Port forward", icon: "router" },
-  { value: "tailscale", label: "Tailscale", icon: "lan" },
-  { value: "tunnel", label: "Tunnel", icon: "public" },
+  { value: "tailscale", label: "Tailscale", logo: "tailscale" },
+  { value: "tunnel", label: "Cloudflare Tunnel", logo: "cloudflare" },
 ];
 
 const CLOSE_AFTER: Option<number>[] = [
@@ -40,7 +39,8 @@ export interface Target { name: string; reach: Reach[] }
 
 // NewRoute is the dialog that opens a route: how, what it needs for that way,
 // who reaches it, then the button.
-export function NewRoute({ providers, container, port: startPort, sub: startSub = "", onClose, onDone }: {
+export function NewRoute({ users, providers, container, port: startPort, sub: startSub = "", onClose, onDone }: {
+  users: User[];
   providers: OAuthProvider[];
   container?: Target;
   port?: string;
@@ -51,7 +51,6 @@ export function NewRoute({ providers, container, port: startPort, sub: startSub 
 }) {
   const needs = useContext(NeedsContext);
   const cloudflare = useCloudflare();
-  const ready = useCloudflareReady();
   const notify = useNotify();
   const missing = (way: Method) => !!needs && (way === "tunnel" ? !needs.cloudflared : way === "tailscale" ? !needs.tailscale : false);
 
@@ -135,16 +134,12 @@ export function NewRoute({ providers, container, port: startPort, sub: startSub 
   return (
     <Dialog title="New route" wide onClose={onClose}>
       <form className="nr" onSubmit={submit}>
-        <div className="nr-ways" role="radiogroup" aria-label="Route by">
-          {WAYS.map((w) => (
-            <button key={w.value} type="button" role="radio" aria-checked={way === w.value} className={"nr-way" + (way === w.value ? " on" : "")}
-              disabled={missing(w.value)} title={missing(w.value) ? `Install ${w.value === "tunnel" ? "cloudflared" : "Tailscale"} from Apps` : undefined}
-              onClick={() => choose(w.value)}>
-              <Icon name={w.icon} size={26} />
-              <b>{w.label}</b>
-              {w.value === "tunnel" && !ready && <small>Cloudflare</small>}
-            </button>
-          ))}
+        <div className="tf static nr-way">
+          <div className="tf-box">
+            <Dropdown label="Route by" value={way} onChange={choose}
+              options={WAYS.map((w) => ({ ...w, disabled: missing(w.value), hint: missing(w.value) ? `Install ${w.value === "tunnel" ? "cloudflared" : "Tailscale"} from Apps` : undefined }))} />
+            <span className="tf-label">Route by</span>
+          </div>
         </div>
 
         <div className="nr-fields">
@@ -184,57 +179,24 @@ export function NewRoute({ providers, container, port: startPort, sub: startSub 
         </div>
         {container && reach.length === 0 && <p className="empty-note">This container publishes no port on this computer.</p>}
 
-        <div className="nr-access">
-          <span className="nr-label">Access</span>
-          {way === "tunnel" ? (
-            <>
-              <div className="nr-toggles">
-                <Toggle icon="lan" label="Same network" on={access.require_lan} onChange={(v) => set({ require_lan: v })} />
-                <Toggle icon="password" label="Password" on={access.require_password} onChange={(v) => set({ require_password: v })} />
-                <Toggle icon="person" label="Sign-in" on={access.require_login} onChange={(v) => set({ require_login: v })} />
-              </div>
-              {access.require_password && (
-                <TextField label="Tunnel password" type="password" autoComplete="new-password" value={access.password ?? ""} onChange={(password) => set({ password })}
-                  hint={<PasswordHint value={access.password ?? ""} empty="Asked for before anything behind it loads." />} />
-              )}
-              {access.require_login && (
-                <div className="nr-signin">
-                  {providers.length > 0 && (
-                    <div className="nr-toggles">
-                      {providers.map((p) => (
-                        <Toggle key={p.id} logo={p.id} label={p.label} on={access.oauth.includes(p.id)}
-                          onChange={(v) => set({ oauth: v ? [...access.oauth, p.id] : access.oauth.filter((x) => x !== p.id) })} />
-                      ))}
-                    </div>
-                  )}
-                  <div className="nr-row">
-                    <Picker wide label="Sign in again after" value={access.login_max} options={SIGN_IN_FOR} onChange={(v) => set({ login_max: v })} />
-                    <Picker wide label="Sign out when idle" value={access.login_idle} options={IDLE_FOR} onChange={(v) => set({ login_idle: v })} />
-                  </div>
-                </div>
-              )}
-              {[access.require_lan, access.require_password, access.require_login].filter(Boolean).length > 1 && (
-                <div className="seg-tabs nr-seg">
-                  <button type="button" className={access.policy_mode === "all" ? "on" : undefined} onClick={() => set({ policy_mode: "all" })}>Require all</button>
-                  <button type="button" className={access.policy_mode === "any" ? "on" : undefined} onClick={() => set({ policy_mode: "any" })}>Any one</button>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="nr-row">
-              {way === "tailscale" ? (
-                <div className="seg-tabs nr-seg">
-                  <button type="button" className={internet ? undefined : "on"} onClick={() => setInternet(false)}><Icon name="lan" size={18} />Tailnet</button>
-                  <button type="button" className={internet ? "on" : undefined} onClick={() => setInternet(true)}><Icon name="public" size={18} />Internet</button>
-                </div>
-              ) : (
-                <span className="nr-reach"><Icon name="public" size={18} />Anyone who reaches the port</span>
-              )}
-              <Picker wide label="Close after" value={closeIn} options={CLOSE_AFTER} onChange={setCloseIn} />
-            </div>
-          )}
-          {!funnelOk && <p className="empty-note">Funnel opens only ports 443, 8443 and 10000.</p>}
-        </div>
+        {way === "tunnel" ? (
+          <AccessCard value={access} users={users} providers={providers} onChange={set}
+            hostname={sub && zones ? `${sub}.${zones.find((z) => z.id === zone)?.name ?? ""}` : undefined} />
+        ) : (
+          <Card title="Access Control">
+            {way === "tailscale" ? (
+              <Row title="Open to the internet" sub="Through Funnel. Off, only devices on your tailnet reach it.">
+                <Switch label="Open to the internet" on={internet} onChange={setInternet} />
+              </Row>
+            ) : (
+              <Row title="Who reaches it" sub="Devices on your network, and anyone on the internet once the router forwards it too." />
+            )}
+            {!funnelOk && <p className="empty-note card-pad">Funnel opens only ports 443, 8443 and 10000.</p>}
+            <Row title="Close after" sub="Closes on its own, and stays in the list switched off.">
+              <Dropdown label="Close after" value={closeIn} options={CLOSE_AFTER} onChange={setCloseIn} />
+            </Row>
+          </Card>
+        )}
 
         <div className="nr-foot">
           <button type="button" className="btn text" onClick={onClose}>Cancel</button>
@@ -262,16 +224,5 @@ function Picker<T extends string | number>({ label, value, options, onChange, wi
         <span className="tf-label">{label}</span>
       </div>
     </div>
-  );
-}
-
-// Toggle is a pill that is on or off, with an icon or a provider's logo.
-function Toggle({ label, on, onChange, icon, logo }: { label: string; on: boolean; onChange: (on: boolean) => void; icon?: IconName; logo?: string }): ReactNode {
-  return (
-    <button type="button" className={"nr-toggle" + (on ? " on" : "")} aria-pressed={on} onClick={() => onChange(!on)}>
-      {logo ? <ProviderLogo id={logo} size={18} /> : icon && <Icon name={icon} size={18} />}
-      {label}
-      {on && <Icon name="check" size={16} />}
-    </button>
   );
 }
