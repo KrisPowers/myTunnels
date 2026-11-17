@@ -4,14 +4,15 @@ import { api, bytes, message, type Container, type ContainerAction, type Contain
 import { BuildLog, Builds, DeploySettings, NewMenu, sourceOf, waiting } from "./Builds";
 import { Chart, Meter } from "./charts";
 import { Dropdown, type Option } from "./Dropdown";
-import { ForwardComposer, ForwardRows, forwardsOf } from "./Forward";
+import { ForwardRows, forwardsOf } from "./Forward";
+import { NewRoute } from "./NewRoute";
 import { Icon, type IconName } from "./Icon";
 import { ContainerImages, ImageView, useImageRemoval } from "./Images";
 import { useCan } from "./me";
 import { Resources } from "./Resources";
 import { go } from "./route";
 import { reachOf, TunnelDetail, tunnelsOf } from "./Tunnels";
-import { Callout, Copy, Dialog, MoreMenu, SubNav, Switch, useNotify, type MenuAction } from "./ui";
+import { Callout, Copy, MoreMenu, SubNav, Switch, useNotify, type MenuAction } from "./ui";
 
 type Act = ContainerAction | "remove";
 
@@ -520,14 +521,12 @@ function ContainerForward({ c, pick, base, routes, forwards, users, providers, o
     <>
       {picked ? <TunnelDetail route={picked} top={list} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go(base)} /> : list}
       {adding && (
-        <Dialog title="New route" wide onClose={() => setAdding(false)}>
-          <ForwardComposer users={users} providers={providers} sub={routes.length ? "" : c.name} container={{ name: c.name, reach: reachOf(c) }}
-            onDone={async (r) => {
-              await onChanged();
-              setAdding(false);
-              if (r) go(`${base}/${r.id}`);
-            }} />
-        </Dialog>
+        <NewRoute providers={providers} sub={routes.length ? "" : c.name} container={{ name: c.name, reach: reachOf(c) }} onClose={() => setAdding(false)}
+          onDone={async (r) => {
+            await onChanged();
+            setAdding(false);
+            if (r) go(`${base}/${r.id}`);
+          }} />
       )}
     </>
   );

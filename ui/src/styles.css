@@ -566,23 +566,50 @@ a.result:hover { background: var(--hover); }
   color: var(--text-2); font: 12px/1.6 var(--mono); white-space: pre-wrap; word-break: break-all;
 }
 
-/* ---- New route: the way on top, its fields on one line, who reaches it,
-   then the button ---- */
-.route-form { display: grid; gap: 22px; }
-.route-fields { display: flex; align-items: flex-start; gap: 10px; }
-.route-fields .tf { margin-bottom: 0; }
-.route-fields .grow { flex: 1; }
-.route-fields .port { width: 120px; flex-shrink: 0; }
-.route-fields .protocol { width: 132px; flex-shrink: 0; }
-.route-fields .port .dropdown, .route-fields .protocol .dropdown { min-width: 0; width: 100%; }
-.route-sep { display: flex; align-items: center; height: 44px; flex-shrink: 0; color: var(--text-3); font-size: 18px; }
-.route-sep.mono { font-size: 13.5px; color: var(--text-2); }
-.route-form .card { background: none; }
-.route-form .card-fold { display: none; }
-.route-form .card-head { padding: 14px 18px 12px; }
-.route-form .setting { padding: 10px 18px; }
-.route-foot { display: flex; justify-content: flex-end; }
-.route-foot .btn { min-width: 120px; }
+/* ---- New route: the way as three tiles, its fields on one line, who
+   reaches it, then the buttons ---- */
+.nr { display: grid; gap: 22px; }
+.nr-ways { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.nr-way {
+  display: grid; justify-items: center; align-content: center; gap: 8px; min-height: 96px; padding: 16px 12px;
+  border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card-2); color: var(--text-2);
+  font: inherit; cursor: pointer; transition: border-color .15s, background .15s, color .15s;
+}
+.nr-way:hover:not(:disabled) { border-color: var(--line-strong); color: var(--text); }
+.nr-way.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.nr-way b { color: var(--text); font-size: 14px; font-weight: 600; }
+.nr-way small { margin-top: -6px; color: var(--text-3); font-size: 11.5px; }
+.nr-way:disabled { opacity: .45; cursor: default; }
+.nr-fields { display: flex; align-items: flex-start; gap: 10px; }
+.nr-fields .tf, .nr-access .tf, .nr-row .tf { margin-bottom: 0; }
+.nr-name { flex: 1; }
+.nr-port { width: 120px; flex-shrink: 0; }
+.nr-port .dropdown, .nr-pick .dropdown, .nr-zone .dropdown { min-width: 0; width: 100%; }
+.nr-pick { width: 200px; flex-shrink: 0; }
+.nr-address { display: flex; flex: 1; min-width: 0; }
+.nr-sub { flex: 1; }
+.nr-sub .tf-input { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.nr-zone { flex: 1; min-width: 0; margin-left: -1px; }
+.nr-zone .dropdown { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.nr-to { display: flex; align-items: center; height: 44px; flex-shrink: 0; color: var(--text-3); }
+.nr-fixed { display: flex; align-items: center; height: 44px; color: var(--text-2); font-size: 13.5px; }
+.nr-access { display: grid; gap: 14px; padding-top: 18px; border-top: 1px solid var(--line); }
+.nr-label { color: var(--text-2); font-size: 12px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
+.nr-toggles { display: flex; flex-wrap: wrap; gap: 8px; }
+.nr-toggle {
+  display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border: 1px solid var(--line-strong);
+  border-radius: 18px; background: none; color: var(--text-2); font: 500 13px var(--font); cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.nr-toggle:hover { color: var(--text); border-color: var(--text-3); }
+.nr-toggle.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.nr-signin { display: grid; gap: 14px; }
+.nr-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.nr-seg { justify-self: start; }
+.nr-seg button { gap: 6px; }
+.nr-reach { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); }
+.nr-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 18px; border-top: 1px solid var(--line); }
+.nr-foot .btn.primary { min-width: 110px; }
 .composer-dot { padding-top: 8px; color: var(--text-3); font-size: 22px; }
 
 /* Rows in the tunnel and device lists. */
@@ -638,10 +665,12 @@ a.result:hover { background: var(--hover); }
   .scrim { display: block; position: fixed; inset: var(--head) 0 0; z-index: 35; background: rgba(0, 0, 0, .5); animation: fade .2s both; }
   .page { padding: 16px 14px 40px; }
   .setting { flex-wrap: wrap; gap: 12px; }
-  .route-fields { flex-wrap: wrap; row-gap: 22px; }
-  .route-fields .grow { flex-basis: 100%; }
-  .route-sep:not(.mono), .composer-dot { display: none; }
-  .route-fields .port, .route-fields .protocol { flex: 1; }
+  .nr-fields { flex-wrap: wrap; row-gap: 22px; }
+  .nr-address, .nr-name { flex-basis: 100%; }
+  .nr-to, .composer-dot { display: none; }
+  .nr-fields .nr-port { flex: 1; }
+  .nr-ways { gap: 6px; }
+  .nr-way { min-height: 80px; padding: 12px 6px; }
   .result.tunnel-row { grid-template-columns: 16px minmax(0, 1fr) auto; gap: 4px 12px; padding: 10px 12px 10px 16px; }
   .result.device-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 10px 12px 10px 16px; }
   .result.tunnel-row .result-service, .result.device-row .result-meta { display: none; }
@@ -1240,9 +1269,6 @@ a.tn-row:hover { background: var(--hover); text-decoration: none; }
 .tn-row.on { background: var(--accent-bg); }
 .ct-row.on { background: var(--accent-bg); }
 .ct-name-text .fw-problem { color: var(--bad); }
-/* The way a route is opened: one switch across the top. */
-.method-tabs { display: flex; }
-.method-tabs button { flex: 1; justify-content: center; }
 .seg-tabs button:disabled { opacity: .45; cursor: default; }
 .tn-name { display: grid; min-width: 0; }
 .tn-name b { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
@@ -1490,8 +1516,7 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
    its room on every tab and only fades. */
 .trend-in { display: block; }
 .sec-now > .trend-in { display: inline-block; }
-.trend-extra { display: grid; gap: 14px; transition: opacity .2s var(--ease); }
-.trend-extra.off { opacity: 0; pointer-events: none; }
+.trend-extra { display: grid; gap: 14px; }
 /* On the page's ground, what the chart masks with the panel colour takes the page's. */
 .dash .chart-grid span { background: var(--bg); }
 .dash .chart-dot { box-shadow: 0 0 0 2px var(--bg); }

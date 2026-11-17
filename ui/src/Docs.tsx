@@ -159,11 +159,11 @@ const CONTENT: Record<string, ReactNode> = {
   forward: (
     <>
       <Doc title="Three ways">
-        <p><b>Routes</b> is every opening in one list: tunnels, router ports and Tailscale, a row each with its address, where it goes, who reaches it and whether it is open. Search, or show one way at a time. The plus, here and in the header, opens <b>New route</b>; the switch at its top picks the way:</p>
+        <p><b>Routes</b> is every opening in one list: router ports, Tailscale and tunnels, a row each with its address, where it goes, who reaches it and whether it is open. Search, or show one way at a time. The plus opens <b>New route</b>; the tiles at its top pick the way:</p>
         <ul>
-          <li><b>Tunnel</b> gives the app an address on your domain through Cloudflare Tunnel, without opening a port on the router, with the full Access Control below.</li>
           <li><b>Port forward</b> opens the port on this PC first: a rule in Windows Firewall, which Windows asks administrator rights for, and a relay when the app is on another port or another machine. Then it asks the router, by UPnP, to send the same port of your public address here. Most routers keep UPnP off; the row then says <b>Router not forwarded</b>, the port still reaches this PC from your network, and the router's own settings can forward it. There is no sign-in or password on either.</li>
           <li><b>Tailscale</b> serves the app to the devices on your tailnet, at this machine's tailnet name. <b>Open to the internet</b> serves it to anyone through Funnel, on port 443, 8443 or 10000.</li>
+          <li><b>Tunnel</b> gives the app an address on your domain through Cloudflare Tunnel, without opening a port on the router, with the full Access Control below.</li>
         </ul>
         <p>A way whose app is not installed, cloudflared or Tailscale, stays in the list but cannot be picked until it is installed from <a href="#/apps">Apps</a>.</p>
       </Doc>
