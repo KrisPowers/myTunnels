@@ -165,7 +165,7 @@ const SHOW: Option<Show>[] = [
 // ForwardPage is every opening in one list: tunnels, router ports and
 // Tailscale, with the plus to add one. `#/routes/new` opens it adding,
 // `#/routes/new/<port>` to that port.
-export function ForwardPage({ id, port, routes, forwards, status, users, providers, onChanged }: {
+export function ForwardPage({ id, port, routes, forwards, status, providers, onChanged }: {
   id: string;
   port: string;
   routes: Route[] | null;
