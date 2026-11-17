@@ -237,6 +237,46 @@ pub async fn forget(
     view(State(state)).await
 }
 
+#[derive(Deserialize)]
+pub struct Dismiss {
+    /// A note's id, `note:<kind>`.
+    id: String,
+}
+
+/// Dismisses a note from events, such as a restart without shutting down:
+/// the events of its kind so far stop counting, and a later one shows it again.
+pub async fn dismiss(
+    State(state): State<AppState>,
+    Json(body): Json<Dismiss>,
+) -> ApiResult<Json<Value>> {
+    let Some(kind) = body.id.strip_prefix("note:") else {
+        return view(State(state)).await;
+    };
+    let mut seen = dismissed(&state.db);
+    seen.insert(kind.to_owned(), util::now());
+    state.db.set_setting(
+        "hardware_dismissed",
+        &serde_json::to_string(&seen).unwrap_or_default(),
+    )?;
+    if let Some(snap) = CURRENT
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_mut()
+    {
+        snap.notes.retain(|n| n.id != body.id);
+    }
+    view(State(state)).await
+}
+
+/// When each kind's notes were last dismissed.
+fn dismissed(db: &Db) -> HashMap<String, i64> {
+    db.setting("hardware_dismissed")
+        .ok()
+        .flatten()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
 // ---- reading, every few seconds ----
 
 pub fn spawn(state: AppState) {
@@ -292,6 +332,27 @@ pub fn cpu_temp() -> Option<f32> {
     let cpu = current.as_ref()?.parts.iter().find(|p| p.kind == "cpu")?;
     let t = cpu.readings.iter().find(|r| r.label == "Temperature")?;
     Some(t.value as f32)
+}
+
+/// Each core's temperature as last read, "Core 0" onward, where the sensor
+/// task reports them.
+pub fn core_temps() -> Vec<f32> {
+    let current = CURRENT.read().unwrap_or_else(PoisonError::into_inner);
+    let Some(cpu) = current
+        .as_ref()
+        .and_then(|s| s.parts.iter().find(|p| p.kind == "cpu"))
+    else {
+        return Vec::new();
+    };
+    cpu.readings
+        .iter()
+        .filter(|r| {
+            r.label
+                .strip_prefix("Core ")
+                .is_some_and(|n| n.parse::<u32>().is_ok())
+        })
+        .map(|r| r.value as f32)
+        .collect()
 }
 
 fn order(kind: &str) -> usize {
@@ -572,15 +633,17 @@ fn gpu_parts(snap: &mut Snapshot, gpus: &[Gpu]) {
 
 // ---- events, notes and the parts they concern ----
 
-/// Notes from recent events: each kind's worst in its window.
+/// Notes from recent events: each kind's worst in its window, since it was
+/// last dismissed.
 #[cfg_attr(target_os = "macos", allow(dead_code))]
-fn notes_from_events(snap: &mut Snapshot) {
+fn notes_from_events(db: &Db, snap: &mut Snapshot) {
     let now = util::now();
+    let seen = dismissed(db);
     let mut worst: HashMap<&'static str, (Health, String)> = HashMap::new();
     for e in &snap.events {
         // A power loss counts for a week; crashes and hardware errors for a month.
         let window = if e.kind == "power" { 7 } else { 30 } * 86_400;
-        if now - e.at > window {
+        if now - e.at > window || seen.get(e.kind).is_some_and(|at| e.at <= *at) {
             continue;
         }
         let entry = worst.entry(e.kind).or_insert((Health::Ok, String::new()));
@@ -1265,7 +1328,7 @@ mod windows {
             }
         }
         snap.events.sort_by_key(|e| -e.at);
-        notes_from_events(snap);
+        notes_from_events(db, snap);
     }
 
     fn text(v: &Value) -> String {
@@ -1941,7 +2004,7 @@ mod linux {
             p.judge(Health::Ok, "Normal");
             snap.parts.push(p);
         }
-        notes_from_events(snap);
+        notes_from_events(db, snap);
     }
 }
 
