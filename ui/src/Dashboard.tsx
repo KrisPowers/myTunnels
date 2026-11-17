@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ago, api, bytes, message, shortId, type Device, type Flag, type Hardware, type Health, type HwPart, type HwSnapshot, type Metrics, type User } from "./api";
-import { Chart, Meter } from "./charts";
+import { Chart, Meter, Spark } from "./charts";
 import { Icon } from "./Icon";
 import { useCan, useMe } from "./me";
 import { Dialog, useNotify } from "./ui";
@@ -85,6 +85,14 @@ export function DashboardPage({ flags, users, devices, onChanged }: { flags: Fla
     }
   };
 
+  const dismiss = async (id: string) => {
+    try {
+      setHw(await api.dismissNote(id));
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+  };
+
   const snap = hw?.snapshot ?? null;
   const windows = hw?.platform === "windows";
   return (
@@ -106,14 +114,14 @@ export function DashboardPage({ flags, users, devices, onChanged }: { flags: Fla
       {advanced && snap && <Setup snap={snap} />}
       {m && m.history.length > 0 && (
         <div className="dash">
-          <Side m={m} snap={snap} advanced={advanced} admin={admin} onForget={forget} toggle={admin && hw && (
+          <Side m={m} snap={snap} advanced={advanced} admin={admin} onForget={forget} onDismiss={dismiss} toggle={admin && hw && (
             <button type="button" className={"icon-btn" + (advanced ? " lit" : "")} aria-label="Advanced" title="Advanced" aria-pressed={advanced} disabled={busy} onClick={() => setAsking(true)}>
               {busy ? <span className="spinner small" /> : <Icon name={windows ? "shield" : "tune"} size={20} />}
             </button>
           )} />
           <div className="dash-main">
             {flags.length > 0 && <NewDevices flags={flags} users={users} devices={devices} onChanged={onChanged} />}
-            <Trend m={m} cpu={snap?.parts.find((p) => p.kind === "cpu")} advanced={advanced} />
+            <Trend m={m} advanced={advanced} />
             <Storage m={m} drives={snap?.parts.filter((p) => p.kind === "drive") ?? []} advanced={advanced} />
           </div>
         </div>
@@ -148,7 +156,7 @@ function Rows({ items }: { items: Fact[] }) {
   );
 }
 
-function Side({ m, snap, advanced, admin, onForget, toggle }: { m: Metrics; snap: HwSnapshot | null; advanced: boolean; admin: boolean; onForget: (slot: string) => void; toggle: ReactNode }) {
+function Side({ m, snap, advanced, admin, onForget, onDismiss, toggle }: { m: Metrics; snap: HwSnapshot | null; advanced: boolean; admin: boolean; onForget: (slot: string) => void; onDismiss: (id: string) => void; toggle: ReactNode }) {
   const parts = snap?.parts ?? [];
   const of = (kind: string) => parts.filter((p) => p.kind === kind);
   const cpu = of("cpu")[0];
@@ -173,6 +181,9 @@ function Side({ m, snap, advanced, admin, onForget, toggle }: { m: Metrics; snap
               {p.id.startsWith("note:") ? p.name : p.reason}
               {admin && p.kind === "memory" && p.health === "bad" && !p.bytes && p.place && (
                 <button type="button" className="link-btn" onClick={() => onForget(p.place)}>Taken out</button>
+              )}
+              {admin && p.id.startsWith("note:") && (
+                <button type="button" className="link-btn" onClick={() => onDismiss(p.id)}>Dismiss</button>
               )}
             </p>
           ))}
@@ -270,7 +281,7 @@ function Section({ title, tabs, now, children }: { title: ReactNode; tabs?: Reac
 type Tab = "CPU" | "Memory" | "Network" | "Temperature";
 
 // Trend is the last five minutes of one figure, picked from the links.
-function Trend({ m, cpu, advanced }: { m: Metrics; cpu: HwPart | undefined; advanced: boolean }) {
+function Trend({ m, advanced }: { m: Metrics; advanced: boolean }) {
   const [tab, setTab] = useState<Tab>("CPU");
   const h = m.history;
   const last = h[h.length - 1];
@@ -279,8 +290,8 @@ function Trend({ m, cpu, advanced }: { m: Metrics; cpu: HwPart | undefined; adva
   const open = tabs.includes(tab) ? tab : "CPU";
   const span = { times: h.map((s) => s.at), keep: m.keep, every: m.every, ticks: true };
   const total = m.memory_total || 1;
-  const coreTemps = cpu?.readings.filter((r) => /^Core \d+$/.test(r.label)).map((r) => r.value) ?? [];
-  const temps = coreTemps.length ? coreTemps : m.cores.map((c) => c.temp).filter((t): t is number => t !== null);
+  const threads = last.cores.map((_, i) => h.map((s) => s.cores[i] ?? null));
+  const temps = (last.temps ?? []).map((_, i) => h.map((s) => s.temps?.[i] ?? null));
   const peak = Math.max(...h.map((s) => Math.max(s.rx, s.tx)));
   return (
     // The title stays put, so the links beside it never shift; the chart and
@@ -299,24 +310,38 @@ function Trend({ m, cpu, advanced }: { m: Metrics; cpu: HwPart | undefined; adva
         {open === "Temperature" && <Chart {...span} max={Math.max(100, nice(Math.max(...h.map((s) => s.temp ?? 0))))} format={degrees} lines={[{ label: "Processor", color: ORANGE, values: h.map((s) => s.temp) }]} />}
       </div>
       <div className={"trend-extra" + (open === "CPU" ? "" : " off")} aria-hidden={open !== "CPU"}>
-        <Strip label="Each thread" values={m.cores.map((c) => c.usage)} max={100} unit="%" />
-        {advanced && <Strip heat label="Each core, °C" values={temps} max={100} unit="°C" />}
+        <Minis label="Each thread" name="Thread" series={threads} span={span} color={BLUE} format={pct} />
+        {advanced && <Minis heat label="Each core" name="Core" series={temps} span={span} color={ORANGE} format={degrees} />}
       </div>
     </Section>
   );
 }
 
-// Strip is a thin bar for each thread or core, on a scale to `max`.
-function Strip({ label, values, max, unit, heat }: { label: string; values: number[]; max: number; unit: string; heat?: boolean }) {
-  if (!values.length) return null;
+// Minis is a small chart of the same five minutes for each thread or core,
+// on a scale to 100, its figure now beside its name.
+function Minis({ label, name, series, span, color, format, heat }: {
+  label: string;
+  name: string;
+  series: (number | null)[][];
+  span: { times: number[]; keep: number; every: number };
+  color: string;
+  format: (n: number) => string;
+  heat?: boolean;
+}) {
+  if (!series.length) return null;
   return (
-    <div className="strip">
-      <span className="strip-label">{label}</span>
-      <div className={"strip-bars" + (heat ? " heat" : "")}>
-        {values.map((v, i) => (
-          <span key={i} data-health={heat && v >= 85 ? (v >= 95 ? "bad" : "warn") : undefined}
-            style={{ height: `${Math.max(Math.min(v / max, 1), 0.03) * 100}%` }} title={`${i + 1}: ${Math.round(v)}${unit}`} />
-        ))}
+    <div className="minis-group">
+      <span className="minis-label">{label}</span>
+      <div className="minis">
+        {series.map((values, i) => {
+          const now = values[values.length - 1];
+          return (
+            <div key={i} className="mini" data-health={heat && now !== null && now >= 85 ? (now >= 95 ? "bad" : "warn") : undefined}>
+              <div className="mini-head"><span>{name} {i + 1}</span><b>{now === null ? "" : format(now)}</b></div>
+              <Spark {...span} values={values} max={100} color={color} />
+            </div>
+          );
+        })}
       </div>
     </div>
   );

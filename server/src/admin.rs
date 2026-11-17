@@ -65,6 +65,7 @@ pub fn router(state: AppState) -> Router {
         .route("/hardware/enable", post(crate::hardware::enable))
         .route("/hardware/disable", post(crate::hardware::disable))
         .route("/hardware/forget", post(crate::hardware::forget))
+        .route("/hardware/dismiss", post(crate::hardware::dismiss))
         .route("/metrics", get(metrics))
         .route("/containers", get(list_containers))
         .route("/images", get(crate::images::list))

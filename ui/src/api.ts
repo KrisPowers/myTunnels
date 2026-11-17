@@ -206,6 +206,8 @@ export interface Sample {
   rx: number;
   tx: number;
   temp: number | null;
+  // Each core's temperature, where the system reports them.
+  temps: number[];
 }
 
 export interface ContainerStats {
@@ -723,6 +725,7 @@ export const api = {
   enableHardware: () => call<Hardware>("/hardware/enable", "POST"),
   disableHardware: () => call<Hardware>("/hardware/disable", "POST"),
   forgetSlot: (slot: string) => call<Hardware>("/hardware/forget", "POST", { slot }),
+  dismissNote: (id: string) => call<Hardware>("/hardware/dismiss", "POST", { id }),
   metrics: () => call<Metrics>("/metrics"),
   apps: () => call<Apps>("/apps"),
   // An install may name a version, in place of the latest.
