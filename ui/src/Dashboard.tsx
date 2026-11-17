@@ -295,8 +295,8 @@ function Trend({ m, advanced }: { m: Metrics; advanced: boolean }) {
   const peak = Math.max(...h.map((s) => Math.max(s.rx, s.tx)));
   return (
     // The title stays put, so the links beside it never shift; the chart and
-    // its figure fade in on each pick, and the threads' room is kept on every
-    // tab, so nothing under the chart jumps.
+    // its figure fade in on each pick. Each thread and core show on the CPU
+    // tab alone, and take no room on the others.
     <Section title="Last 5 Minutes"
       tabs={<nav className="sub-nav sec-tabs">{tabs.map((t) => <button key={t} type="button" className={"sub-nav-item" + (t === open ? " on" : "")} aria-pressed={t === open} onClick={() => setTab(t)}>{t}</button>)}</nav>}
       now={<span key={open} className="trend-in">{open === "CPU" ? pct(last.cpu)
@@ -309,10 +309,10 @@ function Trend({ m, advanced }: { m: Metrics; advanced: boolean }) {
         {open === "Network" && <Chart {...span} max={nice(peak)} format={rate} lines={[{ label: "In", color: BLUE, values: h.map((s) => s.rx) }, { label: "Out", color: ORANGE, values: h.map((s) => s.tx) }]} />}
         {open === "Temperature" && <Chart {...span} max={Math.max(100, nice(Math.max(...h.map((s) => s.temp ?? 0))))} format={degrees} lines={[{ label: "Processor", color: ORANGE, values: h.map((s) => s.temp) }]} />}
       </div>
-      <div className={"trend-extra" + (open === "CPU" ? "" : " off")} aria-hidden={open !== "CPU"}>
+      {open === "CPU" && <div className="trend-extra trend-in">
         <Minis label="Each thread" name="Thread" series={threads} span={span} color={BLUE} format={pct} />
         {advanced && <Minis heat label="Each core" name="Core" series={temps} span={span} color={ORANGE} format={degrees} />}
-      </div>
+      </div>}
     </Section>
   );
 }
