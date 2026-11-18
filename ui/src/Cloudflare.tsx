@@ -52,7 +52,7 @@ type Phase = "idle" | "checking" | "pick" | "connecting" | "connected";
 
 // CloudflareSetup connects Cloudflare: one link to make the token, paste it,
 // done. myTunnels then creates the tunnel and its DNS records itself.
-function CloudflareSetup({ onDone }: { onDone: () => Promise<void> }) {
+export function CloudflareSetup({ onDone }: { onDone: () => Promise<void> }) {
   const [token, setToken] = useState("");
   const [saved, setSaved] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
