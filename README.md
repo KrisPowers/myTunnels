@@ -112,15 +112,15 @@ one. **Skip for now** leaves it for later: anything that needs Cloudflare asks a
 does **Connect** under **Settings, Connections**. Once it is connected, every domain on the
 account is there to use, for services' addresses and for mail, with nothing to add.
 
-Then, on **Services**, press the plus: a **Container from an image** or **from GitHub**, or a
-**Route** to an app already running here. In **New route**, pick **Cloudflare Tunnel**, type
-the subdomain, pick the domain, choose who can open it and press **Publish**; **Port forward**
-and **Tailscale** come before it. A container's own **Routes** page publishes it the same way.
+Then **Add container** on **Containers** runs an image or builds a GitHub repository, and
+**Expose a port** on **Routes** makes a port reachable: by port forward, Tailscale or a
+Cloudflare tunnel, with who gets in decided in the same dialog.
 
 The sidebar follows what this computer is for: **Dashboard** (this computer at a glance, and
-home), **Services** (what it hosts and how each is reached), **Storage** and **Mail** (your files
-and your mail, in place of a paid cloud) and **Security** (who gets in). **Apps**, at its foot,
-installs the tools a new machine needs in a click each.
+home), **Containers**, **Automations** (how each keeps itself current), **Routes** (the ports
+exposed), **Storage** and **Mail** (your files and your mail, in place of a paid cloud) and
+**Security** (who gets in). **Apps**, at its foot, installs the tools a new machine needs in a
+click each.
 
 To manage myTunnels from anywhere, publish the dashboard itself: under **Local app**, set
 **Runs on** to **This dashboard**, with no port. It takes the same access rules as any
@@ -175,41 +175,37 @@ what passes through myTunnels, or the computer's while `server host` runs.
 Temperatures need sensors the host exposes under `/sys/class/hwmon`, which a Linux host
 does and Docker Desktop does not.
 
-## Services
+## Containers
 
-**Services** is everything this computer hosts. It says how many run and the containers' CPU and
-memory together, then a row each, in order by name. A container shows what it is (one Docker
-runs, one built from Git, or one run from an image) in a tile tinted by its state, its name over
-where it comes from, its address, and its CPU and memory while it runs. An app running here
-outside a container is the route to it, as on **Routes** below. Each row has one menu: logs, its forwards, start or
-stop, restart, kill and delete. Compose projects with more than one container fold under their
-name, with start, stop and restart for all of them. Search, or pick **All** or **Running**; the
-catalog refreshes on its own.
+**Containers** is every container Docker runs here, one table: what it is and where it comes
+from, its status, the ports it publishes, and its CPU and memory while it runs. Compose projects
+with more than one container fold under a row of their own. Search, or show all, running or
+stopped; a row's menu starts, restarts, stops, opens its logs or deletes it, and the menu at the
+top deletes every image no container uses.
 
-The plus at the top adds a **Container from GitHub** or **from an image**, or a **Route**. The menu beside it deletes every
-image no container uses.
+**Add container** is one dialog: **Image** runs one such as `nginx:1.27`, **GitHub** builds a
+repository's branch (a token for a private one). A container's page holds its **Overview**,
+**Images** (its builds, each one's log, and going back), **Logs**, **Resources** (CPU and memory
+limits, processes, **Auto-start**) and, when built from a repository, **Settings**. Exposing its
+port is a route, on **Routes**.
 
-A container and its forwards are one page. Its heading holds its state, image and address,
-**Open**, the one button its state calls for (start, stop or resume), and a menu for restart,
-pause, kill and delete. Under it:
+## Automations
 
-- **Overview**: its CPU over time, memory, network and disk while it runs, then what it runs,
-  its state and restarts, its ports, networks and mounts.
-- **Routes**: every way it is reached, a tunnel, a router port or Tailscale, each with its
-  state, where it goes and who reaches it, and the picked tunnel's activity under them. That
-  tunnel's controls sit at the side: Open, its live switch, a menu to change the address or
-  remove it, and its access control. The plus opens **New route** for it; the port is the
-  container's own, asked only when it has more than one.
-- **Images**: the image it runs and the others of the same name, such as earlier versions, with
-  their size and age. Open one for its entrypoint, command, working folder, user, exposed ports,
-  environment, labels and layers. One no container uses can be deleted.
-- **Logs**: followed as it runs, searchable, with or without times.
-- **Resources**: its CPU limit and priority, its memory limit, reserved memory and swap, how
-  many processes it may run, and its **Auto-start**: off, when it fails, unless stopped by
-  hand, or always. The last two bring it back after a crash or a restart of the machine,
-  as soon as Docker is running again. Each change applies at once, without a
-  restart, and is kept by the container's name, so it is given back when the container is
-  made again by Compose or a new build.
+Every container added from GitHub or an image has an automation: what starts a new build, the
+build, the steps it must pass, then going live. **Automations** lists them, with builds waiting
+for review at the top beside **Approve** and **Turn down**.
+
+- **What starts it**: a push to the branch, a new GitHub release (read every five minutes, built
+  at the commit its tag points to), a timer, or **Run now**.
+- **Steps**, in any order and as many as wanted: a **Test** runs a command in the new image with
+  the container's environment (such as `npm test`) and must exit 0, its output kept in the run's
+  log; a **Review** holds the build until someone approves it.
+- **Going live** makes the container again from the new image; one that will not start is undone
+  and the one before comes back. A build that fails a test, or is turned down, never runs.
+
+An automation's page has its **Flow**, drawn as it runs and edited in place, its **Runs** (every
+build with its log), and its **Settings** (repository, branch, Dockerfile, port, environment and
+kept folders).
 
 ### From a repository or an image
 
@@ -263,24 +259,27 @@ Podman works too, through its Docker-compatible API: mount Podman's socket in pl
 
 ## Routes
 
-A route is a way into a service: a Cloudflare tunnel, a router port forward or Tailscale. A
-container's routes are on its **Routes** page; a route to an app running here outside a container
-is a row on **Services** of its own, with its address, where it goes, who reaches it and whether
-it is open. **Route**, under the plus, opens **New route**, whose switch at the top picks the way:
+A route exposes one port on this computer, nothing else. **Expose a port** asks, in order: the
+port; **Read & write** or **Read only**; how it is exposed; and who gets in. **Routes** lists them
+by port, with where each is reached, whether it takes writes, who gets in and whether it is up.
 
-- **Tunnel**: an address on your domain through Cloudflare Tunnel, with no port opened on the
-  router, behind the tunnel's Access Control (home network, a tunnel password, sign-in).
-- **Port forward**: opens the port on this PC (a Windows Firewall rule, which asks for
-  administrator rights, and a relay when the app is on another port or machine), then asks the
-  router by UPnP to send the same port here. Most routers keep UPnP off; the row then says
-  **Router not forwarded**, and the router's own settings can forward it. Neither has a sign-in
-  or password.
-- **Tailscale**: `tailscale serve` puts the app on your tailnet at this machine's tailnet name;
-  **Open to the internet** uses Funnel instead, on port 443, 8443 or 10000.
+- **Port forward**: TCP, UDP or both. The port is opened on this computer (a Windows Firewall
+  rule, through the helper setup puts in place, or the admin prompt), then the router is asked by
+  UPnP to send it here. Most routers keep UPnP off; the row then says so. It can close on its own
+  after an hour, a day or a week.
+- **Tailscale**: `tailscale serve` on your tailnet, as http, https or TCP; **Open to the
+  internet** uses Funnel on 443, 8443 or 10000.
+- **Cloudflare Tunnel**: an address on one of your domains, with no port opened on the router.
+  Every request passes through myTunnels' gateway first.
 
-Router and Tailscale forwards can **Close after** an hour, a day or a week, and stay in the list
-switched off. Tailscale, when it is missing, is listed but cannot be picked until it is
-installed from **Apps**; cloudflared comes with myTunnels.
+Through a tunnel, who gets in is all in one place: a sign-in page for accounts (third-party
+providers and emailed codes included), a password, the home network, and **API keys** for
+programs, sent as `Authorization: Bearer`, `X-API-Key` or `api_key` in a JSON or form body up to
+1 MB, which goes on to the app unchanged. Keys are made and revoked on the route's page; each one's
+text is shown once and only its hash is kept. **Read only** lets GET, HEAD and OPTIONS through
+and answers every write with 405; a **rate limit** caps each visitor's requests a minute (429 past
+it). Every key used or refused, write refused and visitor slowed down is in the route's
+activity. A port forward and Tailscale reach the port directly, so these need a tunnel.
 
 ## Storage
 
@@ -345,15 +344,12 @@ dashboard through a tunnel to reach it from anywhere.
 
 ## Mail
 
-**Mail** has four tabs, a table each: **Mailboxes** (address, messages, storage, whether mail
-apps may sign in), **Aliases**, **Domains** (every domain on the connected Cloudflare account,
-already listed, each with a switch that puts mail on it and writes the records it needs, its
-mailboxes and whether its DNS is ready) and **Activity** (what came in and went out). The first
-switch asks how mail moves and turns the mail server on. The plus adds a **Mailbox** or an
-**Alias**; the dial opens **Mail settings** (how mail moves, where mail apps sign in, the options
-for incoming mail, setting up again and turning off). A domain's menu makes it primary (the mail
-server is `mail.` on it) or gives it managers, accounts that run its mailboxes without setting
-mail up.
+**Mail** is every address in one list: **mailboxes**, which have a password and keep their mail
+here, and **forwards**, which send an address's mail to a mailbox. **New address** takes the
+address in full, on any domain the Cloudflare account holds, and mail turns itself on for that
+domain the first time, writing the records it needs. The clock opens **Activity** and the dial
+**Mail settings** (how mail moves, where mail apps sign in, the options for incoming mail,
+setting up again and turning off).
 
 The mail server runs on this computer: it receives mail, keeps each mailbox in `mail.db` beside
 the gateway's database, and sends mail signed with DKIM. Outlook, Gmail, Apple Mail, Thunderbird
@@ -365,7 +361,7 @@ and phones use it over IMAP and SMTP. How each part is reached, in any mix:
 | Mail apps | IMAP 993 and SMTP 465, with a Let's Encrypt certificate, proved through Cloudflare DNS or, for a domain kept by hand, over port 80 while it is made | IMAP 443 and SMTP 8443 through Tailscale Funnel |
 | Sending | Direct to each recipient's server on port 25, or through a relay SMTP server | Cloudflare Email Sending (Workers Paid plan) |
 
-Every mail listener is on `127.0.0.1`; the ports it opens are rows named **Mail** on **Services**,
+Every mail listener is on `127.0.0.1`; the ports it opens are rows named **Mail** on **Routes**,
 and a relay passes the sender's address on, so SPF still sees who connected. Mail apps find their
 settings from an address alone through `autodiscover.` and `autoconfig.` on each domain, served
 through the tunnel. Received mail is checked with SPF, DKIM and DMARC and filed in Junk when it
