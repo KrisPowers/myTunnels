@@ -1,20 +1,20 @@
 import { useContext, useEffect, useState, type FormEvent } from "react";
 import { NeedsContext } from "./Apps";
-import { useCloudflare, useCloudflareReady } from "./Cloudflare";
+import { useCloudflare } from "./Cloudflare";
 import { api, message, strength, type Access, type Forward, type OAuthProvider, type Route, type User, type Zone } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon } from "./Icon";
 import { AccessCard, type Reach } from "./Tunnels";
 import { Card, Dialog, Row, Switch, TextField, useNotify } from "./ui";
 
-// The ways a route is opened: a Cloudflare tunnel, which opens no port, then
-// Tailscale and the router.
+// The ways a route is opened, the plain ones first: the router, Tailscale,
+// then a Cloudflare tunnel.
 export type Method = "port" | "tailscale" | "tunnel";
 
 const WAYS: Option<Method>[] = [
-  { value: "tunnel", label: "Cloudflare Tunnel", logo: "cloudflare" },
-  { value: "tailscale", label: "Tailscale", logo: "tailscale" },
   { value: "port", label: "Port forward", icon: "router" },
+  { value: "tailscale", label: "Tailscale", logo: "tailscale" },
+  { value: "tunnel", label: "Cloudflare Tunnel", logo: "cloudflare" },
 ];
 
 const CLOSE_AFTER: Option<number>[] = [
@@ -51,12 +51,10 @@ export function NewRoute({ users, providers, container, port: startPort, sub: st
 }) {
   const needs = useContext(NeedsContext);
   const cloudflare = useCloudflare();
-  const connected = useCloudflareReady();
   const notify = useNotify();
   const missing = (way: Method) => !!needs && (way === "tunnel" ? !needs.cloudflared : way === "tailscale" ? !needs.tailscale : false);
 
-  // A tunnel once Cloudflare is connected; until then, the way that needs nothing.
-  const [way, setWay] = useState<Method>(connected ? "tunnel" : "port");
+  const [way, setWay] = useState<Method>("port");
   const [name, setName] = useState(container?.name ?? "");
   const [outside, setOutside] = useState("");
   const [port, setPort] = useState(/^\d{1,5}$/.test(startPort ?? "") ? startPort! : "");
