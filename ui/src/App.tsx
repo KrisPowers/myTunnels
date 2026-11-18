@@ -15,7 +15,6 @@ import { go, readHash } from "./route";
 import { SETTINGS, Settings } from "./Settings";
 import { ConnectStep, Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
-import { DomainsPage } from "./Domains";
 import { MailPage } from "./Mail";
 import { StoragePage } from "./Storage";
 import { target, TunnelPage } from "./Tunnels";
@@ -25,7 +24,7 @@ import { Callout, Notices, Tooltips, useNotify } from "./ui";
 
 // Pages whose id picks one container, tunnel, device or account, a page of its
 // own; on the rest it is a tab or section, which changes in place.
-const ONE_OF: string[] = ["containers", "tunnels", "devices", "users", "domains"];
+const ONE_OF: string[] = ["containers", "tunnels", "devices", "users"];
 
 export function App() {
   return (
@@ -187,29 +186,28 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
   // A tunnel, device or account that is gone goes back to its list.
   useEffect(() => {
-    if (view === "tunnels" && id && routes && !route) go("#/");
+    if (view === "tunnels" && id && routes && !route) go("#/services");
     if (view === "devices" && id && devices && !device) go("#/devices");
     if (view === "users" && id && id !== "new" && users && !user) go("#/users");
   }, [view, id, routes, devices, users, route, device, user]);
 
   // Each page shows for those who may use it; the first of them is home.
-  // Services, what this computer hosts and how each is reached, comes first;
-  // then what replaces a paid cloud, Storage and Mail, and the domains they
-  // all share; then this computer and who may get in.
-  const mail = can("mail.view") || can("mail.manage");
+  // Dashboard, this computer at a glance, comes first; then what it hosts,
+  // and what replaces a paid cloud, Storage and Mail; then who may get in.
+  // Domains have no page: they are the Cloudflare account's, all of them.
   const pages: [string, string, IconName, string, boolean][] = [
-    ["containers", "Services", "deployed_code", "#/", can("containers.view") || can("tunnels.view")],
-    ["storage", "Storage", "cloud", "#/storage", can("drive.view")],
-    ["mail", "Mail", "mail", "#/mail", mail],
-    ["domains", "Domains", "public", "#/domains", mail],
     ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
+    ["containers", "Services", "deployed_code", "#/services", can("containers.view") || can("tunnels.view")],
+    ["storage", "Storage", "cloud", "#/storage", can("drive.view")],
+    ["mail", "Mail", "mail", "#/mail", can("mail.view") || can("mail.manage")],
     ["security", "Security", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
   ];
   const home = pages.find((p) => p[4])?.[3] ?? "#/settings/preferences";
+  // An empty address opens home.
   useEffect(() => {
-    if (view === "containers" && !id && !pages[0][4] && home !== "#/") go(home);
+    if (place.home && home !== "#/services") go(home);
   });
-  const settings = SETTINGS.filter(([k]) => can("settings.manage") || !["cloudflare", "connections", "network", "connector"].includes(k));
+  const settings = SETTINGS.filter(([k]) => can("settings.manage") || !["connections", "network"].includes(k));
   const sections = view === "settings" ? settings : view === "docs" ? DOCS : null;
   const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
     <NavItem key={key} to={to} icon={icon} label={label}
@@ -259,8 +257,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
           {view === "apps" && <AppsPage />}
           {view === "storage" && <StoragePage />}
-          {view === "mail" && <MailPage tab={id} />}
-          {view === "domains" && <DomainsPage id={id} tab={page} routes={apps ?? []} onChanged={load} />}
+          {view === "mail" && <MailPage />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} forwards={forwards ?? []}
             users={users ?? []} providers={providers} onChanged={load} />}
           {route && <TunnelPage route={route} users={users ?? []} providers={providers} onChanged={load} />}

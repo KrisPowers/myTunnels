@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ago, api, message, TOKEN_URL, type Account, type AdminAccount, type PasskeyInfo, type Route, type Settings as Saved, type Status, type TotpSetup } from "./api";
 import { useCloudflare } from "./Cloudflare";
-import { Connections } from "./Registrars";
 import { createPasskey, deviceName, dismissed, passkeysWork } from "./passkey";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
@@ -10,10 +9,8 @@ import { Callout, Card, Dialog, Row, SaveField, TextField, useNotify, ValueRow }
 
 // The sections, in the order the sidebar lists them.
 export const SETTINGS: [string, string, IconName][] = [
-  ["cloudflare", "Cloudflare", "cloud"],
   ["connections", "Connections", "link"],
   ["network", "Network", "router"],
-  ["connector", "Connector", "dns"],
   ["account", "Account", "person"],
   ["preferences", "Preferences", "brightness_auto"],
   ["about", "About", "info"],
@@ -37,13 +34,12 @@ export function Settings({ sections, section, status, routes, onChanged, onSignO
       </div>
       <div className="page-body stack flow" key={key}>
         <h2 className="doc-title">{title}</h2>
-        {key === "cloudflare" && saved && <Cloudflare saved={saved} routes={routes} onSaved={async () => {
+        {key === "connections" && saved && <Cloudflare saved={saved} routes={routes} onSaved={async () => {
           await reload();
           await onChanged();
         }} />}
-        {key === "connections" && saved && <Connections saved={saved} onSaved={setSaved} />}
         {key === "network" && saved && <Network saved={saved} status={status} onSaved={reload} />}
-        {key === "connector" && <Connector status={status} />}
+        {key === "connections" && <Connector status={status} />}
         {key === "account" && <AdminAccountCard />}
         {key === "account" && (
           <Card title="Session">
@@ -392,7 +388,7 @@ function Preferences() {
 
 function About() {
   return (
-    <Card title="myTunnels" sub="Publish homelab apps through Cloudflare Tunnel, with an access gateway in front.">
+    <Card title="myTunnels" sub="Your own cloud on this computer: services, storage and mail, reached through Cloudflare Tunnel.">
       <Row title="Admin panel" sub="Opens here on this computer only; every other device uses a tunnel."><span className="mono">{location.host}</span></Row>
       <Row title="Source"><a className="btn" href="https://github.com/KrisPowers/myTunnels" target="_blank" rel="noreferrer">GitHub</a></Row>
       <Row title="License"><span>Apache 2.0</span></Row>
