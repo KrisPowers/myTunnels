@@ -198,7 +198,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const pages: [string, string, IconName, string, boolean][] = [
     ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
     ["containers", "Containers", "deployed_code", "#/containers", can("containers.view")],
-    ["automations", "Automations", "autorenew", "#/automations", can("containers.view")],
+    ["automations", "Automations", "workflow", "#/automations", can("containers.view")],
     ["routes", "Routes", "wifi_cog", "#/routes", can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("drive.view")],
     ["mail", "Mail", "mail", "#/mail", can("mail.view") || can("mail.manage")],
