@@ -1354,22 +1354,33 @@ fn served_here(scheme: &str) -> bool {
     scheme == "dashboard"
 }
 
-/// Refuses a tunnel aimed at one of myTunnels' own ports on this machine.
-fn check_not_self(state: &AppState, host: Option<&str>, port: u16) -> ApiResult<()> {
+/// Whether `port` on `host` is on this machine and is `addr`'s port.
+fn here_at(state: &AppState, host: Option<&str>, port: u16, addr: &str) -> bool {
     let snap = state.snapshot();
     let host = host.unwrap_or(&snap.upstream_host);
     let local = host.eq_ignore_ascii_case("localhost")
         || host
             .parse::<std::net::IpAddr>()
             .is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified());
-    let own = [&state.config.gate_addr, &state.config.admin_addr]
-        .iter()
-        .any(|addr| {
-            addr.rsplit_once(':')
-                .and_then(|(_, p)| p.parse::<u16>().ok())
-                == Some(port)
-        });
-    if local && own {
+    local
+        && addr
+            .rsplit_once(':')
+            .and_then(|(_, p)| p.parse::<u16>().ok())
+            == Some(port)
+}
+
+/// A route aimed at the panel's own port on this machine is to this dashboard,
+/// which the gateway serves itself: it becomes that target, with no port.
+fn panel_target(state: &AppState, host: &Option<String>, port: &mut u16, scheme: &mut String) {
+    if !served_here(scheme) && here_at(state, host.as_deref(), *port, &state.config.admin_addr) {
+        *scheme = "dashboard".into();
+        *port = 0;
+    }
+}
+
+/// Refuses a tunnel aimed at the gateway's own port on this machine.
+fn check_not_self(state: &AppState, host: Option<&str>, port: u16) -> ApiResult<()> {
+    if here_at(state, host, port, &state.config.gate_addr) {
         return Err(ApiError::bad(format!(
             "Port {port} is myTunnels' own. Use the port your app listens on."
         )));
@@ -1540,8 +1551,13 @@ async fn create_route(
     if body.port == 0 && !served_here(&body.target_scheme) {
         return Err(ApiError::bad("Port must be between 1 and 65535"));
     }
-    let target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
-    check_not_self(&state, target_host.as_deref(), body.port)?;
+    let mut target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
+    let (mut port, mut target_scheme) = (body.port, body.target_scheme);
+    panel_target(&state, &target_host, &mut port, &mut target_scheme);
+    if served_here(&target_scheme) {
+        target_host = None;
+    }
+    check_not_self(&state, target_host.as_deref(), port)?;
     let password_hash = tunnel_password(body.require_password, body.password, None)?;
     check_limits(body.login_max, body.login_idle)?;
     check_rate(body.rate_limit)?;
@@ -1581,9 +1597,10 @@ async fn create_route(
         zone_id: zone.id.clone(),
         zone_name: zone.name,
         hostname,
+        target_port: port,
+        preserve_host: body.preserve_host && !served_here(&target_scheme),
         target_host,
-        target_port: body.port,
-        target_scheme: body.target_scheme,
+        target_scheme,
         require_lan: body.require_lan,
         policy_mode: body.policy_mode,
         enabled: true,
@@ -1595,7 +1612,6 @@ async fn create_route(
         login_idle: body.login_idle,
         require_code: body.require_code,
         oauth: known_providers(body.oauth),
-        preserve_host: body.preserve_host,
         verify_tls: body.verify_tls,
         read_only: body.read_only,
         require_key: body.require_key,
@@ -1661,9 +1677,13 @@ async fn update_route(
         return Err(ApiError::bad("Port must be between 1 and 65535"));
     }
     route.target_host = check_target(body.target_host, &body.target_scheme, &body.policy_mode)?;
-    check_not_self(&state, route.target_host.as_deref(), body.port)?;
-    route.target_port = body.port;
-    route.target_scheme = body.target_scheme;
+    let (mut port, mut target_scheme) = (body.port, body.target_scheme);
+    panel_target(&state, &route.target_host, &mut port, &mut target_scheme);
+    if served_here(&target_scheme) {
+        route.target_host = None;
+    }
+    check_not_self(&state, route.target_host.as_deref(), port)?;
+    route.target_port = port;
     route.require_lan = body.require_lan;
     route.policy_mode = body.policy_mode;
     let switched = route.enabled != body.enabled;
@@ -1681,7 +1701,8 @@ async fn update_route(
     route.login_idle = body.login_idle;
     route.require_code = body.require_code;
     route.oauth = known_providers(body.oauth);
-    route.preserve_host = body.preserve_host;
+    route.preserve_host = body.preserve_host && !served_here(&target_scheme);
+    route.target_scheme = target_scheme;
     route.verify_tls = body.verify_tls;
     check_rate(body.rate_limit)?;
     route.read_only = body.read_only;
