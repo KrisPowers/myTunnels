@@ -402,6 +402,13 @@ export function MailPage({ tab }: { tab: string }) {
   const runs = state.manages;
   const targets = state.accounts.filter((a) => runs.includes(domainOf(a.address))).map((a) => a.address);
   const domains = s.domains.map((d) => d.name);
+  const none = state.accounts.length === 0 && state.aliases.length === 0;
+  const buttons = s.on && runs.length > 0 && (
+    <>
+      {targets.length > 0 && <button type="button" className="btn" onClick={() => setAlias(true)}><Icon name="call_split" size={18} />New alias</button>}
+      <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="add" size={18} />New address</button>
+    </>
+  );
   return (
     <>
       <div className="page-head">
@@ -412,12 +419,7 @@ export function MailPage({ tab }: { tab: string }) {
             <a href="#/domains"><b>{domains.length}</b> {domains.length === 1 ? "domain" : "domains"}</a>
           </div>
         </div>
-        {current === "addresses" && s.on && runs.length > 0 && (
-          <div className="page-actions">
-            {targets.length > 0 && <button type="button" className="btn" onClick={() => setAlias(true)}><Icon name="call_split" size={18} />New alias</button>}
-            <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="add" size={18} />New address</button>
-          </div>
-        )}
+        {current === "addresses" && !none && buttons && <div className="page-actions">{buttons}</div>}
       </div>
       <nav className="sub-nav" aria-label="Mail">
         {TABS.map(([key, label, icon]) => (
@@ -429,8 +431,13 @@ export function MailPage({ tab }: { tab: string }) {
       </nav>
       <div className="page-body stack" key={current}>
         {domains.length === 0 && <Callout icon="public">Mail runs on your own domains. <a href="#/domains">Add a domain</a> first.</Callout>}
-        {current === "addresses" && (s.on ? <Addresses state={state} onState={setState} onPassword={setPassword} />
-          : domains.length > 0 && <Callout icon="info">Mail is not set up yet. <a href="#/mail/settings">Set it up</a></Callout>)}
+        {current === "addresses" && (!s.on ? domains.length > 0 && <Callout icon="info">Mail is not set up yet. <a href="#/mail/settings">Set it up</a></Callout>
+          : none ? (
+            <div className="welcome">
+              <Icon name="mail" size={48} />
+              {buttons && <div className="welcome-actions">{buttons}</div>}
+            </div>
+          ) : <Addresses state={state} onState={setState} onPassword={setPassword} />)}
         {current === "activity" && <MailActivity />}
         {current === "settings" && (
           <>
@@ -449,34 +456,14 @@ export function MailPage({ tab }: { tab: string }) {
   );
 }
 
-// Addresses is every mailbox and alias, under its domain when there are more
-// than one.
+// Addresses is every mailbox, then every alias, each by its full address.
 function Addresses({ state, onState, onPassword }: { state: MailState; onState: (s: MailState) => void; onPassword: (address: string) => void }) {
-  const domains = state.settings.domains.map((d) => d.name);
-  const none = state.accounts.length === 0 && state.aliases.length === 0;
-  if (none) {
-    return (
-      <div className="card welcome">
-        <Icon name="mail" size={40} />
-        <h2>No addresses yet</h2>
-        <p className="muted">Add one with New address. Mail apps sign in with the full address and its password.</p>
-      </div>
-    );
-  }
+  const runs = (address: string) => state.manages.includes(domainOf(address));
   return (
     <div className="card">
       <ul className="results ct-list">
-        {domains.flatMap((domain) => {
-          const runs = state.manages.includes(domain);
-          const accounts = state.accounts.filter((a) => domainOf(a.address) === domain);
-          const aliases = state.aliases.filter((x) => domainOf(x.alias) === domain);
-          if (!accounts.length && !aliases.length) return [];
-          return [
-            ...(domains.length > 1 ? [<li key={"d-" + domain} className="ct-group-head"><b>{domain}</b></li>] : []),
-            ...accounts.map((a) => <AccountRow key={a.address} account={a} runs={runs} onState={onState} onPassword={() => onPassword(a.address)} />),
-            ...aliases.map((x) => <AliasRow key={x.alias} alias={x.alias} target={x.target} runs={runs} onState={onState} />),
-          ];
-        })}
+        {state.accounts.map((a) => <AccountRow key={a.address} account={a} runs={runs(a.address)} onState={onState} onPassword={() => onPassword(a.address)} />)}
+        {state.aliases.map((x) => <AliasRow key={x.alias} alias={x.alias} target={x.target} runs={runs(x.alias)} onState={onState} />)}
       </ul>
     </div>
   );

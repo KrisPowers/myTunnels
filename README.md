@@ -293,7 +293,7 @@ dashboard through a tunnel to reach it from anywhere.
 ## Mail
 
 **Mail** is mail for every domain on **Domains**, with three tabs: **Addresses** (every mailbox and
-alias, under its domain; **New address** and **New alias** pick the domain), **Activity** (what
+alias by its full address; **New address** and **New alias** pick the domain), **Activity** (what
 came in and went out) and **Settings** (the mail server, set up a step at a time, then how mail
 moves, how mail apps sign in, and its options). Until mail is set up it opens on **Settings**.
 
