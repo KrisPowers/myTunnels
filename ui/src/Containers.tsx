@@ -7,7 +7,7 @@ import { ForwardRows, forwardsOf } from "./Forward";
 import { NewRoute } from "./NewRoute";
 import { Icon, type IconName } from "./Icon";
 import { ContainerImages, ImageView } from "./Images";
-import { listed, Services } from "./Services";
+import { ContainerList, listed } from "./ContainerList";
 import { useCan } from "./me";
 import { Resources } from "./Resources";
 import { go } from "./route";
@@ -102,11 +102,10 @@ export interface Shared {
   onChanged: () => Promise<void>;
 }
 
-// ContainersPage is Services: the list, or one container. `page` "new" on
-// the list opens a new route, to the port in `more`.
+// ContainersPage is the containers, or one of them.
 export function ContainersPage({ id, page, more, ...shared }: { id: string; page: string; more: string[] } & Shared) {
   if (id) return <ContainerPage name={id} tab={page} more={more} {...shared} />;
-  return <Services adding={page === "new"} port={more[0] ?? ""} {...shared} />;
+  return <ContainerList routes={shared.routes} forwards={shared.forwards} onChanged={shared.onChanged} />;
 }
 
 // The actions a container's menu holds, by what it may do now. `page` leaves
@@ -199,7 +198,7 @@ function ContainerPage({ name, tab: asked, more, routes, forwards, users, provid
   const on = live(head);
   const working = busy.size > 0;
   const act = (action: Act) => run([{ ...head, deploy: d?.id ?? null }], action).then(() => {
-    if (action === "remove") go("#/services");
+    if (action === "remove") go("#/containers");
   });
   const update = async () => {
     if (!d) return;
@@ -250,7 +249,7 @@ function ContainerPage({ name, tab: asked, more, routes, forwards, users, provid
           {menu.length > 0 && <MoreMenu label={`Actions for ${head.name}`} actions={menu} />}
         </div>
       </div>
-      <SubNav back="#/services" backLabel="Services" base={base} items={tabs} current={current} />
+      <SubNav back="#/containers" backLabel="Containers" base={base} items={tabs} current={current} />
       <div className="page-body stack" key={current}>
         {problem && made && !c && <Callout tone="bad" icon="error">{problem}</Callout>}
         {current === "overview" && (c ? <Overview c={c} /> : <div className="repo-loading"><span className="spinner" /></div>)}

@@ -6,7 +6,7 @@ import { Icon, type IconName } from "./Icon";
 import { imageId } from "./Images";
 import { useCan } from "./me";
 import { go } from "./route";
-import { Callout, Card, Dialog, MoreMenu, Row, TextField, useNotify, ValueRow, type MenuAction } from "./ui";
+import { Callout, Card, Dialog, MoreMenu, Row, TextField, useNotify, ValueRow } from "./ui";
 
 export const UPDATES: Option<Updates>[] = [
   { value: "push", label: "When the branch changes", hint: "Builds each new commit as it arrives" },
@@ -97,10 +97,8 @@ function SourceFields({ value, onChange, deploy, tokenSet, autoFocus }: { value:
 // GitHub, or a Docker image.
 export type Kind = "url" | "image";
 
-const TITLES: Record<Kind, string> = {
-  url: "Container from GitHub",
-  image: "Container from an image",
-};
+// Where a new container comes from, picked at the top of its dialog.
+const KINDS: [Kind, string][] = [["image", "Image"], ["url", "GitHub"]];
 
 // The ways an image updates: pulled again on a timer, or by hand.
 export const updatesFor = (image: boolean): Option<Updates>[] => image
@@ -110,9 +108,10 @@ export const updatesFor = (image: boolean): Option<Updates>[] => image
   ]
   : UPDATES;
 
-// AddContainer makes a container: its name, where it comes from and how it
-// updates. Its first build, or pull, starts at once.
-export function AddContainer({ kind, onClose, onAdded }: { kind: Kind; onClose: () => void; onAdded: (d: Deploy) => Promise<void> }) {
+// AddContainer makes a container: where it comes from, an image or a
+// repository, its name and how it updates. Its first build, or pull, starts at once.
+export function AddContainer({ onClose, onAdded }: { onClose: () => void; onAdded: (d: Deploy) => Promise<void> }) {
+  const [kind, setKind] = useState<Kind>("image");
   const [name, setName] = useState("");
   const [named, setNamed] = useState(false);
   const [source, setSource] = useState<Source>({ url: "", token: "", branch: "" });
@@ -152,8 +151,16 @@ export function AddContainer({ kind, onClose, onAdded }: { kind: Kind; onClose: 
   };
 
   return (
-    <Dialog title={TITLES[kind]} onClose={onClose}>
+    <Dialog title="Add container" onClose={onClose}>
       <form onSubmit={submit}>
+        <div className="seg-tabs add-kind" role="radiogroup" aria-label="From">
+          {KINDS.map(([k, label]) => (
+            <button key={k} type="button" role="radio" aria-checked={kind === k} className={kind === k ? "on" : undefined} onClick={() => {
+              setKind(k);
+              setUpdates(k === "image" ? "manual" : "push");
+            }}>{label}</button>
+          ))}
+        </div>
         {kind !== "image" && <NeedsApp app="git" what="A container from a repository" />}
         {kind === "image" ? (
           <TextField label="Image" mono autoFocus autoComplete="off" placeholder="nginx:1.27" value={image}
@@ -183,31 +190,23 @@ export function AddContainer({ kind, onClose, onAdded }: { kind: Kind; onClose: 
         )}
         <div className="edit-actions">
           <button type="button" className="btn text" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={busy || !ready}>{busy && <span className="spinner small on-accent" />}Add</button>
+          <button className="btn primary" disabled={busy || !ready}>{busy && <span className="spinner small on-accent" />}Add container</button>
         </div>
       </form>
     </Dialog>
   );
 }
 
-// NewMenu is the plus that adds anything to Containers: a tunnel to any port,
-// or a container from GitHub or from an image.
-export function NewMenu() {
+// AddButton is the one way to add a container: the button, and its dialog.
+export function AddButton() {
   const can = useCan();
-  const [adding, setAdding] = useState<Kind | "">("");
-  const actions: MenuAction[] = [
-    ...(can("tunnels.create") ? [{ label: "Route", hint: "A tunnel, a router port or Tailscale", icon: "wifi_cog" as IconName, onClick: () => go("#/routes/new") }] : []),
-    ...(can("containers.deploy") ? [
-      { label: "Container from GitHub", hint: "Built from any https repository", icon: "code" as IconName, onClick: () => setAdding("url") },
-      { label: "Container from an image", hint: "Runs a Docker image, such as nginx", icon: "layers" as IconName, onClick: () => setAdding("image") },
-    ] : []),
-  ];
-  if (!actions.length) return null;
+  const [adding, setAdding] = useState(false);
+  if (!can("containers.deploy")) return null;
   return (
     <>
-      <MoreMenu label="New" icon="add" actions={actions} />
-      {adding && <AddContainer kind={adding} onClose={() => setAdding("")} onAdded={async (d) => {
-        setAdding("");
+      <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="add" size={18} />Add container</button>
+      {adding && <AddContainer onClose={() => setAdding(false)} onAdded={async (d) => {
+        setAdding(false);
         go(`#/containers/${encodeURIComponent(d.name)}/images`);
       }} />}
     </>
