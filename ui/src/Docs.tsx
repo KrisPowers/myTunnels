@@ -91,6 +91,9 @@ const CONTENT: Record<string, ReactNode> = {
       <Doc title="Setting it up">
         <p>On Windows, <b>setup.exe</b> installs everything from one file, with no internet needed for myTunnels itself, and asks once for administrator rights for what you choose: the hardware sensors, the firewall for router ports, Docker and Tailscale. Then the dashboard asks for two things: the host account, and <b>Connect Cloudflare</b>. <b>Open Cloudflare</b> makes a token with the right permissions; paste it back and the tunnel and connector are set up. <b>Skip for now</b> leaves it for later; anything that needs Cloudflare asks again, as does <b>Connect</b> under Settings, Cloudflare.</p>
       </Doc>
+      <Doc title="On the rack and on your phone">
+        <p>On Windows, the desktop app opens the <b>console</b>: this computer at a glance in one still frame for a monitor beside it, with its figures, services, how they are reached, storage and anything that needs attention. <b>F11</b> fills the screen; the icon at its top right opens the rest, and the monitor icon on <b>Dashboard</b> comes back. On a phone, add the dashboard's address to the home screen (on an iPhone, Safari's Share, then <b>Add to Home Screen</b>) and it opens full screen like an app.</p>
+      </Doc>
       <Doc title="Changing the Cloudflare connection">
         <p>Settings, Cloudflare holds the account and tunnel. A new API token can replace the old one at any time. Switching to another account or tunnel needs every tunnel removed first, since their DNS records live in the old one.</p>
       </Doc>
