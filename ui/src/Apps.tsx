@@ -64,6 +64,7 @@ export function InstallPill() {
   // The apps last seen running, so their ending is shown.
   const watching = useRef(new Set<string>());
   const busyNow = useRef(false);
+  const notify = useNotify();
   const look = useCallback(async () => {
     let apps: Apps;
     try {
@@ -86,7 +87,10 @@ export function InstallPill() {
     const fresh = new Set([...now, ...ended].map((r) => r.id));
     setShown((was) => [...now, ...was.filter((r) => !r.job.running && !fresh.has(r.id)), ...ended]);
     for (const r of ended) setTimeout(() => setShown((s) => s.filter((x) => x !== r)), 5000);
-  }, []);
+    for (const r of ended.filter((r) => r.job.failed)) {
+      notify(`${r.name}: ${DONE[r.job.action].toLowerCase()} failed${r.job.log ? `. ${r.job.log}` : ""}`, "bad");
+    }
+  }, [notify]);
   useEffect(() => {
     const started = (e: Event) => {
       const id = (e as CustomEvent<string | undefined>).detail;
