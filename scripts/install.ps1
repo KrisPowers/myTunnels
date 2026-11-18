@@ -1,12 +1,12 @@
 # Installs myTunnels on Windows, or updates it:
 #
-#   irm https://api.github.com/repos/KrisPowers/myTunnels/contents/scripts/install.ps1 -Headers @{ Authorization = "Bearer $(gh auth token)"; Accept = 'application/vnd.github.raw' } | iex
+#   irm https://raw.githubusercontent.com/KrisPowers/myTunnels/main/scripts/install.ps1 | iex
 #
 # The program, cloudflared, the panel and the desktop app go in
 # %LOCALAPPDATA%\myTunnels\bin, which joins your PATH, with the desktop app
-# in the Start menu. Nothing needs administrator rights. The release is
-# fetched signed in, with GH_TOKEN, GITHUB_TOKEN or gh's sign-in, since the
-# repository is private. MYTUNNELS_ARCHIVE names a windows-x64.zip already
+# in the Start menu. Nothing needs administrator rights or a sign-in. With
+# GH_TOKEN, GITHUB_TOKEN or gh's sign-in there, the release is fetched signed
+# in, which a private repository needs. MYTUNNELS_ARCHIVE names a windows-x64.zip already
 # here instead, such as on a USB drive, which needs no internet or sign-in,
 # with MYTUNNELS_RELEASE its release, when it has one. When the panel or
 # setup runs it, MYTUNNELS_PROGRESS names a file it writes each step to,

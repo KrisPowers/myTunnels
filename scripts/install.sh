@@ -1,13 +1,12 @@
 #!/bin/sh
 # Installs myTunnels on Linux or macOS, or updates it:
 #
-#   curl -fsSL -H "Authorization: Bearer $(gh auth token)" -H "Accept: application/vnd.github.raw" \
-#     https://api.github.com/repos/KrisPowers/myTunnels/contents/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/KrisPowers/myTunnels/main/scripts/install.sh | sh
 #
 # The program, cloudflared and the panel go in ~/.local/share/myTunnels/bin,
-# with `mytunnels` linked into ~/.local/bin. Nothing needs root. The release
-# is fetched signed in, with GH_TOKEN, GITHUB_TOKEN or gh's sign-in, since the
-# repository is private. MYTUNNELS_ARCHIVE names an archive already here
+# with `mytunnels` linked into ~/.local/bin. Nothing needs root or a sign-in.
+# With GH_TOKEN, GITHUB_TOKEN or gh's sign-in there, the release is fetched
+# signed in, which a private repository needs. MYTUNNELS_ARCHIVE names an archive already here
 # instead, such as on a USB drive, which needs no internet or sign-in:
 #
 #   MYTUNNELS_ARCHIVE=/media/usb/linux-x64.tar.gz sh /media/usb/install.sh
