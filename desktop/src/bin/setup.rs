@@ -41,14 +41,18 @@ fn main() {
     let event_loop = EventLoopBuilder::<Said>::with_user_event().build();
     let window = WindowBuilder::new()
         .with_title("myTunnels setup")
-        .with_inner_size(LogicalSize::new(560.0, 600.0))
+        .with_inner_size(LogicalSize::new(560.0, 760.0))
         .with_resizable(false)
         .with_background_color(BACKGROUND)
         .build(&event_loop)
         .expect("cannot open a window");
 
     let proxy = event_loop.create_proxy();
-    let facts = json!({ "release": RELEASE.unwrap_or(""), "empty": PAYLOAD.is_empty() });
+    let installed: Vec<&str> = ["docker", "tailscale"]
+        .into_iter()
+        .filter(|app| here(app))
+        .collect();
+    let facts = json!({ "release": RELEASE.unwrap_or(""), "empty": PAYLOAD.is_empty(), "installed": installed });
     let page = PAGE.replace("/*FONT*/", FONT).replace("/*STYLE*/", STYLE);
     // Its web data with the temporary files, not beside it on the drive.
     let mut context = wry::WebContext::new(Some(std::env::temp_dir().join("myTunnels setup")));
@@ -126,8 +130,8 @@ fn steps(wants: &[String], step: &dyn Fn(&str, u8)) -> Result<Vec<String>, Strin
     let program = home().join("bin").join("mytunnels.exe");
     let mut notes = Vec::new();
     if !wants.is_empty() {
-        step("Waiting for Windows to allow it", 75);
-        match grant(&program, wants) {
+        step("Waiting for Windows to allow it", 72);
+        match grant(&program, wants, step) {
             Ok(()) => {}
             Err(why) => notes.push(why),
         }
@@ -205,10 +209,29 @@ fn put_in_place(temp: &Path, step: &dyn Fn(&str, u8)) -> Result<(), String> {
 
 /// Runs `mytunnels grant` with administrator rights, which Windows asks for
 /// once: why it did not, when it did not.
-fn grant(program: &Path, wants: &[String]) -> Result<(), String> {
+fn grant(program: &Path, wants: &[String], step: &dyn Fn(&str, u8)) -> Result<(), String> {
     let sid = account().ok_or("Could not tell which account this is, so nothing was allowed.")?;
     let args = format!("grant {sid} {}", wants.join(" "));
-    match elevate(program, &args) {
+    // What it is up to, from what it writes as it goes.
+    let follow = || {
+        let said = std::fs::read_to_string(program_files().join("grant.txt")).unwrap_or_default();
+        let words: Vec<&str> = said.split_whitespace().collect();
+        if let ["doing", n, of, what] = words[..] {
+            let (n, of) = (
+                n.parse::<u8>().unwrap_or(1),
+                of.parse::<u8>().unwrap_or(1).max(1),
+            );
+            let text = match what {
+                "hardware" => "Setting up the hardware sensors",
+                "firewall" => "Setting up the firewall",
+                "docker" => "Installing Docker",
+                "tailscale" => "Installing Tailscale",
+                _ => "Setting up",
+            };
+            step(text, 72 + 18 * (n - 1) / of);
+        }
+    };
+    match elevate(program, &args, &follow) {
         Ok(0) => Ok(()),
         Ok(_) => {
             let said =
@@ -242,14 +265,30 @@ fn account() -> Option<String> {
     sid.starts_with("S-1-").then(|| sid.to_owned())
 }
 
-/// Runs `program` with administrator rights and waits for its exit code.
+/// Whether `app` is on this computer: on PATH, or where its installer puts it.
+fn here(app: &str) -> bool {
+    let found = hidden(Command::new("where.exe").arg(app))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success());
+    let place: &[&str] = match app {
+        "docker" => &["Docker", "Docker", "resources", "bin", "docker.exe"],
+        _ => &["Tailscale", "tailscale.exe"],
+    };
+    let base = std::env::var_os("ProgramFiles").map(PathBuf::from);
+    found || base.is_some_and(|b| place.iter().fold(b, |p, part| p.join(part)).exists())
+}
+
+/// Runs `program` with administrator rights and waits for its exit code,
+/// calling `meanwhile` every moment until it ends.
 #[cfg(windows)]
-fn elevate(program: &Path, args: &str) -> std::io::Result<u32> {
+fn elevate(program: &Path, args: &str, meanwhile: &dyn Fn()) -> std::io::Result<u32> {
     use desktop::wide;
     use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::Threading::{
-        GetExitCodeProcess, WaitForSingleObject, INFINITE,
-    };
+    use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
     use windows_sys::Win32::UI::Shell::{
         ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
     };
@@ -271,7 +310,9 @@ fn elevate(program: &Path, args: &str) -> std::io::Result<u32> {
         if ShellExecuteExW(&mut info) == 0 {
             return Err(std::io::Error::last_os_error());
         }
-        WaitForSingleObject(info.hProcess, INFINITE);
+        while WaitForSingleObject(info.hProcess, 300) == WAIT_TIMEOUT {
+            meanwhile();
+        }
         let mut code = 0;
         GetExitCodeProcess(info.hProcess, &mut code);
         CloseHandle(info.hProcess);
@@ -280,6 +321,6 @@ fn elevate(program: &Path, args: &str) -> std::io::Result<u32> {
 }
 
 #[cfg(not(windows))]
-fn elevate(_: &Path, _: &str) -> std::io::Result<u32> {
+fn elevate(_: &Path, _: &str, _: &dyn Fn()) -> std::io::Result<u32> {
     Err(std::io::Error::other("only Windows is set up this way"))
 }
