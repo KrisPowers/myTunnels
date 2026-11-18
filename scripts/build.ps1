@@ -8,7 +8,7 @@
 # linux-x64 and linux-arm64 through zig when zig is installed. Through zig,
 # Windows and Linux build both macOS archives too, against Apple's SDK, which
 # is fetched once into builds/.sdk. Each archive holds mytunnels, cloudflared
-# and the panel, as the install scripts expect.
+# and the panel, as the install scripts expect, and Windows' the desktop app.
 #
 # -Publish makes the next release (or adds to the one -Version names, as a
 # Mac does after Windows) and opens and merges the formula's update.
@@ -89,6 +89,12 @@ foreach ($b in $builds) {
     Push-Location $server
     try { Step cargo $build --release --locked --target $b.Target }
     finally { Pop-Location; $env:SDKROOT = $null }
+    # The desktop app, a window onto the panel, is Windows' alone for now.
+    if ($b.Name -like 'windows-*') {
+        Push-Location (Join-Path $root 'desktop')
+        try { Step cargo build --release --locked --target $b.Target --bin desktop }
+        finally { Pop-Location }
+    }
 
     $exe = if ($b.Name -like 'windows-*') { '.exe' } else { '' }
     $stage = Join-Path $out ".stage-$($b.Name)"
@@ -96,6 +102,7 @@ foreach ($b in $builds) {
     New-Item -ItemType Directory $stage | Out-Null
     Copy-Item (Join-Path $server "target/$($b.Target)/release/server$exe") (Join-Path $stage "mytunnels$exe")
     Copy-Item (Join-Path $root 'ui/dist') (Join-Path $stage 'ui') -Recurse
+    if ($exe) { Copy-Item (Join-Path $root "desktop/target/$($b.Target)/release/desktop.exe") $stage }
     $url = "https://github.com/cloudflare/cloudflared/releases/latest/download/$($b.Cloudflared)"
     if ($b.Cloudflared -like '*.tgz') {
         $tgz = Join-Path $stage 'cloudflared.tgz'

@@ -1,4 +1,5 @@
 /server/target/
+/desktop/target/
 /server/data/
 /server/keys/
 /ui/node_modules/

@@ -7,9 +7,9 @@ name: Release
 on:
   push:
     branches: [main]
-    paths: [server/**, ui/**, .github/workflows/release.yml]
+    paths: [server/**, ui/**, desktop/**, .github/workflows/release.yml]
   pull_request:
-    paths: [server/**, ui/**, .github/workflows/release.yml]
+    paths: [server/**, ui/**, desktop/**, .github/workflows/release.yml]
   workflow_dispatch:
 
 concurrency:
@@ -59,12 +59,17 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: server
+          workspaces: |
+            server
+            desktop
           key: ${{ matrix.target }}
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - working-directory: server
         run: cargo build --release --locked --target ${{ matrix.target }}
+      - if: runner.os == 'Windows'
+        working-directory: desktop
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin desktop
       - uses: actions/download-artifact@v4
         with:
           name: ui
@@ -79,6 +84,7 @@ jobs:
             *.tgz) curl -fsSL "$url" | tar -xz -C stage ;;
             *) curl -fsSL -o "stage/cloudflared$exe" "$url" ;;
           esac
+          [ -n "$exe" ] && cp "desktop/target/${{ matrix.target }}/release/desktop.exe" stage/
           chmod +x "stage/mytunnels$exe" "stage/cloudflared$exe"
           cd stage
           if [ "${{ runner.os }}" = Windows ]; then

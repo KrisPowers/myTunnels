@@ -2,8 +2,9 @@
 #
 #   irm https://api.github.com/repos/KrisPowers/myTunnels/contents/scripts/install.ps1 -Headers @{ Authorization = "Bearer $(gh auth token)"; Accept = 'application/vnd.github.raw' } | iex
 #
-# The program, cloudflared and the panel go in %LOCALAPPDATA%\myTunnels\bin,
-# which joins your PATH. Nothing needs administrator rights. The release is
+# The program, cloudflared, the panel and the desktop app go in
+# %LOCALAPPDATA%\myTunnels\bin, which joins your PATH, with the desktop app
+# in the Start menu. Nothing needs administrator rights. The release is
 # fetched signed in, with GH_TOKEN, GITHUB_TOKEN or gh's sign-in, since the
 # repository is private. When the panel runs it, MYTUNNELS_PROGRESS names a
 # file it writes each step to, with how much of the download is in.
@@ -105,10 +106,23 @@
             $running = $LASTEXITCODE -eq 0
             & $exe stop *> $null
         }
-        # Files of a program just stopped can stay locked for a moment.
+        # Files of a program just stopped can stay locked for a moment. A
+        # program still open, such as the desktop window, is moved aside,
+        # which Windows allows of a running program, and cleared next time.
+        $aside = Join-Path $root '.old'
+        Remove-Item $aside -Recurse -Force -ErrorAction SilentlyContinue
         for ($try = 0; Test-Path $bin; $try++) {
             try { Remove-Item $bin -Recurse -Force }
-            catch { if ($try -ge 20) { throw }; Start-Sleep -Milliseconds 500 }
+            catch {
+                if ($try -ge 20) { throw }
+                if ($try -ge 4) {
+                    New-Item -ItemType Directory -Force $aside | Out-Null
+                    Get-ChildItem $bin -Recurse -File | ForEach-Object {
+                        try { Move-Item $_.FullName (Join-Path $aside "$([guid]::NewGuid())-$($_.Name)") -Force } catch { }
+                    }
+                }
+                Start-Sleep -Milliseconds 500
+            }
         }
         Move-Item $new $bin
     }
@@ -128,6 +142,16 @@
     $apps = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps'
     if (Test-Path $apps) {
         Set-Content (Join-Path $apps 'mytunnels.cmd') "@`"$exe`" %*" -Encoding ascii
+    }
+
+    # The desktop app, in the Start menu.
+    $desktop = Join-Path $bin 'desktop.exe'
+    if (Test-Path $desktop) {
+        $link = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'myTunnels.lnk'))
+        $link.TargetPath = $desktop
+        $link.WorkingDirectory = $bin
+        $link.Description = 'myTunnels'
+        $link.Save()
     }
 
     if ($running) {
