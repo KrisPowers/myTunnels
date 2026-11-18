@@ -6,102 +6,143 @@
 <meta name="robots" content="noindex">
 <title>{{TITLE}}</title>
 <style>
+/* The dashboard's sign-in page, from its own tokens and classes in
+   ui/src/styles.css: the bar with the name, then one card. */
 :root {
   color-scheme: light dark;
-  --bg: light-dark(#f0f4f9, #131314); --card: light-dark(#ffffff, #1e1f20);
-  --text: light-dark(#1f1f1f, #e3e3e3); --muted: light-dark(#444746, #c4c7c5); --faint: light-dark(#747775, #8e918f);
-  --line: light-dark(#c4c7c5, #5e5e5e); --accent: light-dark(#0b57d0, #a8c7fa); --on-accent: light-dark(#ffffff, #062e6f);
-  --bad: light-dark(#d93025, #f28b82);
+  --bg: light-dark(#f4f5f6, #141517); --card: light-dark(#ffffff, #1c1d20); --field: light-dark(#ffffff, #212225);
+  --top: light-dark(#ffffff, #111214); --hover: light-dark(rgba(20, 24, 31, .045), rgba(255, 255, 255, .055));
+  --line: light-dark(#e5e7ea, #2a2b2f); --line-strong: light-dark(#cdd1d6, #3b3c41);
+  --text: light-dark(#1c1e21, #f4f5f6); --text-2: light-dark(#50565e, #b6b9c0); --text-3: light-dark(#80868f, #7f838b);
+  --accent: light-dark(#006fff, #4797ff); --on-accent: #ffffff;
+  --btn: light-dark(#eef0f2, #2a2b2f); --btn-hover: light-dark(#e3e6e9, #34353a);
+  --bad: light-dark(#d93a3f, #f2555b); --bad-bg: color-mix(in srgb, var(--bad) 16%, transparent);
+  --radius: 8px; --round: 10px; --card-round: 12px; --head: 52px; --ease: cubic-bezier(.2, .8, .2, 1);
+  --font: "Roboto", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "Roboto Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
 }
-* { box-sizing: border-box; }
-body {
-  margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
-  background: var(--bg); color: var(--text);
-  font: 14px/1.5 "Roboto", "Segoe UI", system-ui, -apple-system, sans-serif;
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; padding: 0 0 48px; background: var(--bg); color: var(--text); font: 400 13.5px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+h1, p { margin: 0; }
+a { color: var(--accent); text-decoration: none; }
+.icon { display: block; flex-shrink: 0; fill: currentColor; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.setup-brand { display: flex; align-items: center; gap: 12px; height: var(--head); padding: 0 16px; background: var(--top); border-bottom: 1px solid var(--line); color: var(--text); font-size: 16px; font-weight: 600; }
+.brand-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--on-accent); }
+.brand-host { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font: 400 12.5px var(--mono); }
+.setup-main { width: min(660px, calc(100% - 32px)); margin: 32px auto 0; }
+.card { border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); }
+.setup-card { padding: 28px; }
+.step-head { margin-bottom: 24px; }
+.step-head h1 { font-size: 22px; font-weight: 600; line-height: 1.3; }
+.step-head p { margin-top: 4px; color: var(--text-2); }
+.tf { display: grid; gap: 4px; min-width: 0; margin-bottom: 16px; }
+.tf-box { position: relative; }
+.tf-input {
+  display: block; width: 100%; height: 44px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--field); color: var(--text); font: 400 14px var(--font); transition: border-color .15s, box-shadow .15s;
 }
-main { width: 100%; max-width: 440px; padding: 36px 40px 32px; background: var(--card); border-radius: 28px; }
-.host { margin-bottom: 20px; color: var(--faint); font: 13px ui-monospace, Consolas, monospace; }
-h1 { margin: 0 0 6px; font-size: 24px; font-weight: 400; }
-p { margin: 0; color: var(--muted); }
-form { margin-top: 28px; }
-.tf { position: relative; margin-bottom: 16px; }
-.tf input {
-  width: 100%; height: 56px; padding: 0 16px; border: 0; border-radius: 4px; background: transparent; color: var(--text);
-  font-size: 16px; font-family: inherit; box-shadow: inset 0 0 0 1px var(--line); transition: box-shadow .15s;
+.tf-input.mono { font-family: var(--mono); font-size: 13.5px; }
+.tf-input:hover { border-color: var(--text-3); }
+.tf-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.tf-input::placeholder { color: transparent; }
+.tf-label {
+  position: absolute; left: 8px; top: 22px; max-width: calc(100% - 16px); padding: 0 4px; transform: translateY(-50%);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: var(--field); color: var(--text-2); font: 400 14px/1.2 var(--font); pointer-events: none;
+  transition: top .15s var(--ease), font-size .15s var(--ease), color .15s;
 }
-.tf input:hover { box-shadow: inset 0 0 0 1px var(--text); }
-.tf input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
-.tf label {
-  position: absolute; left: 12px; top: 28px; padding: 0 4px; transform: translateY(-50%); background: var(--card);
-  color: var(--muted); font-size: 16px; pointer-events: none; transition: top .15s, font-size .15s, color .15s;
+.tf-input:focus ~ .tf-label, .tf-input:not(:placeholder-shown) ~ .tf-label { top: 0; font-size: 11.5px; font-weight: 500; }
+.tf-input:focus ~ .tf-label { color: var(--accent); }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 34px; padding: 0 14px;
+  border-radius: var(--radius); border: 1px solid transparent; background: var(--btn); color: var(--text);
+  font: 500 13px var(--font); cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s, color .12s;
 }
-.tf input:focus + label, .tf input:not(:placeholder-shown) + label { top: 0; font-size: 12px; }
-.tf input:focus + label { color: var(--accent); }
-.row { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 8px; }
-button {
-  height: 40px; padding: 0 24px; border: 0; border-radius: 999px; background: var(--accent); color: var(--on-accent);
-  font-weight: 500; font-size: 14px; font-family: inherit; cursor: pointer;
+.btn:hover { background: var(--btn-hover); }
+.btn.primary { background: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { background: color-mix(in srgb, var(--accent) 86%, #000000); }
+.btn:disabled { opacity: .45; cursor: default; background: var(--btn); }
+.btn.primary:disabled { opacity: 1; background: var(--btn); color: var(--text-3); }
+.btn.text { color: var(--text-2); padding: 0 10px; background: transparent; }
+.btn.text:hover { background: var(--hover); color: var(--text); }
+.btn[aria-busy="true"]::before {
+  content: ""; width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent;
+  animation: spin .8s linear infinite;
 }
-button:disabled { opacity: .5; cursor: default; }
-button.text { padding: 0 12px; background: transparent; color: var(--accent); }
-.error { min-height: 20px; margin: 4px 0 0; color: var(--bad); font-size: 13px; }
-.providers { display: grid; gap: 10px; margin-top: 28px; }
-.provider {
-  display: flex; align-items: center; justify-content: center; height: 40px; border-radius: 999px;
-  box-shadow: inset 0 0 0 1px var(--line); color: var(--text); font-weight: 500; text-decoration: none;
+@keyframes spin { to { transform: rotate(360deg); } }
+.setup-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+/* A problem, as the dashboard's bad callout. */
+.callout:empty { display: none; }
+.callout {
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin-bottom: 16px;
+  border: 1px solid color-mix(in srgb, var(--bad) 30%, transparent); border-radius: var(--round); background: var(--bad-bg);
 }
-.provider:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.or { display: flex; align-items: center; gap: 12px; margin-top: 24px; color: var(--faint); font-size: 12px; }
+.callout::before {
+  content: ""; flex-shrink: 0; width: 20px; height: 20px; background: var(--bad);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm-40-160h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm-40-160h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+/* Sign-in through another service: one wide button each. */
+.providers { display: grid; gap: 8px; }
+.providers .btn { width: 100%; height: 40px; }
+.or { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: var(--text-3); font-size: 12px; }
 .or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
-.or + form { margin-top: 20px; }
-.others { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
-.others a { color: var(--accent); text-decoration: none; margin-right: 16px; }
+.others { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--text-2); font-size: 13px; }
+.others a { margin-right: 16px; }
 .others a:hover { text-decoration: underline; }
 [hidden] { display: none !important; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body data-mode="{{MODE}}" data-others="{{OTHERS}}" data-data="{{DATA}}">
-<main>
-  <div class="host">{{HOST}}</div>
-  <h1>{{TITLE}}</h1>
-  <p>{{TEXT}}</p>
+<div class="setup-brand">
+  <span class="brand-mark"><svg class="icon" width="18" height="18" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path d="M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm-40-82v-78q-33 0-56.5-23.5T360-320v-40L168-552q-3 18-5.5 36t-2.5 36q0 121 79.5 212T440-162Zm276-102q20-22 36-47.5t26.5-53q10.5-27.5 16-56.5t5.5-59q0-98-54.5-179T600-776v16q0 33-23.5 56.5T520-680h-80v80q0 17-11.5 28.5T400-560h-80v80h240q17 0 28.5 11.5T600-440v120h40q26 0 47 15.5t29 40.5Z"/></svg></span>myTunnels
+  <span class="brand-host">{{HOST}}</span>
+</div>
+<main class="setup-main"><div class="setup-card card">
+  <div class="step-head">
+    <h1>{{TITLE}}</h1>
+    <p>{{TEXT}}</p>
+  </div>
 
   <form id="password" hidden>
-    <div class="tf"><input id="pw" type="password" placeholder=" " autocomplete="current-password" required><label for="pw">Password</label></div>
-    <div class="error" id="password-error" role="alert"></div>
-    <div class="row"><button type="submit">Continue</button></div>
+    <div class="tf"><div class="tf-box"><input class="tf-input" id="pw" type="password" placeholder=" " autocomplete="current-password" required><label class="tf-label" for="pw">Password</label></div></div>
+    <div class="callout" id="password-error" role="alert"></div>
+    <div class="setup-foot"><button class="btn primary" type="submit">Continue<svg class="icon" width="18" height="18" viewBox="0 -960 960 960" aria-hidden="true"><path d="M647-440H160v-80h487L423-744l57-56 320 320-320 320-57-56 224-224Z"/></svg></button></div>
   </form>
 
   <div class="providers" id="providers" hidden></div>
-  <div class="providers" id="passkey-in" hidden><button class="provider" id="passkey-button" type="button">Sign in with a passkey</button></div>
-  <div class="error" id="passkey-error" role="alert"></div>
   <div class="or" id="or" hidden>or</div>
   <form id="login" hidden>
-    <div class="tf"><input id="user" type="email" placeholder=" " autocomplete="email" autocapitalize="off" spellcheck="false" required><label for="user">Email</label></div>
-    <div class="tf"><input id="secret" type="password" placeholder=" " autocomplete="current-password" required><label for="secret">Password</label></div>
-    <div class="error" id="login-error" role="alert"></div>
-    <div class="row"><button type="submit">Sign in</button></div>
+    <div class="tf"><div class="tf-box"><input class="tf-input" id="user" type="email" placeholder=" " autocomplete="email" autocapitalize="off" spellcheck="false" required><label class="tf-label" for="user">Email</label></div></div>
+    <div class="tf"><div class="tf-box"><input class="tf-input" id="secret" type="password" placeholder=" " autocomplete="current-password" required><label class="tf-label" for="secret">Password</label></div></div>
+    <div class="callout" id="passkey-error" role="alert"></div>
+    <div class="callout" id="login-error" role="alert"></div>
+    <div class="setup-foot">
+      <button class="btn text" id="passkey-in" type="button" hidden>Use a passkey</button>
+      <button class="btn primary" type="submit">Sign in<svg class="icon" width="18" height="18" viewBox="0 -960 960 960" aria-hidden="true"><path d="M647-440H160v-80h487L423-744l57-56 320 320-320 320-57-56 224-224Z"/></svg></button>
+    </div>
   </form>
 
   <form id="code" hidden>
-    <div class="tf"><input id="otp" type="text" inputmode="numeric" maxlength="11" placeholder=" " autocomplete="one-time-code" required><label for="otp">Code</label></div>
-    <div class="error" id="code-error" role="alert"></div>
-    <div class="row"><button type="submit">Verify</button></div>
+    <div class="tf"><div class="tf-box"><input class="tf-input mono" id="otp" type="text" inputmode="numeric" maxlength="11" placeholder=" " autocomplete="one-time-code" required><label class="tf-label" for="otp">Code</label></div></div>
+    <div class="callout" id="code-error" role="alert"></div>
+    <div class="setup-foot"><button class="btn primary" type="submit">Verify<svg class="icon" width="18" height="18" viewBox="0 -960 960 960" aria-hidden="true"><path d="M647-440H160v-80h487L423-744l57-56 320 320-320 320-57-56 224-224Z"/></svg></button></div>
   </form>
 
   <div id="account" hidden>
-    <div class="error" id="account-error" role="alert"></div>
-    <div class="row"><button class="text" id="account-skip" type="button">Not now</button><button id="account-add" type="button">Add a passkey</button></div>
+    <div class="callout" id="account-error" role="alert"></div>
+    <div class="setup-foot"><button class="btn text" id="account-skip" type="button">Not now</button><button class="btn primary" id="account-add" type="button">Add a passkey</button></div>
   </div>
 
   <form id="logout" hidden>
-    <div class="error" id="logout-error" role="alert"></div>
-    <div class="row"><button type="submit">Sign out</button></div>
+    <div class="callout" id="logout-error" role="alert"></div>
+    <div class="setup-foot"><button class="btn primary" type="submit">Sign out</button></div>
   </form>
 
   <div class="others" id="others" hidden>Or <span id="other-links"></span></div>
-</main>
+</div></main>
 <script>
 (function () {
   var body = document.body, mode = body.dataset.mode, data = {};
@@ -162,12 +203,13 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
   puzzle(data.pow);
 
   function form(id, build) {
-    var el = $(id), error = $(id + '-error'), button = el.querySelector('button');
+    var el = $(id), error = $(id + '-error'), button = el.querySelector('button[type="submit"]');
+    var busy = function (on) { button.disabled = on; button.setAttribute('aria-busy', on ? 'true' : 'false'); };
     el.hidden = false;
     el.querySelector('input').focus();
     el.addEventListener('submit', function (e) {
       e.preventDefault();
-      button.disabled = true;
+      busy(true);
       error.textContent = '';
       var guarded = id === 'login' || id === 'password';
       var solved = guarded && proof ? proof.catch(function () { return null; }) : Promise.resolve(null);
@@ -181,10 +223,10 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
         if (r.ok && r.offer_passkey && passkeys) return offerPasskey();
         if (r.ok) return data.path ? location.replace(data.path) : back();
         error.textContent = r.error || 'That did not work. Try again.';
-        button.disabled = false;
+        busy(false);
       }).catch(function () {
         error.textContent = 'Could not reach the gateway. Try again.';
-        button.disabled = false;
+        busy(false);
       });
     });
   }
@@ -196,7 +238,7 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
     var title = app ? 'Authenticator code' : 'Check your email';
     document.title = title;
     document.querySelector('h1').textContent = title;
-    document.querySelector('main > p').textContent = app
+    document.querySelector('.step-head p').textContent = app
       ? 'Enter the code from your authenticator app, or a recovery code.'
       : 'Enter the code sent to ' + sentTo + '.';
     form('code', function () { return { ticket: ticket, code: $('otp').value.trim() }; });
@@ -248,7 +290,7 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
       var q = params.toString(), here = location.pathname + (q ? '?' + q : '');
       providers.forEach(function (p) {
         var a = document.createElement('a');
-        a.className = 'provider';
+        a.className = 'btn';
         a.href = '/__gate/oauth?p=' + encodeURIComponent(p.id) + '&r=' + encodeURIComponent(here);
         a.textContent = 'Continue with ' + p.name;
         $('providers').appendChild(a);
@@ -259,8 +301,7 @@ button.text { padding: 0 12px; background: transparent; color: var(--accent); }
     form('login', function () { return { email: $('user').value, password: $('secret').value, info: info() }; });
     if (passkeys) {
       $('passkey-in').hidden = false;
-      $('or').hidden = false;
-      $('passkey-button').addEventListener('click', function () {
+      $('passkey-in').addEventListener('click', function () {
         $('passkey-error').textContent = '';
         post('/__gate/passkey-begin', {}).then(function (o) {
           if (!o.challenge) throw new Error(o.error || 'Passkeys are not available here.');
