@@ -6,7 +6,6 @@ import { ContainersPage } from "./Containers";
 
 import { DashboardPage } from "./Dashboard";
 import { DevicePage } from "./Devices";
-import { ForwardPage } from "./Forward";
 
 import { Icon, type IconName } from "./Icon";
 
@@ -16,6 +15,7 @@ import { SETTINGS, Settings } from "./Settings";
 import { ConnectStep, Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
 import { DomainsPage } from "./Domains";
+import { MailPage } from "./Mail";
 import { StoragePage } from "./Storage";
 import { target, TunnelPage } from "./Tunnels";
 import { NewUser, UserPage } from "./Users";
@@ -186,30 +186,33 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
   // A tunnel, device or account that is gone goes back to its list.
   useEffect(() => {
-    if (view === "tunnels" && id && routes && !route) go("#/routes");
+    if (view === "tunnels" && id && routes && !route) go("#/");
     if (view === "devices" && id && devices && !device) go("#/devices");
     if (view === "users" && id && id !== "new" && users && !user) go("#/users");
   }, [view, id, routes, devices, users, route, device, user]);
 
   // Each page shows for those who may use it; the first of them is home.
+  // Services, what this computer hosts and how each is reached, comes first;
+  // then what replaces a paid cloud, Storage and Mail, and the domains they
+  // all share; then this computer and who may get in.
+  const mail = can("mail.view") || can("mail.manage");
   const pages: [string, string, IconName, string, boolean][] = [
-    ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
-    ["containers", "Containers", "deployed_code", "#/", can("containers.view")],
-    ["forward", "Routes", "wifi_cog", "#/routes", can("tunnels.view")],
+    ["containers", "Services", "deployed_code", "#/", can("containers.view") || can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("drive.view")],
-    ["domains", "Domains", "public", "#/domains", can("mail.view") || can("mail.manage")],
-    ["apps", "Apps", "apps", "#/apps", true],
+    ["mail", "Mail", "mail", "#/mail", mail],
+    ["domains", "Domains", "public", "#/domains", mail],
+    ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
     ["security", "Security", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
   ];
   const home = pages.find((p) => p[4])?.[3] ?? "#/settings/preferences";
   useEffect(() => {
-    if (view === "containers" && !id && !can("containers.view") && home !== "#/") go(home);
+    if (view === "containers" && !id && !pages[0][4] && home !== "#/") go(home);
   });
   const settings = SETTINGS.filter(([k]) => can("settings.manage") || !["cloudflare", "connections", "network", "connector"].includes(k));
   const sections = view === "settings" ? settings : view === "docs" ? DOCS : null;
   const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
     <NavItem key={key} to={to} icon={icon} label={label}
-      on={view === key || (key === "forward" && view === "tunnels") || (key === "security" && (view === "users" || view === "devices"))}
+      on={view === key || (key === "containers" && view === "tunnels") || (key === "security" && (view === "users" || view === "devices"))}
       count={key === "dashboard" ? flags.length + faults || undefined : undefined} rail={rail} />
   );
 
@@ -242,6 +245,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           )}
           <span className="nav-gap" />
           {(me.admin || me.host) && <UpdateButton rail={rail} />}
+          {!sections && <NavItem to="#/apps" icon="apps" label="Apps" on={view === "apps"} rail={rail} />}
           <NavItem to="#/docs" icon="help" label="Help" on={view === "docs"} rail={rail} />
           <NavItem to="#/settings" icon="settings" label="Settings" on={view === "settings"} rail={rail} />
         </nav>
@@ -252,10 +256,9 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
           {view === "apps" && <AppsPage />}
           {view === "storage" && <StoragePage />}
-          {view === "domains" && <DomainsPage id={id} tab={page} />}
+          {view === "mail" && <MailPage tab={id} />}
+          {view === "domains" && <DomainsPage id={id} tab={page} routes={apps ?? []} onChanged={load} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} forwards={forwards ?? []}
-            users={users ?? []} providers={providers} onChanged={load} />}
-          {view === "forward" && <ForwardPage id={id} port={page} routes={apps} forwards={forwards} status={status}
             users={users ?? []} providers={providers} onChanged={load} />}
           {route && <TunnelPage route={route} users={users ?? []} providers={providers} onChanged={load} />}
           {device && <DevicePage device={device} users={users ?? []} onChanged={load} />}
@@ -422,7 +425,7 @@ function Search({ routes, devices }: { routes: Route[] | null; devices: Device[]
       if (items[active]) choose(items[active].to);
     }}>
       <Icon name="search" className="search-icon" />
-      <input ref={input} type="text" aria-label="Search tunnels and devices" placeholder="Search tunnels and devices"
+      <input ref={input} type="text" aria-label="Search services and devices" placeholder="Search services and devices"
         role="combobox" aria-expanded={listed} aria-controls="found" aria-autocomplete="list"
         aria-activedescendant={listed ? "found-" + active : undefined}
         autoComplete="off" spellCheck={false} data-1p-ignore data-lpignore="true"
