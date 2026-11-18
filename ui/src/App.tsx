@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent } from "react";
 import { AppsPage, InstallPill, NeedsContext } from "./Apps";
-import { api, deviceInfo, message, shortId, type Auth, type Device, type Flag, type Forward, type Group, type Needs, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
+import { api, deviceInfo, message, shortId, type Auth, type Device, type Flag, type Forward, type Group, type Hardware, type Needs, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { CloudflareProvider } from "./Cloudflare";
+import { Alerts, useAlerts } from "./Alerts";
 import { ConsolePage } from "./Console";
 import { ContainersPage } from "./Containers";
 
@@ -83,8 +84,8 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [users, setUsers] = useState<User[] | null>(null);
   const [flags, setFlags] = useState<Flag[]>([]);
-  // Parts failing or needing attention, counted beside Dashboard.
-  const [faults, setFaults] = useState(0);
+  // The hardware's last reading, for the alerts in the header.
+  const [hw, setHw] = useState<Hardware | null>(null);
   const [needs, setNeeds] = useState<Needs | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [providers, setProviders] = useState<OAuthProvider[]>([]);
@@ -118,10 +119,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
     if (o.status === "fulfilled") setProviders(o.value.providers.filter((p) => p.configured));
     if (f.status === "fulfilled") setFlags(f.value);
     if (n.status === "fulfilled") setNeeds(n.value);
-    if (h.status === "fulfilled") {
-      const snap = h.value.snapshot;
-      setFaults(snap ? [...snap.parts, ...snap.notes].filter((p) => p.health === "warn" || p.health === "bad").length : 0);
-    }
+    if (h.status === "fulfilled") setHw(h.value);
   }, []);
 
   useEffect(() => {
@@ -212,11 +210,12 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
     <NavItem key={key} to={to} icon={icon} label={label}
       on={view === key || (key === "containers" && view === "tunnels") || (key === "security" && (view === "users" || view === "devices"))}
-      count={key === "dashboard" ? flags.length + faults || undefined : undefined} rail={rail} />
+      rail={rail} />
   );
 
-  // The console is a still frame of its own, with no sidebar or header.
-  if (view === "console") return <ConsolePage routes={apps} forwards={forwards} status={status} flags={flags} users={users ?? []} />;
+  const alerts = useAlerts({ hw, flags, users: users ?? [], devices: devices ?? [], status, routes: apps, onChanged: load, onHardware: setHw });
+  // The console is the Dashboard alone, filling the screen.
+  if (view === "console") return <ConsolePage alerts={alerts} />;
   return (
     <NeedsContext.Provider value={needs}>
     <CloudflareProvider ready={status?.configured ?? true} onConnected={load}>
@@ -229,7 +228,10 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           <a className="brand" href={home}><span className="brand-mark"><Icon name="public" size={18} /></span><span className="brand-name">myTunnels</span></a>
         </div>
         <Search routes={apps} devices={devices} />
-        <div className="header-actions" />
+        <div className="header-actions">
+          <a className="icon-btn" href="#/console" aria-label="Console" title="Console"><Icon name="monitor" /></a>
+          <Alerts alerts={alerts} />
+        </div>
       </header>
 
       <div className="shell">
@@ -254,7 +256,7 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
         {/* A new page fades in; a tab or section of the same page changes in place. */}
         <main className="page" key={ONE_OF.includes(view) ? view + id : view}>
-          {view === "dashboard" && <DashboardPage flags={flags} users={users ?? []} devices={devices ?? []} onChanged={load} />}
+          {view === "dashboard" && <DashboardPage />}
           {view === "apps" && <AppsPage />}
           {view === "storage" && <StoragePage />}
           {view === "mail" && <MailPage />}
