@@ -1699,7 +1699,7 @@ impl Db {
 
     pub fn has_waiting_build(&self, deploy_id: &str) -> Result<bool> {
         let n: i64 = self.conn().query_row(
-            "SELECT COUNT(*) FROM builds WHERE deploy_id = ?1 AND status IN ('queued', 'building')",
+            "SELECT COUNT(*) FROM builds WHERE deploy_id = ?1 AND status IN ('queued', 'building', 'testing', 'review')",
             [deploy_id],
             |r| r.get(0),
         )?;
@@ -1746,7 +1746,7 @@ impl Db {
     pub fn end_interrupted_builds(&self, at: i64) -> Result<()> {
         self.conn().execute(
             "UPDATE builds SET status = 'failed', error = 'Stopped when myTunnels restarted',
-                 finished_at = ?1 WHERE status = 'building'",
+                 finished_at = ?1 WHERE status IN ('building', 'testing')",
             [at],
         )?;
         Ok(())

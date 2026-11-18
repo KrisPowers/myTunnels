@@ -10,6 +10,7 @@ import { Callout, Card, Dialog, MoreMenu, Row, TextField, useNotify, ValueRow } 
 
 export const UPDATES: Option<Updates>[] = [
   { value: "push", label: "When the branch changes", hint: "Builds each new commit as it arrives" },
+  { value: "release", label: "When a release is published", hint: "Builds each new GitHub release" },
   { value: "timer", label: "On a timer", hint: "Builds the latest commit, when there is one, every so often" },
   { value: "manual", label: "Only when I press Update" },
 ];
@@ -22,21 +23,21 @@ export const EVERY: Option<number>[] = [
   { value: 7 * 86_400, label: "Every week" },
 ];
 
-const REASONS: Record<Build["reason"], string> = { first: "First build", push: "New commit", timer: "Timer", manual: "Update" };
+const REASONS: Record<Build["reason"], string> = { first: "First build", push: "New commit", release: "New release", timer: "Timer", manual: "Update" };
 
 export const sourceOf = (d: Pick<Deploy, "repo" | "url" | "image">) => d.image || (d.url ? d.url.replace(/^https:\/\//, "").replace(/\.git$/, "") : d.repo);
 
 // Whether a build is still to finish.
-export const waiting = (b: Build | null | undefined) => !!b && (b.status === "queued" || b.status === "building");
+export const waiting = (b: Build | null | undefined) => !!b && (b.status === "queued" || b.status === "building" || b.status === "testing");
 
 export function buildTone(b: Build, current: number | null) {
   if (b.number === current) return "ok";
-  return b.status === "failed" ? "bad" : waiting(b) ? "warn" : "";
+  return b.status === "failed" ? "bad" : waiting(b) || b.status === "review" ? "warn" : "";
 }
 
 export function buildLabel(b: Build, current: number | null) {
   if (b.number === current) return "Running";
-  return { queued: "Waiting", building: "Building", ready: "Ready", failed: "Failed" }[b.status];
+  return { queued: "Waiting", building: "Building", testing: "Testing", review: "Waiting for review", ready: "Ready", rejected: "Turned down", failed: "Failed" }[b.status];
 }
 
 function took(b: Build) {

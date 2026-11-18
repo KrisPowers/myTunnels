@@ -1,6 +1,7 @@
 // Where the page is, kept in the URL hash: `#/` home, the Dashboard;
 // `#/console`, the Dashboard alone on the whole screen; `#/containers`, with
-// `/<name>/<page>/...` for one container; `#/routes`, every way in, with
+// `/<name>/<page>/...` for one container; `#/automations`, each container's
+// flow from its repository, `/<id>/<tab>` for one; `#/routes`, every port exposed, with
 // `#/routes/new` (`/<port>`) adding one, and `#/tunnels/<id>` one tunnel;
 // `#/storage`; `#/mail`, every address; `#/security/<tab>`, whose Users and
 // Devices tabs are also `#/users` and `#/devices` (`/<id>/<page>` for one);
@@ -8,7 +9,7 @@
 // (`#/forward`, `#/remote`, `#/new`, `#/services`, `#/domains`, `#/hardware`,
 // `#/images`, `#/media`, `#/drive`) go where their page went.
 
-export type View = "console" | "tunnels" | "dashboard" | "apps" | "containers" | "routes" | "storage" | "mail" | "devices" | "users" | "security" | "settings" | "docs";
+export type View = "console" | "tunnels" | "dashboard" | "apps" | "containers" | "automations" | "routes" | "storage" | "mail" | "devices" | "users" | "security" | "settings" | "docs";
 
 export interface Place {
   view: View;
@@ -47,6 +48,8 @@ export function readHash(): Place {
   if (first === "images") return { view: "containers", id: "", page: "", more: [] };
   // Mail is its own page; Domains, once a page, went into it.
   if (first === "mail" || first === "domains") return { view: "mail", id: "", page: "", more: [] };
+  // An automation, its tab, and what is open in it, such as a run's log.
+  if (first === "automations") return { view: "automations", id: second, page: third, more };
   // Services was Containers' name for a while.
   if (first === "services") return { view: "containers", id: "", page: "", more: [] };
   if (first === "devices" || first === "users" || first === "settings" || first === "docs" || first === "containers" || first === "security") return { view: first, id: second, page: third, more };

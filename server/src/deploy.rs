@@ -24,6 +24,7 @@ use tokio::io::AsyncReadExt;
 use tokio::sync::{Mutex as AsyncMutex, Notify};
 
 use crate::docker::{self, Endpoint};
+use crate::flow::{self, Step};
 use crate::permissions::Caller;
 use crate::state::AppState;
 use crate::util::{now, random_hex, ApiError, ApiResult};
@@ -57,7 +58,7 @@ pub struct Deploy {
     /// Folders in the container kept from one build to the next, besides the
     /// ones its image declares.
     pub keep: Vec<String>,
-    /// "push", "timer" or "manual".
+    /// "push", "release", "timer" or "manual".
     pub updates: String,
     /// For "timer", the seconds between checks.
     pub every: i64,
@@ -74,9 +75,9 @@ pub struct Build {
     /// Empty until the build looks the branch up.
     pub commit: String,
     pub message: String,
-    /// "first", "push", "timer" or "manual".
+    /// "first", "push", "release", "timer" or "manual".
     pub reason: String,
-    /// "queued", "building", "ready" or "failed".
+    /// "queued", "building", "testing", "review", "ready", "rejected" or "failed".
     pub status: String,
     pub image: Option<String>,
     pub error: Option<String>,
@@ -388,13 +389,14 @@ async fn source(state: &AppState, d: &Deploy) -> Result<PathBuf, String> {
     }
     let spec = format!("+refs/heads/{branch}:refs/heads/{branch}");
     let token = token_of(state, &d.id);
-    git_auth(
-        &dir,
-        &["fetch", "--quiet", "--force", "--no-tags", &d.url, &spec],
-        token.as_deref(),
-    )
-    .await
-    .map_err(|e| format!("Cannot fetch {}: {}", d.url, e.1))?;
+    // A release can point at a commit off the branch, so its tags come too.
+    let mut args = vec!["fetch", "--quiet", "--force", "--no-tags", &d.url, &spec];
+    if d.updates == "release" {
+        args.push("+refs/tags/*:refs/tags/*");
+    }
+    git_auth(&dir, &args, token.as_deref())
+        .await
+        .map_err(|e| format!("Cannot fetch {}: {}", d.url, e.1))?;
     Ok(dir)
 }
 
@@ -709,6 +711,12 @@ async fn run(state: &AppState, mut b: Build) {
         let _ = state.db.delete_build(&b.deploy_id, b.number);
         return;
     }
+    if matches!(&outcome, Err(why) if why == HELD) {
+        b.status = "review".into();
+        b.finished_at = None;
+        let _ = state.db.save_build(&b);
+        return;
+    }
     match outcome {
         Ok(()) => b.status = "ready".into(),
         Err(why) => {
@@ -765,6 +773,9 @@ async fn pull_and_run(state: &AppState, d: &Deploy, b: &mut Build) -> Result<(),
         return Err(UNCHANGED.into());
     }
     let _ = state.db.save_build(b);
+    if !pass_steps(state, d, b, &image, 0).await? {
+        return Err(HELD.into());
+    }
     roll_out(state, d, &image, b.number)
         .await
         .map_err(|why| format!("Pulled, but it did not start: {why}"))?;
@@ -775,6 +786,68 @@ async fn pull_and_run(state: &AppState, d: &Deploy, b: &mut Build) -> Result<(),
 /// What a timed pull ends with when the image has not changed; that build is
 /// dropped, as nothing happened.
 const UNCHANGED: &str = "unchanged";
+
+/// What a build ends with when its flow holds it for review.
+const HELD: &str = "held";
+
+fn held_key(id: &str, number: i64) -> String {
+    format!("held:{id}:{number}")
+}
+
+/// Adds to a build's log.
+fn note(state: &AppState, b: &Build, text: &str) {
+    let log = state
+        .db
+        .build(&b.deploy_id, b.number)
+        .ok()
+        .flatten()
+        .map(|(_, l)| l)
+        .unwrap_or_default();
+    let _ = state
+        .db
+        .set_build_log(&b.deploy_id, b.number, &format!("{log}{text}"));
+}
+
+/// Runs the container's flow on a new build's image, from step `from`: each
+/// test's output goes into the build's log. Ok(true) when it may go live,
+/// Ok(false) when a review holds it, Err when a test failed.
+async fn pass_steps(
+    state: &AppState,
+    d: &Deploy,
+    b: &mut Build,
+    image: &str,
+    from: usize,
+) -> Result<bool, String> {
+    for (i, step) in flow::steps(state, &d.id).into_iter().enumerate().skip(from) {
+        match step {
+            Step::Test { name, command } => {
+                b.status = "testing".into();
+                let _ = state.db.save_build(b);
+                note(state, b, &format!("\n== Test: {name} ==\n$ {command}\n"));
+                let run = format!("{}-test-{}", d.name, b.number);
+                match flow::test(&run, image, &command, &env_of(state, &d.id)).await {
+                    Ok(printed) => note(state, b, &format!("{printed}\n== {name} passed ==\n")),
+                    Err((printed, why)) => {
+                        note(
+                            state,
+                            b,
+                            &format!("{printed}\n== {name} failed: {why} ==\n"),
+                        );
+                        return Err(format!("{name} failed: {why}"));
+                    }
+                }
+            }
+            Step::Review => {
+                note(state, b, "\n== Waiting for review ==\n");
+                let _ = state
+                    .db
+                    .set_setting(&held_key(&d.id, b.number), &(i + 1).to_string());
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
 
 async fn build_and_run(state: &AppState, d: &Deploy, b: &mut Build) -> Result<(), String> {
     if !d.image.is_empty() {
@@ -816,6 +889,9 @@ async fn build_and_run(state: &AppState, d: &Deploy, b: &mut Build) -> Result<()
     .await?;
     b.image = Some(image.clone());
     let _ = state.db.save_build(b);
+    if !pass_steps(state, d, b, &image, 0).await? {
+        return Err(HELD.into());
+    }
     roll_out(state, d, &image, b.number)
         .await
         .map_err(|why| format!("Built, but it did not start: {why}"))?;
@@ -1064,6 +1140,8 @@ async fn watch(state: AppState) {
             let since = now() - d.checked_at;
             let due = match d.updates.as_str() {
                 "push" => d.url.is_empty() || since >= REMOTE_EVERY,
+                // GitHub allows few unsigned asks an hour, so every five minutes.
+                "release" => since >= REMOTE_EVERY * 5,
                 "timer" => since >= d.every.max(3600),
                 _ => false,
             };
@@ -1074,6 +1152,24 @@ async fn watch(state: AppState) {
                 let _ = state.db.set_checked(&d.id, now());
                 if d.updates == "timer" {
                     let _ = queue(&state, &d.id, "", "timer");
+                }
+                continue;
+            }
+            if d.updates == "release" {
+                let token = token_of(&state, &d.id);
+                let found = flow::latest_release(&state, &d.url, token.as_deref()).await;
+                let _ = state.db.set_checked(&d.id, now());
+                let Ok((tag, sha)) = found else { continue };
+                let last = state
+                    .db
+                    .builds(&d.id, 1)
+                    .ok()
+                    .and_then(|b| b.into_iter().next());
+                if last.is_none_or(|b| b.commit != sha) {
+                    tracing::info!("{} has a new release, {tag}", d.name);
+                    if let Err(e) = queue(&state, &d.id, &sha, "release") {
+                        tracing::warn!("could not queue a build of {}: {}", d.name, e.1);
+                    }
                 }
                 continue;
             }
@@ -1196,8 +1292,10 @@ pub struct NewDeploy {
 }
 
 fn check_updates(updates: &str, every: i64) -> ApiResult<()> {
-    if !matches!(updates, "push" | "timer" | "manual") {
-        return Err(ApiError::bad("Update on push, on a timer, or by hand"));
+    if !matches!(updates, "push" | "release" | "timer" | "manual") {
+        return Err(ApiError::bad(
+            "Update on push, on a release, on a timer, or by hand",
+        ));
     }
     if updates == "timer" && !(3600..=30 * 86_400).contains(&every) {
         return Err(ApiError::bad(
@@ -1451,7 +1549,85 @@ pub async fn remove(
     state.db.delete_deploy(&d.id)?;
     state.db.delete_setting(&token_key(&d.id))?;
     state.db.delete_setting(&env_key(&d.id))?;
+    flow::forget(&state, &d.id);
     Ok(Json(json!({ "ok": true })))
+}
+
+/// Approves a build held for review: the steps after the review run, then it
+/// goes live. It carries on after this answers.
+pub async fn approve(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    UrlPath((id, number)): UrlPath<(String, i64)>,
+) -> ApiResult<Json<Value>> {
+    let d = find(&state, &id)?;
+    let (mut b, _) = state
+        .db
+        .build(&id, number)?
+        .ok_or_else(ApiError::not_found)?;
+    let Some(image) = b.image.clone().filter(|_| b.status == "review") else {
+        return Err(ApiError::bad("That build is not waiting for review"));
+    };
+    let from = state
+        .db
+        .setting(&held_key(&id, number))?
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(usize::MAX);
+    state.db.delete_setting(&held_key(&id, number))?;
+    b.status = "building".into();
+    state.db.save_build(&b)?;
+    note(&state, &b, "\n== Approved ==\n");
+    let worker = state.clone();
+    let deploy = d.clone();
+    tokio::spawn(async move {
+        let state = worker;
+        let outcome = match pass_steps(&state, &deploy, &mut b, &image, from).await {
+            Ok(true) => roll_out(&state, &deploy, &image, b.number)
+                .await
+                .map_err(|why| format!("Approved, but it did not start: {why}")),
+            Ok(false) => Err(HELD.into()),
+            Err(why) => Err(why),
+        };
+        b.finished_at = Some(now());
+        match outcome {
+            Ok(()) => {
+                b.status = "ready".into();
+                prune(&state, &deploy.id).await;
+            }
+            Err(why) if why == HELD => {
+                b.status = "review".into();
+                b.finished_at = None;
+            }
+            Err(why) => {
+                b.status = "failed".into();
+                b.error = Some(why);
+            }
+        }
+        let _ = state.db.save_build(&b);
+    });
+    Ok(Json(view(&state, &d, Some(&caller))?))
+}
+
+/// Turns down a build held for review; the running container stays.
+pub async fn reject(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    UrlPath((id, number)): UrlPath<(String, i64)>,
+) -> ApiResult<Json<Value>> {
+    let d = find(&state, &id)?;
+    let (mut b, _) = state
+        .db
+        .build(&id, number)?
+        .ok_or_else(ApiError::not_found)?;
+    if b.status != "review" {
+        return Err(ApiError::bad("That build is not waiting for review"));
+    }
+    state.db.delete_setting(&held_key(&id, number))?;
+    b.status = "rejected".into();
+    b.finished_at = Some(now());
+    state.db.save_build(&b)?;
+    note(&state, &b, "\n== Turned down ==\n");
+    Ok(Json(view(&state, &d, Some(&caller))?))
 }
 
 /// Builds the branch's latest commit now, whatever was built before.

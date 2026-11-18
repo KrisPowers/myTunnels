@@ -5,7 +5,8 @@ import type { IconName } from "./Icon";
 export const DOCS: [string, string, IconName][] = [
   ["start", "Getting started", "info"],
   ["dashboard", "Dashboard", "dashboard"],
-  ["containers", "Services", "deployed_code"],
+  ["containers", "Containers", "deployed_code"],
+  ["automations", "Automations", "autorenew"],
   ["forward", "Routes", "wifi_cog"],
   ["storage", "Storage", "cloud"],
   ["mail", "Mail", "mail"],
@@ -48,23 +49,14 @@ function Doc({ title, children }: { title: string; children: ReactNode }) {
 const CONTENT: Record<string, ReactNode> = {
   mail: (
     <>
-      <Doc title="Mail on your domains">
-        <p>Mail runs on this computer: it receives mail, keeps each mailbox here, and sends mail signed with DKIM. Outlook, Gmail, Apple Mail, Thunderbird and phones read and send it over IMAP and SMTP. Every domain on the connected Cloudflare account is listed on the <b>Domains</b> tab already; its switch puts mail on it, and the records mail needs are written to its DNS. The first switch asks how mail moves and turns the mail server on.</p>
+      <Doc title="Your addresses">
+        <p><b>Mail</b> is every address in one list: <b>mailboxes</b>, which have a password and keep their mail here, and <b>forwards</b>, which send an address's mail to a mailbox. Each row says how much a mailbox holds; its menu changes its password, turns mail apps off for it while its mail still arrives, or removes it with its mail.</p>
       </Doc>
-      <Doc title="Mailboxes">
-        <p>Four tabs: <b>Mailboxes</b>, <b>Aliases</b>, <b>Domains</b> and <b>Activity</b>, a table each. The plus adds a <b>Mailbox</b> (an address, a name and a password; mail apps sign in with the full address) or an <b>Alias</b>, another address, or a whole domain with the address left empty, delivered to a mailbox. A mailbox's menu changes its password, turns mail apps off for it while its mail still arrives, or removes it with its mail. Mail for <code>postmaster</code> and <code>abuse</code> goes to the first mailbox.</p>
+      <Doc title="A new address">
+        <p><b>New address</b> takes the address in full, on any domain the Cloudflare account holds, and whether it is a mailbox or a forward. Nothing else needs setting up: mail turns itself on for the domain the first time an address is made there, and its records are written to its DNS. Leave the part before the @ empty on a forward to catch everything at the domain.</p>
       </Doc>
       <Doc title="How mail moves">
-        <p>Three choices, in <b>Mail settings</b> (the dial beside the plus):</p>
-        <ul>
-          <li><b>Mail arrives</b> by <b>Port forward</b>, port 25 forwarded to this computer with the MX record pointing at <code>mail.</code> on the primary domain, or <b>Cloudflare</b>, where Email Routing hands mail to a Worker that posts it here through the tunnel, with no port open.</li>
-          <li><b>Mail apps connect</b> by <b>Port forward</b>, IMAP 993 and SMTP 465 with a Let's Encrypt certificate, or <b>Tailscale</b>, IMAP 443 and SMTP 8443 through Funnel.</li>
-          <li><b>Mail leaves</b> <b>Direct</b> to each recipient on port 25, which many internet providers block, through a <b>Relay</b> SMTP server, or through Cloudflare Email Sending, which needs the Workers Paid plan.</li>
-        </ul>
-        <p>The same dialog shows where mail apps sign in, the switches for incoming mail, <b>Set up again</b> and <b>Turn off</b>. The ports mail opens are rows on <b>Services</b>, named <b>Mail</b>. A domain's menu makes it <b>primary</b> (the mail server is named after it) or gives it <b>Managers</b>, accounts that run its mailboxes without setting mail up.</p>
-      </Doc>
-      <Doc title="Checks on mail that comes in">
-        <p>Each message is checked with SPF, DKIM and DMARC. Mail that fails, or claims to be from your own domains without proof, goes to Junk; <b>Refuse spoofed mail</b> turns away mail whose sender's policy says reject. Attachments that can run code are marked <code>$Risky</code>, newsletters <code>$Marketing</code>. The <b>Activity</b> tab lists what came in and went out.</p>
+        <p>The dial opens <b>Mail settings</b>: how mail arrives (port 25 forwarded here, or Cloudflare Email Routing through the tunnel), how mail apps connect (IMAP 993 and SMTP 465 on your router, or Tailscale Funnel), how mail leaves (straight to each recipient, through a relay, or Cloudflare Email Sending), where mail apps sign in, and the switches for incoming mail. The clock opens <b>Activity</b>, what came in and went out.</p>
       </Doc>
     </>
   ),
@@ -80,7 +72,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>On Windows, <b>setup.exe</b> installs everything from one file, with no internet needed for myTunnels itself, and asks once for administrator rights for what you choose: the hardware sensors, the firewall for router ports, Docker and Tailscale. Then the dashboard asks for two things: the host account, and <b>Connect Cloudflare</b>. <b>Open Cloudflare</b> makes a token with the right permissions; paste it back and the tunnel and connector are set up. <b>Skip for now</b> leaves it for later; anything that needs Cloudflare asks again, as does <b>Connect</b> under Settings, Connections. Once it is connected, every domain on the account is yours to use: for services' addresses and for mail, with nothing to add.</p>
       </Doc>
       <Doc title="On the rack and on your phone">
-        <p>The monitor button in the header opens the <b>console</b>: the Dashboard alone, filling the screen, for a monitor beside this computer, under a slim bar with the time and the alerts; its close button goes back. On Windows the desktop app opens on it, and <b>F11</b> fills the screen. The bell beside it holds every alert in one list: failing parts and the system log's notes, the sensor task's setup, new devices signing in, and the Cloudflare connector going offline, each with its action where it has one. On a phone, add the dashboard's address to the home screen (on an iPhone, Safari's Share, then <b>Add to Home Screen</b>) and it opens full screen like an app.</p>
+        <p>The monitor button in the header opens the <b>console</b>: one still frame that fills the screen and never scrolls, for a monitor beside this computer: CPU, memory and network over the last five minutes, the drives, the containers and what needs attention, under a slim bar with the time and the alerts; its close button goes back. On Windows the desktop app opens on it, and <b>F11</b> fills the screen. The bell beside it holds every alert in one list: failing parts and the system log's notes, the sensor task's setup, new devices signing in, and the Cloudflare connector going offline, each with its action where it has one. On a phone, add the dashboard's address to the home screen (on an iPhone, Safari's Share, then <b>Add to Home Screen</b>) and it opens full screen like an app.</p>
       </Doc>
       <Doc title="Changing the Cloudflare connection">
         <p>Settings, Connections holds the account and tunnel, and the connector's version and log. A new API token can replace the old one at any time. Switching to another account or tunnel needs every tunnel removed first, since their DNS records live in the old one.</p>
@@ -102,28 +94,28 @@ const CONTENT: Record<string, ReactNode> = {
   ),
   containers: (
     <>
-      <Doc title="What it shows">
-        <p><b>Services</b> is everything this computer hosts, a row each. A container shows what it is in a tile tinted by its state, its name over where it comes from, its address, and its CPU and memory while it runs; Compose projects with more than one container fold under their name. An app running here outside a container is the route to it: a tunnel, a router port or Tailscale. Search, or pick <b>All</b> or <b>Running</b>; it refreshes on its own. The plus adds a <b>Container from GitHub</b> or <b>from an image</b>, or a <b>Route</b> to a port on this computer.</p>
+      <Doc title="The list">
+        <p><b>Containers</b> is every container Docker runs here, one table: what it is and where it comes from, its status, the ports it publishes, and its CPU and memory while it runs. Compose projects with more than one container fold under a row of their own. Search, or show all, running or stopped. A row's menu starts, restarts, stops, opens its logs or deletes it; the menu at the top deletes every image no container uses.</p>
+      </Doc>
+      <Doc title="Adding one">
+        <p><b>Add container</b> is one dialog: pick <b>Image</b> to run one such as <code>nginx:1.27</code>, or <b>GitHub</b> to build one from a repository and branch (a token for a private one). Name it and say how it updates; its first pull or build starts at once. How it keeps updating, and what each new build must pass, is its automation, on <b>Automations</b>.</p>
       </Doc>
       <Doc title="One container">
-        <p>A container and its forwards are one page. Its heading holds its state, image and address, <b>Open</b>, the one button its state calls for (start, stop or resume) and a menu for the rest. Under it: <b>Overview</b> (its CPU, memory, network and disk while it runs, then what it runs, its state, ports, networks and mounts), <b>Routes</b>, <b>Images</b>, <b>Logs</b> and <b>Resources</b>: its CPU limit and priority, memory limit, reserved memory and swap, how many processes it may run and its <b>Auto-start</b>. Set to unless stopped by hand or always, it comes back on its own after a crash or a restart of the machine, once Docker runs again. A change applies at once and is given back when the container is made again.</p>
+        <p>Its heading holds its state, health and source, the one button its state calls for (start, stop or resume) and a menu for the rest. Under it: <b>Overview</b> (its CPU, memory, network and disk while it runs, then what it runs, its state, ports, networks and mounts), <b>Images</b> (its builds or images, each one's log, and going back to one), <b>Logs</b>, <b>Resources</b> (CPU and memory limits, processes and <b>Auto-start</b>) and, when built from a repository, <b>Settings</b>. Exposing a container's port is a route, on <b>Routes</b>.</p>
       </Doc>
-      <Doc title="Its forwards">
-        <p><b>Routes</b> lists every way the container is reached, a tunnel, a router port or Tailscale, each with its state, where it goes and who reaches it. A tunnel's activity sits under the list and its controls at the side: Open, its live switch, a menu to change the address or remove it, and its access control. The plus forwards a port the same way Routes does; the port is the container's own, asked only when it has more than one. A router or Tailscale forward reaches only a port the container publishes on this computer.</p>
+    </>
+  ),
+  automations: (
+    <>
+      <Doc title="What an automation is">
+        <p>Each container added from GitHub or an image has one: what starts a new build, the build, the steps it must pass, then going live. <b>Automations</b> lists them, with how each starts, what its flow does and how its last run went; builds waiting for review sit at the top, with <b>Approve</b> and <b>Turn down</b>.</p>
       </Doc>
-      <Doc title="From a repository">
-        <p><b>Container from GitHub</b> makes a container from code: give any https address (GitHub and the like, with a token for a private one), then its branch, its name and how it updates: <b>When the branch changes</b>, <b>On a timer</b> (every hour to every week), or <b>Only when I press Update</b>. <b>Update</b>, in its heading, builds the latest commit at any time.</p>
-        <p>A build takes the repository's Dockerfile, builds it into an image named after the container and the build's number, and makes the container again from it. One that will not start is undone on the spot and the build before keeps running. Its <b>Images</b> page lists its builds and what each printed; <b>Run this build</b> goes back to any of the latest ten. Its <b>Settings</b> page holds the repository, branch and Dockerfile, how it updates, its port, its environment and the folders kept from one build to the next.</p>
-        <p><b>Container from an image</b> runs a Docker image, such as <code>nginx:1.27</code>. Its updates pull the image again, on a timer or with <b>Update</b>, and run it when it changed; each pull is listed like a build, so going back works the same way.</p>
+      <Doc title="What starts it">
+        <p><b>On push</b> builds each new commit on the branch. <b>On release</b> builds each new GitHub release, at the commit its tag points to, looked for every five minutes. <b>On a timer</b> builds the latest commit, or pulls the image again, every so often. <b>By hand</b> waits for <b>Run now</b>.</p>
       </Doc>
-      <Doc title="Its images">
-        <p><b>Images</b> lists the image the container runs and the others of the same name, such as earlier versions, with their size and age. Open one for what it runs, its environment and labels, and its layers. One no container uses can be deleted; the menu at the top of Services deletes every unused image at once.</p>
-      </Doc>
-      <Doc title="Managing them">
-        <p>Each row's menu holds logs, its forwards, start or stop, restart, kill and delete; a project's menu starts, stops or restarts all of it. Deleting takes a stopped container away and leaves its volumes. The container myTunnels runs in is marked and is never stopped from here.</p>
-      </Doc>
-      <Doc title="What Docker allows">
-        <p>myTunnels reaches Docker through the <code>docker</code> service in <code>compose.yaml</code>, which allows containers, building images from a container's repository, listing and removing images, and the engine's info, and nothing else, so volumes and networks cannot be changed from here.</p>
+      <Doc title="The flow">
+        <p>An automation's <b>Flow</b> tab draws it as it runs. Between the build and going live, add as many steps as you like, in any order: a <b>Test</b> is a command run in the new image with the container's environment, such as <code>npm test</code>, which must exit 0, its output kept in the run's log; a <b>Review</b> holds the build until someone approves it. A build that fails a test, or is turned down, never runs, and the container stays as it was. Going live makes the container again from the new image; one that will not start is undone and the one before comes back.</p>
+        <p><b>Runs</b> is every build with its reason, commit, status and log, and going back to an earlier one; <b>Settings</b> is the repository, branch, Dockerfile, port, environment and kept folders.</p>
       </Doc>
     </>
   ),
@@ -156,29 +148,20 @@ const CONTENT: Record<string, ReactNode> = {
   ),
   forward: (
     <>
-      <Doc title="Three ways">
-        <p>Every way in is a route: a container's are on its <b>Routes</b> page, and the rest are rows on <b>Services</b>, each with its address, where it goes, who reaches it and whether it is open. <b>Route</b>, under the plus, opens <b>New route</b>; <b>Route by</b> at its top picks the way:</p>
+      <Doc title="A route exposes a port">
+        <p>A route is one port on this computer, exposed. <b>Expose a port</b> asks, in order: the port; <b>Read &amp; write</b> or <b>Read only</b>; how it is exposed; and who gets in. <b>Routes</b> lists them by port, with where each is reached, whether it takes writes, who gets in and whether it is up.</p>
+      </Doc>
+      <Doc title="How it is exposed">
         <ul>
-          <li><b>Port forward</b> opens the port on this PC first: a rule in Windows Firewall, which Windows asks administrator rights for, and a relay when the app is on another port or another machine. Then it asks the router, by UPnP, to send the same port of your public address here. Most routers keep UPnP off; the row then says <b>Router not forwarded</b>, the port still reaches this PC from your network, and the router's own settings can forward it. There is no sign-in or password on either.</li>
-          <li><b>Tailscale</b> serves the app to the devices on your tailnet, at this machine's tailnet name. <b>Open to the internet</b> serves it to anyone through Funnel, on port 443, 8443 or 10000.</li>
-          <li><b>Tunnel</b> gives the app an address on your domain through Cloudflare Tunnel, without opening a port on the router, with the full Access Control below.</li>
+          <li><b>Port forward</b>: TCP, UDP or both. The port is opened on this computer, and the router is asked by UPnP to send the same port, or the one you give, here. It can close on its own after an hour, a day or a week.</li>
+          <li><b>Tailscale</b>: on your tailnet at this computer's tailnet name, as http, https or TCP, or to anyone through Funnel on 443, 8443 or 10000.</li>
+          <li><b>Cloudflare Tunnel</b>: an address on one of your domains, with no port opened on the router. Every request passes through myTunnels' gateway first.</li>
         </ul>
-        <p>A way whose app is not installed, Tailscale, stays in the list but cannot be picked until it is installed from <a href="#/apps">Apps</a>. cloudflared comes with myTunnels.</p>
       </Doc>
-      <Doc title="A new tunnel">
-        <p>Pick <b>Tunnel</b>, type a subdomain, pick one of your domains, and enter the port the app listens on. Choose who can open it, then press <b>Publish</b>. The DNS record and the route are made for you, and removed with the tunnel.</p>
-      </Doc>
-      <Doc title="A router or Tailscale forward">
-        <p>Pick <b>Port forward</b> or <b>Tailscale</b>, give it a name, which the list shows it by, then the port it is reached on, the app's port and its protocol: TCP, UDP or TCP & UDP at the router; http, https or TCP on Tailscale, where TCP carries anything else, such as SSH. <b>Close after</b> closes it on its own after an hour, a day or a week; it stays in the list switched off, and its menu opens it again. The router is asked again every twenty minutes, so a router that restarts, or has UPnP turned on later, gets it.</p>
-      </Doc>
-      <Doc title="Where requests go">
-        <p>A new tunnel sends requests to the port on this computer. <b>Change where it goes</b>, in the tunnel's menu, points it at a container name or another machine instead, and uses https when the app serves it itself. Self-signed certificates are accepted.</p>
-      </Doc>
-      <Doc title="This dashboard">
-        <p>Pick <b>This dashboard</b> under a tunnel's <b>Change where it goes</b> to publish myTunnels itself, with no port, and manage it from anywhere. It takes the same access layers as any tunnel, and the dashboard's own sign-in, two-factor code included, still applies behind them.</p>
-      </Doc>
-      <Doc title="How the app sees a visit">
-        <p>Many apps only answer requests addressed to <code>localhost</code>. So myTunnels presents each visit to the app as if it were opened on this computer, and turns the app's redirects back into the public address. Apps set up with their public address should have <b>Pass the public address</b> turned on instead.</p>
+      <Doc title="Who gets in">
+        <p>Through a Cloudflare tunnel, all of it is in one place: a sign-in page for accounts from Users (with third-party providers and emailed codes), a password for the route, the home network, and <b>API keys</b> for programs. A client sends its key as <code>Authorization: Bearer</code>, as <code>X-API-Key</code>, or as <code>api_key</code> in a JSON or form body; the body goes on to the app as it came. A route's page makes and revokes keys; each key's text is shown once, when made. Turn on several and choose whether all are needed or any one is enough.</p>
+        <p><b>Read only</b> lets reads through (GET, HEAD and OPTIONS) and refuses every write. A <b>rate limit</b> caps the requests each visitor makes a minute. Every key used or refused, every write refused and every visitor slowed down is in the route's activity, beside sign-ins and visits.</p>
+        <p>A port forward and Tailscale reach the port directly, so anyone who reaches it gets in; sign-ins, keys, read-only and rate limits need a Cloudflare tunnel.</p>
       </Doc>
     </>
   ),
