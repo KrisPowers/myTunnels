@@ -94,11 +94,11 @@ is in `%LOCALAPPDATA%\myTunnels` on Windows and `~/.local/share/myTunnels` elsew
 it in Docker instead, see [Running in Docker](#running-in-docker).
 
 On the computer running it, open **myTunnels** from the Start menu on Windows, the desktop
-app: the **console**, this computer at a glance in one still frame for a monitor on the rack
-(performance, services, how they are reached, storage, and anything that needs attention),
-maximized, with **F11** to fill the screen. It starts myTunnels when it is not running, and the
-rest of the panel is one click away in the same window. Or open `http://localhost:7070` in a
-browser, on any system; `#/console` is the same still frame there. The panel answers there alone:
+app, which opens on the **console**: the Dashboard alone, filling the monitor on the rack, under
+a slim bar with the time and the alerts; **F11** fills the screen. It starts myTunnels when it is
+not running, and the rest of the panel is one click away. Or open `http://localhost:7070` in a
+browser, on any system; the monitor button in the header opens the console there too, and the
+bell beside it lists every alert. The panel answers there alone:
 every other device, at home or away, reaches myTunnels through a tunnel, so no port is opened
 on your network. Setup asks for two things. First the host account: an email, a username and
 a password for the panel. Either the email or the username signs in, and both can be changed
@@ -345,12 +345,13 @@ dashboard through a tunnel to reach it from anywhere.
 
 ## Mail
 
-**Mail** is your mailboxes, one row each with its aliases, then **Domains**: every domain on the
-connected Cloudflare account, already listed, each with a switch that puts mail on it and writes
-the records it needs. The first switch asks how mail moves and turns the mail server on. The plus
-adds a **Mailbox** or an **Alias**; the clock beside it opens **Activity** (what came in and went
-out) and the dial **Mail settings** (how mail moves, where mail apps sign in, the options for
-incoming mail, setting up again and turning off). A domain's menu makes it primary (the mail
+**Mail** has four tabs, a table each: **Mailboxes** (address, messages, storage, whether mail
+apps may sign in), **Aliases**, **Domains** (every domain on the connected Cloudflare account,
+already listed, each with a switch that puts mail on it and writes the records it needs, its
+mailboxes and whether its DNS is ready) and **Activity** (what came in and went out). The first
+switch asks how mail moves and turns the mail server on. The plus adds a **Mailbox** or an
+**Alias**; the dial opens **Mail settings** (how mail moves, where mail apps sign in, the options
+for incoming mail, setting up again and turning off). A domain's menu makes it primary (the mail
 server is `mail.` on it) or gives it managers, accounts that run its mailboxes without setting
 mail up.
 

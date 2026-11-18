@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useContext, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { NeedsContext } from "./Apps";
 import { useCloudflare, useCloudflareReady } from "./Cloudflare";
 import {
@@ -10,9 +10,12 @@ import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
 import { AddMenu, ArmedButton, Avatar, Callout, Card, Copy, Dialog, MoreMenu, Row, Switch, TextField, useNotify, type MenuAction } from "./ui";
 
-// Mail: your own mail on your Cloudflare domains. Every domain Cloudflare
-// holds is listed already; a switch puts mail on one. Mailboxes are the page;
-// how mail moves, its activity and its options open from the heading.
+// Mail: mailboxes on your own domains, in place of a paid mail service.
+// Four tabs, a table each: the mailboxes, the aliases, the Cloudflare
+// account's domains with mail switched on or off, and what came in and went
+// out. How mail moves sits behind the dial in the heading.
+
+type Tab = "mailboxes" | "aliases" | "domains" | "activity";
 
 const RECEIVE: Option<MailReceive>[] = [
   { value: "port", label: "Port forward", icon: "router", hint: "Port 25 on your router" },
@@ -32,11 +35,10 @@ const SECURITY: Option<string>[] = [
   { value: "tls", label: "TLS", hint: "Usually port 465" },
   { value: "none", label: "None" },
 ];
+const OUTCOME: Record<string, string> = { delivered: "ok", sent: "ok", junk: "warn", queued: "", rejected: "bad", failed: "bad", bounced: "bad" };
 
 const domainOf = (address: string) => address.slice(address.lastIndexOf("@") + 1).toLowerCase();
-const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
-// useAct runs a change and shows how it went, handing the new state on.
 function useAct(onState: (s: MailState) => void) {
   const notify = useNotify();
   return useCallback(async (work: () => Promise<MailState>, done?: string) => {
@@ -60,7 +62,8 @@ export function MailPage() {
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [records, setRecords] = useState<MailRecords[]>([]);
   const [problem, setProblem] = useState("");
-  const [open, setOpen] = useState<"mailbox" | "alias" | "settings" | "activity" | null>(null);
+  const [tab, setTab] = useState<Tab | null>(null);
+  const [dialog, setDialog] = useState<"mailbox" | "alias" | "settings" | null>(null);
   const [starting, setStarting] = useState<Zone | null>(null);
   const [password, setPassword] = useState<string | null>(null);
   const act = useAct(setState);
@@ -83,7 +86,6 @@ export function MailPage() {
   useEffect(() => {
     if (ready && manage) api.mailZones().then(setZones).catch(() => setZones([]));
   }, [ready, manage]);
-  // Whether DNS answers with what mail needs, asked again when the domains change.
   const names = state?.settings.domains.map((d) => d.name).join(",") ?? "";
   useEffect(() => {
     if (names) api.mailRecords().then(setRecords).catch(() => {});
@@ -92,30 +94,26 @@ export function MailPage() {
   if (!state) return problem ? <div className="page-body"><Callout tone="bad" icon="error">{problem}</Callout></div> : null;
   const s = state.settings;
   const runs = state.manages;
+  const current: Tab = tab ?? (s.on ? "mailboxes" : "domains");
   const failed = state.job.running ? [] : state.job.steps.filter((x) => !x.ok);
   const percent = state.job.total ? Math.min(100, Math.round((state.job.done / state.job.total) * 100)) : 0;
-  const tone = state.job.running ? "warn" : failed.length ? "bad" : s.on ? "ok" : "";
-  const said = state.job.running ? `Setting up · ${percent}%` : failed.length ? plural(failed.length, "problem") : s.on ? "Running" : "Off";
-
-  // Every Cloudflare domain, those with mail first; one not on Cloudflare
-  // any more keeps its row while it has mail.
+  const [said, tone] = state.job.running ? [`Setting up · ${percent}%`, "warn"] : failed.length ? ["Needs attention", "bad"] : s.on ? ["Running", "ok"] : ["Off", ""];
   const onMail = new Set(s.domains.map((d) => d.name));
-  const rows: { name: string; zone?: Zone; domain?: MailDomain }[] = [
-    ...s.domains.map((d) => ({ name: d.name, domain: d, zone: zones?.find((z) => z.name.toLowerCase() === d.name) })),
-    ...(zones ?? []).filter((z) => !onMail.has(z.name.toLowerCase())).map((z) => ({ name: z.name.toLowerCase(), zone: z })),
+  const rows = [
+    ...s.domains.map((d) => ({ name: d.name, domain: d as MailDomain | undefined, zone: zones?.find((z) => z.name.toLowerCase() === d.name) })),
+    ...(zones ?? []).filter((z) => !onMail.has(z.name.toLowerCase())).map((z) => ({ name: z.name.toLowerCase(), domain: undefined, zone: z as Zone | undefined })),
   ];
-
-  const turnOn = (z: Zone) => {
-    if (!s.on) return setStarting(z);
-    act(() => api.addMailDomain({ zone_id: z.id }), `Mail is on for ${z.name}`);
-  };
-  const turnOff = (d: MailDomain) => act(() => api.removeMailDomain(d.name), `Mail is off for ${d.name}`);
-
+  const turnOn = (z: Zone) => (s.on ? act(() => api.addMailDomain({ zone_id: z.id }), `Mail is on for ${z.name}`) : setStarting(z));
   const newMenu: MenuAction[] = s.on && runs.length > 0 ? [
-    { label: "Mailbox", icon: "person", hint: "An address with its own password", onClick: () => setOpen("mailbox") },
-    ...(state.accounts.length ? [{ label: "Alias", icon: "call_split" as IconName, hint: "Another address, delivered to a mailbox", onClick: () => setOpen("alias") }] : []),
+    { label: "Mailbox", icon: "person", hint: "An address with its own password", onClick: () => setDialog("mailbox") },
+    ...(state.accounts.length ? [{ label: "Alias", icon: "call_split" as IconName, hint: "Another address, delivered to a mailbox", onClick: () => setDialog("alias") }] : []),
   ] : [];
-  const none = state.accounts.length === 0 && state.aliases.length === 0;
+  const TABS: [Tab, string, number | null][] = [
+    ["mailboxes", "Mailboxes", state.accounts.length],
+    ["aliases", "Aliases", state.aliases.length],
+    ["domains", "Domains", s.domains.length],
+    ["activity", "Activity", null],
+  ];
 
   return (
     <>
@@ -124,13 +122,11 @@ export function MailPage() {
           <h1>Mail</h1>
           <div className="page-sub">
             <span className="mail-state"><span className={"dot " + tone} />{said}</span>
-            {s.on && <span><b>{state.accounts.length}</b> {state.accounts.length === 1 ? "mailbox" : "mailboxes"}</span>}
             {state.queued > 0 && <span><b>{state.queued}</b> waiting to send</span>}
           </div>
         </div>
         <div className="page-actions">
-          {s.on && <button type="button" className="icon-btn" aria-label="Activity" title="Activity" onClick={() => setOpen("activity")}><Icon name="history" /></button>}
-          {s.on && manage && <button type="button" className="icon-btn" aria-label="Mail settings" title="Mail settings" onClick={() => setOpen("settings")}><Icon name="tune" /></button>}
+          {s.on && manage && <button type="button" className="icon-btn" aria-label="Mail settings" title="Mail settings" onClick={() => setDialog("settings")}><Icon name="tune" /></button>}
           {newMenu.length > 0 && <MoreMenu label="New" icon="add" actions={newMenu} />}
         </div>
       </div>
@@ -138,100 +134,197 @@ export function MailPage() {
       <div className="page-body stack">
         {state.job.running && <div className="mail-bar" aria-hidden><span style={{ width: `${percent}%` }} /></div>}
         {failed.length > 0 && (
-          <Card title="Setup did not finish" action={manage ? <button type="button" className="btn" onClick={() => act(api.rerunMail, "Setting up again")}><Icon name="refresh" size={18} />Run again</button> : undefined}>
-            {failed.map((x, i) => <Row key={i} title={<span className="mail-state"><span className="dot bad" />{x.name}</span>} sub={x.detail || undefined} />)}
-          </Card>
+          <Callout tone="bad" icon="error">
+            {failed.map((x) => x.name + (x.detail ? `: ${x.detail}` : "")).join(". ")}
+            {manage && <> <button type="button" className="link-btn" onClick={() => act(api.rerunMail, "Setting up again")}>Run again</button></>}
+          </Callout>
         )}
 
-        {s.on && (none ? (
-          <div className="welcome">
-            <Icon name="mail" size={48} />
-            {runs.length > 0 && <div className="welcome-actions"><button type="button" className="btn primary" onClick={() => setOpen("mailbox")}><Icon name="add" size={18} />New mailbox</button></div>}
-          </div>
+        <nav className="seg-tabs" aria-label="Mail">
+          {TABS.map(([key, label, count]) => (
+            <button key={key} type="button" className={current === key ? "on" : undefined} aria-pressed={current === key} onClick={() => setTab(key)}>
+              {label}{count !== null && <span className="count">{count}</span>}
+            </button>
+          ))}
+        </nav>
+
+        {current === "mailboxes" && (!s.on ? (
+          <Empty icon="mail" action={manage ? <button type="button" className="btn primary" onClick={() => setTab("domains")}>Turn on mail</button> : null} />
+        ) : state.accounts.length === 0 ? (
+          <Empty icon="person" action={runs.length > 0 ? <button type="button" className="btn primary" onClick={() => setDialog("mailbox")}><Icon name="add" size={18} />New mailbox</button> : null} />
         ) : (
-          <div className="card">
-            <ul className="results ct-list">
-              {state.accounts.map((a) => <MailboxRow key={a.address} account={a} runs={runs.includes(domainOf(a.address))} onState={setState} onPassword={() => setPassword(a.address)} />)}
-              {state.aliases.map((x) => <AliasRow key={x.alias} alias={x.alias} target={x.target} runs={runs.includes(domainOf(x.alias))} onState={setState} />)}
-            </ul>
-          </div>
+          <Table head={["Mailbox", "Messages", "Storage", "Mail apps", ""]}>
+            {state.accounts.map((a) => <MailboxRow key={a.address} account={a} runs={runs.includes(domainOf(a.address))} onState={setState} onPassword={() => setPassword(a.address)} />)}
+          </Table>
         ))}
 
-        {!ready ? (
-          <div className="welcome">
-            <Icon name="mail" size={48} />
-            <div className="welcome-actions"><button type="button" className="btn primary" onClick={() => cloudflare()}><Icon name="cloud" size={18} />Connect Cloudflare</button></div>
-          </div>
-        ) : manage && (
-          <section className="card">
-            <div className="card-head"><div className="card-titles"><h2>Domains</h2></div></div>
-            {zones === null ? <div className="repo-loading"><span className="spinner" /></div> : (
-              <ul className="results ct-list">
-                {rows.map((r) => (
-                  <DomainRow key={r.name} name={r.name} zone={r.zone} domain={r.domain} primary={s.domains[0]?.name === r.name}
-                    count={state.accounts.filter((a) => domainOf(a.address) === r.name).length}
-                    missing={records.find((x) => x.domain === r.name)?.records.filter((x) => !x.found).length ?? null}
-                    state={state} onState={setState} onTurnOn={turnOn} onTurnOff={turnOff} />
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
+        {current === "aliases" && (state.aliases.length === 0 ? (
+          <Empty icon="call_split" action={s.on && runs.length > 0 && state.accounts.length > 0 ? <button type="button" className="btn primary" onClick={() => setDialog("alias")}><Icon name="add" size={18} />New alias</button> : null} />
+        ) : (
+          <Table head={["Alias", "Delivered to", ""]}>
+            {state.aliases.map((x) => <AliasRow key={x.alias} alias={x.alias} target={x.target} runs={runs.includes(domainOf(x.alias))} onState={setState} />)}
+          </Table>
+        ))}
+
+        {current === "domains" && (!ready ? (
+          <Empty icon="cloud" action={<button type="button" className="btn primary" onClick={() => cloudflare()}>Connect Cloudflare</button>} />
+        ) : !manage ? (
+          <Table head={["Domain", ""]}>
+            {s.domains.map((d) => <tr key={d.name}><td><Name icon="public" tone="ok" title={d.name} /></td><td /></tr>)}
+          </Table>
+        ) : zones === null ? <div className="repo-loading"><span className="spinner" /></div> : (
+          <Table head={["Domain", "Mail", "Mailboxes", "DNS", ""]}>
+            {rows.map((r) => (
+              <DomainRow key={r.name} name={r.name} zone={r.zone} domain={r.domain} primary={s.domains[0]?.name === r.name}
+                count={state.accounts.filter((a) => domainOf(a.address) === r.name).length}
+                missing={records.find((x) => x.domain === r.name)?.records.filter((x) => !x.found).length ?? null}
+                last={s.domains.length === 1} state={state} onState={setState} onTurnOn={turnOn} />
+            ))}
+          </Table>
+        ))}
+
+        {current === "activity" && <Activity />}
       </div>
 
       {starting && <SetupDialog state={state} zone={starting} onClose={() => setStarting(null)} onDone={(next) => {
         setState(next);
         setStarting(null);
+        setTab("mailboxes");
       }} />}
-      {open === "settings" && <SettingsDialog state={state} onState={setState} onClose={() => setOpen(null)} />}
-      {open === "activity" && <ActivityDialog onClose={() => setOpen(null)} />}
-      {open === "mailbox" && <NewMailbox domains={runs} onClose={() => setOpen(null)}
+      {dialog === "settings" && <SettingsDialog state={state} onState={setState} onClose={() => setDialog(null)} />}
+      {dialog === "mailbox" && <NewMailbox domains={runs} onClose={() => setDialog(null)}
         onSave={(address, name, pass) => act(() => api.addMailAccount({ address, name, password: pass }), `Added ${address}`)} />}
-      {open === "alias" && <NewAlias domains={runs} accounts={state.accounts.filter((a) => runs.includes(domainOf(a.address))).map((a) => a.address)} onClose={() => setOpen(null)}
-        onSave={(from, to) => act(() => api.setMailAlias(from, to), `${from} goes to ${to}`)} />}
+      {dialog === "alias" && <NewAlias domains={runs} accounts={state.accounts.filter((a) => runs.includes(domainOf(a.address))).map((a) => a.address)}
+        onClose={() => setDialog(null)} onSave={(from, to) => act(() => api.setMailAlias(from, to), `${from} goes to ${to}`)} />}
       {password && <NewPassword address={password} onClose={() => setPassword(null)}
         onSave={(address, pass) => act(() => api.editMailAccount(address, { password: pass }), "Password changed")} />}
     </>
   );
 }
 
-// ---- domains ----
+// ---- the parts every tab is made of ----
 
-// DomainRow is one Cloudflare domain: whether mail runs on it, how many
-// mailboxes it has and whether its DNS is in place, its switch, and for a
-// mail domain a menu.
-function DomainRow({ name, zone, domain, primary, count, missing, state, onState, onTurnOn, onTurnOff }: {
-  name: string; zone?: Zone; domain?: MailDomain; primary: boolean; count: number; missing: number | null;
-  state: MailState; onState: (s: MailState) => void; onTurnOn: (z: Zone) => void; onTurnOff: (d: MailDomain) => void;
+function Table({ head, children }: { head: string[]; children: ReactNode }) {
+  return (
+    <div className="card svc-card">
+      <div className="table-wrap">
+        <table className="table svc">
+          <thead><tr>{head.map((h, i) => <th key={i} className={i === 0 ? "grow" : h === "Messages" || h === "Storage" || h === "Mailboxes" ? "svc-num" : undefined}>{h}</th>)}</tr></thead>
+          <tbody>{children}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function Name({ icon, tone, title, sub, avatar }: { icon?: IconName; tone?: string; title: string; sub?: string; avatar?: string }) {
+  return (
+    <span className="svc-name">
+      {avatar !== undefined ? <Avatar name={avatar} /> : <span className={"svc-icon " + (tone ?? "")}><Icon name={icon ?? "mail"} size={18} /></span>}
+      <span className="svc-text"><b>{title}</b>{sub && <small className="plain">{sub}</small>}</span>
+    </span>
+  );
+}
+
+function Empty({ icon, action }: { icon: IconName; action: ReactNode }) {
+  return (
+    <div className="welcome">
+      <Icon name={icon} size={48} />
+      {action && <div className="welcome-actions">{action}</div>}
+    </div>
+  );
+}
+
+// ---- rows ----
+
+function MailboxRow({ account: a, runs, onState, onPassword }: { account: MailAccount; runs: boolean; onState: (s: MailState) => void; onPassword: () => void }) {
+  const act = useAct(onState);
+  const menu: MenuAction[] = [
+    { label: "Change password", icon: "password", onClick: onPassword },
+    a.apps
+      ? { label: "Turn mail apps off", icon: "block", hint: "IMAP and SMTP refuse it; mail still arrives", onClick: () => act(() => api.editMailAccount(a.address, { apps: false }), "Mail apps are off for it") }
+      : { label: "Turn mail apps on", icon: "check_circle", hint: "It can sign in to IMAP and SMTP again", onClick: () => act(() => api.editMailAccount(a.address, { apps: true }), "Mail apps are on for it") },
+    { label: "Remove", icon: "delete", danger: true, confirm: "Remove with its mail", onClick: () => act(() => api.removeMailAccount(a.address), `Removed ${a.address}`) },
+  ];
+  return (
+    <tr>
+      <td><Name avatar={a.name || a.address} title={a.address} sub={a.name || undefined} /></td>
+      <td className="svc-num">{a.messages.toLocaleString()}</td>
+      <td className="svc-num">{bytes(a.size)}</td>
+      <td><span className={"chip " + (a.apps ? "ok" : "")}><span className={"dot " + (a.apps ? "ok" : "")} />{a.apps ? "On" : "Off"}</span></td>
+      <td className="svc-menu">{runs && <MoreMenu label={`Actions for ${a.address}`} actions={menu} />}</td>
+    </tr>
+  );
+}
+
+function AliasRow({ alias, target, runs, onState }: { alias: string; target: string; runs: boolean; onState: (s: MailState) => void }) {
+  const act = useAct(onState);
+  return (
+    <tr>
+      <td><Name icon="call_split" title={alias.startsWith("@") ? `Everything at ${alias.slice(1)}` : alias} /></td>
+      <td><span className="svc-address"><span className="mono">{target}</span></span></td>
+      <td className="svc-menu">{runs && <MoreMenu label={`Actions for ${alias}`} actions={[{ label: "Remove", icon: "delete", danger: true, onClick: () => act(() => api.removeMailAlias(alias), `Removed ${alias}`) }]} />}</td>
+    </tr>
+  );
+}
+
+function DomainRow({ name, zone, domain, primary, count, missing, last, state, onState, onTurnOn }: {
+  name: string; zone?: Zone; domain?: MailDomain; primary: boolean; count: number; missing: number | null; last: boolean;
+  state: MailState; onState: (s: MailState) => void; onTurnOn: (z: Zone) => void;
 }) {
   const act = useAct(onState);
   const [managing, setManaging] = useState(false);
   const on = !!domain;
-  const tone = !on ? "" : missing === null ? "" : missing ? "warn" : "ok";
-  const sub = !on ? "No mail" : [
-    plural(count, "mailbox", "mailboxes"),
-    missing === null ? "Checking DNS" : missing ? `${plural(missing, "record")} missing` : "DNS ready",
-    primary ? "Primary" : "",
-  ].filter(Boolean).join(" · ");
+  const dns: [string, string] = !on ? ["", ""] : missing === null ? ["Checking", ""] : missing ? [`${missing} missing`, "warn"] : ["Ready", "ok"];
   const menu: MenuAction[] = domain ? [
     ...(!primary ? [{ label: "Make primary", icon: "star" as IconName, hint: "The mail server is named after it", onClick: () => act(() => api.editMailDomain(domain.name, { primary: true }), `${domain.name} is the primary domain`) }] : []),
     { label: "Managers", icon: "group", onClick: () => setManaging(true) },
   ] : [];
-  // The primary domain goes last, when it is the only one left.
-  const locked = on && primary && state.settings.domains.length > 1;
   return (
-    <li className="ct-row">
-      <div className="ct-row-main">
-        <span className={"ct-kind " + tone}><Icon name="public" /></span>
-        <span className="ct-name-text"><b>{name}</b><small>{sub}</small></span>
-        <Switch label={`Mail on ${name}`} on={on} disabled={locked || (!on && !zone)}
-          onChange={(v) => (v ? zone && onTurnOn(zone) : domain && onTurnOff(domain))} />
-      </div>
-      <span className="ct-menu">{menu.length > 0 && <MoreMenu label={`Actions for ${name}`} actions={menu} />}</span>
-      {managing && domain && <ManagersDialog domain={domain} state={state} onState={onState} onClose={() => setManaging(false)} />}
-    </li>
+    <tr className={on ? undefined : "svc-down"}>
+      <td><Name icon="public" tone={on ? "ok" : ""} title={name} sub={primary ? "Primary" : undefined} /></td>
+      <td>
+        <Switch label={`Mail on ${name}`} on={on} disabled={(on && primary && !last) || (!on && !zone)}
+          onChange={(v) => (v ? zone && onTurnOn(zone) : domain && act(() => api.removeMailDomain(domain.name), `Mail is off for ${domain.name}`))} />
+      </td>
+      <td className="svc-num">{on ? count : ""}</td>
+      <td>{dns[0] && <span className={"chip " + dns[1]}><span className={"dot " + dns[1]} />{dns[0]}</span>}</td>
+      <td className="svc-menu">
+        {menu.length > 0 && <MoreMenu label={`Actions for ${name}`} actions={menu} />}
+        {managing && domain && <ManagersDialog domain={domain} state={state} onState={onState} onClose={() => setManaging(false)} />}
+      </td>
+    </tr>
   );
 }
+
+// ---- activity ----
+
+function Activity() {
+  const [log, setLog] = useState<MailLog[] | null>(null);
+  useEffect(() => {
+    const load = () => api.mailLog().then(setLog).catch(() => setLog([]));
+    load();
+    const t = setInterval(load, 10_000);
+    return () => clearInterval(t);
+  }, []);
+  if (!log) return <div className="repo-loading"><span className="spinner" /></div>;
+  if (log.length === 0) return <Empty icon="history" action={null} />;
+  return (
+    <Table head={["Message", "Outcome", "When"]}>
+      {log.map((e, i) => (
+        <tr key={i}>
+          <td>
+            <Name icon={e.dir === "in" ? "download" : "upload"} title={e.dir === "in" ? e.to : e.from || "<>"} sub={e.dir === "in" ? `from ${e.from || "<>"}` : `to ${e.to}`} />
+          </td>
+          <td title={e.detail || undefined}><span className={"chip " + (OUTCOME[e.status] ?? "")}><span className={"dot " + (OUTCOME[e.status] ?? "")} />{e.status}</span></td>
+          <td className="svc-num">{new Date(e.at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+        </tr>
+      ))}
+    </Table>
+  );
+}
+
+// ---- dialogs ----
 
 function ManagersDialog({ domain, state, onState, onClose }: { domain: MailDomain; state: MailState; onState: (s: MailState) => void; onClose: () => void }) {
   const act = useAct(onState);
@@ -260,10 +353,8 @@ function ManagersDialog({ domain, state, onState, onClose }: { domain: MailDomai
   );
 }
 
-// ---- how mail moves ----
-
-// Ways is how mail arrives, how mail apps reach it and how it leaves, a
-// dropdown each, with the relay's server when mail leaves through one.
+// How mail arrives, how mail apps reach it and how it leaves, a dropdown
+// each, with the relay's server when mail leaves through one.
 function useWays(state: MailState) {
   const s = state.settings;
   const needs = useContext(NeedsContext);
@@ -275,15 +366,15 @@ function useWays(state: MailState) {
   const [security, setSecurity] = useState(s.relay?.security ?? "starttls");
   const [username, setUsername] = useState(s.relay?.username ?? "");
   const [password, setPassword] = useState("");
-  const relayOk = send !== "relay" || (!!host.trim() && Number(port) > 0 && (!!password || !!s.relay?.password_set || !username.trim()));
+  const ok = send !== "relay" || (!!host.trim() && Number(port) > 0 && (!!password || !!s.relay?.password_set || !username.trim()));
   const appWays = APPS.map((o) => (o.value === "tailscale" && needs && !needs.tailscale ? { ...o, disabled: true, hint: "Install Tailscale from Apps first" } : o));
   const fields = (
     <>
-      <Row title="Mail arrives" sub={RECEIVE.find((o) => o.value === receive)?.hint}><Dropdown label="Mail arrives" value={receive} options={RECEIVE} onChange={setReceive} /></Row>
-      <Row title="Mail apps connect" sub={APPS.find((o) => o.value === apps)?.hint}><Dropdown label="Mail apps connect" value={apps} options={appWays} onChange={setApps} /></Row>
-      <Row title="Mail leaves" sub={SEND.find((o) => o.value === send)?.hint}><Dropdown label="Mail leaves" value={send} options={SEND} onChange={setSend} /></Row>
+      <Row title="Mail arrives"><Dropdown label="Mail arrives" value={receive} options={RECEIVE} onChange={setReceive} /></Row>
+      <Row title="Mail apps connect"><Dropdown label="Mail apps connect" value={apps} options={appWays} onChange={setApps} /></Row>
+      <Row title="Mail leaves"><Dropdown label="Mail leaves" value={send} options={SEND} onChange={setSend} /></Row>
       {send === "relay" && (
-        <div className="wizard-fields">
+        <div className="wizard-fields card-pad">
           <TextField className="span" label="Relay server" mono autoComplete="off" placeholder="smtp.example.com" value={host} onChange={setHost} />
           <TextField label="Port" mono inputMode="numeric" value={port} onChange={(v) => setPort(v.replace(/\D/g, "").slice(0, 5))} />
           <div className="tf static">
@@ -303,10 +394,9 @@ function useWays(state: MailState) {
     zone_id, domain: null, receive, apps, send,
     relay: send === "relay" ? { host: host.trim(), port: Number(port), security, username: username.trim(), password: password || null } : null,
   });
-  return { fields, ok: relayOk, body };
+  return { fields, ok, body };
 }
 
-// SetupDialog turns mail on, for the first time, on the domain picked.
 function SetupDialog({ state, zone, onClose, onDone }: { state: MailState; zone: Zone; onClose: () => void; onDone: (s: MailState) => void }) {
   const notify = useNotify();
   const ways = useWays(state);
@@ -322,21 +412,17 @@ function SetupDialog({ state, zone, onClose, onDone }: { state: MailState; zone:
   };
   return (
     <Dialog title={`Mail on ${zone.name}`} wide onClose={onClose}>
-      <div className="stack">
-        {ways.fields}
-        <div className="edit-actions">
-          <button type="button" className="btn text" onClick={onClose}>Cancel</button>
-          <button type="button" className="btn primary" disabled={!ways.ok || busy} onClick={submit}>
-            {busy ? <span className="spinner small on-accent" /> : <Icon name="check" size={18} />}Turn on mail
-          </button>
-        </div>
+      <Card title="How mail moves">{ways.fields}</Card>
+      <div className="edit-actions">
+        <button type="button" className="btn text" onClick={onClose}>Cancel</button>
+        <button type="button" className="btn primary" disabled={!ways.ok || busy} onClick={submit}>
+          {busy && <span className="spinner small on-accent" />}Turn on mail
+        </button>
       </div>
     </Dialog>
   );
 }
 
-// SettingsDialog is the mail server: how mail moves, where mail apps sign
-// in, what it does with incoming mail, and setting it up again or off.
 function SettingsDialog({ state, onState, onClose }: { state: MailState; onState: (s: MailState) => void; onClose: () => void }) {
   const act = useAct(onState);
   const ways = useWays(state);
@@ -347,13 +433,13 @@ function SettingsDialog({ state, onState, onClose }: { state: MailState; onState
         <Card title="How mail moves" action={<button type="button" className="btn" disabled={!ways.ok || state.job.running} onClick={() => act(() => api.setupMail(ways.body(null)), "Applying")}>Apply</button>}>
           {ways.fields}
         </Card>
-        <Card title="Mail apps sign in" sub="In Outlook, Apple Mail or any app with IMAP, with the full address and its password">
+        <Card title="Mail apps sign in" sub="With the full address and its password">
           {state.servers ? (
             <>
               <Row title="IMAP"><Copy text={`${state.servers.imap_host}:${state.servers.imap_port}`} /></Row>
               <Row title="SMTP"><Copy text={`${state.servers.smtp_host}:${state.servers.smtp_port}`} /></Row>
             </>
-          ) : <Row title="Waiting for Tailscale" sub="Mail apps reach it once Tailscale is connected" />}
+          ) : <Row title="Waiting for Tailscale" />}
         </Card>
         <Card title="Incoming mail">
           <Row title="Refuse spoofed mail" sub="Turn away what its sender's DMARC rejects, rather than file it in Junk">
@@ -367,7 +453,7 @@ function SettingsDialog({ state, onState, onClose }: { state: MailState; onState
           <Row title="Set up again" sub="Opens the ports and writes the records once more">
             <button type="button" className="btn" disabled={state.job.running} onClick={() => act(api.rerunMail, "Setting up again")}><Icon name="refresh" size={18} />Run</button>
           </Row>
-          <Row title="Turn off" sub="Stops mail and closes its ports; mailboxes and mail are kept">
+          <Row title="Turn off" sub="Mailboxes and mail are kept">
             <ArmedButton icon="block" label="Turn off" armedLabel="Close its ports" onConfirm={async () => {
               if (await act(api.mailOff, "Mail is off")) onClose();
             }} />
@@ -378,86 +464,7 @@ function SettingsDialog({ state, onState, onClose }: { state: MailState; onState
   );
 }
 
-// ---- activity ----
-
-const TONE: Record<string, string> = { delivered: "ok", sent: "ok", junk: "warn", queued: "", rejected: "bad", failed: "bad", bounced: "bad" };
-
-function ActivityDialog({ onClose }: { onClose: () => void }) {
-  const [log, setLog] = useState<MailLog[] | null>(null);
-  useEffect(() => {
-    const load = () => api.mailLog().then(setLog).catch(() => {});
-    load();
-    const t = setInterval(load, 10_000);
-    return () => clearInterval(t);
-  }, []);
-  return (
-    <Dialog title="Activity" wide onClose={onClose}>
-      {!log ? <div className="repo-loading"><span className="spinner" /></div> : log.length === 0 ? (
-        <div className="welcome"><Icon name="history" size={48} /></div>
-      ) : (
-        <div className="table-wrap">
-          <table className="table">
-            <thead><tr><th>Time</th><th /><th>From</th><th>To</th><th className="grow">Outcome</th></tr></thead>
-            <tbody>
-              {log.map((e, i) => (
-                <tr key={i}>
-                  <td className="log-time">{new Date(e.at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
-                  <td title={e.dir === "in" ? "Received" : "Sent"}><Icon name={e.dir === "in" ? "download" : "upload"} size={18} /></td>
-                  <td className="mono">{e.from || "<>"}</td>
-                  <td className="mono">{e.to}</td>
-                  <td><span className="log-event"><span className={"dot " + (TONE[e.status] ?? "")} />{e.status}{e.detail ? `: ${e.detail}` : ""}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Dialog>
-  );
-}
-
-// ---- mailboxes ----
-
-function MailboxRow({ account: a, runs, onState, onPassword }: { account: MailAccount; runs: boolean; onState: (s: MailState) => void; onPassword: () => void }) {
-  const act = useAct(onState);
-  const actions: MenuAction[] = [
-    { label: "Change password", icon: "password", onClick: onPassword },
-    a.apps
-      ? { label: "Turn mail apps off", icon: "block", hint: "IMAP and SMTP refuse it; mail still arrives", onClick: () => act(() => api.editMailAccount(a.address, { apps: false }), "Mail apps are off for it") }
-      : { label: "Turn mail apps on", icon: "check_circle", hint: "It can sign in to IMAP and SMTP again", onClick: () => act(() => api.editMailAccount(a.address, { apps: true }), "Mail apps are on for it") },
-    { label: "Remove", icon: "delete", danger: true, confirm: "Remove with its mail", onClick: () => act(() => api.removeMailAccount(a.address), `Removed ${a.address}`) },
-  ];
-  return (
-    <li className="ct-row">
-      <div className="ct-row-main">
-        <Avatar name={a.name || a.address} />
-        <span className="ct-name-text">
-          <b>{a.address}{!a.apps && <span className="chip warn">Mail apps off</span>}</b>
-          <small>{[a.name, plural(a.messages, "message"), bytes(a.size)].filter(Boolean).join(" · ")}</small>
-        </span>
-      </div>
-      {runs && <span className="ct-menu"><MoreMenu label={`Actions for ${a.address}`} actions={actions} /></span>}
-    </li>
-  );
-}
-
-function AliasRow({ alias, target, runs, onState }: { alias: string; target: string; runs: boolean; onState: (s: MailState) => void }) {
-  const act = useAct(onState);
-  return (
-    <li className="ct-row">
-      <div className="ct-row-main">
-        <span className="ct-kind"><Icon name="call_split" /></span>
-        <span className="ct-name-text">
-          <b>{alias.startsWith("@") ? `Everything else at ${alias.slice(1)}` : alias}</b>
-          <small>To {target}</small>
-        </span>
-      </div>
-      {runs && <span className="ct-menu"><MoreMenu label={`Actions for ${alias}`} actions={[{ label: "Remove", icon: "delete", danger: true, onClick: () => act(() => api.removeMailAlias(alias), `Removed ${alias}`) }]} /></span>}
-    </li>
-  );
-}
-
-// Address is the part before the @ typed, the domain picked beside it.
+// The part before the @ typed, the domain picked beside it.
 function Address({ domains, local, domain, onLocal, onDomain, hint }: {
   domains: string[]; local: string; domain: string; onLocal: (v: string) => void; onDomain: (v: string) => void; hint?: string;
 }) {
@@ -485,13 +492,13 @@ function NewMailbox({ domains, onClose, onSave }: { domains: string[]; onClose: 
   };
   return (
     <Dialog title="New mailbox" onClose={onClose}>
-      <form className="stack" onSubmit={submit}>
+      <form onSubmit={submit}>
         <Address domains={domains} local={local} domain={domain} onLocal={setLocal} onDomain={setDomain} />
         <TextField label="Name" autoComplete="off" value={name} onChange={setName} hint="Shown as who mail is from" />
         <TextField label="Password" type="password" autoComplete="new-password" data-1p-ignore value={pass} onChange={setPass} />
         <div className="edit-actions">
           <button type="button" className="btn text" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!local.trim() || !domain || !pass}>Add</button>
+          <button className="btn primary" disabled={!local.trim() || !domain || !pass}>Add mailbox</button>
         </div>
       </form>
     </Dialog>
@@ -508,9 +515,9 @@ function NewAlias({ domains, accounts, onClose, onSave }: { domains: string[]; a
   };
   return (
     <Dialog title="New alias" onClose={onClose}>
-      <form className="stack" onSubmit={submit}>
+      <form onSubmit={submit}>
         <Address domains={domains} local={local} domain={domain} onLocal={setLocal} onDomain={setDomain}
-          hint={local.trim() ? undefined : "Empty for everything else at the domain"} />
+          hint={local.trim() ? undefined : "Empty for everything at the domain"} />
         <div className="tf static">
           <div className="tf-box">
             <Dropdown label="Delivered to" value={target} onChange={setTarget} options={accounts.map((a) => ({ value: a, label: a }))} />
@@ -519,7 +526,7 @@ function NewAlias({ domains, accounts, onClose, onSave }: { domains: string[]; a
         </div>
         <div className="edit-actions">
           <button type="button" className="btn text" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!target || !domain}>Add</button>
+          <button className="btn primary" disabled={!target || !domain}>Add alias</button>
         </div>
       </form>
     </Dialog>
@@ -530,7 +537,7 @@ function NewPassword({ address, onClose, onSave }: { address: string; onClose: (
   const [pass, setPass] = useState("");
   return (
     <Dialog title={`Password for ${address}`} onClose={onClose}>
-      <form className="stack" onSubmit={async (e) => {
+      <form onSubmit={async (e) => {
         e.preventDefault();
         if (await onSave(address, pass)) onClose();
       }}>

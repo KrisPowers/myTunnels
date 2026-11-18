@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ago, api, bytes, message, shortId, type Device, type Flag, type Hardware, type Health, type HwPart, type HwSnapshot, type Metrics, type User } from "./api";
+import { api, bytes, message, type Hardware, type Health, type HwPart, type HwSnapshot, type Metrics } from "./api";
 import { Chart, Meter, Spark } from "./charts";
 import { Icon } from "./Icon";
-import { useCan, useMe } from "./me";
+import { useMe } from "./me";
 import { Dialog, useNotify } from "./ui";
 
 // Chart colours, in a fixed order: blue, violet, orange.
@@ -18,10 +18,11 @@ const dot = (h?: Health) => "dot" + (h === "ok" || failing(h) ? " " + h : "");
 
 // DashboardPage is the host the way UniFi shows a console: a column of its
 // facts on the left, under each part by its health, and on the right a chart
-// of the last five minutes over its storage. Advanced adds
-// the sensors (temperatures, fans, voltages, drive wear), turned on once by
-// the host or an admin, since on Windows they need administrator rights.
-export function DashboardPage({ flags, users, devices, onChanged }: { flags: Flag[]; users: User[]; devices: Device[]; onChanged: () => Promise<void> }) {
+// of the last five minutes over its storage. Advanced adds the sensors
+// (temperatures, fans, voltages, drive wear), turned on once by the host or an
+// admin, since on Windows they need administrator rights. What needs
+// attention is in the header's alerts, not here.
+export function DashboardPage() {
   const me = useMe();
   const admin = me.admin || me.host;
   const notify = useNotify();
@@ -77,22 +78,6 @@ export function DashboardPage({ flags, users, devices, onChanged }: { flags: Fla
       setBusy(false);
     }
   };
-  const forget = async (slot: string) => {
-    try {
-      setHw(await api.forgetSlot(slot));
-    } catch (e) {
-      notify(message(e), "bad");
-    }
-  };
-
-  const dismiss = async (id: string) => {
-    try {
-      setHw(await api.dismissNote(id));
-    } catch (e) {
-      notify(message(e), "bad");
-    }
-  };
-
   const snap = hw?.snapshot ?? null;
   const windows = hw?.platform === "windows";
   return (
@@ -111,16 +96,14 @@ export function DashboardPage({ flags, users, devices, onChanged }: { flags: Fla
         </Dialog>
       )}
       {problem && <div className="callout bad"><Icon name="error" /><span>{problem}</span></div>}
-      {advanced && snap && <Setup snap={snap} />}
       {m && m.history.length > 0 && (
         <div className="dash">
-          <Side m={m} snap={snap} advanced={advanced} admin={admin} onForget={forget} onDismiss={dismiss} toggle={admin && hw && (
+          <Side m={m} snap={snap} advanced={advanced} toggle={admin && hw && (
             <button type="button" className={"icon-btn" + (advanced ? " lit" : "")} aria-label="Advanced" title="Advanced" aria-pressed={advanced} disabled={busy} onClick={() => setAsking(true)}>
               {busy ? <span className="spinner small" /> : <Icon name={windows ? "shield" : "tune"} size={20} />}
             </button>
           )} />
           <div className="dash-main">
-            {flags.length > 0 && <NewDevices flags={flags} users={users} devices={devices} onChanged={onChanged} />}
             <Trend m={m} advanced={advanced} />
             <Storage m={m} drives={snap?.parts.filter((p) => p.kind === "drive") ?? []} advanced={advanced} />
           </div>
@@ -156,7 +139,7 @@ function Rows({ items }: { items: Fact[] }) {
   );
 }
 
-function Side({ m, snap, advanced, admin, onForget, onDismiss, toggle }: { m: Metrics; snap: HwSnapshot | null; advanced: boolean; admin: boolean; onForget: (slot: string) => void; onDismiss: (id: string) => void; toggle: ReactNode }) {
+function Side({ m, snap, advanced, toggle }: { m: Metrics; snap: HwSnapshot | null; advanced: boolean; toggle: ReactNode }) {
   const parts = snap?.parts ?? [];
   const of = (kind: string) => parts.filter((p) => p.kind === kind);
   const cpu = of("cpu")[0];
@@ -164,34 +147,15 @@ function Side({ m, snap, advanced, admin, onForget, onDismiss, toggle }: { m: Me
   const power = of("power")[0];
   const fans = of("fan").filter((f) => f.health !== "empty");
   const gpus = of("gpu").filter((g) => g.readings.some((r) => r.unit !== "°C") || fact(g, "Memory"));
-  const attention = [...parts, ...(snap?.notes ?? [])].filter((p) => failing(p.health));
-  const status: Health = attention.some((p) => p.health === "bad") ? "bad" : attention.length ? "warn" : "ok";
   const temp = reading(cpu, "Temperature");
   return (
     <aside className="dash-side">
       <div className="side-head">
         <h1 className="side-name">{owned(m.host.name)}</h1>
-        <a className="icon-btn" href="#/console" aria-label="Console" title="Console, at a glance"><Icon name="monitor" size={20} /></a>
         {toggle}
       </div>
       <Bays parts={parts} />
-      {attention.length > 0 && (
-        <div className="side-notes">
-          {attention.map((p) => (
-            <p key={p.id} data-health={p.health}>
-              {p.id.startsWith("note:") ? p.name : p.reason}
-              {admin && p.kind === "memory" && p.health === "bad" && !p.bytes && p.place && (
-                <button type="button" className="link-btn" onClick={() => onForget(p.place)}>Taken out</button>
-              )}
-              {admin && p.id.startsWith("note:") && (
-                <button type="button" className="link-btn" onClick={() => onDismiss(p.id)}>Dismiss</button>
-              )}
-            </p>
-          ))}
-        </div>
-      )}
       <Rows items={[
-        ["Status", attention.length ? `${attention.length} need${attention.length === 1 ? "s" : ""} attention` : "Online", status],
         ["Platform", m.host.os],
         ["Processor", m.host.cpu],
         ["Cores", m.host.cores && m.host.cores !== m.host.threads ? `${m.host.cores} cores, ${m.host.threads} threads` : `${m.host.threads} threads`],
@@ -424,71 +388,6 @@ function Storage({ m, drives, advanced }: { m: Metrics; drives: HwPart[]; advanc
       )}
     </Section>
   );
-}
-
-// NewDevices is each sign-in from a device new to its account, until someone
-// dismisses it.
-function NewDevices({ flags, users, devices, onChanged }: { flags: Flag[]; users: User[]; devices: Device[]; onChanged: () => Promise<void> }) {
-  const can = useCan();
-  const notify = useNotify();
-  const dismiss = async (id: number) => {
-    try {
-      await api.clearFlag(id);
-      await onChanged();
-    } catch (e) {
-      notify(message(e), "bad");
-    }
-  };
-  return (
-    <Section title="New Devices" now={`${flags.length} sign-in${flags.length === 1 ? "" : "s"}`}>
-      <div className="table-wrap">
-        <table className="table">
-          <thead><tr><th className="grow">Account</th><th>Device</th><th>From</th><th>When</th>{can("users.manage") && <th />}</tr></thead>
-          <tbody>
-            {flags.map((f) => {
-              const u = users.find((x) => x.id === f.user_id);
-              const d = devices.find((x) => x.id === f.device_id);
-              return (
-                <tr key={f.id}>
-                  <td className="name-cell"><a href={`#/users/${f.user_id}`}>{u ? u.name || u.username : "Removed account"}</a>{u && <small>{u.email}</small>}</td>
-                  <td>{f.device_id ? <a className="mono" href={`#/devices/${f.device_id}`}>{d?.name || shortId(f.device_id)}</a> : "Unknown"}</td>
-                  <td>{[f.ip, f.country].filter(Boolean).join(", ") || "Unknown"}</td>
-                  <td>{ago(f.at)}</td>
-                  {can("users.manage") && <td className="num"><button type="button" className="btn small" onClick={() => dismiss(f.id)}>Dismiss</button></td>}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </Section>
-  );
-}
-
-// Setup is the Windows sensor task while it is not simply running: waiting
-// for the prompt, its step and percent, or why it stopped.
-function Setup({ snap }: { snap: HwSnapshot }) {
-  const why = snap.helper_error && <> {snap.helper_error}</>;
-  switch (snap.helper) {
-    case "waiting":
-      return <div className="callout held"><span className="spinner small" /><span>Waiting for the Windows prompt on this computer's screen to be approved.</span></div>;
-    case "installing":
-      return (
-        <div className="callout held setup-progress">
-          <span className="spinner small" />
-          <span>{snap.helper_step || "Setting up the sensor task"} · {snap.helper_percent ?? 0}%</span>
-          <span className="setup-bar" style={{ width: `${snap.helper_percent ?? 0}%` }} aria-hidden />
-        </div>
-      );
-    case "starting":
-      return <div className="callout held"><span className="spinner small" /><span>Starting the sensor task. Its first readings arrive within a minute.{why}</span></div>;
-    case "missing":
-      return <div className="callout warn held"><Icon name="warning" /><span>The sensor task is not installed. Turn Advanced off and on again to set it up.{why}</span></div>;
-    case "stale":
-      return <div className="callout bad held"><Icon name="error" /><span>The sensor task stopped sending readings; Windows starts it again within a minute.{why}</span></div>;
-    default:
-      return null;
-  }
 }
 
 function Legend({ items }: { items: [string, string][] }) {

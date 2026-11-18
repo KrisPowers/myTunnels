@@ -49,10 +49,10 @@ const CONTENT: Record<string, ReactNode> = {
   mail: (
     <>
       <Doc title="Mail on your domains">
-        <p>Mail runs on this computer: it receives mail, keeps each mailbox here, and sends mail signed with DKIM. Outlook, Gmail, Apple Mail, Thunderbird and phones read and send it over IMAP and SMTP. Every domain on the connected Cloudflare account is listed under <b>Domains</b> already; its switch puts mail on it, and the records mail needs are written to its DNS. The first switch asks how mail moves and turns the mail server on.</p>
+        <p>Mail runs on this computer: it receives mail, keeps each mailbox here, and sends mail signed with DKIM. Outlook, Gmail, Apple Mail, Thunderbird and phones read and send it over IMAP and SMTP. Every domain on the connected Cloudflare account is listed on the <b>Domains</b> tab already; its switch puts mail on it, and the records mail needs are written to its DNS. The first switch asks how mail moves and turns the mail server on.</p>
       </Doc>
       <Doc title="Mailboxes">
-        <p>The page lists every mailbox and alias. The plus adds a <b>Mailbox</b> (an address, a name and a password; mail apps sign in with the full address) or an <b>Alias</b>, another address, or a whole domain with the address left empty, delivered to a mailbox. A mailbox's menu changes its password, turns mail apps off for it while its mail still arrives, or removes it with its mail. Mail for <code>postmaster</code> and <code>abuse</code> goes to the first mailbox.</p>
+        <p>Four tabs: <b>Mailboxes</b>, <b>Aliases</b>, <b>Domains</b> and <b>Activity</b>, a table each. The plus adds a <b>Mailbox</b> (an address, a name and a password; mail apps sign in with the full address) or an <b>Alias</b>, another address, or a whole domain with the address left empty, delivered to a mailbox. A mailbox's menu changes its password, turns mail apps off for it while its mail still arrives, or removes it with its mail. Mail for <code>postmaster</code> and <code>abuse</code> goes to the first mailbox.</p>
       </Doc>
       <Doc title="How mail moves">
         <p>Three choices, in <b>Mail settings</b> (the dial beside the plus):</p>
@@ -64,7 +64,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>The same dialog shows where mail apps sign in, the switches for incoming mail, <b>Set up again</b> and <b>Turn off</b>. The ports mail opens are rows on <b>Services</b>, named <b>Mail</b>. A domain's menu makes it <b>primary</b> (the mail server is named after it) or gives it <b>Managers</b>, accounts that run its mailboxes without setting mail up.</p>
       </Doc>
       <Doc title="Checks on mail that comes in">
-        <p>Each message is checked with SPF, DKIM and DMARC. Mail that fails, or claims to be from your own domains without proof, goes to Junk; <b>Refuse spoofed mail</b> turns away mail whose sender's policy says reject. Attachments that can run code are marked <code>$Risky</code>, newsletters <code>$Marketing</code>. <b>Activity</b>, the clock beside the dial, lists what came in and went out.</p>
+        <p>Each message is checked with SPF, DKIM and DMARC. Mail that fails, or claims to be from your own domains without proof, goes to Junk; <b>Refuse spoofed mail</b> turns away mail whose sender's policy says reject. Attachments that can run code are marked <code>$Risky</code>, newsletters <code>$Marketing</code>. The <b>Activity</b> tab lists what came in and went out.</p>
       </Doc>
     </>
   ),
@@ -80,7 +80,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>On Windows, <b>setup.exe</b> installs everything from one file, with no internet needed for myTunnels itself, and asks once for administrator rights for what you choose: the hardware sensors, the firewall for router ports, Docker and Tailscale. Then the dashboard asks for two things: the host account, and <b>Connect Cloudflare</b>. <b>Open Cloudflare</b> makes a token with the right permissions; paste it back and the tunnel and connector are set up. <b>Skip for now</b> leaves it for later; anything that needs Cloudflare asks again, as does <b>Connect</b> under Settings, Connections. Once it is connected, every domain on the account is yours to use: for services' addresses and for mail, with nothing to add.</p>
       </Doc>
       <Doc title="On the rack and on your phone">
-        <p>On Windows, the desktop app opens the <b>console</b>: this computer at a glance in one still frame for a monitor beside it. A band across the top says whether all is well, then gauges for CPU, memory, temperature and storage, the network, the last five minutes, every service as a tile lit by its state, and what needs attention. <b>F11</b> fills the screen; the icon at its top right opens the rest, and the monitor icon on <b>Dashboard</b> comes back. On a phone, add the dashboard's address to the home screen (on an iPhone, Safari's Share, then <b>Add to Home Screen</b>) and it opens full screen like an app.</p>
+        <p>The monitor button in the header opens the <b>console</b>: the Dashboard alone, filling the screen, for a monitor beside this computer, under a slim bar with the time and the alerts; its close button goes back. On Windows the desktop app opens on it, and <b>F11</b> fills the screen. The bell beside it holds every alert in one list: failing parts and the system log's notes, the sensor task's setup, new devices signing in, and the Cloudflare connector going offline, each with its action where it has one. On a phone, add the dashboard's address to the home screen (on an iPhone, Safari's Share, then <b>Add to Home Screen</b>) and it opens full screen like an app.</p>
       </Doc>
       <Doc title="Changing the Cloudflare connection">
         <p>Settings, Connections holds the account and tunnel, and the connector's version and log. A new API token can replace the old one at any time. Switching to another account or tunnel needs every tunnel removed first, since their DNS records live in the old one.</p>
