@@ -3,15 +3,12 @@ import { api, bytes, message, type Container, type ContainerAction, type Contain
 import { BuildLog, Builds, DeploySettings, sourceOf, waiting } from "./Builds";
 import { Chart, Meter } from "./charts";
 import { Dropdown } from "./Dropdown";
-import { ForwardRows, forwardsOf } from "./Forward";
-import { NewRoute } from "./NewRoute";
 import { Icon, type IconName } from "./Icon";
 import { ContainerImages, ImageView } from "./Images";
 import { ContainerList, listed } from "./ContainerList";
 import { useCan } from "./me";
 import { Resources } from "./Resources";
 import { go } from "./route";
-import { reachOf, TunnelDetail, tunnelsOf } from "./Tunnels";
 import { Callout, Copy, MoreMenu, SubNav, Switch, useNotify, type MenuAction } from "./ui";
 
 type Act = ContainerAction | "remove";
@@ -104,8 +101,8 @@ export interface Shared {
 
 // ContainersPage is the containers, or one of them.
 export function ContainersPage({ id, page, more, ...shared }: { id: string; page: string; more: string[] } & Shared) {
-  if (id) return <ContainerPage name={id} tab={page} more={more} {...shared} />;
-  return <ContainerList routes={shared.routes} forwards={shared.forwards} onChanged={shared.onChanged} />;
+  if (id) return <ContainerPage name={id} tab={page} more={more} />;
+  return <ContainerList onChanged={shared.onChanged} />;
 }
 
 // The actions a container's menu holds, by what it may do now. `page` leaves
@@ -135,7 +132,6 @@ function actionsOf(c: (Container | ContainerDetail) & { deploy?: string | null }
 
 const TABS: [string, string, IconName][] = [
   ["overview", "Overview", "info"],
-  ["routes", "Routes", "wifi_cog"],
   ["images", "Images", "layers"],
   ["logs", "Logs", "terminal"],
   ["resources", "Resources", "tune"],
@@ -144,12 +140,10 @@ const TABS: [string, string, IconName][] = [
 
 const AUTO_START: Record<string, string> = { "on-failure": "When it fails", "unless-stopped": "Unless stopped by hand", always: "Always" };
 
-// ContainerPage is one container and its forwards together: its name, state
-// and address in the heading, with Open, the one button its state calls for,
-// and a menu for the rest; then its sub-pages.
-function ContainerPage({ name, tab: asked, more, routes, forwards, users, providers, onChanged }: { name: string; tab: string; more: string[] } & Shared) {
-  // Its Tunnel page became Forward, then Routes.
-  const tab = asked === "tunnel" || asked === "forward" ? "routes" : asked;
+// ContainerPage is one container: its name, state and source in the
+// heading, the one button its state calls for and a menu for the rest; then
+// its sub-pages. Exposing its port is a route's job, on Routes.
+function ContainerPage({ name, tab, more }: { name: string; tab: string; more: string[] }) {
   const [c, setC] = useState<ContainerDetail | null>(null);
   // The repository it is built from: undefined until known, null for none.
   const [d, setD] = useState<Deploy | null | undefined>(undefined);
@@ -183,8 +177,7 @@ function ContainerPage({ name, tab: asked, more, routes, forwards, users, provid
   // container from a repository that is not made yet shows its builds.
   const head = c ?? listed.get(name) ?? (d ? pending(d) : undefined);
   const made = !!head?.id;
-  const tabs = TABS.filter(([k]) => (k !== "routes" || can("tunnels.view"))
-    && (made || !["overview", "logs", "resources"].includes(k))
+  const tabs = TABS.filter(([k]) => (made || !["overview", "logs", "resources"].includes(k))
     && (k !== "settings" || (!!d && can("containers.deploy"))));
   const current = tabs.some(([k]) => k === tab) ? tab : tabs[0][0];
   if (!head) {
@@ -214,8 +207,6 @@ function ContainerPage({ name, tab: asked, more, routes, forwards, users, provid
       setUpdating(false);
     }
   };
-  const reaching = tunnelsOf(head, routes ?? []);
-  const opens = reaching.find((r) => r.enabled);
   const manage = can("containers.manage") && !head.own;
   const menu = actionsOf({ ...head, deploy: d?.id ?? null }, (_, action) => act(action), can, true);
 
@@ -230,14 +221,10 @@ function ContainerPage({ name, tab: asked, more, routes, forwards, users, provid
             {d ? (
               <span className="ct-source"><Icon name="git" size={16} /><span className="mono">{sourceOf(d)}</span>, {d.branch}{d.running && <>, build {d.running.number}</>}</span>
             ) : <span className="mono">{head.image}</span>}
-            {reaching.map((r) => (
-              <a key={r.id} className="ct-address" href={`${base}/routes/${r.id}`}><span className={"dot " + (r.enabled ? "ok" : "")} />{r.hostname}</a>
-            ))}
           </div>
         </div>
         <div className="page-actions">
           {working && <span className="spinner small" />}
-          {opens && <a className="btn" href={`https://${opens.hostname}`} target="_blank" rel="noreferrer"><Icon name="open_in_new" size={18} />Open</a>}
           {d && can("containers.deploy") && (
             <button type="button" className="btn" disabled={updating || building} onClick={update}>
               {updating || building ? <span className="spinner small" /> : <Icon name="autorenew" size={18} />}{building ? "Updating" : "Update"}
@@ -253,11 +240,6 @@ function ContainerPage({ name, tab: asked, more, routes, forwards, users, provid
       <div className="page-body stack" key={current}>
         {problem && made && !c && <Callout tone="bad" icon="error">{problem}</Callout>}
         {current === "overview" && (c ? <Overview c={c} /> : <div className="repo-loading"><span className="spinner" /></div>)}
-        {current === "routes" && !routes && <div className="repo-loading"><span className="spinner" /></div>}
-        {current === "routes" && routes && (
-          <ContainerForward c={head} pick={more[0] ?? ""} base={`${base}/routes`} routes={reaching} forwards={forwardsOf(head, forwards)}
-            users={users} providers={providers} onChanged={onChanged} />
-        )}
         {current === "images" && (more[0] === "build" && d ? <BuildLog d={d} number={Number(more[1])} back={`${base}/images`} />
           : more[0] ? <ImageView id={more[0]} back={`${base}/images`} />
           : d ? <Builds d={d} base={`${base}/images`} onChanged={load} />
@@ -266,48 +248,6 @@ function ContainerPage({ name, tab: asked, more, routes, forwards, users, provid
         {current === "logs" && <Logs id={head.id} />}
         {current === "resources" && <Resources id={head.id} editable={manage} />}
       </div>
-    </>
-  );
-}
-
-// ContainerForward is every way the container is reached, a tunnel, the
-// router or Tailscale, a row each; the picked tunnel's activity and controls
-// sit under and beside them. The plus adds one from a dialog.
-function ContainerForward({ c, pick, base, routes, forwards, users, providers, onChanged }: {
-  c: Container | ContainerDetail;
-  pick: string;
-  base: string;
-  routes: Route[];
-  forwards: Forward[];
-  users: User[];
-  providers: OAuthProvider[];
-  onChanged: () => Promise<void>;
-}) {
-  const can = useCan();
-  const [adding, setAdding] = useState(false);
-  const picked = routes.find((r) => r.id === pick) ?? routes[0];
-  const list = (
-    <section className="card">
-      <div className="card-head">
-        <div className="card-titles"><h2>Routes</h2></div>
-        {can("tunnels.create") && <button type="button" className="icon-btn" aria-label="New route" title="New route" onClick={() => setAdding(true)}><Icon name="add" /></button>}
-      </div>
-      {routes.length || forwards.length ? (
-        <ForwardRows items={[...routes.map((r) => ({ r })), ...forwards.map((f) => ({ f }))]} hrefOf={(r) => `${base}/${r.id}`} picked={picked?.id} onChanged={onChanged} />
-      ) : <p className="empty-note card-pad">Nothing reaches this container from outside yet.</p>}
-    </section>
-  );
-  return (
-    <>
-      {picked ? <TunnelDetail route={picked} top={list} users={users} providers={providers} onChanged={onChanged} onRemoved={() => go(base)} /> : list}
-      {adding && (
-        <NewRoute users={users} providers={providers} sub={routes.length ? "" : c.name} container={{ name: c.name, reach: reachOf(c) }} onClose={() => setAdding(false)}
-          onDone={async (r) => {
-            await onChanged();
-            setAdding(false);
-            if (r) go(`${base}/${r.id}`);
-          }} />
-      )}
     </>
   );
 }

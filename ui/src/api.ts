@@ -27,8 +27,17 @@ export interface Route {
   preserve_host: boolean;
   // Check an https app's certificate instead of taking any.
   verify_tls: boolean;
+  // Reads only: GET, HEAD and OPTIONS through, every write refused.
+  read_only: boolean;
+  // An API key from the route's keys, in a header or the request body.
+  require_key: boolean;
+  // Requests one visitor may make a minute; 0 is the gateway's own limit.
+  rate_limit: number;
   created_at: number;
 }
+
+// A key an API client presents to a route; its text is shown once, when made.
+export interface RouteKey { id: string; route_id: string; name: string; created_at: number; last_used: number | null }
 
 // Who may open a tunnel, as sent when publishing or editing one. `password` is a
 // new tunnel password; left out, the one set stays.
@@ -45,7 +54,7 @@ export interface Access {
   password?: string;
 }
 
-export type RouteEdit = Pick<Route, "target_host" | "target_scheme" | "enabled" | "preserve_host" | "verify_tls"> & Access & { port: number };
+export type RouteEdit = Pick<Route, "target_host" | "target_scheme" | "enabled" | "preserve_host" | "verify_tls" | "read_only" | "require_key" | "rate_limit"> & Access & { port: number };
 
 export interface User {
   id: string;
@@ -70,7 +79,7 @@ export interface User {
 
 export interface TunnelEvent {
   route_id: string;
-  kind: "sign-in" | "password" | "visit" | "device";
+  kind: "sign-in" | "password" | "visit" | "device" | "api" | "write" | "limit";
   outcome: string;
   user_id: string | null;
   device_id: string | null;
@@ -761,11 +770,14 @@ export const api = {
   zones: () => call<Zone[]>("/zones"),
 
   routes: () => call<Route[]>("/routes"),
-  publish: (body: { subdomain: string; zone_id: string; port: number; target_host: string | null; target_scheme: string; preserve_host: boolean; verify_tls?: boolean } & Access) =>
+  publish: (body: { subdomain: string; zone_id: string; port: number; target_host: string | null; target_scheme: string; preserve_host: boolean; verify_tls?: boolean; read_only?: boolean; require_key?: boolean; rate_limit?: number } & Access) =>
     call<Route>("/routes", "POST", body),
   editRoute: (id: string, edit: RouteEdit) => call<Route>(`/routes/${id}`, "PATCH", edit),
   removeRoute: (id: string) => call(`/routes/${id}`, "DELETE"),
   routeActivity: (id: string) => call<TunnelEvent[]>(`/routes/${id}/activity`),
+  routeKeys: (id: string) => call<RouteKey[]>(`/routes/${id}/keys`),
+  addRouteKey: (id: string, name: string) => call<{ key: RouteKey; token: string }>(`/routes/${id}/keys`, "POST", { name }),
+  removeRouteKey: (id: string, key: string) => call<RouteKey[]>(`/routes/${id}/keys/${key}`, "DELETE"),
   moveRoute: (id: string, subdomain: string, zone_id: string) => call<Route>(`/routes/${id}/address`, "PUT", { subdomain, zone_id }),
 
   forwards: () => call<Forward[]>("/forwards"),
@@ -888,6 +900,9 @@ export function editOf(r: Route): RouteEdit {
     login_idle: r.login_idle,
     policy_mode: r.policy_mode,
     enabled: r.enabled,
+    read_only: r.read_only,
+    require_key: r.require_key,
+    rate_limit: r.rate_limit,
     preserve_host: r.preserve_host,
     verify_tls: r.verify_tls,
   };

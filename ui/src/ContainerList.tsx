@@ -1,20 +1,18 @@
 import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { NeedsApp, NeedsContext } from "./Apps";
-import { api, bytes, message, type Container, type ContainerAction, type ContainerStats, type Deploy, type Forward, type Image, type Metrics, type Route } from "./api";
+import { api, bytes, message, type Container, type ContainerAction, type ContainerStats, type Deploy, type Image, type Metrics } from "./api";
 import { AddButton, sourceOf } from "./Builds";
 import { Dropdown, type Option } from "./Dropdown";
-import { forwardsOf } from "./Forward";
 import { Icon, type IconName } from "./Icon";
 import { useImageRemoval } from "./Images";
 import { useCan } from "./me";
 import { go } from "./route";
-import { tunnelsOf } from "./Tunnels";
 import { Callout, MoreMenu, useNotify, type MenuAction } from "./ui";
 
 // ContainerList is the containers Docker runs here, one table: each with
-// where it comes from, its status, where it is reached, and its CPU and
-// memory. A Compose project folds under a row of its own. A row opens the
-// container. Add container is the one way in.
+// where it comes from, its status, and its CPU and memory. A Compose project
+// folds under a row of its own. A row opens the container. Add container is
+// the one way in; exposing one's port is a route's job.
 
 type Show = "all" | "running" | "stopped";
 const SHOW: Option<Show>[] = [
@@ -34,7 +32,7 @@ const short = (id: string) => id.slice(0, 12);
 // The containers as last listed, by name, so one opens at once.
 export const listed = new Map<string, Container>();
 
-export function ContainerList({ routes, forwards, onChanged }: { routes: Route[] | null; forwards: Forward[]; onChanged: () => Promise<void> }) {
+export function ContainerList({ onChanged }: { onChanged: () => Promise<void> }) {
   const can = useCan();
   const notify = useNotify();
   const needs = useContext(NeedsContext);
@@ -159,15 +157,11 @@ export function ContainerList({ routes, forwards, onChanged }: { routes: Route[]
     group = grouped ? c.project! : "";
     if (grouped && folded.has(c.project!)) continue;
     const d = c.deploy ? byDeploy.get(c.deploy) : undefined;
-    const addresses = [
-      ...tunnelsOf(c, routes ?? []).map((r) => ({ at: r.hostname, href: `https://${r.hostname}` })),
-      ...forwardsOf(c, forwards).filter((f) => f.address).map((f) => ({ at: f.address!, href: f.address!.startsWith("https://") ? f.address! : undefined })),
-    ];
     body.push(
       <Row key={c.id || c.name} c={c} inGroup={grouped} busy={busy === c.name}
         icon={d ? (d.image ? "layers" : "git") : "deployed_code"}
         source={d ? `${sourceOf(d)}${d.branch ? `, ${d.branch}` : ""}` : c.image}
-        addresses={addresses} stats={c.id ? stats.get(short(c.id)) : undefined} menu={menuOf(c)} />,
+        ports={c.ports.filter((p) => p.public !== null).map((p) => p.public!)} stats={c.id ? stats.get(short(c.id)) : undefined} menu={menuOf(c)} />,
     );
   }
 
@@ -211,7 +205,7 @@ export function ContainerList({ routes, forwards, onChanged }: { routes: Route[]
             <div className="table-wrap">
               <table className="table svc">
                 <thead>
-                  <tr><th className="grow">Container</th><th>Status</th><th>Address</th><th className="svc-num">CPU</th><th className="svc-num">Memory</th><th /></tr>
+                  <tr><th className="grow">Container</th><th>Status</th><th>Ports</th><th className="svc-num">CPU</th><th className="svc-num">Memory</th><th /></tr>
                 </thead>
                 <tbody>
                   {body}
@@ -226,13 +220,12 @@ export function ContainerList({ routes, forwards, onChanged }: { routes: Route[]
   );
 }
 
-function Row({ c, inGroup, busy, icon, source, addresses, stats, menu }: {
+function Row({ c, inGroup, busy, icon, source, ports, stats, menu }: {
   c: Container; inGroup: boolean; busy: boolean; icon: IconName; source: string;
-  addresses: { at: string; href?: string }[]; stats?: ContainerStats; menu: MenuAction[];
+  ports: number[]; stats?: ContainerStats; menu: MenuAction[];
 }) {
   const [label, tone] = stateOf(c.state);
   const on = c.state === "running";
-  const first = addresses[0];
   const href = `#/containers/${encodeURIComponent(c.name)}`;
   return (
     <tr className={"svc-link" + (on ? "" : " svc-down")} onClick={() => go(href)}>
@@ -243,14 +236,7 @@ function Row({ c, inGroup, busy, icon, source, addresses, stats, menu }: {
         </span>
       </td>
       <td><span className={"chip " + tone}><span className={"dot " + tone} />{label}</span></td>
-      <td>
-        {first && (
-          <span className="svc-address">
-            {first.href ? <a href={first.href} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{first.at}</a> : <span className="mono">{first.at}</span>}
-            {addresses.length > 1 && <small>+{addresses.length - 1}</small>}
-          </span>
-        )}
-      </td>
+      <td><span className="svc-address mono">{[...new Set(ports)].sort((a, b) => a - b).join(", ")}</span></td>
       <td className="svc-num">{on && stats ? pct(stats.cpu) : ""}</td>
       <td className="svc-num">{on && stats ? bytes(stats.memory) : ""}</td>
       <td className="svc-menu" onClick={(e) => e.stopPropagation()}>

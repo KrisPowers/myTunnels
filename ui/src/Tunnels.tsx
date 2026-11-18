@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { NeedsApp } from "./Apps";
-import { api, editOf, LEVELS, list, message, redirectUrl, shortId, strength, type Access, type OAuthProvider, type PolicyMode, type Port, type Route, type RouteEdit, type TunnelEvent, type User, type Zone } from "./api";
+import { api, editOf, LEVELS, list, message, redirectUrl, shortId, strength, type Access, type OAuthProvider, type PolicyMode, type Route, type RouteEdit, type TunnelEvent, type User, type Zone } from "./api";
 import { Dropdown, MultiDropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
 import { go } from "./route";
+import { RouteRules } from "./Keys";
 import { ProviderLogo } from "./ProviderLogo";
 import { Card, Copy, Dialog, LogTable, MoreMenu, Row, SubNav, Switch, TextField, useNotify, type LogEntry, type MenuAction } from "./ui";
 
@@ -268,31 +269,6 @@ function PasswordSetting({ set, onSave, onCancel }: { set: boolean; onSave: (pas
 
 // ---- publishing ----
 
-// A port a container's tunnel can go to: one it publishes on the host, or one
-// it listens on, reached by its name on a shared network.
-export interface Reach { port: number; host: string | null; label: string }
-
-// The ways a tunnel can reach a container, published ports first.
-export function reachOf(c: { name: string; ports: Port[] }): Reach[] {
-  const out: Reach[] = [];
-  for (const p of c.ports) {
-    if (p.type !== "tcp") continue;
-    const r = p.public !== null ? { port: p.public, host: null, label: `Port ${p.private}` } : { port: p.private, host: c.name, label: `Port ${p.private}` };
-    if (!out.some((o) => o.port === r.port && o.host === r.host)) out.push(r);
-  }
-  return out.sort((a, b) => Number(a.host !== null) - Number(b.host !== null));
-}
-
-// The tunnels that reach a container: aimed at one of the ports it publishes on
-// the host, or at it by name on a shared network.
-export function tunnelsOf(c: { name: string; ports: Port[] }, routes: Route[]) {
-  const published = c.ports.filter((p) => p.public !== null && p.type === "tcp");
-  return routes.filter((r) => (r.target_scheme === "http" || r.target_scheme === "https") && (
-    (!r.target_host && published.some((p) => p.public === r.target_port))
-    || (r.target_host === c.name && c.ports.some((p) => p.private === r.target_port))
-  ));
-}
-
 // ---- one tunnel ----
 
 // useTunnel holds a tunnel's settings as they are being changed, and saves them.
@@ -408,6 +384,7 @@ function TunnelControls({ route, users, providers, onChanged, onRemoved }: {
         </div>
       </section>
       <TunnelAccess route={route} edit={edit} save={save} quietly={quietly} users={users} providers={providers} />
+      <RouteRules route={route} edit={edit} quietly={quietly} />
     </>
   );
 }
@@ -488,21 +465,9 @@ export function TunnelDetail({ route, top, users, providers, onChanged, onRemove
   );
 }
 
-// TunnelPage is a tunnel to anything but a container, laid out as a
-// container's tunnels are. A tunnel that reaches a container opens on the
-// container's page.
+// TunnelPage is one route through a Cloudflare tunnel: its activity, and at
+// the side its switch, who may open it, and how it takes traffic.
 export function TunnelPage({ route, users, providers, onChanged }: { route: Route; users: User[]; providers: OAuthProvider[]; onChanged: () => Promise<void> }) {
-  const can = useCan();
-  const containers = can("containers.view");
-
-  useEffect(() => {
-    if (!containers) return;
-    api.containers().then((list) => {
-      const c = list.find((c) => tunnelsOf(c, [route]).length > 0);
-      if (c) go(`#/containers/${encodeURIComponent(c.name)}/routes/${route.id}`);
-    }).catch(() => {});
-  }, [containers, route.id, route.target_host, route.target_port]);
-
   return (
     <>
       <div className="page-head">
@@ -619,6 +584,9 @@ const KINDS: Option<TunnelEvent["kind"]>[] = [
   { value: "password", label: "Passwords" },
   { value: "visit", label: "Visits" },
   { value: "device", label: "Devices" },
+  { value: "api", label: "API keys" },
+  { value: "write", label: "Writes refused" },
+  { value: "limit", label: "Rate limited" },
 ];
 
 // line says what an event was, and whether it went well, badly or neither.
@@ -634,6 +602,9 @@ function line(e: TunnelEvent): [string, string] {
     return [e.outcome === "network" ? "bad" : "", asked[e.outcome] ?? e.outcome];
   }
   if (e.kind === "device") return e.outcome === "blocked" ? ["bad", "Refused for a day, tried several accounts"] : ["", "Asked for device approval"];
+  if (e.kind === "api") return e.outcome === "refused" ? ["bad", "API request refused, no valid key"] : ["ok", `API request with ${e.outcome}`];
+  if (e.kind === "write") return ["bad", "Write refused, the address takes reads only"];
+  if (e.kind === "limit") return ["bad", "Rate limited"];
   if (e.kind === "password") {
     const said: Record<string, [string, string]> = {
       ok: ["ok", "Tunnel password entered"],
