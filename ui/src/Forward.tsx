@@ -1,14 +1,13 @@
 import { useState } from "react";
-import { api, message, type Forward, type OAuthProvider, type Port, type Route, type Status, type User } from "./api";
-import { Dropdown, type Option } from "./Dropdown";
+import { api, message, type Forward, type Port, type Route } from "./api";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
-import { go } from "./route";
-import { NewRoute } from "./NewRoute";
 import { AccessChips, target } from "./Tunnels";
 import { MoreMenu, useNotify, type MenuAction } from "./ui";
 
-// The three ways a port is opened: a Cloudflare tunnel, the router, or Tailscale.
+// The three ways a service is reached: a Cloudflare tunnel, the router, or
+// Tailscale. Each is a row on Services, alone for a port on this computer, or
+// on its container's Routes.
 export type Method = "tunnel" | "port" | "tailscale";
 
 const ICON: Record<Method, IconName> = { tunnel: "public", port: "router", tailscale: "lan" };
@@ -26,8 +25,10 @@ function titleOf(f: Forward) {
   return f.name || `Port ${f.public_port}`;
 }
 
-const labelOf = (o: Opening) => ("r" in o ? o.r.hostname : titleOf(o.f));
-const liveOf = (o: Opening) => ("r" in o ? o.r.enabled : o.f.enabled && !o.f.problem);
+export const labelOf = (o: Opening) => ("r" in o ? o.r.hostname : titleOf(o.f));
+export const liveOf = (o: Opening) => ("r" in o ? o.r.enabled : o.f.enabled && !o.f.problem);
+// What it goes to, for search.
+export const toOf = (o: Opening) => ("r" in o ? target(o.r) : `${o.f.address ?? ""} ${where(o.f)}`);
 
 // How long until it closes on its own, in a word or two.
 function closesIn(at: number) {
@@ -55,11 +56,14 @@ export function ForwardRows({ items, hrefOf, picked, onChanged }: {
   const sorted = [...items].sort((a, b) => labelOf(a).localeCompare(labelOf(b)));
   return (
     <ul className="results ct-list">
-      {sorted.map((o) => "r" in o
-        ? <TunnelRow key={o.r.id} r={o.r} href={hrefOf(o.r)} on={o.r.id === picked} onChanged={onChanged} />
-        : <ForwardRow key={o.f.id} f={o.f} onChanged={onChanged} />)}
+      {sorted.map((o) => <OpeningRow key={"r" in o ? o.r.id : o.f.id} o={o} href={"r" in o ? hrefOf(o.r) : ""} on={"r" in o && o.r.id === picked} onChanged={onChanged} />)}
     </ul>
   );
+}
+
+// OpeningRow is one way in as a row; a tunnel's opens at `href`.
+export function OpeningRow({ o, href, on, onChanged }: { o: Opening; href: string; on?: boolean; onChanged: () => Promise<void> }) {
+  return "r" in o ? <TunnelRow r={o.r} href={href} on={!!on} onChanged={onChanged} /> : <ForwardRow f={o.f} onChanged={onChanged} />;
 }
 
 function TunnelRow({ r, href, on, onChanged }: { r: Route; href: string; on: boolean; onChanged: () => Promise<void> }) {
@@ -148,86 +152,5 @@ function ForwardRow({ f, onChanged }: { f: Forward; onChanged: () => Promise<voi
       </div>
       <span className="ct-menu">{busy ? <span className="spinner small" /> : actions.length > 0 && <MoreMenu label={`Actions for ${title}`} actions={actions} />}</span>
     </li>
-  );
-}
-
-// ---- the page ----
-
-type Show = "all" | Method;
-
-const SHOW: Option<Show>[] = [
-  { value: "all", label: "All" },
-  { value: "port", label: "Port forwards" },
-  { value: "tailscale", label: "Tailscale" },
-  { value: "tunnel", label: "Tunnels" },
-];
-
-// ForwardPage is every opening in one list: tunnels, router ports and
-// Tailscale, with the plus to add one. `#/routes/new` opens it adding,
-// `#/routes/new/<port>` to that port.
-export function ForwardPage({ id, port, routes, forwards, status, users, providers, onChanged }: {
-  id: string;
-  port: string;
-  routes: Route[] | null;
-  forwards: Forward[] | null;
-  status: Status | null;
-  users: User[];
-  providers: OAuthProvider[];
-  onChanged: () => Promise<void>;
-}) {
-  const can = useCan();
-  const [q, setQ] = useState("");
-  const [show, setShow] = useState<Show>("all");
-  const adding = id === "new" && can("tunnels.create");
-  const close = () => go("#/routes");
-
-  const items: Opening[] = [
-    ...(routes ?? []).map((r) => ({ r })),
-    ...(forwards ?? []).map((f) => ({ f })),
-  ];
-  const needle = q.trim().toLowerCase();
-  const shown = items
-    .filter((o) => show === "all" || ("r" in o ? show === "tunnel" : o.f.method === show))
-    .filter((o) => !needle || [labelOf(o), "r" in o ? target(o.r) : `${o.f.address ?? ""} ${where(o.f)}`].some((v) => v.toLowerCase().includes(needle)));
-  const live = items.filter(liveOf).length;
-  const tunnels = (routes ?? []).length > 0;
-
-  return (
-    <>
-      <div className="page-head">
-        <div className="page-head-main">
-          <h1>Routes</h1>
-          {routes && <div className="page-sub"><span><b>{live}</b> of {items.length} open{tunnels && status && !status.connections ? ", connector offline" : ""}</span></div>}
-        </div>
-        <div className="page-actions">
-          <label className="ct-search">
-            <Icon name="search" size={18} />
-            <input type="search" placeholder="Search" aria-label="Search forwards" value={q} onChange={(e) => setQ(e.target.value)} spellCheck={false} />
-          </label>
-          <div className="ex-pick"><Dropdown label="Show" value={show} options={SHOW} onChange={setShow} /></div>
-          {can("tunnels.create") && <button type="button" className="icon-btn" aria-label="New route" title="New route" onClick={() => go("#/routes/new")}><Icon name="add" /></button>}
-        </div>
-      </div>
-      <div className="page-body stack">
-        {routes && (items.length === 0 ? (
-          <div className="card welcome">
-            <Icon name="swap_horiz" size={40} />
-            <h2>Nothing forwarded yet</h2>
-            <p className="muted">Open a port with the plus, through a tunnel, the router or Tailscale.</p>
-          </div>
-        ) : (
-          <div className="card">
-            <ForwardRows items={shown} hrefOf={(r) => `#/tunnels/${r.id}`} onChanged={onChanged} />
-            {shown.length === 0 && <p className="empty-note ct-none">Nothing matches.</p>}
-          </div>
-        ))}
-      </div>
-      {adding && (
-        <NewRoute users={users} providers={providers} port={port} onClose={close} onDone={async (r) => {
-          await onChanged();
-          go(r ? `#/tunnels/${r.id}` : "#/routes");
-        }} />
-      )}
-    </>
   );
 }
