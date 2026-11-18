@@ -75,7 +75,9 @@ Windows a program run at sign-in, each started again within seconds if it stops.
 is in `%LOCALAPPDATA%\myTunnels` on Windows and `~/.local/share/myTunnels` elsewhere. To run
 it in Docker instead, see [Running in Docker](#running-in-docker).
 
-On the computer running it, open `http://localhost:7070`. The panel answers there alone:
+On the computer running it, open **myTunnels** from the Start menu on Windows, the desktop
+app: the panel in a window of its own, which starts myTunnels when it is not running. Or open
+`http://localhost:7070` in a browser, on any system. The panel answers there alone:
 every other device, at home or away, reaches myTunnels through a tunnel, so no port is opened
 on your network. Setup asks only for the host account: an email, a username and a password
 for the panel. Either the email or the username signs in, and both can be changed under
