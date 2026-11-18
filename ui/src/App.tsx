@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEven
 import { AppsPage, InstallPill, NeedsContext } from "./Apps";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type Flag, type Forward, type Group, type Needs, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { CloudflareProvider } from "./Cloudflare";
+import { ConsolePage } from "./Console";
 import { ContainersPage } from "./Containers";
 
 import { DashboardPage } from "./Dashboard";
@@ -216,6 +217,8 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
       count={key === "dashboard" ? flags.length + faults || undefined : undefined} rail={rail} />
   );
 
+  // The console is a still frame of its own, with no sidebar or header.
+  if (view === "console") return <ConsolePage routes={apps} forwards={forwards} status={status} flags={flags} users={users ?? []} />;
   return (
     <NeedsContext.Provider value={needs}>
     <CloudflareProvider ready={status?.configured ?? true} onConnected={load}>

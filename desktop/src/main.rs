@@ -1,10 +1,13 @@
-//! myTunnels on this computer as an app of its own: the panel in a window of
-//! its own, with no browser around it. Remote devices keep using the panel
-//! through a tunnel; this is the host's console.
+//! myTunnels on this computer as an app of its own: the host's console, a
+//! still frame of this computer at a glance for a monitor on the rack, in a
+//! window with no browser around it. Remote devices keep using the panel
+//! through a tunnel.
 //!
-//! It opens the panel on this computer's loopback address, starting
-//! myTunnels first when it is not running. Pages off the panel open in the
-//! default browser. Opening it again brings the open window to the front.
+//! It opens the console on this computer's loopback address, maximized,
+//! starting myTunnels first when it is not running; F11 fills the screen.
+//! The rest of the panel is a click away in the same window. Pages off the
+//! panel open in the default browser. Opening it again brings the open
+//! window to the front.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -15,7 +18,7 @@ use desktop::{answering, beside, hidden, home, open_outside, page, panel, BACKGR
 use tao::dpi::LogicalSize;
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
-use tao::window::WindowBuilder;
+use tao::window::{Fullscreen, WindowBuilder};
 use wry::{NewWindowResponse, WebContext, WebViewBuilder};
 
 const TITLE: &str = "myTunnels";
@@ -23,7 +26,13 @@ const TITLE: &str = "myTunnels";
 enum Ready {
     Panel,
     Failed(String),
+    Fullscreen,
 }
+
+/// F11 asks the window to fill the screen, or to stop.
+const KEYS: &str = r#"addEventListener("keydown", (e) => {
+  if (e.key === "F11") { e.preventDefault(); window.ipc.postMessage("fullscreen"); }
+});"#;
 
 fn main() {
     if desktop::already_open(TITLE) {
@@ -34,12 +43,14 @@ fn main() {
         .with_title(TITLE)
         .with_inner_size(LogicalSize::new(1360.0, 860.0))
         .with_min_inner_size(LogicalSize::new(960.0, 600.0))
+        .with_maximized(true)
         .with_background_color(BACKGROUND)
         .build(&event_loop)
         .expect("cannot open a window");
 
-    let url = panel();
-    let ours = url.clone();
+    let ours = panel();
+    let url = format!("{ours}#/console");
+    let proxy = event_loop.create_proxy();
     // Its web data in the myTunnels folder: beside the program, an update
     // could not swap the folder while the window is open.
     let mut context = WebContext::new(Some(home().join("desktop")));
@@ -47,6 +58,12 @@ fn main() {
         .with_background_color(BACKGROUND)
         .with_hotkeys_zoom(false)
         .with_back_forward_navigation_gestures(false)
+        .with_initialization_script(KEYS)
+        .with_ipc_handler(move |ask| {
+            if ask.body() == "fullscreen" {
+                let _ = proxy.send_event(Ready::Fullscreen);
+            }
+        })
         .with_navigation_handler(move |to| {
             let inside =
                 to.starts_with(&ours) || to.starts_with("about:") || to.starts_with("data:");
@@ -76,6 +93,10 @@ fn main() {
             }
             Event::UserEvent(Ready::Failed(why)) => {
                 let _ = webview.load_html(&page("myTunnels did not start", &why));
+            }
+            Event::UserEvent(Ready::Fullscreen) => {
+                let full = window.fullscreen().is_some();
+                window.set_fullscreen((!full).then_some(Fullscreen::Borderless(None)));
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,

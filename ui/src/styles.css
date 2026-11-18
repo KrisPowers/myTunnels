@@ -1657,3 +1657,34 @@ div.field-view { cursor: default; }
 .chip .chip-x:hover { opacity: 1; }
 .card-head h2 > .chip { text-transform: none; }
 .ct-row-main > .chip { flex-shrink: 0; text-transform: none; }
+
+/* ---- console: the desktop app's still frame for a monitor on the rack,
+   filling the screen without scrolling, its figures sized for across the room ---- */
+.glance { height: 100vh; overflow: hidden; display: grid; grid-template-rows: auto auto 1fr 1fr; gap: 16px; padding: 20px 24px; background: var(--bg); }
+.glance-top { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.glance-top h1 { font-size: 22px; font-weight: 600; }
+.glance-state { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 15px; background: var(--card); font-weight: 500; }
+.glance-state.warn { color: var(--warn); }
+.glance-state.bad { color: var(--bad); }
+.glance-clock { margin-left: auto; display: grid; justify-items: end; color: var(--text-3); font-size: 13px; line-height: 1.2; }
+.glance-clock b { color: var(--text); font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.glance-figures { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.glance-panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; min-height: 0; }
+.glance-panels.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.glance-panel { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; overflow: hidden; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); }
+.glance-panel h2 { color: var(--text-3); font-size: 13px; font-weight: 500; }
+.glance-big { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.glance-big b { font-size: clamp(28px, 3.4vw, 48px); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.glance-big span { color: var(--text-2); }
+.glance-figure .spark { height: clamp(36px, 7vh, 72px); margin-top: auto; }
+.glance-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; font-size: clamp(14px, 1.1vw, 17px); }
+.glance-list li { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.glance-list small { margin-left: auto; color: var(--text-3); font-size: 13px; white-space: nowrap; }
+.glance-list li.glance-disk { flex-direction: column; align-items: stretch; gap: 6px; }
+.glance-disk-name { display: flex; gap: 8px; }
+.glance-disk .meter { width: 100%; height: 8px; border-radius: 4px; }
+@media (max-width: 900px) {
+  .glance { height: auto; overflow: visible; }
+  .glance-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .glance-panels, .glance-panels.two { grid-template-columns: minmax(0, 1fr); }
+}
