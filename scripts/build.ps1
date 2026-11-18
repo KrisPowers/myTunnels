@@ -9,6 +9,8 @@
 # Windows and Linux build both macOS archives too, against Apple's SDK, which
 # is fetched once into builds/.sdk. Each archive holds mytunnels, cloudflared
 # and the panel, as the install scripts expect, and Windows' the desktop app.
+# Windows also gets setup.exe, which carries its archive inside it and
+# installs with no internet or GitHub sign-in, such as from a USB drive.
 #
 # -Publish makes the next release (or adds to the one -Version names, as a
 # Mac does after Windows) and opens and merges the formula's update.
@@ -77,6 +79,22 @@ if (-not $IsMacOS -and ($builds | Where-Object Name -like 'macos-*')) {
         Step tar -xf $xz -C $cache
         Remove-Item $xz
     }
+}
+
+# The release being made, known before building so setup.exe can carry its
+# name. A build that is not published names none.
+$tag = $null
+if ($Publish) {
+    if (-not $Version) {
+        $latest = gh release list --repo $repo --limit 1 --json tagName -q '.[0].tagName'
+        $Version = if ($latest) {
+            $parts = $latest.TrimStart('v').Split('.')
+            $parts[-1] = [int]$parts[-1] + 1
+            $parts -join '.'
+        }
+        else { '0.1.0' }
+    }
+    $tag = "v$Version"
 }
 
 New-Item -ItemType Directory -Force $out | Out-Null
@@ -153,20 +171,25 @@ foreach ($b in $builds) {
     }
     Remove-Item $stage -Recurse -Force
     $made += [pscustomobject]@{ Name = $b.Name; File = $archive; Sha256 = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() }
+
+    # setup.exe: the same build inside an installer that needs no internet
+    # or GitHub sign-in, to carry on a USB drive, and asks at install for
+    # what needs administrator rights.
+    if ($exe) {
+        $env:SETUP_PAYLOAD = $archive
+        $env:SETUP_RELEASE = $tag
+        Push-Location (Join-Path $root 'desktop')
+        try { Step cargo build --release --locked --target $b.Target --bin setup }
+        finally { Pop-Location; $env:SETUP_PAYLOAD = $null; $env:SETUP_RELEASE = $null }
+        $setup = Join-Path $out 'setup.exe'
+        Copy-Item (Join-Path $root "desktop/target/$($b.Target)/release/setup.exe") $setup -Force
+        $made += [pscustomobject]@{ Name = 'windows-setup'; File = $setup; Sha256 = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower() }
+    }
 }
 $made | Format-Table Name, Sha256 -AutoSize | Out-Host
 
 if (-not $Publish) { return }
 
-if (-not $Version) {
-    $latest = gh release list --repo $repo --limit 1 --json tagName -q '.[0].tagName'
-    $Version = if ($latest) {
-        $parts = $latest.TrimStart('v').Split('.')
-        $parts[-1] = [int]$parts[-1] + 1
-        $parts -join '.'
-    }
-    else { '0.1.0' }
-}
 $tag = "v$Version"
 gh release view $tag --repo $repo *> $null
 if ($LASTEXITCODE -eq 0) {

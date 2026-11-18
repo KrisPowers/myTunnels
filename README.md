@@ -26,7 +26,8 @@ browser ──https──> Cloudflare edge ──tunnel──> cloudflared ─�
 
 Install it, with nothing else needed first. cloudflared comes with it. The repository is
 private, so each way signs in with [GitHub CLI](https://cli.github.com/) (`gh auth login`, and
-`gh auth setup-git` for Homebrew's tap) as an account that can see it.
+`gh auth setup-git` for Homebrew's tap) as an account that can see it. To install without
+either, see [Without internet or a GitHub sign-in](#without-internet-or-a-github-sign-in).
 
 Windows, in PowerShell:
 
@@ -51,6 +52,23 @@ Releases are built by `pwsh scripts/build.ps1 -Publish`, which builds what the c
 runs on can (Windows on Windows, macOS on a Mac, and with zig installed Linux and macOS from
 anywhere, against Apple's SDK fetched once into `builds/.sdk`), releases it and points the
 formula in `Formula/` at it. Without `-Publish` it only builds, into `builds/`.
+
+### Without internet or a GitHub sign-in
+
+On Windows, `builds/setup.exe` (also on each release) carries the whole build inside it. Copy
+it to a USB drive and run it on the other computer. Before installing it asks whether to set
+up, with one admin prompt, what would otherwise ask later: the hardware sensors behind the
+Dashboard's Advanced view, and the firewall for router ports. It then starts myTunnels, and
+opens it from the Start menu from then on.
+
+On macOS or Linux, copy `scripts/install.sh` and the system's archive from `builds/`, then:
+
+```sh
+MYTUNNELS_ARCHIVE=/media/usb/linux-x64.tar.gz sh /media/usb/install.sh
+```
+
+`install.ps1` takes `MYTUNNELS_ARCHIVE` the same way. A build installed from `builds/` without
+`-Publish` names no release, so it is never offered an update.
 
 Then start it, once:
 

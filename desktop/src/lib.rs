@@ -130,18 +130,26 @@ pub fn escape(text: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// The panel's font, carried inside the program.
+pub const FONT: &str = include_str!(concat!(env!("OUT_DIR"), "/font.css"));
+
 /// The panel's colours and type, for the pages shown before it answers.
 pub const STYLE: &str = r#"
 :root {
   color-scheme: light dark;
   --bg: light-dark(#f4f5f6, #141517);
   --card: light-dark(#ffffff, #1c1d20);
+  --card-2: light-dark(#f2f3f5, #25262a);
   --line: light-dark(#e5e7ea, #2a2b2f);
+  --line-strong: light-dark(#cdd1d6, #3b3c41);
   --text: light-dark(#1c1e21, #f4f5f6);
   --text-2: light-dark(#50565e, #b6b9c0);
   --text-3: light-dark(#80868f, #7f838b);
   --accent: light-dark(#006fff, #4797ff);
+  --on-accent: #ffffff;
   --btn: light-dark(#eef0f2, #2a2b2f);
+  --btn-hover: light-dark(#e3e6e9, #34353a);
+  --warn: light-dark(#c26a00, #f5a524);
   --ok: light-dark(#1f9e4f, #38c66c);
   --bad: light-dark(#d93a3f, #f2555b);
   --font: "Roboto", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -156,7 +164,7 @@ p { margin: 0; color: var(--text-2); max-width: 520px; }
 /// A page with a title and a line under it.
 pub fn page(title: &str, detail: &str) -> String {
     format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><style>{STYLE}</style></head>\
+        "<!doctype html><html><head><meta charset=\"utf-8\"><style>{FONT}{STYLE}</style></head>\
          <body><div class=\"center\"><div><h1>{}</h1><p>{}</p></div></div></body></html>",
         escape(title),
         escape(detail)
