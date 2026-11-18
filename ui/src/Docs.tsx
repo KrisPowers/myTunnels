@@ -4,11 +4,12 @@ import type { IconName } from "./Icon";
 // The sections, in the order the sidebar lists them.
 export const DOCS: [string, string, IconName][] = [
   ["start", "Getting started", "info"],
-  ["dashboard", "Dashboard", "dashboard"],
-  ["containers", "Containers", "deployed_code"],
-  ["storage", "Storage", "cloud"],
+  ["containers", "Services", "deployed_code"],
   ["forward", "Routes", "wifi_cog"],
+  ["storage", "Storage", "cloud"],
+  ["mail", "Mail", "mail"],
   ["domains", "Domains", "public"],
+  ["dashboard", "Dashboard", "dashboard"],
   ["access", "Access Control", "shield"],
   ["devices", "Devices", "devices"],
   ["users", "Users", "group"],
@@ -53,36 +54,42 @@ const CONTENT: Record<string, ReactNode> = {
         <p>A domain's menu holds <b>Make primary</b> (the mail server is <code>mail.</code> on the primary domain), Cloudflare sync, its <b>Managers</b> (dashboard accounts with View mail that run its addresses without setting mail up), and removing it.</p>
       </Doc>
       <Doc title="Inside a domain">
-        <p><b>DNS</b> lists its records, one line each. A click opens one in full to change or remove it; <b>Add record</b> adds A, AAAA, CNAME, MX or TXT. Records mail needs that DNS lacks are listed with an <b>Add</b> button. For DNS kept elsewhere, it lists what mail needs there, each checked against DNS.</p>
-        <p><b>Mail</b> lists its addresses and aliases. <b>New address</b> takes a name and a password; mail apps sign in with the full address. <b>Turn mail apps off</b> keeps an address from signing in to IMAP and SMTP while its mail still arrives. <b>New alias</b> sends another address, or <code>@domain</code> for everything else at it, to an address. Mail for <code>postmaster</code> and <code>abuse</code> goes to the first address.</p>
+        <p>Its heading says what uses it: how many services are reached at it, and how many mail addresses it has, which open Mail. <b>Services</b> lists every tunnel at the domain or under it. <b>DNS</b> lists its records, one line each. A click opens one in full to change or remove it; <b>Add record</b> adds A, AAAA, CNAME, MX or TXT. Records mail needs that DNS lacks are listed with an <b>Add</b> button. For DNS kept elsewhere, it lists what mail needs there, each checked against DNS. <b>Redirects</b>, for a domain on Cloudflare, sends any address under it elsewhere.</p>
       </Doc>
+    </>
+  ),
+  mail: (
+    <>
       <Doc title="Mail">
         <p>Each domain is served by a mail server on this computer: it receives mail, keeps each address's mailboxes here, and sends mail signed with DKIM. Outlook, Gmail, Apple Mail, Thunderbird and phones read and send it over IMAP and SMTP.</p>
       </Doc>
+      <Doc title="Addresses">
+        <p><b>Addresses</b> lists every mailbox and alias, under its domain when there are more than one. <b>New address</b> takes a domain, a name and a password; mail apps sign in with the full address. <b>Turn mail apps off</b> keeps an address from signing in to IMAP and SMTP while its mail still arrives. <b>New alias</b> sends another address, or <code>@domain</code> for everything else at it, to an address. Mail for <code>postmaster</code> and <code>abuse</code> goes to the first address. Mail runs on the domains on <b>Domains</b>; add one there first.</p>
+      </Doc>
       <Doc title="Picking the ways in and out">
-        <p>A domain's <b>Settings</b> tab sets mail up a step at a time: how mail arrives, how mail apps connect, how mail leaves. Each way is ticked or crossed for whether it exposes a port, depends on a third party, is usage limited, is often blocked at home, or needs a paid plan. Any mix works, except that the Cloudflare ways need every domain synced with Cloudflare:</p>
+        <p><b>Mail</b>'s <b>Settings</b> tab sets mail up a step at a time: how mail arrives, how mail apps connect, how mail leaves. Each way is ticked or crossed for whether it exposes a port, depends on a third party, is usage limited, is often blocked at home, or needs a paid plan. Any mix works, except that the Cloudflare ways need every domain synced with Cloudflare:</p>
         <ul>
           <li><b>Receiving, Port forward</b>: the traditional way. Port 25 is forwarded to this computer and the domain's MX record points at <code>mail.</code> on it, which follows this network's public address. <b>Cloudflare</b>: Email Routing takes the mail and a Worker posts it here through the tunnel, with no port open.</li>
           <li><b>Mail apps, Port forward</b>: IMAP on 993 and SMTP on 465, with a Let's Encrypt certificate, proved through Cloudflare DNS, or over port 80 while it is made for a domain kept by hand. <b>Tailscale</b>: IMAP on 443 and SMTP on 8443 through Tailscale Funnel, with Tailscale's certificate.</li>
           <li><b>Sending, Direct</b>: from this computer to each recipient's server on port 25. Many internet providers block that; <b>Relay</b> sends through another SMTP server instead, and <b>Cloudflare</b> through Email Sending, which needs the Workers Paid plan.</li>
         </ul>
-        <p>The ports it opens are rows on <b>Routes</b>, named <b>Mail</b>. Afterwards, <b>Settings</b> shows how mail moves and how mail apps sign in, with <b>Change</b> to switch any part (the ports and records follow), the switches for incoming mail, and <b>Run setup again</b> and <b>Turn off</b>.</p>
+        <p>The ports it opens are rows on <b>Services</b>, named <b>Mail</b>. Afterwards, <b>Settings</b> shows how mail moves and how mail apps sign in, with <b>Change</b> to switch any part (the ports and records follow), the switches for incoming mail, and <b>Run setup again</b> and <b>Turn off</b>.</p>
       </Doc>
       <Doc title="Checks on mail that comes in">
-        <p>Each message is checked with SPF, DKIM and DMARC. Mail that fails, or claims to be from your own domains without proof, goes to Junk; <b>Refuse spoofed mail</b> turns away mail whose sender's policy says reject. Attachments that can run code are marked <code>$Risky</code>, newsletters <code>$Marketing</code>. A domain's <b>Activity</b> lists what came in and went out for it.</p>
+        <p>Each message is checked with SPF, DKIM and DMARC. Mail that fails, or claims to be from your own domains without proof, goes to Junk; <b>Refuse spoofed mail</b> turns away mail whose sender's policy says reject. Attachments that can run code are marked <code>$Risky</code>, newsletters <code>$Marketing</code>. <b>Activity</b> lists what came in and went out.</p>
       </Doc>
     </>
   ),
   start: (
     <>
       <Doc title="What it does">
-        <p>myTunnels puts apps running on this computer on the internet through Cloudflare Tunnel, without opening a port on your router. Each app gets an address such as <code>app1.example.com</code>, and every visit passes through myTunnels first, which can ask who the visitor is before the app loads.</p>
+        <p>myTunnels is your own cloud, on this computer. <b>Services</b> runs your apps, in containers or as they are, and puts them on the internet through Cloudflare Tunnel without opening a port on your router, or on your tailnet, or through a router port. Each gets an address such as <code>app1.example.com</code>, and every visit passes through myTunnels first, which can ask who the visitor is before the app loads. <b>Storage</b> keeps your files and <b>Mail</b> runs mail on your own domains, both reached from anywhere the same way.</p>
       </Doc>
       <Doc title="How a visit travels">
         <p>The browser reaches Cloudflare, which sends the visit down the tunnel to the connector running inside myTunnels. myTunnels checks the tunnel's access layers, then hands the request to the app on its local port. WebSockets work the same way.</p>
       </Doc>
-      <Doc title="Connecting Cloudflare">
-        <p>Setup asks only for the host account. Cloudflare is connected the first time a tunnel needs it: picking <b>Tunnel</b> in <b>New route</b>, or <b>Connect</b> under Settings, Cloudflare, opens <b>Connect Cloudflare</b>, and it opens again each time until it is connected. <b>Open Cloudflare</b> makes a token with the right permissions; paste it back and the tunnel and connector are set up.</p>
+      <Doc title="Setting it up">
+        <p>On Windows, <b>setup.exe</b> installs everything from one file, with no internet needed for myTunnels itself, and asks once for administrator rights for what you choose: the hardware sensors, the firewall for router ports, Docker and Tailscale. Then the dashboard asks for two things: the host account, and <b>Connect Cloudflare</b>. <b>Open Cloudflare</b> makes a token with the right permissions; paste it back and the tunnel and connector are set up. <b>Skip for now</b> leaves it for later; anything that needs Cloudflare asks again, as does <b>Connect</b> under Settings, Cloudflare.</p>
       </Doc>
       <Doc title="Changing the Cloudflare connection">
         <p>Settings, Cloudflare holds the account and tunnel. A new API token can replace the old one at any time. Switching to another account or tunnel needs every tunnel removed first, since their DNS records live in the old one.</p>
@@ -105,7 +112,7 @@ const CONTENT: Record<string, ReactNode> = {
   containers: (
     <>
       <Doc title="What it shows">
-        <p><b>Containers</b> is the catalog of containers, a row each with what it is in a tile tinted by its state, its name over where it comes from, its address, and its CPU and memory while it runs. Compose projects with more than one container fold under their name. Search, or pick <b>All</b> or <b>Running</b>; it refreshes on its own. The plus, here and in the header, adds a <b>Container from GitHub</b> or <b>from an image</b>, or a <b>Forward</b>.</p>
+        <p><b>Services</b> is everything this computer hosts, a row each. A container shows what it is in a tile tinted by its state, its name over where it comes from, its address, and its CPU and memory while it runs; Compose projects with more than one container fold under their name. An app running here outside a container is the route to it: a tunnel, a router port or Tailscale. Search, or pick <b>All</b> or <b>Running</b>; it refreshes on its own. The plus adds a <b>Container from GitHub</b> or <b>from an image</b>, or a <b>Route</b> to a port on this computer.</p>
       </Doc>
       <Doc title="One container">
         <p>A container and its forwards are one page. Its heading holds its state, image and address, <b>Open</b>, the one button its state calls for (start, stop or resume) and a menu for the rest. Under it: <b>Overview</b> (its CPU, memory, network and disk while it runs, then what it runs, its state, ports, networks and mounts), <b>Routes</b>, <b>Images</b>, <b>Logs</b> and <b>Resources</b>: its CPU limit and priority, memory limit, reserved memory and swap, how many processes it may run and its <b>Auto-start</b>. Set to unless stopped by hand or always, it comes back on its own after a crash or a restart of the machine, once Docker runs again. A change applies at once and is given back when the container is made again.</p>
@@ -119,7 +126,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Container from an image</b> runs a Docker image, such as <code>nginx:1.27</code>. Its updates pull the image again, on a timer or with <b>Update</b>, and run it when it changed; each pull is listed like a build, so going back works the same way.</p>
       </Doc>
       <Doc title="Its images">
-        <p><b>Images</b> lists the image the container runs and the others of the same name, such as earlier versions, with their size and age. Open one for what it runs, its environment and labels, and its layers. One no container uses can be deleted; the menu at the top of Containers deletes every unused image at once.</p>
+        <p><b>Images</b> lists the image the container runs and the others of the same name, such as earlier versions, with their size and age. Open one for what it runs, its environment and labels, and its layers. One no container uses can be deleted; the menu at the top of Services deletes every unused image at once.</p>
       </Doc>
       <Doc title="Managing them">
         <p>Each row's menu holds logs, its forwards, start or stop, restart, kill and delete; a project's menu starts, stops or restarts all of it. Deleting takes a stopped container away and leaves its volumes. The container myTunnels runs in is marked and is never stopped from here.</p>
@@ -139,7 +146,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p>When myTunnels runs in Docker, that machine is reached through <span className="mono">server host</span> running on it. It pairs with the first myTunnels to ask and installs only for that one; to pair again, remove the <span className="mono">paired</span> file it names.</p>
       </Doc>
       <Doc title="What features need">
-        <p>Containers need Docker, tunnels need cloudflared, Tailscale forwards need Tailscale, and containers from a repository need Git, where myTunnels runs. Without one, the feature stays and says which app to install; on Forward, a way whose app is missing is listed but cannot be picked.</p>
+        <p>Containers need Docker, Tailscale routes need Tailscale, and containers from a repository need Git, where myTunnels runs; cloudflared comes with myTunnels. Without one, the feature stays and says which app to install; in New route, a way whose app is missing is listed but cannot be picked.</p>
       </Doc>
     </>
   ),
@@ -159,13 +166,13 @@ const CONTENT: Record<string, ReactNode> = {
   forward: (
     <>
       <Doc title="Three ways">
-        <p><b>Routes</b> is every opening in one list: router ports, Tailscale and tunnels, a row each with its address, where it goes, who reaches it and whether it is open. Search, or show one way at a time. The plus opens <b>New route</b>; the tiles at its top pick the way:</p>
+        <p>Every way in is a route: a container's are on its <b>Routes</b> page, and the rest are rows on <b>Services</b>, each with its address, where it goes, who reaches it and whether it is open. <b>Route</b>, under the plus, opens <b>New route</b>; <b>Route by</b> at its top picks the way:</p>
         <ul>
           <li><b>Port forward</b> opens the port on this PC first: a rule in Windows Firewall, which Windows asks administrator rights for, and a relay when the app is on another port or another machine. Then it asks the router, by UPnP, to send the same port of your public address here. Most routers keep UPnP off; the row then says <b>Router not forwarded</b>, the port still reaches this PC from your network, and the router's own settings can forward it. There is no sign-in or password on either.</li>
           <li><b>Tailscale</b> serves the app to the devices on your tailnet, at this machine's tailnet name. <b>Open to the internet</b> serves it to anyone through Funnel, on port 443, 8443 or 10000.</li>
           <li><b>Tunnel</b> gives the app an address on your domain through Cloudflare Tunnel, without opening a port on the router, with the full Access Control below.</li>
         </ul>
-        <p>A way whose app is not installed, cloudflared or Tailscale, stays in the list but cannot be picked until it is installed from <a href="#/apps">Apps</a>.</p>
+        <p>A way whose app is not installed, Tailscale, stays in the list but cannot be picked until it is installed from <a href="#/apps">Apps</a>. cloudflared comes with myTunnels.</p>
       </Doc>
       <Doc title="A new tunnel">
         <p>Pick <b>Tunnel</b>, type a subdomain, pick one of your domains, and enter the port the app listens on. Choose who can open it, then press <b>Publish</b>. The DNS record and the route are made for you, and removed with the tunnel.</p>
