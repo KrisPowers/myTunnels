@@ -31,15 +31,6 @@ function summary(d: Deploy, steps: FlowStep[] | undefined) {
 
 // ---- the list ----
 
-// The flow every automation follows, drawn when there is none yet.
-const INTRO: [IconName, string, string, string][] = [
-  ["bolt", "", "Starts", "A push, a release or a timer"],
-  ["code", "", "Build", "From the repository or image"],
-  ["terminal", "test", "Test", "Your commands must pass"],
-  ["visibility", "review", "Review", "Someone approves it"],
-  ["rocket_launch", "live", "Go live", "Replaces the container"],
-];
-
 function AutomationList() {
   const can = useCan();
   const notify = useNotify();
@@ -121,16 +112,8 @@ function AutomationList() {
           </section>
         )}
         {!list ? (!problem && <div className="repo-loading"><span className="spinner" /></div>) : list.length === 0 ? (
-          <div className="card auto-intro">
-            <ol className="auto-steps">
-              {INTRO.map(([icon, tone, title, what]) => (
-                <li key={title}>
-                  <span className={"flow-dot " + tone}><Icon name={icon} size={22} /></span>
-                  <b>{title}</b>
-                  <small>{what}</small>
-                </li>
-              ))}
-            </ol>
+          <div className="card welcome">
+            <Icon name="workflow" size={48} />
             <h2>Nothing is automated yet</h2>
             <p>Add a container from GitHub or an image, and every new release, push or timer runs it through its flow.</p>
             {can("containers.deploy") && <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="add" size={18} />New automation</button>}
