@@ -2,13 +2,13 @@ import { useCallback, useContext, useEffect, useState } from "react";
 import { NeedsContext } from "./Apps";
 import { useCloudflareReady } from "./Cloudflare";
 import {
-  api, message,
-  type MailApps, type MailLog, type MailReceive, type MailSend, type MailState, type Zone,
+  api, bytes, message,
+  type MailAccount, type MailApps, type MailLog, type MailReceive, type MailSend, type MailState, type Zone,
 } from "./api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
-import { ArmedButton, Callout, Card, Copy, Dialog, Row, Switch, TextField, useNotify } from "./ui";
+import { ArmedButton, Callout, Card, Copy, Dialog, MoreMenu, Row, Switch, TextField, useNotify, type MenuAction } from "./ui";
 
 // A way mail is received, reached by mail apps or sent, with what it means at
 // a glance: each fact is a drawback, ticked when the way has it.
@@ -321,7 +321,8 @@ export function MailSettings({ state, onState }: { state: MailState; onState: (s
 
 const TONE: Record<string, string> = { delivered: "ok", sent: "ok", junk: "warn", queued: "", rejected: "bad", failed: "bad", bounced: "bad" };
 
-export function MailActivity({ domain }: { domain: string }) {
+// MailActivity is what came in and went out, for `domain` or every domain.
+export function MailActivity({ domain }: { domain?: string }) {
   const [log, setLog] = useState<MailLog[] | null>(null);
   useEffect(() => {
     const load = () => api.mailLog().then(setLog).catch(() => {});
@@ -330,7 +331,7 @@ export function MailActivity({ domain }: { domain: string }) {
     return () => clearInterval(t);
   }, []);
   if (!log) return null;
-  const mine = log.filter((e) => domainOf(e.from) === domain || domainOf(e.to) === domain);
+  const mine = domain ? log.filter((e) => domainOf(e.from) === domain || domainOf(e.to) === domain) : log;
   return (
     <div className="card">
         {mine.length === 0 ? <p className="empty-note mail-none">Nothing has come in or gone out yet.</p> : (
@@ -354,5 +355,255 @@ export function MailActivity({ domain }: { domain: string }) {
           </div>
         )}
     </div>
+  );
+}
+
+// ---- the page ----
+
+const TABS: [string, string, IconName][] = [
+  ["addresses", "Addresses", "mail"],
+  ["activity", "Activity", "history"],
+  ["settings", "Settings", "settings"],
+];
+
+// useMail loads mail's state, quickly while setup runs.
+function useMail() {
+  const [state, setState] = useState<MailState | null>(null);
+  const [problem, setProblem] = useState("");
+  const load = useCallback(async () => {
+    try {
+      setState(await api.mail());
+      setProblem("");
+    } catch (e) {
+      setProblem(message(e));
+    }
+  }, []);
+  const running = !!state?.job.running;
+  useEffect(() => {
+    load();
+    const t = setInterval(load, running ? 1500 : 10_000);
+    return () => clearInterval(t);
+  }, [load, running]);
+  return { state, setState, problem };
+}
+
+// MailPage is mail for every domain on Domains: the addresses and aliases,
+// what came in and went out, and how the mail server runs. Until it is set
+// up, it opens on setting it up.
+export function MailPage({ tab }: { tab: string }) {
+  const { state, setState, problem } = useMail();
+  const act = useAct(setState);
+  const [adding, setAdding] = useState(false);
+  const [alias, setAlias] = useState(false);
+  const [password, setPassword] = useState<string | null>(null);
+  if (!state) return problem ? <div className="page-body"><Callout tone="bad" icon="error">{problem}</Callout></div> : null;
+  const s = state.settings;
+  const current = TABS.some(([k]) => k === tab) ? tab : s.on ? "addresses" : "settings";
+  const runs = state.manages;
+  const targets = state.accounts.filter((a) => runs.includes(domainOf(a.address))).map((a) => a.address);
+  const domains = s.domains.map((d) => d.name);
+  return (
+    <>
+      <div className="page-head">
+        <div className="page-head-main">
+          <h1>Mail</h1>
+          <div className="page-sub">
+            {s.on ? <span><b>{state.accounts.length}</b> {state.accounts.length === 1 ? "address" : "addresses"}</span> : <span>Not set up</span>}
+            <a href="#/domains"><b>{domains.length}</b> {domains.length === 1 ? "domain" : "domains"}</a>
+          </div>
+        </div>
+        {current === "addresses" && s.on && runs.length > 0 && (
+          <div className="page-actions">
+            {targets.length > 0 && <button type="button" className="btn" onClick={() => setAlias(true)}><Icon name="call_split" size={18} />New alias</button>}
+            <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="add" size={18} />New address</button>
+          </div>
+        )}
+      </div>
+      <nav className="sub-nav" aria-label="Mail">
+        {TABS.map(([key, label, icon]) => (
+          <a key={key} className={"sub-nav-item" + (current === key ? " on" : "")} href={`#/mail/${key}`} aria-current={current === key ? "page" : undefined}>
+            <Icon name={icon} size={18} />
+            <span>{label}</span>
+          </a>
+        ))}
+      </nav>
+      <div className="page-body stack" key={current}>
+        {domains.length === 0 && <Callout icon="public">Mail runs on your own domains. <a href="#/domains">Add a domain</a> first.</Callout>}
+        {current === "addresses" && (s.on ? <Addresses state={state} onState={setState} onPassword={setPassword} />
+          : domains.length > 0 && <Callout icon="info">Mail is not set up yet. <a href="#/mail/settings">Set it up</a></Callout>)}
+        {current === "activity" && <MailActivity />}
+        {current === "settings" && (
+          <>
+            <MailStatus state={state} onState={setState} domain="" />
+            <MailSettings state={state} onState={setState} />
+          </>
+        )}
+      </div>
+      {adding && <NewAddress domains={runs} onClose={() => setAdding(false)}
+        onSave={(address, name, pass) => act(() => api.addMailAccount({ address, name, password: pass }), `Added ${address}`)} />}
+      {alias && <NewAlias accounts={targets} domains={runs} onClose={() => setAlias(false)}
+        onSave={(from, to) => act(() => api.setMailAlias(from, to), `${from} goes to ${to}`)} />}
+      {password && <NewPassword address={password} onClose={() => setPassword(null)}
+        onSave={(address, pass) => act(() => api.editMailAccount(address, { password: pass }), "Password changed")} />}
+    </>
+  );
+}
+
+// Addresses is every mailbox and alias, under its domain when there are more
+// than one.
+function Addresses({ state, onState, onPassword }: { state: MailState; onState: (s: MailState) => void; onPassword: (address: string) => void }) {
+  const domains = state.settings.domains.map((d) => d.name);
+  const none = state.accounts.length === 0 && state.aliases.length === 0;
+  if (none) {
+    return (
+      <div className="card welcome">
+        <Icon name="mail" size={40} />
+        <h2>No addresses yet</h2>
+        <p className="muted">Add one with New address. Mail apps sign in with the full address and its password.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="card">
+      <ul className="results ct-list">
+        {domains.flatMap((domain) => {
+          const runs = state.manages.includes(domain);
+          const accounts = state.accounts.filter((a) => domainOf(a.address) === domain);
+          const aliases = state.aliases.filter((x) => domainOf(x.alias) === domain);
+          if (!accounts.length && !aliases.length) return [];
+          return [
+            ...(domains.length > 1 ? [<li key={"d-" + domain} className="ct-group-head"><b>{domain}</b></li>] : []),
+            ...accounts.map((a) => <AccountRow key={a.address} account={a} runs={runs} onState={onState} onPassword={() => onPassword(a.address)} />),
+            ...aliases.map((x) => <AliasRow key={x.alias} alias={x.alias} target={x.target} runs={runs} onState={onState} />),
+          ];
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// DomainPick is the domain a new address or alias goes on, when there is a choice.
+function DomainPick({ domains, value, onChange }: { domains: string[]; value: string; onChange: (d: string) => void }) {
+  if (domains.length < 2) return null;
+  return (
+    <div className="tf static">
+      <div className="tf-box">
+        <Dropdown label="Domain" value={value} onChange={onChange} options={domains.map((d) => ({ value: d, label: d }))} />
+        <span className="tf-label">Domain</span>
+      </div>
+    </div>
+  );
+}
+
+function AccountRow({ account, runs, onState, onPassword }: { account: MailAccount; runs: boolean; onState: (s: MailState) => void; onPassword: () => void }) {
+  const act = useAct(onState);
+  const a = account;
+  const actions: MenuAction[] = [
+    { label: "Change password", icon: "password", onClick: onPassword },
+    a.apps
+      ? { label: "Turn mail apps off", icon: "block", hint: "IMAP and SMTP refuse it; mail still arrives", onClick: () => act(() => api.editMailAccount(a.address, { apps: false }), "Mail apps are off for it") }
+      : { label: "Turn mail apps on", icon: "check_circle", hint: "It can sign in to IMAP and SMTP again", onClick: () => act(() => api.editMailAccount(a.address, { apps: true }), "Mail apps are on for it") },
+    { label: "Remove", icon: "delete", danger: true, confirm: "Remove with its mail", onClick: () => act(() => api.removeMailAccount(a.address), `Removed ${a.address}`) },
+  ];
+  return (
+    <li className="ct-row mail-row">
+      <div className="ct-row-main">
+        <span className={"ct-kind" + (a.apps ? " ok" : "")}><Icon name="person" /></span>
+        <span className="ct-name-text">
+          <b>{a.address}{!a.apps && <span className="chip warn">Mail apps off</span>}</b>
+          <small>{[a.name, plural(a.messages, "message"), bytes(a.size)].filter(Boolean).join(" · ")}</small>
+        </span>
+      </div>
+      {runs && <span className="ct-menu"><MoreMenu label={`Actions for ${a.address}`} actions={actions} /></span>}
+    </li>
+  );
+}
+
+function AliasRow({ alias, target, runs, onState }: { alias: string; target: string; runs: boolean; onState: (s: MailState) => void }) {
+  const act = useAct(onState);
+  return (
+    <li className="ct-row mail-row">
+      <div className="ct-row-main">
+        <span className="ct-kind"><Icon name="call_split" /></span>
+        <span className="ct-name-text">
+          <b>{alias.startsWith("@") ? `Everything else at ${alias}` : alias}</b>
+          <small>To {target}</small>
+        </span>
+      </div>
+      {runs && <span className="ct-menu"><MoreMenu label={`Actions for ${alias}`} actions={[{ label: "Remove", icon: "delete", danger: true, onClick: () => act(() => api.removeMailAlias(alias), `Removed ${alias}`) }]} /></span>}
+    </li>
+  );
+}
+
+function NewAddress({ domains, onClose, onSave }: { domains: string[]; onClose: () => void; onSave: (address: string, name: string, password: string) => Promise<boolean> }) {
+  const [domain, setDomain] = useState(domains[0] ?? "");
+  const [local, setLocal] = useState("");
+  const [name, setName] = useState("");
+  const [pass, setPass] = useState("");
+  const full = `${local.trim().replace(/@.*$/, "")}@${domain}`;
+  return (
+    <Dialog title="New address" onClose={onClose}>
+      <form onSubmit={async (e) => {
+        e.preventDefault();
+        if (await onSave(full, name.trim(), pass)) onClose();
+      }}>
+        <DomainPick domains={domains} value={domain} onChange={setDomain} />
+        <TextField label="Address" autoFocus autoComplete="off" value={local} onChange={setLocal} trailing={<span className="muted">@{domain}</span>} />
+        <TextField label="Name" autoComplete="off" value={name} onChange={setName} hint="Shown as who mail is from" />
+        <TextField label="Password" type="password" autoComplete="new-password" data-1p-ignore value={pass} onChange={setPass} />
+        <div className="edit-actions">
+          <button type="button" className="btn text" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={!local.trim() || !pass}>Add</button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function NewAlias({ accounts, domains, onClose, onSave }: { accounts: string[]; domains: string[]; onClose: () => void; onSave: (alias: string, target: string) => Promise<boolean> }) {
+  const [domain, setDomain] = useState(domains[0] ?? "");
+  const [local, setLocal] = useState("");
+  const [target, setTarget] = useState(accounts.find((a) => domainOf(a) === domain) ?? accounts[0] ?? "");
+  const full = `${local.trim().replace(/@.*$/, "")}@${domain}`;
+  return (
+    <Dialog title="New alias" onClose={onClose}>
+      <form onSubmit={async (e) => {
+        e.preventDefault();
+        if (await onSave(full, target)) onClose();
+      }}>
+        <DomainPick domains={domains} value={domain} onChange={setDomain} />
+        <TextField label="Address" autoFocus autoComplete="off" value={local} onChange={setLocal} trailing={<span className="muted">@{domain}</span>}
+          hint={local.trim() ? undefined : `Empty for everything else at @${domain}`} />
+        <div className="tf static">
+          <div className="tf-box">
+            <Dropdown label="Delivered to" value={target} onChange={setTarget} options={accounts.map((a) => ({ value: a, label: a }))} />
+            <span className="tf-label">Delivered to</span>
+          </div>
+        </div>
+        <div className="edit-actions">
+          <button type="button" className="btn text" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={!target}>Add</button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function NewPassword({ address, onClose, onSave }: { address: string; onClose: () => void; onSave: (address: string, password: string) => Promise<boolean> }) {
+  const [pass, setPass] = useState("");
+  return (
+    <Dialog title={`Password for ${address}`} onClose={onClose}>
+      <form onSubmit={async (e) => {
+        e.preventDefault();
+        if (await onSave(address, pass)) onClose();
+      }}>
+        <TextField label="New password" type="password" autoFocus autoComplete="new-password" data-1p-ignore value={pass} onChange={setPass}
+          hint="Mail apps signed in with the old one are asked again" />
+        <div className="edit-actions">
+          <button type="button" className="btn text" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={!pass}>Save</button>
+        </div>
+      </form>
+    </Dialog>
   );
 }

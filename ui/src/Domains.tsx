@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useCloudflare } from "./Cloudflare";
-import { api, bytes, message, type DnsRecord, type DnsZone, type MailAccount, type MailDomain, type MailRecords, type MailState, type Redirect, type Redirects, type Registrar } from "./api";
+import { api, message, type DnsRecord, type DnsZone, type MailDomain, type MailRecords, type MailState, type Redirect, type Redirects, type Registrar, type Route } from "./api";
 import { Dropdown, MultiDropdown } from "./Dropdown";
 import { Icon, type IconName } from "./Icon";
-import { cleanDomain, DOMAIN, domainOf, MailActivity, MailSettings, MailStatus, plural, useAct, useZones } from "./Mail";
+import { ForwardRows } from "./Forward";
+import { cleanDomain, DOMAIN, domainOf, MailStatus, plural, useAct, useZones } from "./Mail";
 import { useCan } from "./me";
 import { go } from "./route";
 import { ConnectRegistrar } from "./Registrars";
 import { AddMenu, ArmedButton, Callout, Copy, Dialog, MoreMenu, Row, SubNav, Switch, TextField, useNotify, type MenuAction } from "./ui";
+
+// Whether a hostname is the domain or under it.
+const under = (host: string, domain: string) => host === domain || host.endsWith("." + domain);
 
 // Where a domain's DNS is hosted: records added by hand anywhere, or its real
 // zone, read and changed here, on Cloudflare or at a registrar.
@@ -65,7 +69,9 @@ function useDomains() {
 
 // ---- the list ----
 
-export function DomainsPage({ id, tab }: { id: string; tab: string }) {
+// DomainsPage is the domains everything here is reached at: each with what
+// uses it, its services and its mail addresses, and its DNS and redirects.
+export function DomainsPage({ id, tab, routes, onChanged }: { id: string; tab: string; routes: Route[]; onChanged: () => Promise<void> }) {
   const can = useCan();
   const { state, setState, problem, records } = useDomains();
   const [adding, setAdding] = useState(false);
@@ -76,7 +82,7 @@ export function DomainsPage({ id, tab }: { id: string; tab: string }) {
 
   if (!state) return problem ? <div className="page-body"><Callout tone="bad" icon="error">{problem}</Callout></div> : null;
   if (domain) {
-    return <DomainPage domain={domain} tab={tab} state={state} onState={setState} />;
+    return <DomainPage domain={domain} tab={tab} state={state} onState={setState} routes={routes} onChanged={onChanged} />;
   }
   const domains = state.settings.domains;
   const manage = can("mail.manage");
@@ -98,7 +104,8 @@ export function DomainsPage({ id, tab }: { id: string; tab: string }) {
           {domains.length === 0 ? <p className="empty-note mail-none">No domains yet.</p> : (
             <ul className="results ct-list">
               {domains.map((d, i) => (
-                <DomainRow key={d.name} domain={d} primary={i === 0} list={records?.find((r) => r.domain === d.name)} state={state} onState={setState} />
+                <DomainRow key={d.name} domain={d} primary={i === 0} list={records?.find((r) => r.domain === d.name)} state={state} onState={setState}
+                  services={routes.filter((r) => under(r.hostname, d.name)).length} />
               ))}
             </ul>
           )}
@@ -135,8 +142,8 @@ function useActions(domain: MailDomain, primary: boolean, state: MailState, onSt
   ];
 }
 
-function DomainRow({ domain, primary, list, state, onState }: {
-  domain: MailDomain; primary: boolean; list: MailRecords | undefined; state: MailState; onState: (s: MailState) => void;
+function DomainRow({ domain, primary, list, state, onState, services }: {
+  domain: MailDomain; primary: boolean; list: MailRecords | undefined; state: MailState; onState: (s: MailState) => void; services: number;
 }) {
   const [managing, setManaging] = useState(false);
   const actions = useActions(domain, primary, state, onState, () => setManaging(true));
@@ -151,7 +158,7 @@ function DomainRow({ domain, primary, list, state, onState }: {
         </span>
         <span className="ct-name-text">
           <b>{domain.name}</b>
-          <small>{[hostOf(domain).label, missing === null ? "Checking DNS" : missing ? `${plural(missing, "record")} to add` : "DNS ready", plural(addresses, "address", "addresses")].join(" · ")}</small>
+          <small>{[hostOf(domain).label, missing === null ? "Checking DNS" : missing ? `${plural(missing, "record")} to add` : "DNS ready", plural(services, "service"), plural(addresses, "address", "addresses")].join(" · ")}</small>
         </span>
       </a>
       {actions.length > 0 && <span className="ct-menu"><MoreMenu label={`Actions for ${domain.name}`} actions={actions} /></span>}
@@ -268,27 +275,33 @@ function ManagersDialog({ domain, state, onState, onClose }: { domain: MailDomai
 // ---- one domain ----
 
 const TABS: [string, string, IconName][] = [
+  ["services", "Services", "deployed_code"],
   ["dns", "DNS", "dns"],
   ["redirects", "Redirects", "corner_up_right"],
-  ["mail", "Mail", "mail"],
-  ["activity", "Activity", "history"],
-  ["settings", "Settings", "settings"],
 ];
 
-function DomainPage({ domain, tab, state, onState }: { domain: MailDomain; tab: string; state: MailState; onState: (s: MailState) => void }) {
+function DomainPage({ domain, tab, state, onState, routes, onChanged }: {
+  domain: MailDomain; tab: string; state: MailState; onState: (s: MailState) => void; routes: Route[]; onChanged: () => Promise<void>;
+}) {
   const [managing, setManaging] = useState(false);
   const [bar, setBar] = useState<HTMLElement | null>(null);
   const primary = state.settings.domains[0]?.name === domain.name;
   const actions = useActions(domain, primary, state, onState, () => setManaging(true));
   // Redirects are answered through the tunnel, so need the domain on Cloudflare.
   const tabs = TABS.filter(([k]) => k !== "redirects" || !!domain.zone_id);
-  const current = tabs.some(([k]) => k === tab) ? tab : "dns";
+  const current = tabs.some(([k]) => k === tab) ? tab : "services";
+  const mine = routes.filter((r) => under(r.hostname, domain.name));
+  const addresses = state.accounts.filter((a) => domainOf(a.address) === domain.name).length;
   return (
     <>
       <div className="page-head">
         <div className="page-head-main">
           <h1>{domain.name}</h1>
-          <div className="page-sub"><span>{hostOf(domain).label}</span></div>
+          <div className="page-sub">
+            <span>{hostOf(domain).label}</span>
+            <span><b>{mine.length}</b> {mine.length === 1 ? "service" : "services"}</span>
+            <a href="#/mail"><b>{addresses}</b> {addresses === 1 ? "address" : "addresses"}</a>
+          </div>
         </div>
         {actions.length > 0 && <div className="page-actions"><MoreMenu label={`Actions for ${domain.name}`} actions={actions} /></div>}
       </div>
@@ -297,16 +310,24 @@ function DomainPage({ domain, tab, state, onState }: { domain: MailDomain; tab: 
         <div className="sub-nav-actions" ref={setBar} />
       </div>
       <div className="page-body stack">
-        {current === "dns" && <Dns domain={domain.name} bar={bar} />}
-        {current === "redirects" && <RedirectList domain={domain.name} bar={bar} />}
-        {current === "mail" && <Addresses domain={domain.name} state={state} onState={onState} bar={bar} />}
-        {current === "activity" && <MailActivity domain={domain.name} />}
-        {current === "settings" && (
+        {current === "services" && (mine.length ? (
+          <div className="card">
+            <ForwardRows items={mine.map((r) => ({ r }))} hrefOf={(r) => `#/tunnels/${r.id}`} onChanged={onChanged} />
+          </div>
+        ) : (
+          <div className="card welcome">
+            <Icon name="deployed_code" size={40} />
+            <h2>Nothing reached here yet</h2>
+            <p className="muted">Services published at {domain.name} through a tunnel show here. <a href="#/routes/new">Publish one</a></p>
+          </div>
+        ))}
+        {current === "dns" && (
           <>
-            <MailStatus state={state} onState={onState} domain={domain.name} />
-            <MailSettings state={state} onState={onState} />
+            {state.settings.on && <MailStatus state={state} onState={onState} domain={domain.name} />}
+            <Dns domain={domain.name} bar={bar} />
           </>
         )}
+        {current === "redirects" && <RedirectList domain={domain.name} bar={bar} />}
       </div>
       {managing && <ManagersDialog domain={domain} state={state} onState={onState} onClose={() => setManaging(false)} />}
     </>
@@ -597,163 +618,6 @@ function RedirectDialog({ domain, redirect, editable, onClose, onSaved }: {
             )}
           </div>
         )}
-      </form>
-    </Dialog>
-  );
-}
-
-// ---- addresses ----
-
-// Addresses lists the domain's mailboxes and aliases, its buttons beside the
-// tabs; with none yet, the page is just the way to add the first.
-function Addresses({ domain, state, onState, bar }: { domain: string; state: MailState; onState: (s: MailState) => void; bar: HTMLElement | null }) {
-  const act = useAct(onState);
-  const [adding, setAdding] = useState(false);
-  const [alias, setAlias] = useState(false);
-  const [password, setPassword] = useState<string | null>(null);
-  const runs = state.manages.includes(domain);
-  const accounts = state.accounts.filter((a) => domainOf(a.address) === domain);
-  const aliases = state.aliases.filter((x) => domainOf(x.alias) === domain);
-  const targets = state.accounts.filter((a) => state.manages.includes(domainOf(a.address))).map((a) => a.address);
-  const none = accounts.length === 0 && aliases.length === 0;
-  const buttons = runs && (
-    <>
-      {targets.length > 0 && <button type="button" className="btn" onClick={() => setAlias(true)}><Icon name="call_split" size={18} />New alias</button>}
-      <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="add" size={18} />New address</button>
-    </>
-  );
-  return (
-    <>
-      {none ? (
-        <div className="welcome">
-          <Icon name="mail" size={48} />
-          {buttons && <div className="welcome-actions">{buttons}</div>}
-        </div>
-      ) : (
-        <>
-          {bar && buttons && createPortal(buttons, bar)}
-          <div className="card">
-            <ul className="results ct-list">
-              {accounts.map((a) => <AccountRow key={a.address} account={a} runs={runs} onState={onState} onPassword={() => setPassword(a.address)} />)}
-              {aliases.map((x) => <AliasRow key={x.alias} alias={x.alias} target={x.target} runs={runs} onState={onState} />)}
-            </ul>
-          </div>
-        </>
-      )}
-      {adding && <NewAddress domain={domain} onClose={() => setAdding(false)}
-        onSave={(address, name, pass) => act(() => api.addMailAccount({ address, name, password: pass }), `Added ${address}`)} />}
-      {alias && <NewAlias accounts={targets} domain={domain} onClose={() => setAlias(false)}
-        onSave={(from, to) => act(() => api.setMailAlias(from, to), `${from} goes to ${to}`)} />}
-      {password && <NewPassword address={password} onClose={() => setPassword(null)}
-        onSave={(address, pass) => act(() => api.editMailAccount(address, { password: pass }), "Password changed")} />}
-    </>
-  );
-}
-
-function AccountRow({ account, runs, onState, onPassword }: { account: MailAccount; runs: boolean; onState: (s: MailState) => void; onPassword: () => void }) {
-  const act = useAct(onState);
-  const a = account;
-  const actions: MenuAction[] = [
-    { label: "Change password", icon: "password", onClick: onPassword },
-    a.apps
-      ? { label: "Turn mail apps off", icon: "block", hint: "IMAP and SMTP refuse it; mail still arrives", onClick: () => act(() => api.editMailAccount(a.address, { apps: false }), "Mail apps are off for it") }
-      : { label: "Turn mail apps on", icon: "check_circle", hint: "It can sign in to IMAP and SMTP again", onClick: () => act(() => api.editMailAccount(a.address, { apps: true }), "Mail apps are on for it") },
-    { label: "Remove", icon: "delete", danger: true, confirm: "Remove with its mail", onClick: () => act(() => api.removeMailAccount(a.address), `Removed ${a.address}`) },
-  ];
-  return (
-    <li className="ct-row mail-row">
-      <div className="ct-row-main">
-        <span className={"ct-kind" + (a.apps ? " ok" : "")}><Icon name="person" /></span>
-        <span className="ct-name-text">
-          <b>{a.address}{!a.apps && <span className="chip warn">Mail apps off</span>}</b>
-          <small>{[a.name, plural(a.messages, "message"), bytes(a.size)].filter(Boolean).join(" · ")}</small>
-        </span>
-      </div>
-      {runs && <span className="ct-menu"><MoreMenu label={`Actions for ${a.address}`} actions={actions} /></span>}
-    </li>
-  );
-}
-
-function AliasRow({ alias, target, runs, onState }: { alias: string; target: string; runs: boolean; onState: (s: MailState) => void }) {
-  const act = useAct(onState);
-  return (
-    <li className="ct-row mail-row">
-      <div className="ct-row-main">
-        <span className="ct-kind"><Icon name="call_split" /></span>
-        <span className="ct-name-text">
-          <b>{alias.startsWith("@") ? `Everything else at ${alias}` : alias}</b>
-          <small>To {target}</small>
-        </span>
-      </div>
-      {runs && <span className="ct-menu"><MoreMenu label={`Actions for ${alias}`} actions={[{ label: "Remove", icon: "delete", danger: true, onClick: () => act(() => api.removeMailAlias(alias), `Removed ${alias}`) }]} /></span>}
-    </li>
-  );
-}
-
-function NewAddress({ domain, onClose, onSave }: { domain: string; onClose: () => void; onSave: (address: string, name: string, password: string) => Promise<boolean> }) {
-  const [local, setLocal] = useState("");
-  const [name, setName] = useState("");
-  const [pass, setPass] = useState("");
-  const full = `${local.trim().replace(/@.*$/, "")}@${domain}`;
-  return (
-    <Dialog title="New address" onClose={onClose}>
-      <form onSubmit={async (e) => {
-        e.preventDefault();
-        if (await onSave(full, name.trim(), pass)) onClose();
-      }}>
-        <TextField label="Address" autoFocus autoComplete="off" value={local} onChange={setLocal} trailing={<span className="muted">@{domain}</span>} />
-        <TextField label="Name" autoComplete="off" value={name} onChange={setName} hint="Shown as who mail is from" />
-        <TextField label="Password" type="password" autoComplete="new-password" data-1p-ignore value={pass} onChange={setPass} />
-        <div className="edit-actions">
-          <button type="button" className="btn text" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!local.trim() || !pass}>Add</button>
-        </div>
-      </form>
-    </Dialog>
-  );
-}
-
-function NewAlias({ accounts, domain, onClose, onSave }: { accounts: string[]; domain: string; onClose: () => void; onSave: (alias: string, target: string) => Promise<boolean> }) {
-  const [local, setLocal] = useState("");
-  const [target, setTarget] = useState(accounts.find((a) => domainOf(a) === domain) ?? accounts[0] ?? "");
-  const full = `${local.trim().replace(/@.*$/, "")}@${domain}`;
-  return (
-    <Dialog title="New alias" onClose={onClose}>
-      <form onSubmit={async (e) => {
-        e.preventDefault();
-        if (await onSave(full, target)) onClose();
-      }}>
-        <TextField label="Address" autoFocus autoComplete="off" value={local} onChange={setLocal} trailing={<span className="muted">@{domain}</span>}
-          hint={local.trim() ? undefined : `Empty for everything else at @${domain}`} />
-        <div className="tf static">
-          <div className="tf-box">
-            <Dropdown label="Delivered to" value={target} onChange={setTarget} options={accounts.map((a) => ({ value: a, label: a }))} />
-            <span className="tf-label">Delivered to</span>
-          </div>
-        </div>
-        <div className="edit-actions">
-          <button type="button" className="btn text" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!target}>Add</button>
-        </div>
-      </form>
-    </Dialog>
-  );
-}
-
-function NewPassword({ address, onClose, onSave }: { address: string; onClose: () => void; onSave: (address: string, password: string) => Promise<boolean> }) {
-  const [pass, setPass] = useState("");
-  return (
-    <Dialog title={`Password for ${address}`} onClose={onClose}>
-      <form onSubmit={async (e) => {
-        e.preventDefault();
-        if (await onSave(address, pass)) onClose();
-      }}>
-        <TextField label="New password" type="password" autoFocus autoComplete="new-password" data-1p-ignore value={pass} onChange={setPass}
-          hint="Mail apps signed in with the old one are asked again" />
-        <div className="edit-actions">
-          <button type="button" className="btn text" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!pass}>Save</button>
-        </div>
       </form>
     </Dialog>
   );
