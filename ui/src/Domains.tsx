@@ -315,10 +315,9 @@ function DomainPage({ domain, tab, state, onState, routes, onChanged }: {
             <ForwardRows items={mine.map((r) => ({ r }))} hrefOf={(r) => `#/tunnels/${r.id}`} onChanged={onChanged} />
           </div>
         ) : (
-          <div className="card welcome">
-            <Icon name="deployed_code" size={40} />
-            <h2>Nothing reached here yet</h2>
-            <p className="muted">Services published at {domain.name} through a tunnel show here. <a href="#/routes/new">Publish one</a></p>
+          <div className="welcome">
+            <Icon name="deployed_code" size={48} />
+            <div className="welcome-actions"><a className="btn primary" href="#/routes/new"><Icon name="add" size={18} />New route</a></div>
           </div>
         ))}
         {current === "dns" && (
