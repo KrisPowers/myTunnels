@@ -274,9 +274,9 @@ function ServiceList({ adding, port, routes, forwards, users, providers, onChang
         ))}
       </div>
       {adding && can("tunnels.create") && (
-        <NewRoute users={users} providers={providers} port={port} onClose={() => go("#/")} onDone={async (r) => {
+        <NewRoute users={users} providers={providers} port={port} onClose={() => go("#/services")} onDone={async (r) => {
           await onChanged();
-          go(r ? `#/tunnels/${r.id}` : "#/");
+          go(r ? `#/tunnels/${r.id}` : "#/services");
         }} />
       )}
     </>
@@ -450,7 +450,7 @@ function ContainerPage({ name, tab: asked, more, routes, forwards, users, provid
   const on = live(head);
   const working = busy.size > 0;
   const act = (action: Act) => run([{ ...head, deploy: d?.id ?? null }], action).then(() => {
-    if (action === "remove") go("#/");
+    if (action === "remove") go("#/services");
   });
   const update = async () => {
     if (!d) return;
@@ -501,7 +501,7 @@ function ContainerPage({ name, tab: asked, more, routes, forwards, users, provid
           {menu.length > 0 && <MoreMenu label={`Actions for ${head.name}`} actions={menu} />}
         </div>
       </div>
-      <SubNav back="#/" backLabel="Services" base={base} items={tabs} current={current} />
+      <SubNav back="#/services" backLabel="Services" base={base} items={tabs} current={current} />
       <div className="page-body stack" key={current}>
         {problem && made && !c && <Callout tone="bad" icon="error">{problem}</Callout>}
         {current === "overview" && (c ? <Overview c={c} /> : <div className="repo-loading"><span className="spinner" /></div>)}

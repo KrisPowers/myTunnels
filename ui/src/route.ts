@@ -7,12 +7,12 @@
 // `/<id>/<page>` for one of them; `#/apps`, the apps catalog;
 // `#/settings/<section>`, Preferences among them; and
 // `#/docs/<section>`; `#/dashboard`, the host and its containers, where `#/hardware` now goes;
-// `#/storage`, documents, photos and videos together; `#/mail/<tab>`, every
-// domain's addresses, mail's activity and its settings; `#/domains/<name>/<tab>`,
-// the domains, each with its services, DNS and redirects; `#/containers`,
-// with `/<name>/<page>/...` for one, its tunnel and images among its pages.
+// `#/storage`, documents, photos and videos together; `#/mail`, mailboxes on
+// the Cloudflare account's domains, where `#/domains` now goes; `#/services`
+// or `#/containers`, with `/<name>/<page>/...` for one container. An empty
+// address opens home: Dashboard, or the first page the account may see.
 
-export type View = "console" | "tunnels" | "dashboard" | "apps" | "containers" | "storage" | "mail" | "domains" | "devices" | "users" | "security" | "settings" | "docs";
+export type View = "console" | "tunnels" | "dashboard" | "apps" | "containers" | "storage" | "mail" | "devices" | "users" | "security" | "settings" | "docs";
 
 export interface Place {
   view: View;
@@ -21,6 +21,8 @@ export interface Place {
   page: string;
   // Anything further down, such as a container's page and what is open in it.
   more: string[];
+  // The address was empty, so the page is home, whichever that is.
+  home?: boolean;
 }
 
 export function readHash(): Place {
@@ -32,6 +34,8 @@ export function readHash(): Place {
   if ((first === "users" || first === "devices") && !second) return { view: "security", id: first, page: "", more: [] };
   // Appearance, then a Preferences page of its own, are Settings' Preferences now.
   if ((first === "settings" && second === "appearance") || first === "preferences") return { view: "settings", id: "preferences", page: "", more: [] };
+  // Cloudflare and its connector are Settings' Connections now.
+  if (first === "settings" && (second === "cloudflare" || second === "connector")) return { view: "settings", id: "connections", page: "", more: [] };
   if (first === "dashboard" || first === "apps" || first === "console") return { view: first, id: "", page: "", more: [] };
   // Hardware became part of the Dashboard.
   if (first === "hardware") return { view: "dashboard", id: "", page: "", more: [] };
@@ -45,13 +49,14 @@ export function readHash(): Place {
   if (first === "media" || first === "drive" || first === "convert" || first === "storage") return { view: "storage", id: "", page: "", more: [] };
   // Images became each container's Images page.
   if (first === "images") return { view: "containers", id: "", page: "", more: [] };
-  // Mail is its own page again, with every domain's addresses.
-  if (first === "mail") return { view: "mail", id: second, page: "", more: [] };
-  if (first === "domains") return { view: "domains", id: second, page: third, more: [] };
+  // Mail is its own page; Domains, once a page, went into it.
+  if (first === "mail" || first === "domains") return { view: "mail", id: "", page: "", more: [] };
+  // Services, what this computer hosts.
+  if (first === "services") return { view: "containers", id: "", page: "", more: [] };
   if (first === "devices" || first === "users" || first === "settings" || first === "docs" || first === "containers" || first === "security") return { view: first, id: second, page: third, more };
   // One tunnel has a page of its own; the list of them is Containers'.
   if (first === "tunnels" && second) return { view: "tunnels", id: second, page: third, more: [] };
-  return { view: "containers", id: "", page: "", more: [] };
+  return { view: "containers", id: "", page: "", more: [], home: !first };
 }
 
 export function go(hash: string) {
