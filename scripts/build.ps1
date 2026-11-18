@@ -102,7 +102,19 @@ foreach ($b in $builds) {
     New-Item -ItemType Directory $stage | Out-Null
     Copy-Item (Join-Path $server "target/$($b.Target)/release/server$exe") (Join-Path $stage "mytunnels$exe")
     Copy-Item (Join-Path $root 'ui/dist') (Join-Path $stage 'ui') -Recurse
-    if ($exe) { Copy-Item (Join-Path $root "desktop/target/$($b.Target)/release/desktop.exe") $stage }
+    if ($exe) {
+        Copy-Item (Join-Path $root "desktop/target/$($b.Target)/release/desktop.exe") $stage
+        # What the hardware sensors' setup downloads, brought along so it runs
+        # with no internet, pinned as hardware.rs pins them.
+        $pinned = Get-Content (Join-Path $server 'src/hardware.rs') -Raw
+        New-Item -ItemType Directory (Join-Path $stage 'hardware') | Out-Null
+        foreach ($m in [regex]::Matches($pinned, 'const (?:PAWNIO|LHM): \(&str, &str\) = \(\s*"([^"]+)",\s*"([0-9a-f]{64})"')) {
+            $url = $m.Groups[1].Value
+            $file = Join-Path $stage "hardware/$($url.Split('/')[-1])"
+            Invoke-WebRequest $url -OutFile $file
+            if ((Get-FileHash $file -Algorithm SHA256).Hash.ToLower() -ne $m.Groups[2].Value) { throw "$url does not match its checksum" }
+        }
+    }
     $url = "https://github.com/cloudflare/cloudflared/releases/latest/download/$($b.Cloudflared)"
     if ($b.Cloudflared -like '*.tgz') {
         $tgz = Join-Path $stage 'cloudflared.tgz'

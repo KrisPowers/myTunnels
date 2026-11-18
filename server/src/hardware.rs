@@ -178,7 +178,18 @@ const PLATFORM: &str = if cfg!(windows) {
 };
 
 fn enabled(db: &Db) -> bool {
-    db.setting("hardware").ok().flatten().as_deref() == Some("on")
+    match db.setting("hardware").ok().flatten() {
+        Some(word) => word == "on",
+        // Granted when myTunnels was installed, and not turned off since.
+        None => granted(),
+    }
+}
+
+fn granted() -> bool {
+    #[cfg(windows)]
+    return windows::installed();
+    #[cfg(not(windows))]
+    false
 }
 
 // ---- the API ----
@@ -876,6 +887,10 @@ async fn tell(db: &Db, news: &[(Part, Health)]) -> Result<()> {
 
 // ---- Windows ----
 
+/// What the firewall helper's setup shares with the sensor task's.
+#[cfg(windows)]
+pub use windows::{add_task, lock_down};
+
 #[cfg(windows)]
 mod windows {
     use std::path::{Path, PathBuf};
@@ -1512,8 +1527,10 @@ mod windows {
         );
     }
 
-    /// Downloads a pinned file, moving the record from `from` to `to` percent
-    /// as it comes in, and checks it is the file that was checked.
+    /// A pinned file: the copy an install brings in `hardware` beside the
+    /// program, so setup needs no internet, or else downloaded, moving the
+    /// record from `from` to `to` percent as it comes in. Either way it is
+    /// checked to be the file that was checked.
     async fn fetch(
         client: &reqwest::Client,
         (url, sha): (&str, &str),
@@ -1522,6 +1539,14 @@ mod windows {
         text: &str,
     ) -> Result<Vec<u8>> {
         step(dir, from, text);
+        let brought = crate::config::program()
+            .zip(url.rsplit('/').next())
+            .and_then(|(exe, name)| std::fs::read(exe.parent()?.join("hardware").join(name)).ok());
+        if let Some(body) = brought {
+            if hex::encode(Sha256::digest(&body)) == sha {
+                return Ok(body);
+            }
+        }
         let mut answer = client.get(url).send().await?.error_for_status()?;
         let total = answer.content_length().unwrap_or(0);
         let mut body = Vec::with_capacity(total as usize);
@@ -1543,31 +1568,63 @@ mod windows {
         Ok(body)
     }
 
-    async fn turn_on(dir: &Path) -> Result<()> {
+    /// Makes `dir`, which only SYSTEM, administrators and `writer`, when
+    /// named, may change; everyone may read it. The folder holds the rules
+    /// and what is in it inherits them, which also puts right files from an
+    /// earlier setup.
+    pub fn lock_down(dir: &Path, writer: Option<&str>) -> Result<()> {
         std::fs::create_dir_all(dir)?;
         let path = dir.to_string_lossy().into_owned();
-        // Only SYSTEM and administrators may change what SYSTEM runs from
-        // here; everyone may read it. The folder holds the rules and what is
-        // in it inherits them, which also puts right files from an earlier setup.
         run(
             "icacls",
             &[&path, "/setowner", "*S-1-5-32-544", "/T", "/C", "/Q"],
         )?;
-        run(
-            "icacls",
-            &[
-                &path,
-                "/inheritance:r",
-                "/grant:r",
-                "*S-1-5-18:(OI)(CI)F",
-                "*S-1-5-32-544:(OI)(CI)F",
-                "*S-1-5-32-545:(OI)(CI)RX",
-                "/C",
-                "/Q",
-            ],
-        )?;
+        let writer = writer.map(|sid| format!("*{sid}:(OI)(CI)M"));
+        let mut args = vec![
+            path.as_str(),
+            "/inheritance:r",
+            "/grant:r",
+            "*S-1-5-18:(OI)(CI)F",
+            "*S-1-5-32-544:(OI)(CI)F",
+            "*S-1-5-32-545:(OI)(CI)RX",
+        ];
+        args.extend(writer.as_deref());
+        args.extend(["/C", "/Q"]);
+        run("icacls", &args)?;
         let inside = dir.join("*").to_string_lossy().into_owned();
         let _ = run("icacls", &[&inside, "/reset", "/T", "/C", "/Q"]);
+        Ok(())
+    }
+
+    /// Puts a task in place that runs `script` as SYSTEM from boot, started
+    /// again whenever it stops, and starts it, ending one there before.
+    pub fn add_task(name: &str, script: &Path, description: &str) -> Result<()> {
+        let _ = run("schtasks", &["/End", "/TN", name]);
+        let xml = task_xml(script, description);
+        let task = script.with_extension("xml");
+        // schtasks reads the task as UTF-16.
+        let mut bytes = vec![0xFF, 0xFE];
+        bytes.extend(xml.encode_utf16().flat_map(u16::to_le_bytes));
+        std::fs::write(&task, bytes)?;
+        let made = run(
+            "schtasks",
+            &[
+                "/Create",
+                "/TN",
+                name,
+                "/XML",
+                &task.to_string_lossy(),
+                "/F",
+            ],
+        );
+        let _ = std::fs::remove_file(&task);
+        made?;
+        run("schtasks", &["/Run", "/TN", name])
+    }
+
+    pub async fn turn_on(dir: &Path) -> Result<()> {
+        // Only SYSTEM and administrators may change what SYSTEM runs from here.
+        lock_down(dir, None)?;
         // An earlier task holds the library open, and its error is old news.
         let _ = run("schtasks", &["/End", "/TN", TASK]);
         let _ = std::fs::remove_file(dir.join("sensors.error.txt"));
@@ -1629,31 +1686,16 @@ mod windows {
         step(dir, 90, "Adding the sensor task");
         let script = dir.join("sensors.ps1");
         std::fs::write(&script, SENSORS)?;
-        let xml = task_xml(&script);
-        let task = dir.join("task.xml");
-        // schtasks reads the task as UTF-16.
-        let mut bytes = vec![0xFF, 0xFE];
-        bytes.extend(xml.encode_utf16().flat_map(u16::to_le_bytes));
-        std::fs::write(&task, bytes)?;
-        run(
-            "schtasks",
-            &[
-                "/Create",
-                "/TN",
-                TASK,
-                "/XML",
-                &task.to_string_lossy(),
-                "/F",
-            ],
+        add_task(
+            TASK,
+            &script,
+            "Reads this computer's hardware sensors for the Hardware page in myTunnels.",
         )?;
-        let _ = std::fs::remove_file(&task);
-        step(dir, 97, "Starting the sensor task");
-        run("schtasks", &["/Run", "/TN", TASK])?;
         std::fs::write(dir.join("setup.txt"), "done\n")?;
         Ok(())
     }
 
-    fn task_xml(script: &Path) -> String {
+    fn task_xml(script: &Path, description: &str) -> String {
         let script = script
             .display()
             .to_string()
@@ -1663,7 +1705,7 @@ mod windows {
         format!(
             r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo><Description>Reads this computer's hardware sensors for the Hardware page in myTunnels.</Description></RegistrationInfo>
+  <RegistrationInfo><Description>{description}</Description></RegistrationInfo>
   <Triggers><BootTrigger><Enabled>true</Enabled></BootTrigger></Triggers>
   <Principals><Principal id="Author"><UserId>S-1-5-18</UserId><RunLevel>HighestAvailable</RunLevel></Principal></Principals>
   <Settings>
