@@ -6,8 +6,11 @@
 # %LOCALAPPDATA%\myTunnels\bin, which joins your PATH, with the desktop app
 # in the Start menu. Nothing needs administrator rights. The release is
 # fetched signed in, with GH_TOKEN, GITHUB_TOKEN or gh's sign-in, since the
-# repository is private. When the panel runs it, MYTUNNELS_PROGRESS names a
-# file it writes each step to, with how much of the download is in.
+# repository is private. MYTUNNELS_ARCHIVE names a windows-x64.zip already
+# here instead, such as on a USB drive, which needs no internet or sign-in,
+# with MYTUNNELS_RELEASE its release, when it has one. When the panel or
+# setup runs it, MYTUNNELS_PROGRESS names a file it writes each step to,
+# with how much of the download is in.
 & {
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
@@ -60,43 +63,54 @@
     $zip = Join-Path ([IO.Path]::GetTempPath()) "$([guid]::NewGuid()).zip"
     $new = Join-Path $root ".new-$([guid]::NewGuid())"
 
+    $from = $zip
+
     New-Item -ItemType Directory -Force $root | Out-Null
     try {
-        # Windows on Arm runs the x64 build.
-        Write-Host 'Downloading myTunnels for windows-x64'
-        Report 'download' 0
-        $token = if ($env:GH_TOKEN) { $env:GH_TOKEN } elseif ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN }
-        if (-not $token -and (Get-Command gh -ErrorAction SilentlyContinue)) {
-            try { $token = gh auth token 2>$null } catch { }
-        }
-        if ($token) {
-            # The latest release's archive, by its API address, which takes the token.
-            $release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers @{ Authorization = "Bearer $token" } -UseBasicParsing
-            $tag = $release.tag_name
-            $asset = $release.assets | Where-Object name -eq 'windows-x64.zip'
-            if (-not $asset) { throw 'The latest release has no build for windows-x64' }
-            # GitHub answers with its file storage's address, which refuses the
-            # token, so the redirect is followed by hand, without it.
-            $handler = New-Object System.Net.Http.HttpClientHandler
-            $handler.AllowAutoRedirect = $false
-            $client = New-Object System.Net.Http.HttpClient($handler)
-            $ask = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Get, $asset.url)
-            $ask.Headers.Add('Authorization', "Bearer $token")
-            $ask.Headers.Add('Accept', 'application/octet-stream')
-            $ask.Headers.Add('User-Agent', 'mytunnels-install')
-            $answer = $client.SendAsync($ask).GetAwaiter().GetResult()
-            if (-not $answer.Headers.Location) { throw "GitHub would not hand out the download: $($answer.StatusCode)" }
-            $client.Dispose()
-            Save $answer.Headers.Location.AbsoluteUri
+        if ($env:MYTUNNELS_ARCHIVE) {
+            # A build brought along, such as on a USB drive: no download, no sign-in.
+            $from = $env:MYTUNNELS_ARCHIVE
+            $tag = $env:MYTUNNELS_RELEASE
+            Write-Host "Installing myTunnels from $from"
         }
         else {
-            $tag = (Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -UseBasicParsing).tag_name
-            Save "https://github.com/$repo/releases/latest/download/windows-x64.zip"
+            # Windows on Arm runs the x64 build.
+            Write-Host 'Downloading myTunnels for windows-x64'
+            Report 'download' 0
+            $token = if ($env:GH_TOKEN) { $env:GH_TOKEN } elseif ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN }
+            if (-not $token -and (Get-Command gh -ErrorAction SilentlyContinue)) {
+                try { $token = gh auth token 2>$null } catch { }
+            }
+            if ($token) {
+                # The latest release's archive, by its API address, which takes the token.
+                $release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers @{ Authorization = "Bearer $token" } -UseBasicParsing
+                $tag = $release.tag_name
+                $asset = $release.assets | Where-Object name -eq 'windows-x64.zip'
+                if (-not $asset) { throw 'The latest release has no build for windows-x64' }
+                # GitHub answers with its file storage's address, which refuses the
+                # token, so the redirect is followed by hand, without it.
+                $handler = New-Object System.Net.Http.HttpClientHandler
+                $handler.AllowAutoRedirect = $false
+                $client = New-Object System.Net.Http.HttpClient($handler)
+                $ask = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Get, $asset.url)
+                $ask.Headers.Add('Authorization', "Bearer $token")
+                $ask.Headers.Add('Accept', 'application/octet-stream')
+                $ask.Headers.Add('User-Agent', 'mytunnels-install')
+                $answer = $client.SendAsync($ask).GetAwaiter().GetResult()
+                if (-not $answer.Headers.Location) { throw "GitHub would not hand out the download: $($answer.StatusCode)" }
+                $client.Dispose()
+                Save $answer.Headers.Location.AbsoluteUri
+            }
+            else {
+                $tag = (Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -UseBasicParsing).tag_name
+                Save "https://github.com/$repo/releases/latest/download/windows-x64.zip"
+            }
         }
         Report 'unpack' $null
-        [IO.Compression.ZipFile]::ExtractToDirectory($zip, $new)
-        # The release in place, which the panel compares with the latest to offer an update.
-        Set-Content (Join-Path $new 'release') $tag -NoNewline
+        [IO.Compression.ZipFile]::ExtractToDirectory($from, $new)
+        # The release in place, which the panel compares with the latest to
+        # offer an update. A local build names none, and is offered none.
+        if ($tag) { Set-Content (Join-Path $new 'release') $tag -NoNewline }
 
         # An update stops the one running, swaps the files, then starts it again.
         Report 'restart' $null

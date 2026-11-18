@@ -7,8 +7,13 @@
 # The program, cloudflared and the panel go in ~/.local/share/myTunnels/bin,
 # with `mytunnels` linked into ~/.local/bin. Nothing needs root. The release
 # is fetched signed in, with GH_TOKEN, GITHUB_TOKEN or gh's sign-in, since the
-# repository is private. When the panel runs it, MYTUNNELS_PROGRESS names a
-# file it writes each step to.
+# repository is private. MYTUNNELS_ARCHIVE names an archive already here
+# instead, such as on a USB drive, which needs no internet or sign-in:
+#
+#   MYTUNNELS_ARCHIVE=/media/usb/linux-x64.tar.gz sh /media/usb/install.sh
+#
+# with MYTUNNELS_RELEASE its release, when it has one. When the panel runs
+# it, MYTUNNELS_PROGRESS names a file it writes each step to.
 set -eu
 
 report() {
@@ -42,9 +47,13 @@ trap 'rm -rf "$new"' EXIT
 file="$os-$arch.tar.gz"
 token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 if [ -z "$token" ] && command -v gh > /dev/null 2>&1; then token="$(gh auth token 2>/dev/null || true)"; fi
-echo "Downloading myTunnels for $os-$arch"
-report download
-if [ -n "$token" ]; then
+if [ -n "${MYTUNNELS_ARCHIVE:-}" ]; then
+  echo "Installing myTunnels from $MYTUNNELS_ARCHIVE"
+  tar -xzf "$MYTUNNELS_ARCHIVE" -C "$new"
+  release="{\"tag_name\": \"${MYTUNNELS_RELEASE:-}\"}"
+elif [ -n "$token" ]; then
+  echo "Downloading myTunnels for $os-$arch"
+  report download
   # The latest release's archive, by its API address, which takes the token.
   auth="Authorization: Bearer $token"
   release="$(curl -fsSL -H "$auth" "https://api.github.com/repos/$repo/releases/latest")"
@@ -55,6 +64,8 @@ if [ -n "$token" ]; then
   # curl leaves the token off when GitHub sends it on to its file storage.
   curl -fsSL -H "$auth" -H "Accept: application/octet-stream" "$asset" | tar -xz -C "$new"
 else
+  echo "Downloading myTunnels for $os-$arch"
+  report download
   release="$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest")"
   curl -fsSL "https://github.com/$repo/releases/latest/download/$file" | tar -xz -C "$new"
 fi

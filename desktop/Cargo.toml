@@ -6,11 +6,12 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
+serde_json = "1.0.154"
 tao = "0.37.2"
 wry = "0.57.2"
 
 [target."cfg(windows)".dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Security"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Security", "Win32_System_Registry"] }
 
 [profile.release]
 strip = true

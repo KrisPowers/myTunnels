@@ -92,10 +92,20 @@ jobs:
           else
             tar -czf "../${{ matrix.name }}.tar.gz" .
           fi
+      # The same build inside an installer that needs no internet or sign-in.
+      - if: runner.os == 'Windows'
+        working-directory: desktop
+        env:
+          SETUP_PAYLOAD: ${{ github.workspace }}/${{ matrix.name }}.zip
+        run: |
+          cargo build --release --locked --target ${{ matrix.target }} --bin setup
+          cp "target/${{ matrix.target }}/release/setup.exe" ../setup.exe
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
-          path: ${{ matrix.name }}.*
+          path: |
+            ${{ matrix.name }}.*
+            setup.exe
 
   publish:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
