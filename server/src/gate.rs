@@ -500,7 +500,7 @@ fn user_session(
         .users
         .get(&s.subject)
         .filter(|u| secret::tag(&u.password_hash) == s.tag)
-        .is_some_and(|u| u.enabled && u.route_ids.contains(&route.id));
+        .is_some_and(|u| u.enabled && may_open(u, route));
     if !ok {
         return None;
     }
@@ -1517,6 +1517,14 @@ async fn admit(
     })
 }
 
+/// Whether `account` may open `route`: one it was added to; any, as the host
+/// or an admin; and the dashboard's, when it may use the dashboard.
+fn may_open(account: &User, route: &Route) -> bool {
+    account.route_ids.contains(&route.id)
+        || account.holds(crate::db::ADMIN)
+        || (route.target_scheme == "dashboard" && account.holds("dashboard"))
+}
+
 /// The checks every sign-in passes, before any code: the account may open this
 /// tunnel, from a device it may sign in from, and does not look like it is in other
 /// hands.
@@ -1526,7 +1534,7 @@ fn vet(
     mut account: User,
     v: &Visitor,
 ) -> Result<User, (StatusCode, &'static str)> {
-    if !account.route_ids.contains(&route.id) {
+    if !may_open(&account, route) {
         return Err((StatusCode::FORBIDDEN, "This account cannot open this app."));
     }
 
