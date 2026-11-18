@@ -109,9 +109,9 @@ one. **Skip for now** leaves it for later: anything that needs Cloudflare asks a
 does **Connect** under **Settings, Cloudflare**.
 
 Then, on **Services**, press the plus: a **Container from an image** or **from GitHub**, or a
-**Route** to an app already running here. In **New route**, keep **Cloudflare Tunnel** at the
-top, type the subdomain, pick the domain, choose who can open it and press **Publish**. A
-container's own **Routes** page publishes it the same way.
+**Route** to an app already running here. In **New route**, pick **Cloudflare Tunnel**, type
+the subdomain, pick the domain, choose who can open it and press **Publish**; **Port forward**
+and **Tailscale** come before it. A container's own **Routes** page publishes it the same way.
 
 The sidebar follows what this computer is for: **Services** (what it hosts and how each is
 reached), **Storage** and **Mail** (your files and your mail, in place of a paid cloud),
