@@ -1,16 +1,17 @@
-// Where the page is, kept in the URL hash: `#/` the containers,
-// `#/routes` every tunnel, router port and Tailscale forward, with
-// `#/routes/new` adding one (`#/routes/new/<port>` to that port, where
-// `#/new`, `#/forward` and `#/remote` now go), `#/tunnels/<id>/<page>` one tunnel; `#/security/<tab>`, Security,
+// Where the page is, kept in the URL hash: `#/` Services, every container
+// and every route to a port on this computer, with `#/routes/new` adding a
+// route (`#/routes/new/<port>` to that port; `#/routes`, `#/new`, `#/forward`
+// and `#/remote` now go to Services), `#/tunnels/<id>/<page>` one tunnel; `#/security/<tab>`, Security,
 // whose Users and Devices tabs are also `#/users` and `#/devices`, with
 // `/<id>/<page>` for one of them; `#/apps`, the apps catalog;
 // `#/settings/<section>`, Preferences among them; and
 // `#/docs/<section>`; `#/dashboard`, the host and its containers, where `#/hardware` now goes;
-// `#/storage`, documents, photos and videos together; `#/domains/<name>/<tab>`,
-// the domains, each with its mail addresses, activity, DNS and mail settings; `#/containers`,
+// `#/storage`, documents, photos and videos together; `#/mail/<tab>`, every
+// domain's addresses, mail's activity and its settings; `#/domains/<name>/<tab>`,
+// the domains, each with its services, DNS and redirects; `#/containers`,
 // with `/<name>/<page>/...` for one, its tunnel and images among its pages.
 
-export type View = "tunnels" | "dashboard" | "apps" | "containers" | "forward" | "storage" | "domains" | "devices" | "users" | "security" | "settings" | "docs";
+export type View = "tunnels" | "dashboard" | "apps" | "containers" | "storage" | "mail" | "domains" | "devices" | "users" | "security" | "settings" | "docs";
 
 export interface Place {
   view: View;
@@ -33,16 +34,18 @@ export function readHash(): Place {
   if (first === "dashboard" || first === "apps") return { view: first, id: "", page: "", more: [] };
   // Hardware became part of the Dashboard.
   if (first === "hardware") return { view: "dashboard", id: "", page: "", more: [] };
-  // Adding a tunnel became adding a forward.
-  if (first === "new") return { view: "forward", id: "new", page: second, more: [] };
-  // Forward, then Remote Access, became Routes.
-  if (first === "routes" || first === "remote" || first === "forward") return { view: "forward", id: second, page: third, more: [] };
+  // Adding a tunnel became adding a route, on Services.
+  if (first === "new") return { view: "containers", id: "", page: "new", more: [second] };
+  // Forward, then Remote Access, then Routes became part of Services.
+  if (first === "routes" || first === "remote" || first === "forward") {
+    return { view: "containers", id: "", page: second === "new" ? "new" : "", more: [third] };
+  }
   // Media, Drive and Convert became Storage, one page, and its Convert action.
   if (first === "media" || first === "drive" || first === "convert" || first === "storage") return { view: "storage", id: "", page: "", more: [] };
   // Images became each container's Images page.
   if (first === "images") return { view: "containers", id: "", page: "", more: [] };
-  // Mail became part of each domain on the Domains page.
-  if (first === "mail") return { view: "domains", id: "", page: "", more: [] };
+  // Mail is its own page again, with every domain's addresses.
+  if (first === "mail") return { view: "mail", id: second, page: "", more: [] };
   if (first === "domains") return { view: "domains", id: second, page: third, more: [] };
   if (first === "devices" || first === "users" || first === "settings" || first === "docs" || first === "containers" || first === "security") return { view: first, id: second, page: third, more };
   // One tunnel has a page of its own; the list of them is Containers'.

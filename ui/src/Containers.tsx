@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { NeedsApp } from "./Apps";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { NeedsApp, NeedsContext } from "./Apps";
 import { api, bytes, message, type Container, type ContainerAction, type ContainerDetail, type ContainerStats, type Deploy, type Forward, type Image, type Metrics, type OAuthProvider, type Route, type User } from "./api";
 import { BuildLog, Builds, DeploySettings, NewMenu, sourceOf, waiting } from "./Builds";
 import { Chart, Meter } from "./charts";
 import { Dropdown, type Option } from "./Dropdown";
-import { ForwardRows, forwardsOf } from "./Forward";
+import { ForwardRows, forwardsOf, labelOf, liveOf, OpeningRow, toOf, type Opening } from "./Forward";
 import { NewRoute } from "./NewRoute";
 import { Icon, type IconName } from "./Icon";
 import { ContainerImages, ImageView, useImageRemoval } from "./Images";
@@ -102,9 +102,11 @@ export interface Shared {
   onChanged: () => Promise<void>;
 }
 
+// ContainersPage is Services: the list, or one container. `page` "new" on
+// the list opens a new route, to the port in `more`.
 export function ContainersPage({ id, page, more, ...shared }: { id: string; page: string; more: string[] } & Shared) {
   if (id) return <ContainerPage name={id} tab={page} more={more} {...shared} />;
-  return <ContainerList routes={shared.routes} forwards={shared.forwards} />;
+  return <ServiceList adding={page === "new"} port={more[0] ?? ""} {...shared} />;
 }
 
 // ---- the list ----
@@ -123,14 +125,17 @@ const SHOW: Option<Show>[] = [
 // One container in the catalog.
 type Item = { key: string; name: string; project: string | null; on: boolean; c: Container };
 
-// ContainerList is the catalog of containers, a row each with what it is, its
-// state, its address and its use, and one menu. Compose projects of two or
-// more fold under their name. It refreshes on its own; tunnels and other
-// forwards to ports elsewhere are on Routes.
-function ContainerList({ routes, forwards }: { routes: Route[] | null; forwards: Forward[] }) {
+// ServiceList is everything this computer hosts, a row each: every container,
+// with what it is, its state, its address and its use, and every route to a
+// port here that is not a container's, a tunnel, a router port or Tailscale.
+// Compose projects of two or more fold under their name. It refreshes on its own.
+function ServiceList({ adding, port, routes, forwards, users, providers, onChanged }: { adding: boolean; port: string } & Shared) {
   const can = useCan();
   const seeContainers = can("containers.view");
   const seeTunnels = can("tunnels.view");
+  // Without Docker, its error says nothing the note to install it does not.
+  const needs = useContext(NeedsContext);
+  const noDocker = !!needs && !needs.docker;
   const [list, setList] = useState<Container[] | null>(null);
   const [images, setImages] = useState<Image[] | null>(null);
   const [deploys, setDeploys] = useState<Deploy[]>([]);
@@ -164,6 +169,12 @@ function ContainerList({ routes, forwards }: { routes: Route[] | null; forwards:
 
   const allRoutes = seeTunnels ? routes ?? [] : [];
   const allForwards = seeTunnels ? forwards : [];
+  // Routes to a container are on its row; the rest are services of their own.
+  const theirs = new Set((list ?? []).flatMap((c) => [...tunnelsOf(c, allRoutes).map((r) => r.id), ...forwardsOf(c, allForwards).map((f) => f.id)]));
+  const openings: Opening[] = [
+    ...allRoutes.filter((r) => !theirs.has(r.id)).map((r) => ({ r })),
+    ...allForwards.filter((f) => !theirs.has(f.id)).map((f) => ({ f })),
+  ];
   const made = new Set((list ?? []).map((c) => c.name));
   const containers = [...(list ?? []), ...deploys.filter((d) => !made.has(d.name)).map(pending)];
   const items: Item[] = containers.map((c) => ({ key: c.id || c.name, name: c.name, project: c.project, on: live(c), c }));
@@ -177,6 +188,9 @@ function ContainerList({ routes, forwards }: { routes: Route[] | null; forwards:
     .sort((a, b) => (a.project ?? a.name).localeCompare(b.project ?? b.name) || a.name.localeCompare(b.name));
   const counts = new Map<string, number>();
   for (const i of shown) if (i.project) counts.set(i.project, (counts.get(i.project) ?? 0) + 1);
+  const shownOpenings = openings
+    .filter((o) => show === "all" || liveOf(o))
+    .filter((o) => !needle || [labelOf(o), toOf(o)].some((v) => v.toLowerCase().includes(needle)));
 
   const running = (list ?? []).filter(live);
   const cpu = running.reduce((n, c) => n + (stats[shortId(c.id)]?.cpu ?? 0), 0);
@@ -194,27 +208,39 @@ function ContainerList({ routes, forwards }: { routes: Route[] | null; forwards:
     return next;
   });
 
-  const rows: ReactNode[] = [];
+  // A block is a container, a Compose project with its containers, or a
+  // route, kept together while they are put in order by name.
+  const blocks: { key: string; rows: ReactNode[] }[] = [];
   let group = "";
   for (const i of shown) {
     const grouped = !!i.project && (counts.get(i.project) ?? 0) > 1;
     if (grouped && i.project !== group) {
       const members = shown.filter((x) => x.project === i.project).map((x) => x.c);
-      rows.push(<GroupHead key={"g-" + i.project} name={i.project!} items={members} open={!folded.has(i.project!)} onFold={() => fold(i.project!)} run={run} />);
+      blocks.push({ key: i.project!, rows: [<GroupHead key={"g-" + i.project} name={i.project!} items={members} open={!folded.has(i.project!)} onFold={() => fold(i.project!)} run={run} />] });
     }
     group = grouped ? i.project! : "";
     if (grouped && folded.has(i.project!)) continue;
-    rows.push(<ContainerRow key={i.key} c={i.c} d={i.c.deploy ? byDeploy.get(i.c.deploy) : undefined} s={stats[shortId(i.c.id)]}
-      routes={tunnelsOf(i.c, allRoutes)} forwards={forwardsOf(i.c, allForwards)} busy={busy.has(i.c.id)} run={run} grouped={grouped} />);
+    const row = <ContainerRow key={i.key} c={i.c} d={i.c.deploy ? byDeploy.get(i.c.deploy) : undefined} s={stats[shortId(i.c.id)]}
+      routes={tunnelsOf(i.c, allRoutes)} forwards={forwardsOf(i.c, allForwards)} busy={busy.has(i.c.id)} run={run} grouped={grouped} />;
+    if (grouped) blocks[blocks.length - 1].rows.push(row);
+    else blocks.push({ key: i.name, rows: [row] });
   }
+  for (const o of shownOpenings) {
+    blocks.push({ key: labelOf(o), rows: [<OpeningRow key={"r" in o ? o.r.id : o.f.id} o={o} href={"r" in o ? `#/tunnels/${o.r.id}` : ""} onChanged={onChanged} />] });
+  }
+  blocks.sort((a, b) => a.key.localeCompare(b.key));
+  const rows = blocks.flatMap((b) => b.rows);
+  const total = items.length + openings.length;
+  const up = (list ?? []).filter(live).length + openings.filter(liveOf).length;
+  const ready = !!list || !seeContainers || !!problem;
 
   return (
     <>
       <div className="page-head">
         <div className="page-head-main">
-          <h1>Containers</h1>
+          <h1>Services</h1>
           <div className="page-sub">
-            {list && <span><b>{running.length}</b> of {list.length} running</span>}
+            {ready && <span><b>{up}</b> of {total} running</span>}
             {list && m && <span>CPU <b>{pct(cpu)}</b></span>}
             {list && m && <span>Memory <b>{bytes(memory)}</b></span>}
           </div>
@@ -222,7 +248,7 @@ function ContainerList({ routes, forwards }: { routes: Route[] | null; forwards:
         <div className="page-actions">
           <label className="ct-search">
             <Icon name="search" size={18} />
-            <input type="search" placeholder="Search" aria-label="Search containers" value={q} onChange={(e) => setQ(e.target.value)} spellCheck={false} />
+            <input type="search" placeholder="Search" aria-label="Search services" value={q} onChange={(e) => setQ(e.target.value)} spellCheck={false} />
           </label>
           <div className="ex-pick"><Dropdown label="Show" value={show} options={SHOW} onChange={setShow} /></div>
           <NewMenu />
@@ -230,23 +256,29 @@ function ContainerList({ routes, forwards }: { routes: Route[] | null; forwards:
         </div>
       </div>
       <div className="page-body stack">
-        <NeedsApp app="docker" what="Containers" />
-        {problem && <Callout tone="bad" icon="error">Docker is not reachable: {problem}</Callout>}
-        {(list || !seeContainers) && (items.length === 0 ? (
+        {seeContainers && <NeedsApp app="docker" what="Running containers" />}
+        {problem && !noDocker && <Callout tone="bad" icon="error">Docker is not reachable: {problem}</Callout>}
+        {ready && (total === 0 ? (
           <div className="card welcome">
             <Icon name="deployed_code" size={40} />
-            <h2>Nothing here yet</h2>
-            <p className="muted">Add a container with the plus. Containers Docker runs here show up on their own.</p>
+            <h2>Nothing hosted yet</h2>
+            <p className="muted">Add one with the plus: a container, or a route to an app already running on this computer. Containers Docker runs here show up on their own.</p>
           </div>
         ) : (
           <div className="card">
             <ul className="results ct-list">
               {rows}
-              {shown.length === 0 && <li className="empty-note ct-none">Nothing matches.</li>}
+              {rows.length === 0 && <li className="empty-note ct-none">Nothing matches.</li>}
             </ul>
           </div>
         ))}
       </div>
+      {adding && can("tunnels.create") && (
+        <NewRoute users={users} providers={providers} port={port} onClose={() => go("#/")} onDone={async (r) => {
+          await onChanged();
+          go(r ? `#/tunnels/${r.id}` : "#/");
+        }} />
+      )}
     </>
   );
 }
@@ -469,7 +501,7 @@ function ContainerPage({ name, tab: asked, more, routes, forwards, users, provid
           {menu.length > 0 && <MoreMenu label={`Actions for ${head.name}`} actions={menu} />}
         </div>
       </div>
-      <SubNav back="#/" backLabel="Containers" base={base} items={tabs} current={current} />
+      <SubNav back="#/" backLabel="Services" base={base} items={tabs} current={current} />
       <div className="page-body stack" key={current}>
         {problem && made && !c && <Callout tone="bad" icon="error">{problem}</Callout>}
         {current === "overview" && (c ? <Overview c={c} /> : <div className="repo-loading"><span className="spinner" /></div>)}

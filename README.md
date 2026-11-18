@@ -97,150 +97,43 @@ On the computer running it, open **myTunnels** from the Start menu on Windows, t
 app: the panel in a window of its own, which starts myTunnels when it is not running. Or open
 `http://localhost:7070` in a browser, on any system. The panel answers there alone:
 every other device, at home or away, reaches myTunnels through a tunnel, so no port is opened
-on your network. Setup asks only for the host account: an email, a username and a password
-for the panel. Either the email or the username signs in, and both can be changed under
-**Settings, Account**.
+on your network. Setup asks for two things. First the host account: an email, a username and
+a password for the panel. Either the email or the username signs in, and both can be changed
+under **Settings, Account**.
 
-Cloudflare is connected the first time something needs it: picking **Tunnel** in
-**New route**, or **Connect** under **Settings, Cloudflare**. It asks again each time until it
-is connected. **Open Cloudflare** goes to the token page with the permissions already picked
-(Account, Cloudflare Tunnel, Edit; Zone, DNS, Edit; Zone, Zone, Read). Create the token, paste
-it back, and the tunnel is created and the connector started. A token that sees more than one
-account asks which one.
+Then **Connect Cloudflare**, which services, domains and mail all run through. **Open
+Cloudflare** goes to the token page with the permissions already picked (Account, Cloudflare
+Tunnel, Edit; Zone, DNS, Edit; Zone, Zone, Read). Create the token, paste it back, and the
+tunnel is created and the connector started. A token that sees more than one account asks which
+one. **Skip for now** leaves it for later: anything that needs Cloudflare asks again, and so
+does **Connect** under **Settings, Cloudflare**.
 
-Then, on **Containers**, open a container, and on its **Routes** page press the plus: keep
-**Tunnel** at the top, type the subdomain, pick the domain, choose who can open it and
-press **Publish**. The plus on **Routes** opens any other port the same way.
+Then, on **Services**, press the plus: a **Container from an image** or **from GitHub**, or a
+**Route** to an app already running here. In **New route**, keep **Cloudflare Tunnel** at the
+top, type the subdomain, pick the domain, choose who can open it and press **Publish**. A
+container's own **Routes** page publishes it the same way.
+
+The sidebar follows what this computer is for: **Services** (what it hosts and how each is
+reached), **Storage** and **Mail** (your files and your mail, in place of a paid cloud),
+**Domains** (what they all share), **Dashboard** (this computer's health) and **Security** (who
+gets in). **Apps**, at its foot, installs the tools a new machine needs in a click each.
 
 To manage myTunnels from anywhere, publish the dashboard itself: under **Local app**, set
 **Runs on** to **This dashboard**, with no port. It takes the same access rules as any
 tunnel, and the dashboard's own sign-in (and emailed code, when on) still applies behind them.
 
-## Dashboard
+## Services
 
-**Dashboard** is the host at a glance, read every two seconds, with the last five minutes
-drawn as charts: its facts in a column on the left, under each memory slot, drive and
-graphics card by a dot lit by its health, and the chart and tables on the right. It
-shows what any account can read from the system:
-
-- The machine: its name, platform, kernel, processor, cores, memory, board and uptime, as
-  the system itself reports them, never Docker's virtual machine.
-- **CPU** over time and per thread, **memory** over time with the sticks in the board's
-  slots, and **network** traffic in and out. A stick that stops being detected stays listed
-  in red until it is marked as taken out; one running below its rated speed turns yellow.
-- **Graphics**: NVIDIA cards' temperature, load, fan, power and video memory through
-  `nvidia-smi`, other cards by their state.
-- On a Mac, the parts come from `system_profiler`: the memory (built into the chip on Apple
-  silicon), the drives with their SMART status, the graphics, and the battery's health.
-- **Volumes**, how full each one is, and the **drives** with their health.
-
-**Advanced**, the button beside the computer's name that the host or an admin confirms once, adds the sensors: the processor's temperature over time and per core, every
-temperature read, the **fans** (a fan that spun before and reads 0 has stopped), the power
-supply's 12, 5 and 3.3 V rails (within 5% is healthy, past 10% is failing), and each drive's
-temperature, life left, errors and hours. On Linux these come from `/sys` and need nothing
-more; drive wear and errors there need root and are not shown. On a Mac they are every
-temperature the system reports, which needs nothing more; its fans and rails are not
-shown. On Windows they need
-administrator rights, so turning it on asks Windows once, then installs the
-[PawnIO](https://pawnio.eu) driver, puts
-[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)'s
-library in `Program Files\myTunnels\hardware` (both downloads pinned by checksum) and adds a
-`myTunnels Hardware` task that reads the sensors as SYSTEM from startup. Turning
-**Advanced** off removes the task and those files; PawnIO stays installed.
-
-When a part has been failing, or healthy again, for 15 seconds, the host and every admin
-get an email, once SMTP is set up under **Security**, **Two-Factor Auth**.
-
-Installed, every figure is the computer's own. The rest of this paragraph is about running in Docker. On a Linux host,
-processors, memory and temperatures are the host's own. Docker Desktop
-runs containers in a virtual machine, so from inside one they are that machine's. To show
-the computer's own, run `server host` on it (from `server/`, `cargo run --release -- host`):
-it answers on `127.0.0.1:7094` alone, and the Dashboard reads it through `HOST_URL` in
-`compose.yaml`, falling back to its own figures while it is not running. Network traffic is
-what passes through myTunnels, or the computer's while `server host` runs.
-Temperatures need sensors the host exposes under `/sys/class/hwmon`, which a Linux host
-does and Docker Desktop does not.
-
-## Routes
-
-**Routes** is every opening in one list: Cloudflare tunnels, router port forwards and
-Tailscale, a row each with its address, where it goes, who reaches it and whether it is open.
-The plus opens **New route**, whose switch at the top picks the way:
-
-- **Tunnel**: an address on your domain through Cloudflare Tunnel, with no port opened on the
-  router, behind the tunnel's Access Control (home network, a tunnel password, sign-in).
-- **Port forward**: opens the port on this PC (a Windows Firewall rule, which asks for
-  administrator rights, and a relay when the app is on another port or machine), then asks the
-  router by UPnP to send the same port here. Most routers keep UPnP off; the row then says
-  **Router not forwarded**, and the router's own settings can forward it. Neither has a sign-in
-  or password.
-- **Tailscale**: `tailscale serve` puts the app on your tailnet at this machine's tailnet name;
-  **Open to the internet** uses Funnel instead, on port 443, 8443 or 10000.
-
-Router and Tailscale forwards can **Close after** an hour, a day or a week, and stay in the list
-switched off. A way whose app is missing (cloudflared, Tailscale) is listed but cannot be picked
-until it is installed from **Apps**.
-
-## Domains
-
-**Domains** holds the domains this computer serves. **Add domain** asks where each one's DNS is
-hosted. With **Cloudflare**, **Porkbun**, **GoDaddy** or **Namecheap**, its real records are read
-and changed here through the host's API; each connects once, with a token or keys, under
-**Settings**, **Connections** (Cloudflare under its own section). With **DNS records**, any other
-host works and you add what mail needs there yourself.
-
-Inside a domain:
-
-- **DNS**: its records, one line each; a click opens one in full to change or remove it, and
-  **Add record** adds A, AAAA, CNAME, MX or TXT. Records mail needs that DNS does not have yet are
-  listed with an **Add** button. For DNS kept elsewhere, it lists what mail needs there, each
-  checked against DNS.
-- **Mail**: its mail addresses and aliases.
-- **Activity**: the mail that came in and went out for it.
-- **Settings**: the mail server, set up a step at a time, then how mail moves, how mail apps
-  sign in, and its options.
-
-A domain's menu holds **Make primary** (the mail server is `mail.` on the primary domain),
-Cloudflare sync on or off, its **managers** (dashboard accounts with **View mail** that run its
-addresses without being able to set mail up), and removing it.
-
-### Mail
-
-The mail server runs on this computer: it receives mail, keeps each address's mailboxes in
-`mail.db` beside the gateway's database, and sends mail signed with DKIM. Outlook, Gmail, Apple
-Mail, Thunderbird and phones use it over IMAP and SMTP. Setup goes a step at a time: how mail
-arrives, how mail apps connect and how mail leaves. Each way shows at a glance whether it exposes
-a port, depends on a third party, is usage limited, is often blocked on home connections or needs
-a paid plan.
-
-Setup picks how each part is reached, in any mix:
-
-| Part | Port forward | Cloudflare and Tailscale |
-| --- | --- | --- |
-| Receiving | Port 25 forwarded here, MX pointing at this network | Email Routing hands mail to a Worker, which posts it through the tunnel |
-| Mail apps | IMAP 993 and SMTP 465, with a Let's Encrypt certificate, proved through Cloudflare DNS or, for a domain kept by hand, over port 80 while it is made | IMAP 443 and SMTP 8443 through Tailscale Funnel |
-| Sending | Direct to each recipient's server on port 25, or through a relay SMTP server | Cloudflare Email Sending (Workers Paid plan) |
-
-Every mail listener is on `127.0.0.1`; the ports it opens are rows named **Mail** on **Routes**,
-and a relay passes the sender's address on, so SPF still sees who connected. Mail apps find their
-settings from an address alone through `autodiscover.` and `autoconfig.` on each domain, served
-through the tunnel. Received mail is checked with SPF, DKIM and DMARC and filed in Junk when it
-fails. The Cloudflare token needs Workers Scripts, Email Routing Rules and Zone Settings edit for
-the Cloudflare ways, which need every domain on Cloudflare; **Make a token on Cloudflare** asks for
-them.
-
-## Containers
-
-**Containers** is the catalog of containers. It says how many run and their CPU and memory
-together, then a row each: what it is (a container Docker runs, one built from Git, or one run
-from an image) in a tile tinted by its state, its name over where it comes from, its address,
-and its CPU and memory while it runs. Each row has one menu: logs, its forwards, start or
+**Services** is everything this computer hosts. It says how many run and the containers' CPU and
+memory together, then a row each, in order by name. A container shows what it is (one Docker
+runs, one built from Git, or one run from an image) in a tile tinted by its state, its name over
+where it comes from, its address, and its CPU and memory while it runs. An app running here
+outside a container is the route to it, as on **Routes** below. Each row has one menu: logs, its forwards, start or
 stop, restart, kill and delete. Compose projects with more than one container fold under their
 name, with start, stop and restart for all of them. Search, or pick **All** or **Running**; the
 catalog refreshes on its own.
 
-The plus at the top, here and in the header, adds a **Container from Git**, **from GitHub** or
-**from an image**, or a **Route**. The menu beside it deletes every
+The plus at the top adds a **Container from GitHub** or **from an image**, or a **Route**. The menu beside it deletes every
 image no container uses.
 
 A container and its forwards are one page. Its heading holds its state, image and address,
@@ -252,8 +145,8 @@ pause, kill and delete. Under it:
 - **Routes**: every way it is reached, a tunnel, a router port or Tailscale, each with its
   state, where it goes and who reaches it, and the picked tunnel's activity under them. That
   tunnel's controls sit at the side: Open, its live switch, a menu to change the address or
-  remove it, and its access control. The plus forwards a port as Routes does; the
-  port is the container's own, asked only when it has more than one.
+  remove it, and its access control. The plus opens **New route** for it; the port is the
+  container's own, asked only when it has more than one.
 - **Images**: the image it runs and the others of the same name, such as earlier versions, with
   their size and age. Open one for its entrypoint, command, working folder, user, exposed ports,
   environment, labels and layers. One no container uses can be deleted.
@@ -315,6 +208,27 @@ networks are refused, and only the gateway may connect to it.
 Podman works too, through its Docker-compatible API: mount Podman's socket in place of
 `/var/run/docker.sock` in the `docker` service.
 
+## Routes
+
+A route is a way into a service: a Cloudflare tunnel, a router port forward or Tailscale. A
+container's routes are on its **Routes** page; a route to an app running here outside a container
+is a row on **Services** of its own, with its address, where it goes, who reaches it and whether
+it is open. **Route**, under the plus, opens **New route**, whose switch at the top picks the way:
+
+- **Tunnel**: an address on your domain through Cloudflare Tunnel, with no port opened on the
+  router, behind the tunnel's Access Control (home network, a tunnel password, sign-in).
+- **Port forward**: opens the port on this PC (a Windows Firewall rule, which asks for
+  administrator rights, and a relay when the app is on another port or machine), then asks the
+  router by UPnP to send the same port here. Most routers keep UPnP off; the row then says
+  **Router not forwarded**, and the router's own settings can forward it. Neither has a sign-in
+  or password.
+- **Tailscale**: `tailscale serve` puts the app on your tailnet at this machine's tailnet name;
+  **Open to the internet** uses Funnel instead, on port 443, 8443 or 10000.
+
+Router and Tailscale forwards can **Close after** an hour, a day or a week, and stay in the list
+switched off. Tailscale, when it is missing, is listed but cannot be picked until it is
+installed from **Apps**; cloudflared comes with myTunnels.
+
 ## Storage
 
 **Storage** is a home cloud for your files, not tied to any folder you pick: everything uploaded is
@@ -375,6 +289,103 @@ set is kept unless you pick another, and the others can be deleted one set at a 
 
 Storage takes only the kinds of file above. It is in the dashboard alone, so publish the
 dashboard through a tunnel to reach it from anywhere.
+
+## Mail
+
+**Mail** is mail for every domain on **Domains**, with three tabs: **Addresses** (every mailbox and
+alias, under its domain; **New address** and **New alias** pick the domain), **Activity** (what
+came in and went out) and **Settings** (the mail server, set up a step at a time, then how mail
+moves, how mail apps sign in, and its options). Until mail is set up it opens on **Settings**.
+
+The mail server runs on this computer: it receives mail, keeps each address's mailboxes in
+`mail.db` beside the gateway's database, and sends mail signed with DKIM. Outlook, Gmail, Apple
+Mail, Thunderbird and phones use it over IMAP and SMTP. Setup goes a step at a time: how mail
+arrives, how mail apps connect and how mail leaves. Each way shows at a glance whether it exposes
+a port, depends on a third party, is usage limited, is often blocked on home connections or needs
+a paid plan.
+
+Setup picks how each part is reached, in any mix:
+
+| Part | Port forward | Cloudflare and Tailscale |
+| --- | --- | --- |
+| Receiving | Port 25 forwarded here, MX pointing at this network | Email Routing hands mail to a Worker, which posts it through the tunnel |
+| Mail apps | IMAP 993 and SMTP 465, with a Let's Encrypt certificate, proved through Cloudflare DNS or, for a domain kept by hand, over port 80 while it is made | IMAP 443 and SMTP 8443 through Tailscale Funnel |
+| Sending | Direct to each recipient's server on port 25, or through a relay SMTP server | Cloudflare Email Sending (Workers Paid plan) |
+
+Every mail listener is on `127.0.0.1`; the ports it opens are rows named **Mail** on **Services**,
+and a relay passes the sender's address on, so SPF still sees who connected. Mail apps find their
+settings from an address alone through `autodiscover.` and `autoconfig.` on each domain, served
+through the tunnel. Received mail is checked with SPF, DKIM and DMARC and filed in Junk when it
+fails. The Cloudflare token needs Workers Scripts, Email Routing Rules and Zone Settings edit for
+the Cloudflare ways, which need every domain on Cloudflare; **Make a token on Cloudflare** asks for
+them.
+
+## Domains
+
+**Domains** holds the domains this computer serves. **Add domain** asks where each one's DNS is
+hosted. With **Cloudflare**, **Porkbun**, **GoDaddy** or **Namecheap**, its real records are read
+and changed here through the host's API; each connects once, with a token or keys, under
+**Settings**, **Connections** (Cloudflare under its own section). With **DNS records**, any other
+host works and you add what mail needs there yourself.
+
+Each domain's row and heading say what uses it: its services and its mail addresses. Inside a
+domain:
+
+- **Services**: every tunnel at the domain or under it.
+- **DNS**: its records, one line each; a click opens one in full to change or remove it, and
+  **Add record** adds A, AAAA, CNAME, MX or TXT. Records mail needs that DNS does not have yet are
+  listed with an **Add** button. For DNS kept elsewhere, it lists what mail needs there, each
+  checked against DNS.
+- **Redirects**: for a domain on Cloudflare, any address under it sent elsewhere.
+
+A domain's menu holds **Make primary** (the mail server is `mail.` on the primary domain),
+Cloudflare sync on or off, its **managers** (dashboard accounts with **View mail** that run its
+addresses without being able to set mail up), and removing it.
+
+## Dashboard
+
+**Dashboard** is the host at a glance, read every two seconds, with the last five minutes
+drawn as charts: its facts in a column on the left, under each memory slot, drive and
+graphics card by a dot lit by its health, and the chart and tables on the right. It
+shows what any account can read from the system:
+
+- The machine: its name, platform, kernel, processor, cores, memory, board and uptime, as
+  the system itself reports them, never Docker's virtual machine.
+- **CPU** over time and per thread, **memory** over time with the sticks in the board's
+  slots, and **network** traffic in and out. A stick that stops being detected stays listed
+  in red until it is marked as taken out; one running below its rated speed turns yellow.
+- **Graphics**: NVIDIA cards' temperature, load, fan, power and video memory through
+  `nvidia-smi`, other cards by their state.
+- On a Mac, the parts come from `system_profiler`: the memory (built into the chip on Apple
+  silicon), the drives with their SMART status, the graphics, and the battery's health.
+- **Volumes**, how full each one is, and the **drives** with their health.
+
+**Advanced**, the button beside the computer's name that the host or an admin confirms once, adds the sensors: the processor's temperature over time and per core, every
+temperature read, the **fans** (a fan that spun before and reads 0 has stopped), the power
+supply's 12, 5 and 3.3 V rails (within 5% is healthy, past 10% is failing), and each drive's
+temperature, life left, errors and hours. On Linux these come from `/sys` and need nothing
+more; drive wear and errors there need root and are not shown. On a Mac they are every
+temperature the system reports, which needs nothing more; its fans and rails are not
+shown. On Windows they need
+administrator rights, so turning it on asks Windows once, then installs the
+[PawnIO](https://pawnio.eu) driver, puts
+[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)'s
+library in `Program Files\myTunnels\hardware` (both downloads pinned by checksum) and adds a
+`myTunnels Hardware` task that reads the sensors as SYSTEM from startup. Turning
+**Advanced** off removes the task and those files; PawnIO stays installed.
+
+When a part has been failing, or healthy again, for 15 seconds, the host and every admin
+get an email, once SMTP is set up under **Security**, **Two-Factor Auth**.
+
+Installed, every figure is the computer's own. The rest of this paragraph is about running in Docker. On a Linux host,
+processors, memory and temperatures are the host's own. Docker Desktop
+runs containers in a virtual machine, so from inside one they are that machine's. To show
+the computer's own, run `server host` on it (from `server/`, `cargo run --release -- host`):
+it answers on `127.0.0.1:7094` alone, and the Dashboard reads it through `HOST_URL` in
+`compose.yaml`, falling back to its own figures while it is not running. Network traffic is
+what passes through myTunnels, or the computer's while `server host` runs.
+Temperatures need sensors the host exposes under `/sys/class/hwmon`, which a Linux host
+does and Docker Desktop does not.
 
 ## Apps
 
