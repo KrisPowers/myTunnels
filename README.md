@@ -24,22 +24,34 @@ browser ──https──> Cloudflare edge ──tunnel──> cloudflared ─�
 
 ## Quick start
 
-Install it, with nothing else needed first. cloudflared comes with it. The repository is
-private, so each way signs in with [GitHub CLI](https://cli.github.com/) (`gh auth login`, and
-`gh auth setup-git` for Homebrew's tap) as an account that can see it. To install without
-either, see [Without internet or a GitHub sign-in](#without-internet-or-a-github-sign-in).
+Install it, with nothing else needed first. cloudflared comes with it. While the repository
+is public, no sign-in or [GitHub CLI](https://cli.github.com/) is needed.
 
 Windows, in PowerShell:
 
 ```powershell
-irm https://api.github.com/repos/KrisPowers/myTunnels/contents/scripts/install.ps1 -Headers @{ Authorization = "Bearer $(gh auth token)"; Accept = 'application/vnd.github.raw' } | iex
+irm https://raw.githubusercontent.com/KrisPowers/myTunnels/main/scripts/install.ps1 | iex
 ```
 
 macOS or Linux:
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/KrisPowers/myTunnels/main/scripts/install.sh | sh
+```
+
+When the repository is private, each way signs in with GitHub CLI (`gh auth login`, and
+`gh auth setup-git` for Homebrew's tap) as an account that can see it:
+
+```powershell
+irm https://api.github.com/repos/KrisPowers/myTunnels/contents/scripts/install.ps1 -Headers @{ Authorization = "Bearer $(gh auth token)"; Accept = 'application/vnd.github.raw' } | iex
+```
+
+```sh
 curl -fsSL -H "Authorization: Bearer $(gh auth token)" -H "Accept: application/vnd.github.raw" https://api.github.com/repos/KrisPowers/myTunnels/contents/scripts/install.sh | sh
 ```
+
+To install without internet or a sign-in, see
+[Without internet or a GitHub sign-in](#without-internet-or-a-github-sign-in).
 
 Homebrew:
 
