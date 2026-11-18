@@ -8,6 +8,7 @@ import { ContainersPage } from "./Containers";
 
 import { DashboardPage } from "./Dashboard";
 import { DevicePage } from "./Devices";
+import { RoutesPage } from "./Routes";
 
 import { Icon, type IconName } from "./Icon";
 
@@ -184,18 +185,19 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
 
   // A tunnel, device or account that is gone goes back to its list.
   useEffect(() => {
-    if (view === "tunnels" && id && routes && !route) go("#/services");
+    if (view === "tunnels" && id && routes && !route) go("#/routes");
     if (view === "devices" && id && devices && !device) go("#/devices");
     if (view === "users" && id && id !== "new" && users && !user) go("#/users");
   }, [view, id, routes, devices, users, route, device, user]);
 
   // Each page shows for those who may use it; the first of them is home.
-  // Dashboard, this computer at a glance, comes first; then what it hosts,
-  // and what replaces a paid cloud, Storage and Mail; then who may get in.
-  // Domains have no page: they are the Cloudflare account's, all of them.
+  // Dashboard, this computer at a glance; then what it runs and how each is
+  // reached; then your files and mail; then who may get in. Domains have no
+  // page: they are the Cloudflare account's, all of them.
   const pages: [string, string, IconName, string, boolean][] = [
     ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
-    ["containers", "Services", "deployed_code", "#/services", can("containers.view") || can("tunnels.view")],
+    ["containers", "Containers", "deployed_code", "#/containers", can("containers.view")],
+    ["routes", "Routes", "wifi_cog", "#/routes", can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("drive.view")],
     ["mail", "Mail", "mail", "#/mail", can("mail.view") || can("mail.manage")],
     ["security", "Security", "shield", "#/security", ["users.view", "devices.view", "oauth.manage", "twofactor.manage"].some(can)],
@@ -203,13 +205,13 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const home = pages.find((p) => p[4])?.[3] ?? "#/settings/preferences";
   // An empty address opens home.
   useEffect(() => {
-    if (place.home && home !== "#/services") go(home);
+    if (place.home && home !== "#/containers") go(home);
   });
   const settings = SETTINGS.filter(([k]) => can("settings.manage") || !["connections", "network"].includes(k));
   const sections = view === "settings" ? settings : view === "docs" ? DOCS : null;
   const item = ([key, label, icon, to, shown]: [string, string, IconName, string, boolean]) => shown && (
     <NavItem key={key} to={to} icon={icon} label={label}
-      on={view === key || (key === "containers" && view === "tunnels") || (key === "security" && (view === "users" || view === "devices"))}
+      on={view === key || (key === "routes" && view === "tunnels") || (key === "security" && (view === "users" || view === "devices"))}
       rail={rail} />
   );
 
@@ -260,6 +262,8 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "apps" && <AppsPage />}
           {view === "storage" && <StoragePage />}
           {view === "mail" && <MailPage />}
+          {view === "routes" && <RoutesPage adding={page === "new"} port={place.more[0] ?? ""} routes={apps} forwards={forwards}
+            users={users ?? []} providers={providers} onChanged={load} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} forwards={forwards ?? []}
             users={users ?? []} providers={providers} onChanged={load} />}
           {route && <TunnelPage route={route} users={users ?? []} providers={providers} onChanged={load} />}

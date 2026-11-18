@@ -1587,14 +1587,31 @@ a.alert-text:hover b { color: var(--accent); }
 .alert-text small { color: var(--text-3); font-size: 12px; line-height: 1.4; }
 .alert .btn { flex-shrink: 0; align-self: center; }
 
-/* ---- console: the Dashboard alone on the rack's monitor, under a slim bar ---- */
-.console { min-height: 100vh; background: var(--bg); }
-.console-bar { display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px 0 24px; border-bottom: 1px solid var(--line); background: var(--top); }
-.console-bar b { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.console-bar > span:not(.brand-mark):not(.console-gap) { color: var(--text-3); font-size: 14px; }
+/* ---- console: this computer on the rack's monitor, one still frame that
+   fills the screen exactly and never scrolls; six panels in two rows ---- */
+.console { display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: var(--bg); }
+.console-bar { display: flex; flex-shrink: 0; align-items: center; gap: 12px; height: 48px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--line); background: var(--top); }
+.console-bar b { font-size: 15px; font-weight: 600; }
+.console-bar .console-quiet { color: var(--text-3); font-size: 13px; white-space: nowrap; }
+.console-bar .console-time { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .console-gap { flex: 1; }
 .console-bar .icon-btn { width: 36px; height: 36px; border-radius: 50%; color: var(--text-2); }
-.console-page { padding-top: 24px; }
+.console-grid { display: grid; flex: 1; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 12px; min-height: 0; padding: 12px; }
+.console-cell { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; overflow: hidden; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card); }
+.console-head { display: flex; flex-shrink: 0; align-items: baseline; gap: 8px; min-width: 0; }
+.console-head h2 { color: var(--text-2); font-size: 13px; font-weight: 500; }
+.console-head span { margin-left: auto; overflow: hidden; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.console-cell .chart { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.console-cell .chart-plot { flex: 1; height: auto; min-height: 0; }
+.console-list { display: grid; align-content: start; gap: 2px; min-height: 0; margin: 0; padding: 0; overflow: hidden; list-style: none; }
+.console-list li { display: flex; align-items: center; gap: 8px; min-width: 0; height: 28px; font-size: 13px; }
+.console-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.console-list small { flex-shrink: 0; color: var(--text-3); font-size: 12px; white-space: nowrap; }
+.console-list .meter { width: 96px; flex-shrink: 0; }
+.console-list .icon { flex-shrink: 0; }
+.console-list .ok-icon { color: var(--ok); }
+.console-list .warn .icon { color: var(--warn); }
+.console-list .bad .icon { color: var(--bad); }
 
 /* ---- services: one table of everything hosted ---- */
 .svc-card { overflow: hidden; }
@@ -1631,3 +1648,22 @@ a.alert-text:hover b { color: var(--accent); }
   .table.svc th:nth-child(3), .table.svc td:nth-child(3), .table.svc .svc-num { display: none; }
 }
 .svc-text small.plain { font-family: var(--font); }
+
+/* ---- mail: every address in one list ---- */
+.mail-list { margin: 0; padding: 0; list-style: none; }
+.mail-entry { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 12px 8px 20px; }
+.mail-entry + .mail-entry { border-top: 1px solid var(--line); }
+.mail-entry:hover { background: var(--hover); }
+.mail-who { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.mail-who b { overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.mail-who small { overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.mail-forward { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--card-2); color: var(--text-3); }
+.mail-size { flex-shrink: 0; min-width: 72px; color: var(--text-2); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+.mail-menu { flex-shrink: 0; width: 34px; }
+.mail-none { padding: 24px; color: var(--text-3); text-align: center; }
+.mail-kind, .add-kind { display: flex; margin-bottom: 20px; }
+.mail-kind button, .add-kind button { flex: 1; justify-content: center; }
+.mail-entry .chip { text-transform: none; }
+.svc-way { color: var(--text-2); font-size: 13px; white-space: nowrap; }
+.svc-text b a { color: inherit; }
+.svc-text b a:hover { color: var(--accent); }

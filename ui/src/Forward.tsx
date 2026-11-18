@@ -5,9 +5,8 @@ import { useCan } from "./me";
 import { AccessChips, target } from "./Tunnels";
 import { MoreMenu, useNotify, type MenuAction } from "./ui";
 
-// The three ways a service is reached: a Cloudflare tunnel, the router, or
-// Tailscale. Each is a row on Services, alone for a port on this computer, or
-// on its container's Routes.
+// The three ways in: a Cloudflare tunnel, the router, or Tailscale. Each is a
+// row on Routes, and on its container's Routes when it goes to one.
 export type Method = "tunnel" | "port" | "tailscale";
 
 const ICON: Record<Method, IconName> = { tunnel: "public", port: "router", tailscale: "lan" };
