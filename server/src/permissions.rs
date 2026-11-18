@@ -286,7 +286,7 @@ pub fn needed(method: &Method, path: &str) -> Need {
         "containers" => any(&["containers.manage"]),
         "routes" if read && seg.len() == 1 => any(&["tunnels.view", "users.view", "devices.view"]),
         "routes" if read => any(&["tunnels.view"]),
-        "routes" if *method == Method::POST => any(&["tunnels.create"]),
+        "routes" if *method == Method::POST && seg.len() == 1 => any(&["tunnels.create"]),
         "routes" if *method == Method::DELETE => any(&["tunnels.delete"]),
         "routes" => any(&["tunnels.edit"]),
         "forwards" if read => any(&["tunnels.view"]),

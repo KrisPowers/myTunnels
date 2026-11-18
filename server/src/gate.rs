@@ -11,6 +11,7 @@
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
+use axum::body::Body;
 use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
@@ -19,7 +20,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-use crate::db::{Device, Event, Route, SignIn, User};
+use crate::db::{Device, Event, Route, RouteKey, SignIn, User};
 use crate::state::{AppState, Hop, Outcome, Snapshot, DAY};
 use crate::util::{cookie, now, random_alnum, random_hex, sha256_hex, ApiError, ApiResult};
 use crate::{codes, guard, passkey, pow, secret, share, totp};
@@ -176,7 +177,7 @@ async fn serve(
     snap: &Snapshot,
     route: Route,
     host: String,
-    req: Request,
+    mut req: Request,
 ) -> Response {
     // A tunnel aimed at the gateway itself would forward to itself forever.
     if req.headers().contains_key(proxy::HOP_HEADER) {
@@ -229,6 +230,53 @@ async fn serve(
         return response;
     }
 
+    // The route's own limit, beneath the gateway's.
+    if route.rate_limit > 0 && !within(&format!("route-{}", route.id), route.rate_limit) {
+        if state.allow(&format!("limit-log:{}:{from}", route.id), 1, 60) {
+            log(state, &route, "limit", "refused", None, ip, req.headers());
+        }
+        return too_many();
+    }
+    // A read-only route takes reads and nothing else.
+    if route.read_only && !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS) {
+        log(state, &route, "write", "refused", None, ip, req.headers());
+        return json_error(
+            StatusCode::METHOD_NOT_ALLOWED,
+            "This address takes reads only",
+        );
+    }
+    // An API key, from a header or the body, for a route that asks for one.
+    let key: Option<Option<RouteKey>> = if route.require_key {
+        let (given, back) = api_key(req).await;
+        req = back;
+        Some(given.and_then(|k| {
+            state
+                .db
+                .use_route_key(&route.id, &sha256_hex(k.trim()))
+                .ok()
+                .flatten()
+        }))
+    } else {
+        None
+    };
+    match &key {
+        Some(Some(k)) if state.allow(&format!("key-log:{}", k.id), 1, 60) => {
+            log(
+                state,
+                &route,
+                "api",
+                &format!("key {}", k.name),
+                None,
+                ip,
+                req.headers(),
+            );
+        }
+        Some(None) if state.allow(&format!("key-fail:{}:{from}", route.id), 1, 10) => {
+            log(state, &route, "api", "refused", None, ip, req.headers());
+        }
+        _ => {}
+    }
+
     let mut new_cookies = Vec::new();
     let known = |token: &str| {
         state
@@ -246,7 +294,18 @@ async fn serve(
         }
     }
 
-    let verdict = check(state, snap, &route, ip, req.headers());
+    let verdict = check(
+        state,
+        snap,
+        &route,
+        ip,
+        req.headers(),
+        key.as_ref().map(Option::is_some),
+    );
+    // An API client turned away for its key is answered in JSON, not a page.
+    if !verdict.allowed() && verdict.key == Some(false) && !page_load(&req) {
+        return json_error(StatusCode::UNAUTHORIZED, "A valid API key is needed");
+    }
     // Each page a visitor lets through is logged; the files it asks for are not.
     if verdict.allowed() && page_load(&req) {
         log(state, &route, "visit", "opened", None, ip, req.headers());
@@ -270,6 +329,51 @@ async fn serve(
         response.headers_mut().append(header::SET_COOKIE, value);
     }
     response
+}
+
+/// The API key a request carries: `Authorization: Bearer`, `X-API-Key`, or
+/// `api_key` in a JSON or form body of up to 1 MB, which goes on to the app
+/// as it came.
+async fn api_key(req: Request) -> (Option<String>, Request) {
+    let headers = req.headers();
+    let text = |name: header::HeaderName| headers.get(name).and_then(|v| v.to_str().ok());
+    let given = text(header::AUTHORIZATION)
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .or_else(|| text(header::HeaderName::from_static("x-api-key")))
+        .map(str::to_owned);
+    if given.is_some() {
+        return (given, req);
+    }
+    let kind = text(header::CONTENT_TYPE)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let json = kind.starts_with("application/json");
+    let form = kind.starts_with("application/x-www-form-urlencoded");
+    let small = text(header::CONTENT_LENGTH)
+        .and_then(|v| v.parse::<usize>().ok())
+        .is_some_and(|n| n <= 1 << 20);
+    if !(json || form) || !small {
+        return (None, req);
+    }
+    let (parts, body) = req.into_parts();
+    let Ok(bytes) = axum::body::to_bytes(body, 1 << 20).await else {
+        return (None, Request::from_parts(parts, Body::empty()));
+    };
+    let found = if json {
+        serde_json::from_slice::<Value>(&bytes)
+            .ok()
+            .and_then(|v| v.get("api_key").and_then(Value::as_str).map(str::to_owned))
+    } else {
+        serde_urlencoded::from_bytes::<Vec<(String, String)>>(&bytes)
+            .ok()
+            .and_then(|pairs| {
+                pairs
+                    .into_iter()
+                    .find(|(k, _)| k == "api_key")
+                    .map(|(_, v)| v)
+            })
+    };
+    (found, Request::from_parts(parts, Body::from(bytes)))
 }
 
 /// The panel, as at its own address, for a visitor that passed the tunnel's
@@ -298,11 +402,14 @@ struct Verdict {
     lan: Option<bool>,
     password: Option<bool>,
     login: Option<bool>,
+    key: Option<bool>,
 }
 
 impl Verdict {
     fn results(&self) -> impl Iterator<Item = bool> + '_ {
-        [self.lan, self.password, self.login].into_iter().flatten()
+        [self.lan, self.password, self.login, self.key]
+            .into_iter()
+            .flatten()
     }
 
     fn allowed(&self) -> bool {
@@ -333,9 +440,11 @@ fn check(
     route: &Route,
     ip: Option<IpAddr>,
     headers: &HeaderMap,
+    key: Option<bool>,
 ) -> Verdict {
     Verdict {
         any: route.policy_mode == "any",
+        key,
         lan: route
             .require_lan
             .then(|| ip.is_some_and(|ip| state.is_local(snap, ip))),
@@ -1887,7 +1996,20 @@ mod tests {
             lan,
             password,
             login,
+            key: None,
         }
+    }
+
+    #[test]
+    fn a_missing_key_refuses_unless_any_other_check_passes() {
+        let mut v = verdict(false, None, None, None);
+        v.key = Some(false);
+        assert!(!v.allowed());
+        v.key = Some(true);
+        assert!(v.allowed());
+        let mut either = verdict(true, None, None, Some(true));
+        either.key = Some(false);
+        assert!(either.allowed());
     }
 
     #[test]

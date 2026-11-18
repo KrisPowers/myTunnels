@@ -108,6 +108,11 @@ pub fn router(state: AppState) -> Router {
         .route("/routes/{id}/address", put(move_route))
         .route("/routes/{id}/activity", get(route_activity))
         .route(
+            "/routes/{id}/keys",
+            get(list_route_keys).post(create_route_key),
+        )
+        .route("/routes/{id}/keys/{key}", delete(delete_route_key))
+        .route(
             "/forwards",
             get(crate::forward::list).post(crate::forward::create),
         )
@@ -1414,6 +1419,69 @@ struct NewRoute {
     preserve_host: bool,
     #[serde(default)]
     verify_tls: bool,
+    #[serde(default)]
+    read_only: bool,
+    #[serde(default)]
+    require_key: bool,
+    #[serde(default)]
+    rate_limit: u32,
+}
+
+/// A route's own limit: none, or up to 100,000 requests a minute.
+fn check_rate(rate: u32) -> ApiResult<()> {
+    if rate > 100_000 {
+        return Err(ApiError::bad("Rate limit: up to 100,000 requests a minute"));
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct KeyIn {
+    name: String,
+}
+
+async fn list_route_keys(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Vec<crate::db::RouteKey>>> {
+    state.db.route(&id)?.ok_or_else(ApiError::not_found)?;
+    Ok(Json(state.db.route_keys(&id)?))
+}
+
+/// Makes a key for the route. Its text is answered once, here, and only its
+/// hash is kept.
+async fn create_route_key(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<KeyIn>,
+) -> ApiResult<Json<Value>> {
+    state.db.route(&id)?.ok_or_else(ApiError::not_found)?;
+    let name = body.name.trim();
+    if name.is_empty() || name.len() > 60 {
+        return Err(ApiError::bad("Name the key, up to 60 characters"));
+    }
+    let token = format!("mtk_{}", random_hex(24));
+    let key = crate::db::RouteKey {
+        id: random_hex(8),
+        route_id: id,
+        name: name.to_owned(),
+        created_at: now(),
+        last_used: None,
+    };
+    state
+        .db
+        .add_route_key(&key, &crate::util::sha256_hex(&token))?;
+    Ok(Json(json!({ "key": key, "token": token })))
+}
+
+async fn delete_route_key(
+    State(state): State<AppState>,
+    Path((id, key)): Path<(String, String)>,
+) -> ApiResult<Json<Vec<crate::db::RouteKey>>> {
+    if !state.db.delete_route_key(&id, &key)? {
+        return Err(ApiError::not_found());
+    }
+    Ok(Json(state.db.route_keys(&id)?))
 }
 
 /// Provider IDs that exist, once each.
@@ -1464,6 +1532,7 @@ async fn create_route(
     check_not_self(&state, target_host.as_deref(), body.port)?;
     let password_hash = tunnel_password(body.require_password, body.password, None)?;
     check_limits(body.login_max, body.login_idle)?;
+    check_rate(body.rate_limit)?;
 
     let cf = Cloudflare::new(&state.http, &cf_settings.token);
     let zone = cf
@@ -1516,6 +1585,9 @@ async fn create_route(
         oauth: known_providers(body.oauth),
         preserve_host: body.preserve_host,
         verify_tls: body.verify_tls,
+        read_only: body.read_only,
+        require_key: body.require_key,
+        rate_limit: body.rate_limit,
         dns_record_id: Some(record_id.clone()),
         created_at: now(),
     };
@@ -1559,6 +1631,12 @@ struct RouteEdit {
     preserve_host: bool,
     #[serde(default)]
     verify_tls: bool,
+    #[serde(default)]
+    read_only: bool,
+    #[serde(default)]
+    require_key: bool,
+    #[serde(default)]
+    rate_limit: u32,
 }
 
 async fn update_route(
@@ -1593,6 +1671,10 @@ async fn update_route(
     route.oauth = known_providers(body.oauth);
     route.preserve_host = body.preserve_host;
     route.verify_tls = body.verify_tls;
+    check_rate(body.rate_limit)?;
+    route.read_only = body.read_only;
+    route.require_key = body.require_key;
+    route.rate_limit = body.rate_limit;
     state.db.update_route(&route)?;
     if switched && state.cloudflare().is_ok() {
         tunnel::sync_ingress(&state).await?;

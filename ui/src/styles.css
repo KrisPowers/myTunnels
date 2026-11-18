@@ -1667,3 +1667,28 @@ a.alert-text:hover b { color: var(--accent); }
 .svc-way { color: var(--text-2); font-size: 13px; white-space: nowrap; }
 .svc-text b a { color: inherit; }
 .svc-text b a:hover { color: var(--accent); }
+
+/* ---- exposing a port: four numbered steps, each a choice or a field ---- */
+.nr2 { display: grid; gap: 4px; }
+.nr2-step { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 0 12px; padding: 16px 0; }
+.nr2-step + .nr2-step { border-top: 1px solid var(--line); }
+.nr2-step-head { display: contents; }
+.nr2-step-head .how-num { grid-row: 1 / span 2; }
+.nr2-step-head h3 { align-self: center; font-size: 15px; font-weight: 600; }
+.nr2-step-body { display: grid; grid-column: 2; gap: 12px; min-width: 0; margin-top: 12px; }
+.nr2-step-body .tf { margin-bottom: 0; }
+.nr2-seg { display: flex; justify-self: start; }
+.nr2-fields { display: grid; gap: 12px; }
+.nr2-note { margin: 0; color: var(--text-3); font-size: 13px; line-height: 1.5; }
+.nr2-close { max-width: 240px; }
+.keys { display: grid; gap: 4px; padding: 8px 20px 16px; border-top: 1px solid var(--line); }
+.keys-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
+.keys-head b { font-weight: 600; }
+.keys-none { margin: 0; color: var(--text-3); font-size: 13px; }
+.key { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.key > .icon { color: var(--text-3); }
+.key-text { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.key-text b { font-weight: 500; }
+.key-text small { color: var(--text-3); font-size: 12px; }
+.key-token { margin: 12px 0; padding: 12px; border-radius: var(--radius); background: var(--code); font-family: var(--mono); overflow-wrap: anywhere; }
+.rt-port { font-size: 15px; font-weight: 600; }

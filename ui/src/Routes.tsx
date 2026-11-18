@@ -1,29 +1,42 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { api, message, type Forward, type OAuthProvider, type Route, type User } from "./api";
 import { Icon, type IconName } from "./Icon";
 import { useCan } from "./me";
 import { NewRoute } from "./NewRoute";
 import { go } from "./route";
-import { AccessChips, target } from "./Tunnels";
 import { MoreMenu, useNotify, type MenuAction } from "./ui";
 
-// Routes are every way in, one table: Cloudflare tunnels at an address on
-// your domains, ports the router forwards here, and Tailscale. Each row says
-// where it is reached, where it goes, who gets in and whether it is up. Add
-// route opens New route; `#/routes/new/<port>` opens it on that port.
+// Routes are this computer's ports exposed: a row each, the port first, then
+// how it is exposed and where it is reached, whether it takes writes, who
+// gets in, and whether it is up. A tunnel's row opens its page, where its
+// sign-in, API keys, rate limit and activity are.
 
 interface Item {
   key: string;
-  address: string;
-  href?: string;
-  to: string;
+  port: number;
+  name: string;
   way: string;
   icon: IconName;
-  up: boolean;
+  at: string;
+  href?: string;
+  traffic: string;
+  who: string[];
   state: [string, string];
-  access: ReactNode;
+  up: boolean;
   open?: string;
   menu: MenuAction[];
+}
+
+// Who a tunnel lets in, in a word or two each.
+function whoOf(r: Route): string[] {
+  const who = [
+    r.require_login && "Sign-in",
+    r.require_password && "Password",
+    r.require_key && "API key",
+    r.require_lan && "Home network",
+  ].filter(Boolean) as string[];
+  if (!who.length) return ["Anyone"];
+  return r.policy_mode === "any" && who.length > 1 ? [who.join(" or ")] : who;
 }
 
 export function RoutesPage({ adding, port, routes, forwards, users, providers, onChanged }: {
@@ -52,9 +65,10 @@ export function RoutesPage({ adding, port, routes, forwards, users, providers, o
   };
 
   const items: Item[] = [
-    ...(routes ?? []).map((r): Item => ({
-      key: "r" + r.id, address: r.hostname, href: `https://${r.hostname}`, to: target(r), way: "Cloudflare Tunnel", icon: "public",
-      up: r.enabled, state: r.enabled ? ["Live", "ok"] : ["Off", ""], access: <AccessChips route={r} />, open: `#/tunnels/${r.id}`,
+    ...(routes ?? []).filter((r) => r.target_scheme !== "dashboard").map((r): Item => ({
+      key: "r" + r.id, port: r.target_port, name: r.target_host ? `on ${r.target_host}` : "", way: "Cloudflare Tunnel", icon: "public",
+      at: r.hostname, href: `https://${r.hostname}`, traffic: r.read_only ? "Read only" : "Read & write", who: whoOf(r),
+      state: r.enabled ? ["Live", "ok"] : ["Off", ""], up: r.enabled, open: `#/tunnels/${r.id}`,
       menu: [
         { label: "Open", icon: "open_in_new", onClick: () => window.open(`https://${r.hostname}`, "_blank", "noreferrer") },
         ...(can("tunnels.delete") ? [{ label: "Remove", icon: "delete" as IconName, danger: true, confirm: "Remove for good", onClick: () => act("r" + r.id, () => api.removeRoute(r.id), `Removed ${r.hostname}`) }] : []),
@@ -62,13 +76,11 @@ export function RoutesPage({ adding, port, routes, forwards, users, providers, o
     })),
     ...(forwards ?? []).map((f): Item => {
       const tailscale = f.method === "tailscale";
-      const up = f.enabled && !f.problem;
       return {
-        key: "f" + f.id, address: f.address ?? `Port ${f.public_port}`, href: f.address?.startsWith("https://") ? f.address : undefined,
-        to: `${f.name ? `${f.name}, ` : ""}${f.target_host ? `${f.target_host}:` : "port "}${f.target_port}`,
-        way: tailscale ? "Tailscale" : "Port forward", icon: tailscale ? "lan" : "router", up,
-        state: !f.enabled ? ["Closed", ""] : f.problem ? ["Failed", "bad"] : ["Open", "ok"],
-        access: <span className="chip">{tailscale ? (f.public ? "Internet" : "Tailnet") : f.router ? "Internet" : "This network"}</span>,
+        key: "f" + f.id, port: f.target_port, name: f.name, way: tailscale ? "Tailscale" : `Port forward, ${f.protocol === "both" ? "TCP & UDP" : f.protocol.toUpperCase()}`,
+        icon: tailscale ? "lan" : "router", at: f.address ?? `port ${f.public_port}`, href: f.address?.startsWith("https://") ? f.address : undefined,
+        traffic: "Read & write", who: [tailscale ? (f.public ? "Anyone, by Funnel" : "Your tailnet") : f.router ? "Anyone" : "Your network"],
+        state: !f.enabled ? ["Closed", ""] : f.problem ? ["Failed", "bad"] : ["Open", "ok"], up: f.enabled && !f.problem,
         menu: [
           ...(can("tunnels.edit") ? [f.enabled
             ? { label: "Close", icon: "block" as IconName, onClick: () => act("f" + f.id, () => api.editForward(f.id, { enabled: false }), `Closed port ${f.public_port}`) }
@@ -77,18 +89,17 @@ export function RoutesPage({ adding, port, routes, forwards, users, providers, o
         ],
       };
     }),
-  ].sort((a, b) => a.address.localeCompare(b.address));
+  ].sort((a, b) => a.port - b.port || a.at.localeCompare(b.at));
 
   const needle = q.trim().toLowerCase();
-  const shown = needle ? items.filter((i) => [i.address, i.to, i.way].some((v) => v.toLowerCase().includes(needle))) : items;
-  const up = items.filter((i) => i.up).length;
+  const shown = needle ? items.filter((i) => [String(i.port), i.name, i.at, i.way].some((v) => v.toLowerCase().includes(needle))) : items;
 
   return (
     <>
       <div className="page-head">
         <div className="page-head-main">
           <h1>Routes</h1>
-          {routes && <div className="page-sub"><span><b>{up}</b> of {items.length} up</span></div>}
+          {routes && <div className="page-sub"><span><b>{items.filter((i) => i.up).length}</b> of {items.length} exposed</span></div>}
         </div>
         <div className="page-actions">
           {items.length > 0 && (
@@ -97,7 +108,7 @@ export function RoutesPage({ adding, port, routes, forwards, users, providers, o
               <input type="search" placeholder="Search" aria-label="Search routes" value={q} onChange={(e) => setQ(e.target.value)} spellCheck={false} />
             </label>
           )}
-          {can("tunnels.create") && <button type="button" className="btn primary" onClick={() => go("#/routes/new")}><Icon name="add" size={18} />Add route</button>}
+          {can("tunnels.create") && <button type="button" className="btn primary" onClick={() => go("#/routes/new")}><Icon name="add" size={18} />Expose a port</button>}
         </div>
       </div>
 
@@ -108,28 +119,29 @@ export function RoutesPage({ adding, port, routes, forwards, users, providers, o
           <div className="card svc-card">
             <div className="table-wrap">
               <table className="table svc">
-                <thead><tr><th className="grow">Address</th><th>Way</th><th>Who gets in</th><th>Status</th><th /></tr></thead>
+                <thead><tr><th>Port</th><th className="grow">Reached at</th><th>Traffic</th><th>Who gets in</th><th>Status</th><th /></tr></thead>
                 <tbody>
                   {shown.map((i) => (
                     <tr key={i.key} className={(i.open ? "svc-link" : "") + (i.up ? "" : " svc-down")} onClick={() => i.open && go(i.open)}>
+                      <td><span className="rt-port mono">{i.port}</span></td>
                       <td>
                         <span className="svc-name">
                           <span className={"svc-icon " + i.state[1]}><Icon name={i.icon} size={18} /></span>
                           <span className="svc-text">
-                            <b>{i.href ? <a href={i.href} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{i.address}</a> : i.address}</b>
-                            <small>to {i.to}</small>
+                            <b>{i.href ? <a href={i.href} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{i.at}</a> : i.at}</b>
+                            <small className="plain">{[i.way, i.name].filter(Boolean).join(" · ")}</small>
                           </span>
                         </span>
                       </td>
-                      <td><span className="svc-way">{i.way}</span></td>
-                      <td><span className="access">{i.access}</span></td>
+                      <td><span className={"chip " + (i.traffic === "Read only" ? "plain" : "")}>{i.traffic}</span></td>
+                      <td><span className="access">{i.who.map((w) => <span key={w} className="chip">{w}</span>)}</span></td>
                       <td><span className={"chip " + i.state[1]}><span className={"dot " + i.state[1]} />{i.state[0]}</span></td>
                       <td className="svc-menu" onClick={(e) => e.stopPropagation()}>
-                        {busy === i.key ? <span className="spinner small" /> : i.menu.length > 0 && <MoreMenu label={`Actions for ${i.address}`} actions={i.menu} />}
+                        {busy === i.key ? <span className="spinner small" /> : i.menu.length > 0 && <MoreMenu label={`Actions for port ${i.port}`} actions={i.menu} />}
                       </td>
                     </tr>
                   ))}
-                  {shown.length === 0 && <tr><td colSpan={5} className="svc-none">Nothing matches.</td></tr>}
+                  {shown.length === 0 && <tr><td colSpan={6} className="svc-none">Nothing matches.</td></tr>}
                 </tbody>
               </table>
             </div>

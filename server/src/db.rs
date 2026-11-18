@@ -95,6 +95,15 @@ CREATE TABLE IF NOT EXISTS events (
     at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS events_route ON events (route_id, at);
+CREATE TABLE IF NOT EXISTS route_keys (
+    id TEXT PRIMARY KEY,
+    route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    hash TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    last_used INTEGER
+);
+CREATE INDEX IF NOT EXISTS route_keys_route ON route_keys (route_id);
 CREATE INDEX IF NOT EXISTS events_at ON events (at);
 CREATE TABLE IF NOT EXISTS user_devices (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -184,7 +193,7 @@ CREATE TABLE IF NOT EXISTS forwards (
 ";
 
 /// Columns added to `routes` after its first release, with how to add each.
-const ROUTE_MIGRATIONS: [(&str, &str); 9] = [
+const ROUTE_MIGRATIONS: [(&str, &str); 12] = [
     ("preserve_host", "preserve_host INTEGER NOT NULL DEFAULT 0"),
     (
         "require_password",
@@ -197,6 +206,9 @@ const ROUTE_MIGRATIONS: [(&str, &str); 9] = [
     ("require_code", "require_code INTEGER NOT NULL DEFAULT 0"),
     ("oauth", "oauth TEXT NOT NULL DEFAULT ''"),
     ("verify_tls", "verify_tls INTEGER NOT NULL DEFAULT 0"),
+    ("read_only", "read_only INTEGER NOT NULL DEFAULT 0"),
+    ("require_key", "require_key INTEGER NOT NULL DEFAULT 0"),
+    ("rate_limit", "rate_limit INTEGER NOT NULL DEFAULT 0"),
 ];
 
 /// A published tunnel: one hostname on a Cloudflare zone pointing at one local port.
@@ -230,11 +242,37 @@ pub struct Route {
     pub preserve_host: bool,
     /// Check an HTTPS app's certificate instead of taking any, self-signed included.
     pub verify_tls: bool,
+    /// Lets reads through (GET, HEAD, OPTIONS) and refuses every write.
+    pub read_only: bool,
+    /// An API key, from Route keys, in a header or the request body.
+    pub require_key: bool,
+    /// Requests one visitor may make each minute; 0 is the gateway's own limit.
+    pub rate_limit: u32,
     #[serde(skip)]
     pub password_hash: Option<String>,
     pub password_set: bool,
     pub dns_record_id: Option<String>,
     pub created_at: i64,
+}
+
+/// A key an API client presents to a route that asks for one. Only its hash is kept.
+#[derive(Clone, Serialize)]
+pub struct RouteKey {
+    pub id: String,
+    pub route_id: String,
+    pub name: String,
+    pub created_at: i64,
+    pub last_used: Option<i64>,
+}
+
+fn route_key_row(r: &Row) -> rusqlite::Result<RouteKey> {
+    Ok(RouteKey {
+        id: r.get(0)?,
+        route_id: r.get(1)?,
+        name: r.get(2)?,
+        created_at: r.get(3)?,
+        last_used: r.get(4)?,
+    })
 }
 
 /// A port opened by the router or by Tailscale, beside the tunnels: `method` is
@@ -379,7 +417,7 @@ pub struct Device {
 
 const ROUTE_COLS: &str = "id, subdomain, zone_id, zone_name, hostname, target_host, target_port, \
      target_scheme, require_lan, require_device, policy_mode, enabled, dns_record_id, created_at, \
-     preserve_host, require_password, password_hash, require_login, login_max, login_idle,      require_code, oauth, verify_tls";
+     preserve_host, require_password, password_hash, require_login, login_max, login_idle,      require_code, oauth, verify_tls, read_only, require_key, rate_limit";
 
 /// A passkey: its credential ID, whose it is, the site it signs in to, and its
 /// public key.
@@ -469,6 +507,9 @@ fn route_row(r: &Row) -> rusqlite::Result<Route> {
             .map(str::to_owned)
             .collect(),
         verify_tls: r.get(22)?,
+        read_only: r.get(23)?,
+        require_key: r.get(24)?,
+        rate_limit: r.get(25)?,
     })
 }
 
@@ -810,7 +851,7 @@ impl Db {
         self.conn().execute(
             &format!(
                 "INSERT INTO routes ({ROUTE_COLS})
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)"
             ),
             params![
                 r.id,
@@ -836,6 +877,9 @@ impl Db {
                 r.require_code,
                 r.oauth.join(","),
                 r.verify_tls,
+                r.read_only,
+                r.require_key,
+                r.rate_limit,
             ],
         )?;
         Ok(())
@@ -847,7 +891,7 @@ impl Db {
                  require_lan = ?5, policy_mode = ?6, enabled = ?7,
                  preserve_host = ?8, require_password = ?9, password_hash = ?10,
                  require_login = ?11, login_max = ?12, login_idle = ?13, require_code = ?14,
-                 oauth = ?15, verify_tls = ?16
+                 oauth = ?15, verify_tls = ?16, read_only = ?17, require_key = ?18, rate_limit = ?19
              WHERE id = ?1",
             params![
                 r.id,
@@ -866,9 +910,61 @@ impl Db {
                 r.require_code,
                 r.oauth.join(","),
                 r.verify_tls,
+                r.read_only,
+                r.require_key,
+                r.rate_limit,
             ],
         )?;
         Ok(())
+    }
+
+    // ---- a route's API keys ----
+
+    pub fn route_keys(&self, route_id: &str) -> Result<Vec<RouteKey>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, route_id, name, created_at, last_used FROM route_keys
+             WHERE route_id = ?1 ORDER BY created_at",
+        )?;
+        let keys = stmt
+            .query_map([route_id], route_key_row)?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(keys)
+    }
+
+    pub fn add_route_key(&self, key: &RouteKey, hash: &str) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO route_keys (id, route_id, name, hash, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![key.id, key.route_id, key.name, hash, key.created_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_route_key(&self, route_id: &str, id: &str) -> Result<bool> {
+        Ok(self.conn().execute(
+            "DELETE FROM route_keys WHERE route_id = ?1 AND id = ?2",
+            params![route_id, id],
+        )? > 0)
+    }
+
+    /// The route's key with this hash, its last use noted.
+    pub fn use_route_key(&self, route_id: &str, hash: &str) -> Result<Option<RouteKey>> {
+        let conn = self.conn();
+        let key = conn
+            .query_row(
+                "SELECT id, route_id, name, created_at, last_used FROM route_keys
+                 WHERE route_id = ?1 AND hash = ?2",
+                params![route_id, hash],
+                route_key_row,
+            )
+            .optional()?;
+        if let Some(k) = &key {
+            conn.execute(
+                "UPDATE route_keys SET last_used = ?2 WHERE id = ?1",
+                params![k.id, crate::util::now()],
+            )?;
+        }
+        Ok(key)
     }
 
     /// Moves a tunnel to another address.
