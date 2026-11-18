@@ -824,8 +824,10 @@ fn install_command(
     match m? {
         Manager::Winget => {
             let mut args = words(match action {
-                Action::Install => "install --exact --silent --disable-interactivity --accept-package-agreements --accept-source-agreements --id",
-                Action::Update => "upgrade --exact --silent --disable-interactivity --accept-package-agreements --accept-source-agreements --id",
+                // Every catalog ID is in winget's own source; the Store's is
+                // left out, which fails on machines without the Store set up.
+                Action::Install => "install --source winget --exact --silent --disable-interactivity --accept-package-agreements --accept-source-agreements --id",
+                Action::Update => "upgrade --source winget --exact --silent --disable-interactivity --accept-package-agreements --accept-source-agreements --id",
                 Action::Uninstall => "uninstall --exact --silent --disable-interactivity --accept-source-agreements --id",
             });
             args.push(a.winget?.into());
@@ -1152,6 +1154,7 @@ fn lines_of(
 /// Runs the installer, moving `id`'s job along as it prints. Ends with whether
 /// it worked and the last of what it said.
 async fn run_installer(id: &str, program: &FsPath, args: &[String]) -> (bool, String) {
+    let _one = MANAGER.lock().await;
     let child = Command::new(program)
         .args(args)
         .stdin(Stdio::null())
@@ -1196,6 +1199,10 @@ async fn run_installer(id: &str, program: &FsPath, args: &[String]) -> (bool, St
     }
 }
 
+/// Held while the package manager runs, so only one call runs at a time: on
+/// a machine where winget has never run, calls at once each try to set up its
+/// sources, and all of them fail.
+static MANAGER: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static JOBS: LazyLock<Mutex<HashMap<String, Job>>> = LazyLock::new(Mutex::default);
 /// What was last found installed, and when. It is answered with at once and
 /// looked at again in the background once it is older than `FOUND_FOR`.
@@ -1403,6 +1410,8 @@ async fn lookup_versions(a: &App, m: Option<Manager>, dirs: &[PathBuf]) -> Vec<S
                 };
                 let args = [
                     "show",
+                    "--source",
+                    "winget",
                     "--id",
                     id,
                     "--exact",
@@ -1410,6 +1419,7 @@ async fn lookup_versions(a: &App, m: Option<Manager>, dirs: &[PathBuf]) -> Vec<S
                     "--accept-source-agreements",
                     "--disable-interactivity",
                 ];
+                let _one = MANAGER.lock().await;
                 output(&winget, &args)
                     .await
                     .map(|t| winget_versions(&t))
