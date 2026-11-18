@@ -1,6 +1,8 @@
 //! This computer's half of a port forward: an inbound rule in its firewall,
 //! and, when the app is on another port or another machine, a relay that
-//! listens on the forwarded port and passes everything to the app.
+//! listens on the forwarded port and passes everything to the app. On
+//! Windows the rule is made by the firewall helper granted at install, with
+//! no prompt, or else through Windows' admin prompt.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -186,16 +188,108 @@ async fn relay_udp(socket: Arc<UdpSocket>, host: String, port: u16) {
 }
 
 #[cfg(windows)]
-mod firewall {
-    use std::process::Stdio;
-    use std::time::Duration;
+pub use firewall::grant as grant_firewall;
 
-    use anyhow::{anyhow, bail, Result};
+#[cfg(windows)]
+mod firewall {
+    use std::path::PathBuf;
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    use anyhow::{anyhow, bail, Context, Result};
+    use serde_json::json;
 
     use super::{kinds, relays};
     use crate::db::Forward;
 
     const NO_WINDOW: u32 = 0x0800_0000;
+
+    /// The helper that opens and closes these rules with no admin prompt: a
+    /// task run as SYSTEM, put in place once by `mytunnels grant`.
+    const HELPER: &str = include_str!("firewall.ps1");
+    const TASK: &str = "myTunnels Firewall";
+
+    /// A folder under one of Windows' own, by the variable that names it.
+    fn under(var: &str, fallback: &str) -> PathBuf {
+        std::env::var_os(var)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(fallback))
+            .join("myTunnels")
+            .join("firewall")
+    }
+
+    /// Where the helper lives: Program Files, which only administrators may change.
+    fn helper_dir() -> PathBuf {
+        under("ProgramFiles", r"C:\Program Files")
+    }
+
+    /// Where myTunnels asks it, which only the account it runs as may write to.
+    fn asks() -> PathBuf {
+        under("ProgramData", r"C:\ProgramData")
+    }
+
+    /// Puts the helper in place, letting the account `sid` ask it. Run with
+    /// administrator rights.
+    pub fn grant(sid: &str) -> Result<()> {
+        use crate::hardware::{add_task, lock_down};
+        let dir = helper_dir();
+        lock_down(&dir, None)?;
+        let program = crate::config::program().context("cannot find this program")?;
+        std::fs::write(dir.join("program.txt"), program.display().to_string())?;
+        let script = dir.join("firewall.ps1");
+        std::fs::write(&script, HELPER)?;
+        lock_down(&asks(), Some(sid))?;
+        add_task(
+            TASK,
+            &script,
+            "Opens and closes the firewall rules for myTunnels' router ports.",
+        )
+    }
+
+    /// Has the helper open or close `f`'s rules and waits for it: None when
+    /// there is no helper, or it did not answer.
+    async fn ask(f: &Forward, open: bool) -> Option<Result<()>> {
+        let dir = asks();
+        if !helper_dir().join("program.txt").exists() || !dir.exists() {
+            return None;
+        }
+        let rules: Vec<_> = names(f)
+            .iter()
+            .zip(kinds(f))
+            .map(|(name, kind)| {
+                json!({ "name": name, "port": f.public_port, "protocol": kind.to_uppercase() })
+            })
+            .collect();
+        let body = json!({ "open": open, "relay": relays(f), "rules": rules }).to_string();
+        let file = dir.join(format!("{}.json", f.id));
+        let failed = file.with_extension("error");
+        let _ = std::fs::remove_file(&failed);
+        // Written whole, then named, so the helper never reads half of it.
+        let part = file.with_extension("part");
+        if std::fs::write(&part, body)
+            .and_then(|()| std::fs::rename(&part, &file))
+            .is_err()
+        {
+            let _ = std::fs::remove_file(&part);
+            return None;
+        }
+        let began = Instant::now();
+        while file.exists() {
+            if began.elapsed() > Duration::from_secs(20) {
+                let _ = std::fs::remove_file(&file);
+                tracing::warn!("the firewall helper did not answer, so Windows asks instead");
+                return None;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+        Some(match std::fs::read_to_string(&failed) {
+            Ok(why) => {
+                let _ = std::fs::remove_file(&failed);
+                Err(anyhow!("Windows Firewall refused: {}", why.trim()))
+            }
+            Err(_) => Ok(()),
+        })
+    }
 
     fn names(f: &Forward) -> Vec<String> {
         kinds(f)
@@ -269,6 +363,9 @@ mod firewall {
         if present(f).await? == kinds(f).len() {
             return Ok(());
         }
+        if let Some(done) = ask(f, true).await {
+            return done;
+        }
         // A relay is myTunnels listening, so the rule names it as well.
         let program = if relays(f) {
             crate::config::program()
@@ -302,6 +399,9 @@ mod firewall {
     pub async fn close(f: &Forward) -> Result<()> {
         if present(f).await? == 0 {
             return Ok(());
+        }
+        if let Some(done) = ask(f, false).await {
+            return done;
         }
         let script = names(f)
             .iter()

@@ -12,6 +12,7 @@ mod docker;
 mod dupes;
 mod forward;
 mod gate;
+mod grant;
 mod guard;
 mod hardware;
 mod images;
@@ -65,6 +66,10 @@ async fn main() -> Result<()> {
         Some(name @ ("start" | "stop" | "status" | "run")) => return service::command(name),
         // The Hardware page's sensor task, put in place or taken away with administrator rights.
         Some("hardware") => return hardware::command(std::env::args().nth(2).as_deref()).await,
+        // What setup grants once with administrator rights, so nothing asks later.
+        Some("grant") => {
+            return grant::command(&std::env::args().skip(2).collect::<Vec<_>>()).await
+        }
         _ => {}
     }
 
