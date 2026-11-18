@@ -13,7 +13,7 @@ import { Icon, type IconName } from "./Icon";
 import { MeContext, useCan } from "./me";
 import { go, readHash } from "./route";
 import { SETTINGS, Settings } from "./Settings";
-import { Setup } from "./Setup";
+import { ConnectStep, Setup } from "./Setup";
 import { DOCS, Docs } from "./Docs";
 import { DomainsPage } from "./Domains";
 import { StoragePage } from "./Storage";
@@ -35,11 +35,14 @@ export function App() {
   );
 }
 
-// Root shows setup until the host account is made, and the sign-in page
-// whenever the session has ended; otherwise the dashboard.
+// Root shows setup until the host account is made, then asks for
+// Cloudflare once, and the sign-in page whenever the session has ended;
+// otherwise the dashboard.
 function Root() {
   const [auth, setAuth] = useState<Auth | null>(null);
   const [problem, setProblem] = useState("");
+  const [connect, setConnect] = useState(false);
+  const connected = useCallback(() => setConnect(false), []);
 
   const load = useCallback(async () => {
     try {
@@ -57,7 +60,8 @@ function Root() {
   }, [load]);
 
   if (!auth) return problem ? <div className="page"><Callout tone="bad" icon="error">Can't reach myTunnels: {problem}</Callout></div> : null;
-  if (!auth.authenticated || !auth.setup.done || !auth.me) return <Setup auth={auth} onChange={load} />;
+  if (!auth.authenticated || !auth.setup.done || !auth.me) return <Setup auth={auth} onChange={load} onCreated={() => setConnect(true)} />;
+  if (connect) return <ConnectStep onDone={connected} />;
   return (
     <MeContext.Provider value={auth.me}>
       <Dashboard me={auth.me} catalog={auth.catalog} onSignOut={async () => {

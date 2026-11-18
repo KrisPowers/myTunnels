@@ -1,18 +1,41 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api, LEVELS, list, message, strength, type Auth } from "./api";
+import { CloudflareSetup } from "./Cloudflare";
 import { Icon } from "./Icon";
 import { dismissed, passkeysWork, signWithPasskey } from "./passkey";
 import { solve, type Proof } from "./pow";
 import { Callout, TextField } from "./ui";
 
-// Setup holds the dashboard until it has a host account. Cloudflare is
-// connected later, the first time something that uses it is opened. After
-// setup this is the sign-in page.
-export function Setup({ auth, onChange }: { auth: Auth; onChange: () => Promise<void> }) {
+// Setup holds the dashboard until it has a host account; `onCreated` is
+// told when it was just made, so Cloudflare is asked for next. After setup
+// this is the sign-in page.
+export function Setup({ auth, onChange, onCreated }: { auth: Auth; onChange: () => Promise<void>; onCreated: () => void }) {
   return (
     <Frame>
       <div className="setup-card card">
-        <PasswordStep auth={auth} onDone={onChange} />
+        <PasswordStep auth={auth} onCreated={onCreated} onDone={onChange} />
+      </div>
+    </Frame>
+  );
+}
+
+// ConnectStep is setup's second step: Cloudflare, which services, domains
+// and mail run through. It can wait; whatever needs it asks again.
+export function ConnectStep({ onDone }: { onDone: () => void }) {
+  const [asked, setAsked] = useState(false);
+  // Connected already, as when the data came from an earlier install.
+  useEffect(() => {
+    api.status().then((s) => (s.configured ? onDone() : setAsked(true))).catch(() => setAsked(true));
+  }, [onDone]);
+  if (!asked) return null;
+  return (
+    <Frame>
+      <div className="setup-card card">
+        <StepHead title="Connect Cloudflare" sub="Your services reach the internet through it, at your own domains, with no port opened. myTunnels makes the tunnel and its DNS records itself." />
+        <CloudflareSetup onDone={async () => onDone()} />
+        <div className="setup-foot">
+          <button type="button" className="btn text" onClick={onDone}>Skip for now</button>
+        </div>
       </div>
     </Frame>
   );
@@ -38,7 +61,7 @@ function StepHead({ title, sub }: { title: string; sub: ReactNode }) {
 
 // ---- the host account: create it, or sign in ----
 
-function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void> }) {
+function PasswordStep({ auth, onCreated, onDone }: { auth: Auth; onCreated: () => void; onDone: () => Promise<void> }) {
   const create = !auth.setup.password;
   // Installs from before the host account had a name sign in with the password alone.
   const named = create || auth.setup.account;
@@ -85,6 +108,7 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
     try {
       if (create) {
         await api.createAccount(email.trim(), username.trim(), password);
+        onCreated();
       } else {
         const pow = await proof.current?.catch(() => undefined);
         puzzle();
@@ -107,7 +131,7 @@ function PasswordStep({ auth, onDone }: { auth: Auth; onDone: () => Promise<void
   return (
     <form onSubmit={submit}>
       <StepHead title={create ? "Create the host account" : "Sign in"}
-        sub={create ? "The account that owns this dashboard. Others, admins included, are added under Users." : "Sign in with your account."} />
+        sub={create ? "The account that owns this dashboard. Others, admins included, are added under Security." : "Sign in with your account."} />
       {create && (
         <>
           <TextField label="Email" type="email" autoFocus autoComplete="email" value={email} onChange={setEmail} />
