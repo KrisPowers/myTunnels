@@ -14,6 +14,8 @@ body { display: flex; flex-direction: column; padding: 28px 28px 24px; }
 .view { display: none; flex: 1; flex-direction: column; }
 .view.on { display: flex; }
 .lead { margin: 0 0 20px; }
+.card + .card { margin-top: 12px; }
+.switch:disabled { opacity: .45; cursor: default; }
 .card { border: 1px solid var(--line); border-radius: 12px; background: var(--card); overflow: hidden; }
 .row { display: flex; align-items: center; gap: 14px; padding: 16px 16px 16px 18px; }
 .row + .row { border-top: 1px solid var(--line); }
@@ -52,7 +54,7 @@ h1 { margin: 0 0 6px; }
 
 <section class="view on" id="choose">
   <h1>Install myTunnels</h1>
-  <p class="lead">It starts with this computer and opens from the Start menu. Allow now what would ask for administrator rights later.</p>
+  <p class="lead">It starts with this computer and opens from the Start menu. Choose what to set up with it now, so nothing asks later.</p>
   <div class="card">
     <div class="row">
       <svg width="22" height="22" viewBox="0 -960 960 960" fill="currentColor"><path d="M360-360v-240h240v240H360Zm80-80h80v-80h-80v80Zm-80 320v-80h-80q-33 0-56.5-23.5T200-280v-80h-80v-80h80v-80h-80v-80h80v-80q0-33 23.5-56.5T280-760h80v-80h80v80h80v-80h80v80h80q33 0 56.5 23.5T760-680v80h80v80h-80v80h80v80h-80v80q0 33-23.5 56.5T680-200h-80v80h-80v-80h-80v80h-80Zm320-160v-400H280v400h400ZM480-480Z"/></svg>
@@ -63,6 +65,18 @@ h1 { margin: 0 0 6px; }
       <svg width="22" height="22" viewBox="0 -960 960 960" fill="currentColor"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Z"/></svg>
       <div><b>Router ports</b><small>Opens this computer's firewall for router ports, with no prompt each time.</small></div>
       <button type="button" class="switch" role="switch" aria-checked="true" data-grant="firewall" aria-label="Router ports"><span></span></button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <svg width="22" height="22" viewBox="0 -960 960 960" fill="currentColor"><path d="M440-183v-274L200-596v274l240 139Zm80 0 240-139v-274L520-457v274Zm-80 92L160-252q-19-11-29.5-29T120-321v-318q0-22 10.5-40t29.5-29l280-161q19-11 40-11t40 11l280 161q19 11 29.5 29t10.5 40v318q0 22-10.5 40T800-252L520-91q-19 11-40 11t-40-11Zm200-528 77-44-237-137-78 45 238 136Zm-160 93 78-45-237-137-78 45 237 137Z"/></svg>
+      <div><b>Docker</b><small id="docker-sub">Runs the containers on Services. Downloaded during install.</small></div>
+      <button type="button" class="switch" role="switch" aria-checked="true" data-grant="docker" aria-label="Docker"><span></span></button>
+    </div>
+    <div class="row">
+      <svg width="22" height="22" viewBox="0 -960 960 960" fill="currentColor"><path d="M120-80v-280h120v-160h200v-80H320v-280h320v280H520v80h200v160h120v280H520v-280h120v-80H320v80h120v280H120Zm280-600h160v-120H400v120ZM200-160h160v-120H200v120Zm400 0h160v-120H600v120ZM480-680ZM360-280Zm240 0Z"/></svg>
+      <div><b>Tailscale</b><small id="tailscale-sub">Private routes, for your own devices only. Downloaded during install.</small></div>
+      <button type="button" class="switch" role="switch" aria-checked="true" data-grant="tailscale" aria-label="Tailscale"><span></span></button>
     </div>
   </div>
   <p class="note" id="once">Windows asks for administrator rights once, during install.</p>
@@ -102,6 +116,13 @@ const view = (name) => document.querySelectorAll(".view").forEach((v) => v.class
 const chosen = () => switches.filter((s) => s.getAttribute("aria-checked") === "true").map((s) => s.dataset.grant);
 
 $("release").textContent = setup.release || "Local build";
+// What is on this computer already is left as it is.
+for (const app of setup.installed) {
+  const s = switches.find((x) => x.dataset.grant === app);
+  s.setAttribute("aria-checked", "false");
+  s.disabled = true;
+  $(app + "-sub").textContent = "Installed on this computer.";
+}
 if (setup.empty) {
   $("install").disabled = true;
   $("once").textContent = "This setup was built without myTunnels in it.";

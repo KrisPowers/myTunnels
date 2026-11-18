@@ -1275,6 +1275,34 @@ pub async fn local_status() -> Value {
     status
 }
 
+/// Installs `id` here and waits for it, for setup's one admin step: left
+/// alone when it is here already.
+pub fn install_now(id: &str) -> anyhow::Result<()> {
+    use anyhow::{bail, Context};
+    let a = find(id).context("no such app")?;
+    let dirs = search_dirs();
+    if a.bins.iter().any(|b| which(b, &dirs).is_some()) {
+        return Ok(());
+    }
+    let (program, args) = install_command(a, manager(&dirs), &dirs, Action::Install, None)
+        .with_context(|| format!("{} cannot be installed here; get it from {}", a.name, a.url))?;
+    let out = std::process::Command::new(&program)
+        .args(&args)
+        .stdin(Stdio::null())
+        .output()
+        .with_context(|| format!("cannot run {}", program.display()))?;
+    if !out.status.success() {
+        let said = String::from_utf8_lossy(&out.stdout);
+        let last = said
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("");
+        bail!("{} did not install: {}", a.name, last.trim());
+    }
+    Ok(())
+}
+
 /// Starts installing `id` here; it carries on after the call returns.
 pub fn local_install(id: &str, action: Action, version: Option<&str>) -> Result<(), String> {
     let a = find(id).ok_or("No such app")?;
