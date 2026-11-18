@@ -4,12 +4,11 @@ import type { IconName } from "./Icon";
 // The sections, in the order the sidebar lists them.
 export const DOCS: [string, string, IconName][] = [
   ["start", "Getting started", "info"],
+  ["dashboard", "Dashboard", "dashboard"],
   ["containers", "Services", "deployed_code"],
   ["forward", "Routes", "wifi_cog"],
   ["storage", "Storage", "cloud"],
   ["mail", "Mail", "mail"],
-  ["domains", "Domains", "public"],
-  ["dashboard", "Dashboard", "dashboard"],
   ["access", "Access Control", "shield"],
   ["devices", "Devices", "devices"],
   ["users", "Users", "group"],
@@ -47,36 +46,25 @@ function Doc({ title, children }: { title: string; children: ReactNode }) {
 }
 
 const CONTENT: Record<string, ReactNode> = {
-  domains: (
-    <>
-      <Doc title="Adding a domain">
-        <p><b>Add domain</b> asks where its DNS is hosted. With <b>Cloudflare</b>, <b>Porkbun</b>, <b>GoDaddy</b> or <b>Namecheap</b>, its real records are read and changed here through the host's API; each connects once, under <b>Settings</b>, <b>Connections</b>. With <b>DNS records</b>, any other host works and you add what mail needs there yourself.</p>
-        <p>A domain's menu holds <b>Make primary</b> (the mail server is <code>mail.</code> on the primary domain), Cloudflare sync, its <b>Managers</b> (dashboard accounts with View mail that run its addresses without setting mail up), and removing it.</p>
-      </Doc>
-      <Doc title="Inside a domain">
-        <p>Its heading says what uses it: how many services are reached at it, and how many mail addresses it has, which open Mail. <b>Services</b> lists every tunnel at the domain or under it. <b>DNS</b> lists its records, one line each. A click opens one in full to change or remove it; <b>Add record</b> adds A, AAAA, CNAME, MX or TXT. Records mail needs that DNS lacks are listed with an <b>Add</b> button. For DNS kept elsewhere, it lists what mail needs there, each checked against DNS. <b>Redirects</b>, for a domain on Cloudflare, sends any address under it elsewhere.</p>
-      </Doc>
-    </>
-  ),
   mail: (
     <>
-      <Doc title="Mail">
-        <p>Each domain is served by a mail server on this computer: it receives mail, keeps each address's mailboxes here, and sends mail signed with DKIM. Outlook, Gmail, Apple Mail, Thunderbird and phones read and send it over IMAP and SMTP.</p>
+      <Doc title="Mail on your domains">
+        <p>Mail runs on this computer: it receives mail, keeps each mailbox here, and sends mail signed with DKIM. Outlook, Gmail, Apple Mail, Thunderbird and phones read and send it over IMAP and SMTP. Every domain on the connected Cloudflare account is listed under <b>Domains</b> already; its switch puts mail on it, and the records mail needs are written to its DNS. The first switch asks how mail moves and turns the mail server on.</p>
       </Doc>
-      <Doc title="Addresses">
-        <p><b>Addresses</b> lists every mailbox and alias by its full address. <b>New address</b> takes a domain, a name and a password; mail apps sign in with the full address. <b>Turn mail apps off</b> keeps an address from signing in to IMAP and SMTP while its mail still arrives. <b>New alias</b> sends another address, or <code>@domain</code> for everything else at it, to an address. Mail for <code>postmaster</code> and <code>abuse</code> goes to the first address. Mail runs on the domains on <b>Domains</b>; add one there first.</p>
+      <Doc title="Mailboxes">
+        <p>The page lists every mailbox and alias. The plus adds a <b>Mailbox</b> (an address, a name and a password; mail apps sign in with the full address) or an <b>Alias</b>, another address, or a whole domain with the address left empty, delivered to a mailbox. A mailbox's menu changes its password, turns mail apps off for it while its mail still arrives, or removes it with its mail. Mail for <code>postmaster</code> and <code>abuse</code> goes to the first mailbox.</p>
       </Doc>
-      <Doc title="Picking the ways in and out">
-        <p><b>Mail</b>'s <b>Settings</b> tab sets mail up a step at a time: how mail arrives, how mail apps connect, how mail leaves. Each way is ticked or crossed for whether it exposes a port, depends on a third party, is usage limited, is often blocked at home, or needs a paid plan. Any mix works, except that the Cloudflare ways need every domain synced with Cloudflare:</p>
+      <Doc title="How mail moves">
+        <p>Three choices, in <b>Mail settings</b> (the dial beside the plus):</p>
         <ul>
-          <li><b>Receiving, Port forward</b>: the traditional way. Port 25 is forwarded to this computer and the domain's MX record points at <code>mail.</code> on it, which follows this network's public address. <b>Cloudflare</b>: Email Routing takes the mail and a Worker posts it here through the tunnel, with no port open.</li>
-          <li><b>Mail apps, Port forward</b>: IMAP on 993 and SMTP on 465, with a Let's Encrypt certificate, proved through Cloudflare DNS, or over port 80 while it is made for a domain kept by hand. <b>Tailscale</b>: IMAP on 443 and SMTP on 8443 through Tailscale Funnel, with Tailscale's certificate.</li>
-          <li><b>Sending, Direct</b>: from this computer to each recipient's server on port 25. Many internet providers block that; <b>Relay</b> sends through another SMTP server instead, and <b>Cloudflare</b> through Email Sending, which needs the Workers Paid plan.</li>
+          <li><b>Mail arrives</b> by <b>Port forward</b>, port 25 forwarded to this computer with the MX record pointing at <code>mail.</code> on the primary domain, or <b>Cloudflare</b>, where Email Routing hands mail to a Worker that posts it here through the tunnel, with no port open.</li>
+          <li><b>Mail apps connect</b> by <b>Port forward</b>, IMAP 993 and SMTP 465 with a Let's Encrypt certificate, or <b>Tailscale</b>, IMAP 443 and SMTP 8443 through Funnel.</li>
+          <li><b>Mail leaves</b> <b>Direct</b> to each recipient on port 25, which many internet providers block, through a <b>Relay</b> SMTP server, or through Cloudflare Email Sending, which needs the Workers Paid plan.</li>
         </ul>
-        <p>The ports it opens are rows on <b>Services</b>, named <b>Mail</b>. Afterwards, <b>Settings</b> shows how mail moves and how mail apps sign in, with <b>Change</b> to switch any part (the ports and records follow), the switches for incoming mail, and <b>Run setup again</b> and <b>Turn off</b>.</p>
+        <p>The same dialog shows where mail apps sign in, the switches for incoming mail, <b>Set up again</b> and <b>Turn off</b>. The ports mail opens are rows on <b>Services</b>, named <b>Mail</b>. A domain's menu makes it <b>primary</b> (the mail server is named after it) or gives it <b>Managers</b>, accounts that run its mailboxes without setting mail up.</p>
       </Doc>
       <Doc title="Checks on mail that comes in">
-        <p>Each message is checked with SPF, DKIM and DMARC. Mail that fails, or claims to be from your own domains without proof, goes to Junk; <b>Refuse spoofed mail</b> turns away mail whose sender's policy says reject. Attachments that can run code are marked <code>$Risky</code>, newsletters <code>$Marketing</code>. <b>Activity</b> lists what came in and went out.</p>
+        <p>Each message is checked with SPF, DKIM and DMARC. Mail that fails, or claims to be from your own domains without proof, goes to Junk; <b>Refuse spoofed mail</b> turns away mail whose sender's policy says reject. Attachments that can run code are marked <code>$Risky</code>, newsletters <code>$Marketing</code>. <b>Activity</b>, the clock beside the dial, lists what came in and went out.</p>
       </Doc>
     </>
   ),
@@ -89,13 +77,13 @@ const CONTENT: Record<string, ReactNode> = {
         <p>The browser reaches Cloudflare, which sends the visit down the tunnel to the connector running inside myTunnels. myTunnels checks the tunnel's access layers, then hands the request to the app on its local port. WebSockets work the same way.</p>
       </Doc>
       <Doc title="Setting it up">
-        <p>On Windows, <b>setup.exe</b> installs everything from one file, with no internet needed for myTunnels itself, and asks once for administrator rights for what you choose: the hardware sensors, the firewall for router ports, Docker and Tailscale. Then the dashboard asks for two things: the host account, and <b>Connect Cloudflare</b>. <b>Open Cloudflare</b> makes a token with the right permissions; paste it back and the tunnel and connector are set up. <b>Skip for now</b> leaves it for later; anything that needs Cloudflare asks again, as does <b>Connect</b> under Settings, Cloudflare.</p>
+        <p>On Windows, <b>setup.exe</b> installs everything from one file, with no internet needed for myTunnels itself, and asks once for administrator rights for what you choose: the hardware sensors, the firewall for router ports, Docker and Tailscale. Then the dashboard asks for two things: the host account, and <b>Connect Cloudflare</b>. <b>Open Cloudflare</b> makes a token with the right permissions; paste it back and the tunnel and connector are set up. <b>Skip for now</b> leaves it for later; anything that needs Cloudflare asks again, as does <b>Connect</b> under Settings, Connections. Once it is connected, every domain on the account is yours to use: for services' addresses and for mail, with nothing to add.</p>
       </Doc>
       <Doc title="On the rack and on your phone">
-        <p>On Windows, the desktop app opens the <b>console</b>: this computer at a glance in one still frame for a monitor beside it, with its figures, services, how they are reached, storage and anything that needs attention. <b>F11</b> fills the screen; the icon at its top right opens the rest, and the monitor icon on <b>Dashboard</b> comes back. On a phone, add the dashboard's address to the home screen (on an iPhone, Safari's Share, then <b>Add to Home Screen</b>) and it opens full screen like an app.</p>
+        <p>On Windows, the desktop app opens the <b>console</b>: this computer at a glance in one still frame for a monitor beside it. A band across the top says whether all is well, then gauges for CPU, memory, temperature and storage, the network, the last five minutes, every service as a tile lit by its state, and what needs attention. <b>F11</b> fills the screen; the icon at its top right opens the rest, and the monitor icon on <b>Dashboard</b> comes back. On a phone, add the dashboard's address to the home screen (on an iPhone, Safari's Share, then <b>Add to Home Screen</b>) and it opens full screen like an app.</p>
       </Doc>
       <Doc title="Changing the Cloudflare connection">
-        <p>Settings, Cloudflare holds the account and tunnel. A new API token can replace the old one at any time. Switching to another account or tunnel needs every tunnel removed first, since their DNS records live in the old one.</p>
+        <p>Settings, Connections holds the account and tunnel, and the connector's version and log. A new API token can replace the old one at any time. Switching to another account or tunnel needs every tunnel removed first, since their DNS records live in the old one.</p>
       </Doc>
     </>
   ),
@@ -264,7 +252,7 @@ const CONTENT: Record<string, ReactNode> = {
   trouble: (
     <>
       <Doc title="Error 1033 from Cloudflare">
-        <p>The connector is not running. Settings, Connector shows its log. It starts on its own once Cloudflare is connected.</p>
+        <p>The connector is not running. Settings, Connections shows its log. It starts on its own once Cloudflare is connected.</p>
       </Doc>
       <Doc title="App not responding">
         <p>Nothing answered on the tunnel's port. Check the app is running and the port is right, and for an app in a container, that its port is published on this computer.</p>

@@ -109,17 +109,18 @@ Cloudflare** goes to the token page with the permissions already picked (Account
 Tunnel, Edit; Zone, DNS, Edit; Zone, Zone, Read). Create the token, paste it back, and the
 tunnel is created and the connector started. A token that sees more than one account asks which
 one. **Skip for now** leaves it for later: anything that needs Cloudflare asks again, and so
-does **Connect** under **Settings, Cloudflare**.
+does **Connect** under **Settings, Connections**. Once it is connected, every domain on the
+account is there to use, for services' addresses and for mail, with nothing to add.
 
 Then, on **Services**, press the plus: a **Container from an image** or **from GitHub**, or a
 **Route** to an app already running here. In **New route**, pick **Cloudflare Tunnel**, type
 the subdomain, pick the domain, choose who can open it and press **Publish**; **Port forward**
 and **Tailscale** come before it. A container's own **Routes** page publishes it the same way.
 
-The sidebar follows what this computer is for: **Services** (what it hosts and how each is
-reached), **Storage** and **Mail** (your files and your mail, in place of a paid cloud),
-**Domains** (what they all share), **Dashboard** (this computer's health) and **Security** (who
-gets in). **Apps**, at its foot, installs the tools a new machine needs in a click each.
+The sidebar follows what this computer is for: **Dashboard** (this computer at a glance, and
+home), **Services** (what it hosts and how each is reached), **Storage** and **Mail** (your files
+and your mail, in place of a paid cloud) and **Security** (who gets in). **Apps**, at its foot,
+installs the tools a new machine needs in a click each.
 
 To manage myTunnels from anywhere, publish the dashboard itself: under **Local app**, set
 **Runs on** to **This dashboard**, with no port. It takes the same access rules as any
@@ -128,6 +129,51 @@ tunnel, and the dashboard's own sign-in (and emailed code, when on) still applie
 On a phone, open that address and add it to the home screen (on an iPhone, Safari's Share,
 then **Add to Home Screen**). It opens full screen from its own icon, like an app, with no app
 store or developer account involved.
+
+## Dashboard
+
+**Dashboard** is the host at a glance, read every two seconds, with the last five minutes
+drawn as charts: its facts in a column on the left, under each memory slot, drive and
+graphics card by a dot lit by its health, and the chart and tables on the right. It
+shows what any account can read from the system:
+
+- The machine: its name, platform, kernel, processor, cores, memory, board and uptime, as
+  the system itself reports them, never Docker's virtual machine.
+- **CPU** over time and per thread, **memory** over time with the sticks in the board's
+  slots, and **network** traffic in and out. A stick that stops being detected stays listed
+  in red until it is marked as taken out; one running below its rated speed turns yellow.
+- **Graphics**: NVIDIA cards' temperature, load, fan, power and video memory through
+  `nvidia-smi`, other cards by their state.
+- On a Mac, the parts come from `system_profiler`: the memory (built into the chip on Apple
+  silicon), the drives with their SMART status, the graphics, and the battery's health.
+- **Volumes**, how full each one is, and the **drives** with their health.
+
+**Advanced**, the button beside the computer's name that the host or an admin confirms once, adds the sensors: the processor's temperature over time and per core, every
+temperature read, the **fans** (a fan that spun before and reads 0 has stopped), the power
+supply's 12, 5 and 3.3 V rails (within 5% is healthy, past 10% is failing), and each drive's
+temperature, life left, errors and hours. On Linux these come from `/sys` and need nothing
+more; drive wear and errors there need root and are not shown. On a Mac they are every
+temperature the system reports, which needs nothing more; its fans and rails are not
+shown. On Windows they need
+administrator rights, so turning it on asks Windows once, then installs the
+[PawnIO](https://pawnio.eu) driver, puts
+[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)'s
+library in `Program Files\myTunnels\hardware` (both downloads pinned by checksum) and adds a
+`myTunnels Hardware` task that reads the sensors as SYSTEM from startup. Turning
+**Advanced** off removes the task and those files; PawnIO stays installed.
+
+When a part has been failing, or healthy again, for 15 seconds, the host and every admin
+get an email, once SMTP is set up under **Security**, **Two-Factor Auth**.
+
+Installed, every figure is the computer's own. The rest of this paragraph is about running in Docker. On a Linux host,
+processors, memory and temperatures are the host's own. Docker Desktop
+runs containers in a virtual machine, so from inside one they are that machine's. To show
+the computer's own, run `server host` on it (from `server/`, `cargo run --release -- host`):
+it answers on `127.0.0.1:7094` alone, and the Dashboard reads it through `HOST_URL` in
+`compose.yaml`, falling back to its own figures while it is not running. Network traffic is
+what passes through myTunnels, or the computer's while `server host` runs.
+Temperatures need sensors the host exposes under `/sys/class/hwmon`, which a Linux host
+does and Docker Desktop does not.
 
 ## Services
 
@@ -299,19 +345,18 @@ dashboard through a tunnel to reach it from anywhere.
 
 ## Mail
 
-**Mail** is mail for every domain on **Domains**, with three tabs: **Addresses** (every mailbox and
-alias by its full address; **New address** and **New alias** pick the domain), **Activity** (what
-came in and went out) and **Settings** (the mail server, set up a step at a time, then how mail
-moves, how mail apps sign in, and its options). Until mail is set up it opens on **Settings**.
+**Mail** is your mailboxes, one row each with its aliases, then **Domains**: every domain on the
+connected Cloudflare account, already listed, each with a switch that puts mail on it and writes
+the records it needs. The first switch asks how mail moves and turns the mail server on. The plus
+adds a **Mailbox** or an **Alias**; the clock beside it opens **Activity** (what came in and went
+out) and the dial **Mail settings** (how mail moves, where mail apps sign in, the options for
+incoming mail, setting up again and turning off). A domain's menu makes it primary (the mail
+server is `mail.` on it) or gives it managers, accounts that run its mailboxes without setting
+mail up.
 
-The mail server runs on this computer: it receives mail, keeps each address's mailboxes in
-`mail.db` beside the gateway's database, and sends mail signed with DKIM. Outlook, Gmail, Apple
-Mail, Thunderbird and phones use it over IMAP and SMTP. Setup goes a step at a time: how mail
-arrives, how mail apps connect and how mail leaves. Each way shows at a glance whether it exposes
-a port, depends on a third party, is usage limited, is often blocked on home connections or needs
-a paid plan.
-
-Setup picks how each part is reached, in any mix:
+The mail server runs on this computer: it receives mail, keeps each mailbox in `mail.db` beside
+the gateway's database, and sends mail signed with DKIM. Outlook, Gmail, Apple Mail, Thunderbird
+and phones use it over IMAP and SMTP. How each part is reached, in any mix:
 
 | Part | Port forward | Cloudflare and Tailscale |
 | --- | --- | --- |
@@ -326,73 +371,6 @@ through the tunnel. Received mail is checked with SPF, DKIM and DMARC and filed 
 fails. The Cloudflare token needs Workers Scripts, Email Routing Rules and Zone Settings edit for
 the Cloudflare ways, which need every domain on Cloudflare; **Make a token on Cloudflare** asks for
 them.
-
-## Domains
-
-**Domains** holds the domains this computer serves. **Add domain** asks where each one's DNS is
-hosted. With **Cloudflare**, **Porkbun**, **GoDaddy** or **Namecheap**, its real records are read
-and changed here through the host's API; each connects once, with a token or keys, under
-**Settings**, **Connections** (Cloudflare under its own section). With **DNS records**, any other
-host works and you add what mail needs there yourself.
-
-Each domain's row and heading say what uses it: its services and its mail addresses. Inside a
-domain:
-
-- **Services**: every tunnel at the domain or under it.
-- **DNS**: its records, one line each; a click opens one in full to change or remove it, and
-  **Add record** adds A, AAAA, CNAME, MX or TXT. Records mail needs that DNS does not have yet are
-  listed with an **Add** button. For DNS kept elsewhere, it lists what mail needs there, each
-  checked against DNS.
-- **Redirects**: for a domain on Cloudflare, any address under it sent elsewhere.
-
-A domain's menu holds **Make primary** (the mail server is `mail.` on the primary domain),
-Cloudflare sync on or off, its **managers** (dashboard accounts with **View mail** that run its
-addresses without being able to set mail up), and removing it.
-
-## Dashboard
-
-**Dashboard** is the host at a glance, read every two seconds, with the last five minutes
-drawn as charts: its facts in a column on the left, under each memory slot, drive and
-graphics card by a dot lit by its health, and the chart and tables on the right. It
-shows what any account can read from the system:
-
-- The machine: its name, platform, kernel, processor, cores, memory, board and uptime, as
-  the system itself reports them, never Docker's virtual machine.
-- **CPU** over time and per thread, **memory** over time with the sticks in the board's
-  slots, and **network** traffic in and out. A stick that stops being detected stays listed
-  in red until it is marked as taken out; one running below its rated speed turns yellow.
-- **Graphics**: NVIDIA cards' temperature, load, fan, power and video memory through
-  `nvidia-smi`, other cards by their state.
-- On a Mac, the parts come from `system_profiler`: the memory (built into the chip on Apple
-  silicon), the drives with their SMART status, the graphics, and the battery's health.
-- **Volumes**, how full each one is, and the **drives** with their health.
-
-**Advanced**, the button beside the computer's name that the host or an admin confirms once, adds the sensors: the processor's temperature over time and per core, every
-temperature read, the **fans** (a fan that spun before and reads 0 has stopped), the power
-supply's 12, 5 and 3.3 V rails (within 5% is healthy, past 10% is failing), and each drive's
-temperature, life left, errors and hours. On Linux these come from `/sys` and need nothing
-more; drive wear and errors there need root and are not shown. On a Mac they are every
-temperature the system reports, which needs nothing more; its fans and rails are not
-shown. On Windows they need
-administrator rights, so turning it on asks Windows once, then installs the
-[PawnIO](https://pawnio.eu) driver, puts
-[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)'s
-library in `Program Files\myTunnels\hardware` (both downloads pinned by checksum) and adds a
-`myTunnels Hardware` task that reads the sensors as SYSTEM from startup. Turning
-**Advanced** off removes the task and those files; PawnIO stays installed.
-
-When a part has been failing, or healthy again, for 15 seconds, the host and every admin
-get an email, once SMTP is set up under **Security**, **Two-Factor Auth**.
-
-Installed, every figure is the computer's own. The rest of this paragraph is about running in Docker. On a Linux host,
-processors, memory and temperatures are the host's own. Docker Desktop
-runs containers in a virtual machine, so from inside one they are that machine's. To show
-the computer's own, run `server host` on it (from `server/`, `cargo run --release -- host`):
-it answers on `127.0.0.1:7094` alone, and the Dashboard reads it through `HOST_URL` in
-`compose.yaml`, falling back to its own figures while it is not running. Network traffic is
-what passes through myTunnels, or the computer's while `server host` runs.
-Temperatures need sensors the host exposes under `/sys/class/hwmon`, which a Linux host
-does and Docker Desktop does not.
 
 ## Apps
 
