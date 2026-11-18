@@ -171,6 +171,7 @@ function Side({ m, snap, advanced, admin, onForget, onDismiss, toggle }: { m: Me
     <aside className="dash-side">
       <div className="side-head">
         <h1 className="side-name">{owned(m.host.name)}</h1>
+        <a className="icon-btn" href="#/console" aria-label="Console" title="Console, at a glance"><Icon name="monitor" size={20} /></a>
         {toggle}
       </div>
       <Bays parts={parts} />

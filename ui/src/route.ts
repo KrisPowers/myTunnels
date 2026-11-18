@@ -1,4 +1,5 @@
-// Where the page is, kept in the URL hash: `#/` Services, every container
+// Where the page is, kept in the URL hash: `#/console`, this computer at a
+// glance in one still frame, which the desktop app opens; `#/` Services, every container
 // and every route to a port on this computer, with `#/routes/new` adding a
 // route (`#/routes/new/<port>` to that port; `#/routes`, `#/new`, `#/forward`
 // and `#/remote` now go to Services), `#/tunnels/<id>/<page>` one tunnel; `#/security/<tab>`, Security,
@@ -11,7 +12,7 @@
 // the domains, each with its services, DNS and redirects; `#/containers`,
 // with `/<name>/<page>/...` for one, its tunnel and images among its pages.
 
-export type View = "tunnels" | "dashboard" | "apps" | "containers" | "storage" | "mail" | "domains" | "devices" | "users" | "security" | "settings" | "docs";
+export type View = "console" | "tunnels" | "dashboard" | "apps" | "containers" | "storage" | "mail" | "domains" | "devices" | "users" | "security" | "settings" | "docs";
 
 export interface Place {
   view: View;
@@ -31,7 +32,7 @@ export function readHash(): Place {
   if ((first === "users" || first === "devices") && !second) return { view: "security", id: first, page: "", more: [] };
   // Appearance, then a Preferences page of its own, are Settings' Preferences now.
   if ((first === "settings" && second === "appearance") || first === "preferences") return { view: "settings", id: "preferences", page: "", more: [] };
-  if (first === "dashboard" || first === "apps") return { view: first, id: "", page: "", more: [] };
+  if (first === "dashboard" || first === "apps" || first === "console") return { view: first, id: "", page: "", more: [] };
   // Hardware became part of the Dashboard.
   if (first === "hardware") return { view: "dashboard", id: "", page: "", more: [] };
   // Adding a tunnel became adding a route, on Services.

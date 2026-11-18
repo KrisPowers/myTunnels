@@ -94,8 +94,11 @@ is in `%LOCALAPPDATA%\myTunnels` on Windows and `~/.local/share/myTunnels` elsew
 it in Docker instead, see [Running in Docker](#running-in-docker).
 
 On the computer running it, open **myTunnels** from the Start menu on Windows, the desktop
-app: the panel in a window of its own, which starts myTunnels when it is not running. Or open
-`http://localhost:7070` in a browser, on any system. The panel answers there alone:
+app: the **console**, this computer at a glance in one still frame for a monitor on the rack
+(performance, services, how they are reached, storage, and anything that needs attention),
+maximized, with **F11** to fill the screen. It starts myTunnels when it is not running, and the
+rest of the panel is one click away in the same window. Or open `http://localhost:7070` in a
+browser, on any system; `#/console` is the same still frame there. The panel answers there alone:
 every other device, at home or away, reaches myTunnels through a tunnel, so no port is opened
 on your network. Setup asks for two things. First the host account: an email, a username and
 a password for the panel. Either the email or the username signs in, and both can be changed
@@ -121,6 +124,10 @@ gets in). **Apps**, at its foot, installs the tools a new machine needs in a cli
 To manage myTunnels from anywhere, publish the dashboard itself: under **Local app**, set
 **Runs on** to **This dashboard**, with no port. It takes the same access rules as any
 tunnel, and the dashboard's own sign-in (and emailed code, when on) still applies behind them.
+
+On a phone, open that address and add it to the home screen (on an iPhone, Safari's Share,
+then **Add to Home Screen**). It opens full screen from its own icon, like an app, with no app
+store or developer account involved.
 
 ## Services
 
