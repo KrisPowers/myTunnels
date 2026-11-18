@@ -37,9 +37,22 @@ fn installed() -> Option<String> {
     Some(tag.trim().to_owned()).filter(|t| !t.is_empty())
 }
 
-/// A GitHub sign-in that can read the private repository: GH_TOKEN,
-/// GITHUB_TOKEN, or GitHub CLI's.
-async fn token() -> Option<String> {
+/// A GitHub sign-in, which a private repository needs: GH_TOKEN,
+/// GITHUB_TOKEN, or GitHub CLI's. Empty without one, for a public repository.
+async fn token() -> String {
+    signed_in().await.unwrap_or_default()
+}
+
+/// `req`, signed in with `token` when there is one.
+fn sign(req: reqwest::RequestBuilder, token: &str) -> reqwest::RequestBuilder {
+    if token.is_empty() {
+        req
+    } else {
+        req.bearer_auth(token)
+    }
+}
+
+async fn signed_in() -> Option<String> {
     let env = |key: &str| std::env::var(key).ok().filter(|v| !v.trim().is_empty());
     if let Some(token) = env("GH_TOKEN").or_else(|| env("GITHUB_TOKEN")) {
         return Some(token);
@@ -60,14 +73,14 @@ async fn latest(state: &AppState, token: &str) -> Result<String> {
     if let Some((_, tag)) = known.filter(|(at, _)| at.elapsed() < FRESH) {
         return Ok(tag);
     }
-    let body: Value = state
+    let req = state
         .http
         .get(format!(
             "https://api.github.com/repos/{REPO}/releases/latest"
         ))
         .header("User-Agent", "mytunnels")
-        .header("Accept", "application/vnd.github+json")
-        .bearer_auth(token)
+        .header("Accept", "application/vnd.github+json");
+    let body: Value = sign(req, token)
         .send()
         .await?
         .error_for_status()?
@@ -110,10 +123,11 @@ pub async fn check(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let Some(current) = installed() else {
         return Ok(Json(json!({ "available": false })));
     };
-    let Some(token) = token().await else {
+    // GitHub not answering, or refusing a copy without a sign-in once it has
+    // asked too often, leaves the update to the next look.
+    let Ok(latest) = latest(&state, &token().await).await else {
         return Ok(Json(json!({ "available": false, "current": current })));
     };
-    let latest = latest(&state, &token).await?;
     Ok(Json(json!({
         "available": latest != current,
         "current": current,
@@ -130,9 +144,7 @@ pub async fn install(State(state): State<AppState>) -> ApiResult<StatusCode> {
             "This copy of myTunnels was not put here by its install script, so it cannot update itself",
         ));
     }
-    let token = token().await.ok_or_else(|| {
-        ApiError::bad("Sign in to GitHub CLI on this computer (gh auth login) so myTunnels can fetch its update")
-    })?;
+    let token = token().await;
     // The install script is fetched here, so a failure to fetch it is said
     // at once rather than lost in a window no one sees.
     let name = if cfg!(windows) {
@@ -140,14 +152,14 @@ pub async fn install(State(state): State<AppState>) -> ApiResult<StatusCode> {
     } else {
         "install.sh"
     };
-    let script = state
+    let req = state
         .http
         .get(format!(
             "https://api.github.com/repos/{REPO}/contents/scripts/{name}"
         ))
         .header("User-Agent", "mytunnels")
-        .header("Accept", "application/vnd.github.raw")
-        .bearer_auth(&token)
+        .header("Accept", "application/vnd.github.raw");
+    let script = sign(req, &token)
         .send()
         .await
         .and_then(|r| r.error_for_status())
