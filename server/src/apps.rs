@@ -1155,16 +1155,21 @@ fn lines_of(
 /// it worked and the last of what it said.
 async fn run_installer(id: &str, program: &FsPath, args: &[String]) -> (bool, String) {
     let _one = MANAGER.lock().await;
-    // winget through the helper granted at install, so no installer asks for
-    // administrator rights on a screen no one may be at.
+    // winget through the helper granted once, so no installer asks for
+    // administrator rights on a screen no one may be at. Without it, the
+    // install says why rather than let an installer raise its own prompt.
     #[cfg(windows)]
     if program
         .file_stem()
         .is_some_and(|s| s.eq_ignore_ascii_case("winget"))
     {
-        if let Some(done) = helper::run(id, args).await {
-            return done;
-        }
+        return helper::run(id, args).await.unwrap_or_else(|| {
+            (
+                false,
+                "App installs need Windows' one yes first: Allow it from the bell, on this computer"
+                    .into(),
+            )
+        });
     }
     let child = Command::new(program)
         .args(args)

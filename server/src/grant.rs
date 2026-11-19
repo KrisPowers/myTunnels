@@ -26,6 +26,48 @@ pub async fn command(args: &[String]) -> Result<()> {
     result
 }
 
+/// Whether this computer still needs the one admin step for router ports and
+/// app installs: on Windows, until both helpers are in place.
+pub fn missing() -> bool {
+    if !cfg!(windows) {
+        return false;
+    }
+    let dir = std::env::var_os("ProgramFiles")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| r"C:\Program Files".into())
+        .join("myTunnels");
+    !(dir.join(r"firewall\program.txt").is_file() && dir.join(r"apps\apps.ps1").is_file())
+}
+
+/// Takes the one admin step on this computer's screen, when the person
+/// running it asks from the dashboard: Windows asks once, and from then on
+/// router ports and app installs never ask.
+pub fn ask_windows() -> Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let exe =
+            crate::config::program().ok_or_else(|| anyhow::anyhow!("cannot find this program"))?;
+        let script = format!(
+            "$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value; \
+             Start-Process -FilePath '{}' -ArgumentList 'grant',$sid,'firewall','apps' -Verb RunAs -WindowStyle Hidden",
+            exe.display().to_string().replace('\'', "''")
+        );
+        std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-EncodedCommand",
+                &crate::util::powershell_encoded(&script),
+            ])
+            .creation_flags(0x0800_0000)
+            .spawn()?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    bail!("only Windows needs this step")
+}
+
 /// Writes where it is up to, for setup.
 fn say(text: &str) {
     #[cfg(windows)]
