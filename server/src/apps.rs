@@ -1155,6 +1155,17 @@ fn lines_of(
 /// it worked and the last of what it said.
 async fn run_installer(id: &str, program: &FsPath, args: &[String]) -> (bool, String) {
     let _one = MANAGER.lock().await;
+    // winget through the helper granted at install, so no installer asks for
+    // administrator rights on a screen no one may be at.
+    #[cfg(windows)]
+    if program
+        .file_stem()
+        .is_some_and(|s| s.eq_ignore_ascii_case("winget"))
+    {
+        if let Some(done) = helper::run(id, args).await {
+            return done;
+        }
+    }
     let child = Command::new(program)
         .args(args)
         .stdin(Stdio::null())
@@ -1176,18 +1187,7 @@ async fn run_installer(id: &str, program: &FsPath, args: &[String]) -> (bool, St
     let mut tail: Vec<String> = Vec::new();
     let read = async {
         while let Some(line) = rx.recv().await {
-            if line.is_empty() {
-                continue;
-            }
-            if let Some(job) = lock(&JOBS).get_mut(id) {
-                job.feed(&line);
-            }
-            if line.chars().any(char::is_alphanumeric) && progress(&line).is_none() {
-                tail.push(line);
-                if tail.len() > 6 {
-                    tail.remove(0);
-                }
-            }
+            heard(id, &line, &mut tail);
         }
         child.wait().await
     };
@@ -1196,6 +1196,205 @@ async fn run_installer(id: &str, program: &FsPath, args: &[String]) -> (bool, St
         Ok(Ok(status)) => (status.success(), tail.join("\n")),
         Ok(Err(err)) => (false, format!("The installer stopped: {err}")),
         Err(_) => (false, "The installer took over half an hour".into()),
+    }
+}
+
+/// Moves `id`'s job along by a line the installer printed, keeping the last
+/// few that say something in `tail`.
+fn heard(id: &str, line: &str, tail: &mut Vec<String>) {
+    let line = line.trim();
+    if line.is_empty() {
+        return;
+    }
+    if let Some(job) = lock(&JOBS).get_mut(id) {
+        job.feed(line);
+    }
+    if line.chars().any(char::is_alphanumeric) && progress(line).is_none() {
+        tail.push(line.to_owned());
+        if tail.len() > 6 {
+            tail.remove(0);
+        }
+    }
+}
+
+/// Grants the helper below: see `helper::grant`.
+#[cfg(windows)]
+pub use helper::grant as grant_helper;
+
+/// On Windows, winget run by the "myTunnels Apps" task: as the signed-in
+/// account with its administrator rights, so installers never stop for the
+/// admin prompt. `mytunnels grant` puts it in place once, at install.
+#[cfg(windows)]
+mod helper {
+    use std::os::windows::process::CommandExt;
+    use std::path::PathBuf;
+    use std::time::{Duration, Instant};
+
+    use anyhow::{bail, Context, Result};
+    use tokio::process::Command;
+
+    const SCRIPT: &str = include_str!("apps.ps1");
+    const TASK: &str = "myTunnels Apps";
+    const NO_WINDOW: u32 = 0x0800_0000;
+
+    fn under(var: &str, fallback: &str) -> PathBuf {
+        std::env::var_os(var)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(fallback))
+            .join("myTunnels")
+            .join("apps")
+    }
+
+    /// Where the helper lives: Program Files, which only administrators may change.
+    fn helper_dir() -> PathBuf {
+        under("ProgramFiles", r"C:\Program Files")
+    }
+
+    /// Where myTunnels asks it, which only the account it runs as may write to.
+    fn asks() -> PathBuf {
+        under("ProgramData", r"C:\ProgramData")
+    }
+
+    /// Puts the helper in place for the account `sid`, which alone may start
+    /// it. Run with administrator rights.
+    pub fn grant(sid: &str) -> Result<()> {
+        use crate::hardware::lock_down;
+        let dir = helper_dir();
+        lock_down(&dir, None)?;
+        let script = dir.join("apps.ps1");
+        std::fs::write(&script, SCRIPT)?;
+        lock_down(&asks(), Some(sid))?;
+        let file = script.with_extension("xml");
+        // schtasks reads the task as UTF-16.
+        let mut bytes = vec![0xFF, 0xFE];
+        bytes.extend(
+            task_xml(&script, sid)
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes),
+        );
+        std::fs::write(&file, bytes)?;
+        let made = std::process::Command::new("schtasks")
+            .args([
+                "/Create",
+                "/TN",
+                TASK,
+                "/XML",
+                &file.to_string_lossy(),
+                "/F",
+            ])
+            .creation_flags(NO_WINDOW)
+            .output();
+        let _ = std::fs::remove_file(&file);
+        let out = made.context("cannot run schtasks")?;
+        if !out.status.success() {
+            bail!(
+                "the apps helper was not added: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+        Ok(())
+    }
+
+    /// Started on asking alone, as `sid` with its highest rights, which `sid`
+    /// may start and nothing else may change.
+    fn task_xml(script: &std::path::Path, sid: &str) -> String {
+        let script = script
+            .display()
+            .to_string()
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;");
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Installs the apps chosen in myTunnels, with no admin prompt.</Description>
+    <SecurityDescriptor>D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;{sid})</SecurityDescriptor>
+  </RegistrationInfo>
+  <Principals><Principal id="Author"><UserId>{sid}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>Queue</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT2H</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>powershell.exe</Command><Arguments>-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "{script}"</Arguments></Exec></Actions>
+</Task>
+"#
+        )
+    }
+
+    /// Runs winget with `args` through the helper, moving `id`'s job along
+    /// as it says each line. None when there is no helper here, so winget
+    /// runs on its own.
+    pub async fn run(id: &str, args: &[String]) -> Option<(bool, String)> {
+        let dir = asks();
+        if !helper_dir().join("apps.ps1").exists() || !dir.exists() {
+            return None;
+        }
+        let job = crate::util::random_hex(8);
+        let ask = dir.join(format!("{job}.json"));
+        let log = dir.join(format!("{job}.log"));
+        let exit = dir.join(format!("{job}.exit"));
+        let clean = || {
+            for f in [&ask, &log, &exit] {
+                let _ = std::fs::remove_file(f);
+            }
+        };
+        // Written whole, then named, so the helper never reads half of it.
+        let part = ask.with_extension("part");
+        let body = serde_json::to_string(args).ok()?;
+        if std::fs::write(&part, body)
+            .and_then(|()| std::fs::rename(&part, &ask))
+            .is_err()
+        {
+            let _ = std::fs::remove_file(&part);
+            return None;
+        }
+        let started = Command::new("schtasks")
+            .args(["/Run", "/TN", TASK])
+            .creation_flags(NO_WINDOW)
+            .output()
+            .await;
+        if !started.is_ok_and(|o| o.status.success()) {
+            clean();
+            return Some((false, "The apps helper did not start".into()));
+        }
+        let began = Instant::now();
+        let mut read = 0;
+        let mut tail = Vec::new();
+        let mut follow = |tail: &mut Vec<String>| {
+            let Ok(bytes) = std::fs::read(&log) else {
+                return;
+            };
+            // Whole lines only; the rest is read once it ends.
+            let Some(end) = bytes.iter().rposition(|b| *b == b'\n').map(|e| e + 1) else {
+                return;
+            };
+            if end > read {
+                for line in String::from_utf8_lossy(&bytes[read..end]).split(['\n', '\r']) {
+                    super::heard(id, line, tail);
+                }
+                read = end;
+            }
+        };
+        while !exit.exists() {
+            follow(&mut tail);
+            if ask.exists() && began.elapsed() > Duration::from_secs(60) {
+                clean();
+                return Some((false, "The apps helper did not take the install".into()));
+            }
+            if began.elapsed() > Duration::from_secs(30 * 60) {
+                clean();
+                return Some((false, "The installer took over half an hour".into()));
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        follow(&mut tail);
+        let code = std::fs::read_to_string(&exit).unwrap_or_default();
+        clean();
+        Some((code.trim() == "0", tail.join("\n")))
     }
 }
 

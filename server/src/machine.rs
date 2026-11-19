@@ -2,7 +2,7 @@
 //! and, when the app is on another port or another machine, a relay that
 //! listens on the forwarded port and passes everything to the app. On
 //! Windows the rule is made by the firewall helper granted at install, with
-//! no prompt, or else through Windows' admin prompt.
+//! no prompt; myTunnels never raises Windows' admin prompt for it.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -277,7 +277,7 @@ mod firewall {
         while file.exists() {
             if began.elapsed() > Duration::from_secs(20) {
                 let _ = std::fs::remove_file(&file);
-                tracing::warn!("the firewall helper did not answer, so Windows asks instead");
+                tracing::warn!("the firewall helper did not answer");
                 return None;
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
@@ -341,74 +341,23 @@ mod firewall {
         Ok(out.parse().unwrap_or(0))
     }
 
-    /// Runs `script` with administrator rights, which Windows asks for on this
-    /// computer's screen, and waits for it.
-    async fn elevated(script: &str) -> Result<()> {
-        let inner = crate::util::powershell_encoded(&format!(
-            "$ErrorActionPreference = 'Stop'\ntry {{ {script} }} catch {{ exit 1 }}"
-        ));
-        powershell(
-            &format!(
-                "$p = Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait -PassThru \
-                 -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','{inner}'\n\
-                 if ($p.ExitCode -ne 0) {{ [Console]::Error.WriteLine('the rule could not be changed'); exit 1 }}"
-            ),
-            180,
-        )
-        .await
-        .map(drop)
-    }
+    /// Changing a rule needs the helper: myTunnels never asks for
+    /// administrator rights on a screen no one may be at.
+    const NO_HELPER: &str = "Windows Firewall needs myTunnels' one admin step, taken when it is \
+         installed. Run the install command on this computer once to take it.";
 
     pub async fn open(f: &Forward) -> Result<()> {
         if present(f).await? == kinds(f).len() {
             return Ok(());
         }
-        if let Some(done) = ask(f, true).await {
-            return done;
-        }
-        // A relay is myTunnels listening, so the rule names it as well.
-        let program = if relays(f) {
-            crate::config::program()
-                .map(|p| {
-                    format!(
-                        " -Program '{}'",
-                        p.display().to_string().replace('\'', "''")
-                    )
-                })
-                .unwrap_or_default()
-        } else {
-            String::new()
-        };
-        let script = names(f)
-            .iter()
-            .zip(kinds(f))
-            .map(|(name, kind)| {
-                format!(
-                    "Remove-NetFirewallRule -Name '{name}' -ErrorAction SilentlyContinue; \
-                     New-NetFirewallRule -Name '{name}' -DisplayName 'myTunnels port {port} {proto}' \
-                     -Direction Inbound -Action Allow -Protocol {proto} -LocalPort {port} -Profile Any{program} | Out-Null",
-                    port = f.public_port,
-                    proto = kind.to_uppercase(),
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("; ");
-        elevated(&script).await
+        ask(f, true).await.unwrap_or_else(|| bail!(NO_HELPER))
     }
 
     pub async fn close(f: &Forward) -> Result<()> {
         if present(f).await? == 0 {
             return Ok(());
         }
-        if let Some(done) = ask(f, false).await {
-            return done;
-        }
-        let script = names(f)
-            .iter()
-            .map(|n| format!("Remove-NetFirewallRule -Name '{n}' -ErrorAction SilentlyContinue"))
-            .collect::<Vec<_>>()
-            .join("; ");
-        elevated(&script).await
+        ask(f, false).await.unwrap_or_else(|| bail!(NO_HELPER))
     }
 }
 
