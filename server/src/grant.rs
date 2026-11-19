@@ -46,46 +46,16 @@ pub fn missing() -> bool {
     .all(|f| dir.join(f).is_file())
 }
 
-/// Puts the helpers in place when they are not, then carries on: a drive, a
-/// port or an install that needs them takes Windows' one yes itself, the
-/// first time on this computer, and waits for it. Every time after, nothing
-/// asks. One at a time, so several at once take it once.
+/// Whether the helpers are in place. They are put there by the one yes
+/// Windows gets when myTunnels is installed; nothing asks for it after.
 pub async fn ensure() -> Result<()> {
-    if !missing() {
-        return Ok(());
-    }
-    #[cfg(windows)]
-    {
-        static ONE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-        let _one = ONE.lock().await;
-        if !missing() {
-            return Ok(());
-        }
-        let exe =
-            crate::config::program().ok_or_else(|| anyhow::anyhow!("cannot find this program"))?;
-        let script = format!(
-            "$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value; \
-             Start-Process -FilePath '{}' -ArgumentList 'grant',$sid,'firewall','apps','drives' -Verb RunAs -WindowStyle Hidden -Wait",
-            exe.display().to_string().replace('\'', "''")
+    if missing() {
+        bail!(
+            "This computer was installed before myTunnels took its one yes at install. \
+             Run the install command on it once"
         );
-        let run = tokio::process::Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-EncodedCommand",
-                &crate::util::powershell_encoded(&script),
-            ])
-            .creation_flags(0x0800_0000)
-            .kill_on_drop(true)
-            .output();
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(30 * 60), run).await;
-        if missing() {
-            bail!("Windows was not given its yes on this computer");
-        }
-        Ok(())
     }
-    #[cfg(not(windows))]
-    bail!("only Windows needs this step")
+    Ok(())
 }
 
 /// Writes where it is up to, for setup.
