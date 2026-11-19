@@ -225,6 +225,7 @@ fn grant(program: &Path, wants: &[String], step: &dyn Fn(&str, u8)) -> Result<()
                 "hardware" => "Setting up the hardware sensors",
                 "firewall" => "Setting up the firewall",
                 "apps" => "Setting up app installs",
+                "drives" => "Setting up drives",
                 "docker" => "Installing Docker",
                 "tailscale" => "Installing Tailscale",
                 _ => "Setting up",

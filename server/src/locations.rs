@@ -1,9 +1,15 @@
-//! Locations: folders on this computer, a whole drive or any folder on one,
-//! kept as network storage, as a NAS keeps shares. Each is browsed and changed
-//! on Storage, and opens in File Explorer, Finder and any other WebDAV client
-//! at `/dav/<name>` on the dashboard's address, signed in with a myTunnels
-//! account that may use Storage: reading with Storage's view permission,
-//! changing with its edit permission.
+//! Locations: drives of their own, as a NAS keeps volumes. Each is a part of
+//! another drive's free room set aside as a drive with its own letter, such
+//! as A:, made and attached on this computer, and attached again at boot. Each
+//! is browsed and changed on Storage, and opens in File Explorer, Finder and
+//! any other WebDAV client at `/dav/<name>` on the dashboard's address, signed
+//! in with a myTunnels account that may use Storage: reading with Storage's
+//! view permission, changing with its edit permission.
+//!
+//! On Windows the drive is a virtual disk, `<drive>:\drives\<name>.vhdx`, its
+//! whole size set aside when it is made, formatted NTFS. Making, attaching and
+//! removing one needs administrator rights, so the "myTunnels Drives" task does
+//! it as SYSTEM, put in place by the one admin step.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -30,13 +36,26 @@ use crate::util::{lock, random_hex, sha256_hex, ApiError, ApiResult};
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Location {
     pub id: String,
-    /// Its name in its address, `/dav/<name>`.
+    /// Its name, in its address `/dav/<name>` and on its drive.
     pub name: String,
-    /// The folder on this computer.
+    /// The drive's root, such as `A:\`.
     pub path: String,
+    /// The virtual disk the drive is, on the drive its room was taken from.
+    #[serde(default)]
+    pub image: String,
+    /// Its size, in bytes.
+    #[serde(default)]
+    pub size: u64,
+    /// How far along it is while it is being made; none once it is.
+    #[serde(default)]
+    pub making: Option<u8>,
+    /// Why it could not be made.
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 const KEY: &str = "storage_locations";
+const GB: u64 = 1 << 30;
 
 pub fn all(state: &AppState) -> Vec<Location> {
     state
@@ -49,7 +68,9 @@ pub fn all(state: &AppState) -> Vec<Location> {
 }
 
 pub fn find(state: &AppState, id: &str) -> Option<Location> {
-    all(state).into_iter().find(|l| l.id == id)
+    all(state)
+        .into_iter()
+        .find(|l| l.id == id && l.making.is_none() && l.error.is_none())
 }
 
 fn save(state: &AppState, list: &[Location]) -> ApiResult<()> {
@@ -58,10 +79,21 @@ fn save(state: &AppState, list: &[Location]) -> ApiResult<()> {
     Ok(())
 }
 
+/// Changes the location `id`, when it is still there.
+fn change(state: &AppState, id: &str, f: impl FnOnce(&mut Location)) {
+    static SAVING: Mutex<()> = Mutex::new(());
+    let _one = lock(&SAVING);
+    let mut list = all(state);
+    if let Some(l) = list.iter_mut().find(|l| l.id == id) {
+        f(l);
+        let _ = save(state, &list);
+    }
+}
+
 /// A location's name, as its address takes it: lowercase letters, digits,
 /// `-` and `_`.
 fn valid_name(name: &str) -> bool {
-    (1..=40).contains(&name.len())
+    (1..=32).contains(&name.len())
         && name.as_bytes()[0].is_ascii_alphanumeric()
         && name
             .bytes()
@@ -80,6 +112,18 @@ fn address(state: &AppState) -> Option<String> {
         .min()
 }
 
+/// A drive's root by its letter, such as `G:\`.
+fn root(letter: char) -> PathBuf {
+    PathBuf::from(format!("{letter}:\\"))
+}
+
+/// The letters no drive has yet, A first.
+fn free_letters(list: &[Location]) -> Vec<char> {
+    ('A'..='Z')
+        .filter(|&c| !root(c).exists() && !list.iter().any(|l| l.path.starts_with(c)))
+        .collect()
+}
+
 // ---- the API ----
 
 pub async fn list(State(state): State<AppState>) -> ApiResult<Json<Value>> {
@@ -88,13 +132,16 @@ pub async fn list(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         .into_iter()
         .map(|l| {
             let path = Path::new(&l.path);
-            let space = path
-                .is_dir()
+            let here = l.making.is_none() && l.error.is_none() && path.is_dir();
+            let space = here
                 .then(|| crate::storage::disk(path))
                 .flatten()
                 .map(|(free, total)| json!({ "free": free, "total": total }));
             let url = host.as_ref().map(|h| format!("https://{h}/dav/{}", l.name));
-            json!({ "id": l.id, "name": l.name, "path": l.path, "here": path.is_dir(), "space": space, "url": url })
+            json!({
+                "id": l.id, "name": l.name, "path": l.path, "size": l.size, "here": here,
+                "space": space, "url": url, "making": l.making, "error": l.error,
+            })
         })
         .collect();
     Ok(Json(json!({ "locations": locations, "address": host })))
@@ -103,31 +150,31 @@ pub async fn list(State(state): State<AppState>) -> ApiResult<Json<Value>> {
 #[derive(Deserialize)]
 pub struct NewLocation {
     name: String,
-    path: String,
+    /// The drive whose free room it is made from, such as `G:\`.
+    from: String,
+    /// Its size, in gigabytes.
+    size_gb: u64,
+    /// Its letter, such as `A`.
+    letter: String,
 }
 
 pub async fn add(
     State(state): State<AppState>,
     Json(body): Json<NewLocation>,
 ) -> ApiResult<Json<Value>> {
+    if !cfg!(windows) {
+        return Err(ApiError::bad("Making a drive works on Windows for now"));
+    }
+    if crate::grant::missing() {
+        return Err(ApiError::bad(
+            "Making a drive needs Windows' one yes first: Allow it from the bell, on this computer",
+        ));
+    }
     let name = body.name.trim().to_owned();
     if !valid_name(&name) {
         return Err(ApiError::bad(
-            "Name: lowercase letters, digits, '-' and '_', starting with a letter or digit",
+            "Name: lowercase letters, digits, '-' and '_', starting with a letter or digit, up to 32",
         ));
-    }
-    let path = body.path.trim().to_owned();
-    // A drive's root keeps its slash; any other folder loses a trailing one.
-    let path = if path.len() > 3 {
-        path.trim_end_matches(['/', '\\']).to_owned()
-    } else {
-        path
-    };
-    let dir = PathBuf::from(&path);
-    if !dir.is_absolute() || !dir.is_dir() {
-        return Err(ApiError::bad(format!(
-            "{path} is not a folder on this computer"
-        )));
     }
     let mut list = all(&state);
     if list.iter().any(|l| l.name == name) {
@@ -135,12 +182,66 @@ pub async fn add(
             "There is already a location called {name}"
         )));
     }
+    let from = body
+        .from
+        .trim()
+        .chars()
+        .next()
+        .map(|c| c.to_ascii_uppercase());
+    let Some(from) = from.filter(|c| c.is_ascii_uppercase() && root(*c).is_dir()) else {
+        return Err(ApiError::bad(
+            "Pick a drive on this computer to take the room from",
+        ));
+    };
+    let letter = body
+        .letter
+        .trim()
+        .chars()
+        .next()
+        .map(|c| c.to_ascii_uppercase());
+    let Some(letter) = letter.filter(|c| free_letters(&list).contains(c)) else {
+        return Err(ApiError::bad("That letter is taken; pick a free one"));
+    };
+    if body.size_gb == 0 {
+        return Err(ApiError::bad("Give it at least 1 GB"));
+    }
+    let size = body.size_gb.saturating_mul(GB);
+    let free = crate::storage::disk(&root(from)).map_or(0, |(free, _)| free);
+    // Room left over on the drive it comes from, so that drive never fills.
+    if size.saturating_add(GB) > free {
+        return Err(ApiError::bad(format!(
+            "{from}: has room for {} GB at most",
+            free.saturating_sub(GB) / GB
+        )));
+    }
+    let image = format!("{from}:\\drives\\{name}.vhdx");
+    if Path::new(&image).exists() {
+        return Err(ApiError::conflict(format!("{image} is there already")));
+    }
+    let id = random_hex(8);
     list.push(Location {
-        id: random_hex(8),
-        name,
-        path,
+        id: id.clone(),
+        name: name.clone(),
+        path: root(letter).display().to_string(),
+        image: image.clone(),
+        size,
+        making: Some(0),
+        error: None,
     });
     save(&state, &list)?;
+    let ask = json!({
+        "action": "make", "image": image, "size_mb": size / (1 << 20),
+        "letter": letter.to_string(), "label": name,
+    });
+    let worker = state.clone();
+    tokio::spawn(async move {
+        let progress = |p: u8| change(&worker, &id, |l| l.making = Some(p));
+        let done = helper::ask(&ask, Duration::from_secs(4 * 3600), progress).await;
+        change(&worker, &id, |l| {
+            l.making = None;
+            l.error = done.err();
+        });
+    });
     list_value(&state).await
 }
 
@@ -148,14 +249,23 @@ pub async fn remove(
     State(state): State<AppState>,
     UrlPath(id): UrlPath<String>,
 ) -> ApiResult<Json<Value>> {
-    let mut list = all(&state);
-    let before = list.len();
-    list.retain(|l| l.id != id);
-    if list.len() == before {
-        return Err(ApiError::not_found());
+    let place = all(&state)
+        .into_iter()
+        .find(|l| l.id == id)
+        .ok_or_else(ApiError::not_found)?;
+    if place.making.is_some() {
+        return Err(ApiError::conflict("It is still being made"));
     }
+    // The drive goes with what is on it.
+    if !place.image.is_empty() && Path::new(&place.image).exists() {
+        let ask = json!({ "action": "remove", "image": place.image });
+        helper::ask(&ask, Duration::from_secs(120), |_| {})
+            .await
+            .map_err(ApiError::bad)?;
+    }
+    let mut list = all(&state);
+    list.retain(|l| l.id != id);
     save(&state, &list)?;
-    // Only myTunnels' previews go; the folder and its files stay as they are.
     let _ = std::fs::remove_dir_all(state.config.data_dir.join("thumbs").join(&id));
     lock(&HANDLERS).retain(|key, _| !key.starts_with(&format!("{id}:")));
     list_value(&state).await
@@ -165,51 +275,122 @@ async fn list_value(state: &AppState) -> ApiResult<Json<Value>> {
     list(State(state.clone())).await
 }
 
-/// The drives and usual places a location can be made from, with their room.
-pub async fn drives() -> ApiResult<Json<Value>> {
-    let mut found: Vec<PathBuf> = Vec::new();
-    if cfg!(windows) {
-        for letter in b'A'..=b'Z' {
-            let root = PathBuf::from(format!("{}:\\", letter as char));
-            if root.is_dir() {
-                found.push(root);
-            }
-        }
-    } else {
-        found.push(PathBuf::from("/"));
-        if let Some(home) = std::env::var_os("HOME") {
-            found.push(PathBuf::from(home));
-        }
-        // Drives mounted where Linux and macOS put them; /media and
-        // /run/media keep a folder per account, with the drives inside.
-        let folders = |dir: &Path| -> Vec<PathBuf> {
-            std::fs::read_dir(dir)
-                .map(|r| {
-                    r.flatten()
-                        .map(|e| e.path())
-                        .filter(|p| p.is_dir())
-                        .collect()
-                })
-                .unwrap_or_default()
-        };
-        for parent in ["/mnt", "/Volumes"] {
-            found.extend(folders(Path::new(parent)));
-        }
-        for parent in ["/media", "/run/media"] {
-            for account in folders(Path::new(parent)) {
-                found.extend(folders(&account));
-            }
-        }
-    }
-    let list: Vec<Value> = found
-        .into_iter()
-        .map(|p| {
-            let space = crate::storage::disk(&p)
-                .map(|(free, total)| json!({ "free": free, "total": total }));
-            json!({ "path": p.display().to_string(), "space": space })
+/// The drives a drive's room can come from, with their room, and the letters free.
+pub async fn drives(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    let list = all(&state);
+    let drives: Vec<Value> = ('A'..='Z')
+        .map(root)
+        .filter(|p| cfg!(windows) && p.is_dir())
+        // Not one of its own drives.
+        .filter(|p| !list.iter().any(|l| Path::new(&l.path) == p.as_path()))
+        .filter_map(|p| {
+            let (free, total) = crate::storage::disk(&p)?;
+            Some(json!({ "path": p.display().to_string(), "space": { "free": free, "total": total } }))
         })
         .collect();
-    Ok(Json(json!(list)))
+    let letters: Vec<String> = free_letters(&list).iter().map(char::to_string).collect();
+    Ok(Json(json!({ "drives": drives, "letters": letters })))
+}
+
+/// Puts the drives helper in place: see `helper::grant`.
+#[cfg(windows)]
+pub use helper::grant as grant_helper;
+
+/// The "myTunnels Drives" task, which makes, attaches and removes drives as
+/// SYSTEM, and the asks myTunnels leaves it.
+mod helper {
+    use std::path::PathBuf;
+    use std::time::{Duration, Instant};
+
+    use serde_json::Value;
+
+    #[cfg(windows)]
+    const SCRIPT: &str = include_str!("drives.ps1");
+    #[cfg(windows)]
+    const TASK: &str = "myTunnels Drives";
+
+    fn under(var: &str, fallback: &str) -> PathBuf {
+        std::env::var_os(var)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(fallback))
+            .join("myTunnels")
+            .join("drives")
+    }
+
+    /// Where myTunnels asks it, which only the account it runs as may write to.
+    fn asks() -> PathBuf {
+        under("ProgramData", r"C:\ProgramData")
+    }
+
+    /// Puts the helper in place for the account `sid`, and starts it. Run
+    /// with administrator rights.
+    #[cfg(windows)]
+    pub fn grant(sid: &str) -> anyhow::Result<()> {
+        use crate::hardware::{add_task, lock_down};
+        let dir = under("ProgramFiles", r"C:\Program Files");
+        lock_down(&dir, None)?;
+        let script = dir.join("drives.ps1");
+        std::fs::write(&script, SCRIPT)?;
+        lock_down(&asks(), Some(sid))?;
+        add_task(
+            TASK,
+            &script,
+            "Makes and attaches the drives Storage keeps, and attaches them again at boot.",
+        )
+    }
+
+    /// Leaves `ask` for the helper and waits up to `wait` for it, telling
+    /// `progress` how far along it says it is.
+    pub async fn ask(ask: &Value, wait: Duration, progress: impl Fn(u8)) -> Result<(), String> {
+        let dir = asks();
+        let job = crate::util::random_hex(8);
+        let file = dir.join(format!("{job}.json"));
+        let (done, failed, along) = (
+            file.with_extension("done"),
+            file.with_extension("error"),
+            file.with_extension("progress"),
+        );
+        let clean = || {
+            for f in [&file, &done, &failed, &along] {
+                let _ = std::fs::remove_file(f);
+            }
+        };
+        // Written whole, then named, so the helper never reads half of it.
+        let part = file.with_extension("part");
+        if std::fs::write(&part, ask.to_string())
+            .and_then(|()| std::fs::rename(&part, &file))
+            .is_err()
+        {
+            let _ = std::fs::remove_file(&part);
+            return Err("The drives helper is not set up on this computer".into());
+        }
+        let began = Instant::now();
+        loop {
+            if done.exists() {
+                clean();
+                return Ok(());
+            }
+            if let Ok(why) = std::fs::read_to_string(&failed) {
+                clean();
+                return Err(why.trim().to_owned());
+            }
+            if let Some(p) = std::fs::read_to_string(&along)
+                .ok()
+                .and_then(|t| t.trim().parse::<u8>().ok())
+            {
+                progress(p.min(99));
+            }
+            if file.exists() && began.elapsed() > Duration::from_secs(60) {
+                clean();
+                return Err("The drives helper did not take it; is it running?".into());
+            }
+            if began.elapsed() > wait {
+                clean();
+                return Err("The drive took too long".into());
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
 }
 
 // ---- WebDAV ----
@@ -382,6 +563,10 @@ mod tests {
             id: random_hex(8),
             name: "test".into(),
             path: dir.display().to_string(),
+            image: String::new(),
+            size: 0,
+            making: None,
+            error: None,
         };
         let dav = handler(&place);
 
@@ -393,7 +578,10 @@ mod tests {
             .unwrap();
         let answer = dav.handle(list).await;
         assert_eq!(answer.status().as_u16(), 207);
-        let body = http_body_util::BodyExt::collect(answer.into_body()).await.unwrap().to_bytes();
+        let body = http_body_util::BodyExt::collect(answer.into_body())
+            .await
+            .unwrap()
+            .to_bytes();
         assert!(String::from_utf8_lossy(&body).contains("hello.txt"));
 
         let put = axum::http::Request::builder()
@@ -403,7 +591,10 @@ mod tests {
             .unwrap();
         let answer = dav.handle(put).await;
         assert!(answer.status().is_success(), "{}", answer.status());
-        assert_eq!(std::fs::read_to_string(dir.join("new.txt")).unwrap(), "made over WebDAV");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("new.txt")).unwrap(),
+            "made over WebDAV"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
