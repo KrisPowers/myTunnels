@@ -287,9 +287,6 @@ export interface Build {
 
 export type Updates = "push" | "release" | "timer" | "manual";
 
-// A step every new build passes before it runs: a command run in the new
-// image, which must exit 0, or a review that waits for an approval.
-export type FlowStep = { kind: "test"; name: string; command: string } | { kind: "review" };
 
 // A container built from a repository at an https address (`url`), one of
 // its branches, and how it updates; `repo` is one that was on this host's Git.
@@ -795,10 +792,6 @@ export const api = {
   buildNow: (id: string) => call<Deploy>(`/deploys/${id}/build`, "POST"),
   buildLog: (id: string, number: number) => call<Build & { log: string }>(`/deploys/${id}/builds/${number}`),
   useBuild: (id: string, number: number) => call<Deploy>(`/deploys/${id}/builds/${number}/use`, "POST"),
-  approveBuild: (id: string, number: number) => call<Deploy>(`/deploys/${id}/builds/${number}/approve`, "POST"),
-  rejectBuild: (id: string, number: number) => call<Deploy>(`/deploys/${id}/builds/${number}/reject`, "POST"),
-  flow: (id: string) => call<{ steps: FlowStep[] }>(`/deploys/${id}/flow`),
-  setFlow: (id: string, steps: FlowStep[]) => call<{ steps: FlowStep[] }>(`/deploys/${id}/flow`, "PUT", { steps }),
   accounts: (token: string | null) => call<Account[]>("/cloudflare/accounts", "POST", { api_token: token }),
   connect: (token: string | null, accountId: string, tunnelName: string) =>
     call("/settings/cloudflare", "PUT", { api_token: token, account_id: accountId, tunnel_name: tunnelName }),

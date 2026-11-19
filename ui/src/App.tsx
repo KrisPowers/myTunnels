@@ -3,7 +3,6 @@ import { AppsPage, InstallPill, NeedsContext } from "./Apps";
 import { api, deviceInfo, message, shortId, type Auth, type Device, type Flag, type Forward, type Group, type Hardware, type Needs, type Me, type OAuthProvider, type Route, type Status, type User } from "./api";
 import { CloudflareProvider } from "./Cloudflare";
 import { Alerts, useAlerts } from "./Alerts";
-import { AutomationsPage } from "./Automations";
 import { ConsolePage } from "./Console";
 import { ContainersPage } from "./Containers";
 
@@ -27,7 +26,7 @@ import { Callout, Notices, Tooltips, useNotify } from "./ui";
 
 // Pages whose id picks one container, tunnel, device or account, a page of its
 // own; on the rest it is a tab or section, which changes in place.
-const ONE_OF: string[] = ["containers", "automations", "tunnels", "devices", "users"];
+const ONE_OF: string[] = ["containers", "tunnels", "devices", "users"];
 
 export function App() {
   return (
@@ -198,7 +197,6 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
   const pages: [string, string, IconName, string, boolean][] = [
     ["dashboard", "Dashboard", "dashboard", "#/dashboard", can("metrics.view")],
     ["containers", "Containers", "deployed_code", "#/containers", can("containers.view")],
-    ["automations", "Automations", "workflow", "#/automations", can("containers.view")],
     ["routes", "Routes", "wifi_cog", "#/routes", can("tunnels.view")],
     ["storage", "Storage", "cloud", "#/storage", can("drive.view")],
     ["mail", "Mail", "mail", "#/mail", can("mail.view") || can("mail.manage")],
@@ -264,7 +262,6 @@ function Dashboard({ me, catalog, onSignOut }: { me: Me; catalog: Group[]; onSig
           {view === "apps" && <AppsPage />}
           {view === "storage" && <StoragePage />}
           {view === "mail" && <MailPage />}
-          {view === "automations" && <AutomationsPage id={id} tab={page} more={place.more} />}
           {view === "routes" && <RoutesPage adding={page === "new"} port={place.more[0] ?? ""} routes={apps} forwards={forwards}
             users={users ?? []} providers={providers} onChanged={load} />}
           {view === "containers" && <ContainersPage id={id} page={page} more={place.more} routes={apps} forwards={forwards ?? []}
