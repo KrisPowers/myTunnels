@@ -1231,6 +1231,7 @@ async fn cloudflare_accounts(
 struct CloudflareBody {
     api_token: Option<String>,
     account_id: String,
+    #[serde(default)]
     tunnel_name: String,
 }
 
@@ -1239,7 +1240,12 @@ async fn save_cloudflare(
     Json(body): Json<CloudflareBody>,
 ) -> ApiResult<Json<Value>> {
     let token = token_or_saved(&state, body.api_token)?;
-    let name = body.tunnel_name.trim();
+    // A tunnel of this machine's own, named for it, unless one is named.
+    let machine = tunnel::machine_tunnel();
+    let name = match body.tunnel_name.trim() {
+        "" => machine.as_str(),
+        given => given,
+    };
     if name.is_empty()
         || name.len() > 64
         || !name

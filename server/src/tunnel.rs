@@ -76,7 +76,117 @@ impl Tunnel {
 /// Keeps cloudflared running for as long as a tunnel token is configured.
 pub fn spawn(state: AppState) {
     tokio::spawn(read_version(state.clone()));
+    tokio::spawn(move_off_shared(state.clone()));
     tokio::spawn(supervise(state));
+}
+
+/// The name every install's tunnel once had, which put every machine on one
+/// Cloudflare account on the same tunnel.
+const SHARED: &str = "homelab";
+
+/// This machine's tunnel's name: the computer's own, so each machine on a
+/// Cloudflare account has a tunnel of its own.
+pub fn machine_tunnel() -> String {
+    let name: String = sysinfo::System::host_name()
+        .unwrap_or_default()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .take(64)
+        .collect();
+    let name = name.trim_matches('-').to_owned();
+    if name.is_empty() {
+        "home".into()
+    } else {
+        name
+    }
+}
+
+/// Each machine on a tunnel shared with others takes it each request in
+/// turn, and each machine's addresses replace the others'; an install on
+/// the shared tunnel moves to one of its own, its addresses with it.
+async fn move_off_shared(state: AppState) {
+    if state.db.setting("cf_tunnel_name").ok().flatten().as_deref() != Some(SHARED) {
+        return;
+    }
+    // Once the panel and the gateway are up.
+    sleep(Duration::from_secs(10)).await;
+    match own_tunnel(&state).await {
+        Ok(name) => tracing::info!("moved off the shared tunnel to tunnel {name}"),
+        Err(err) => tracing::warn!("could not move off the shared tunnel: {err:#}"),
+    }
+}
+
+/// Moves this install to a tunnel named for this machine: made or found, its
+/// connector started, this install's addresses put on it, and their DNS
+/// records pointed at it. Records still pointing at the shared tunnel are the
+/// only ones changed.
+async fn own_tunnel(state: &AppState) -> Result<String> {
+    let cf = state.cloudflare().map_err(|e| anyhow!(e.1))?;
+    let api = Cloudflare::new(&state.http, &cf.token);
+    let name = machine_tunnel();
+    let tunnel = match api.find_tunnel(&cf.account_id, &name).await? {
+        Some(t) => t,
+        None => api.create_tunnel(&cf.account_id, &name).await?,
+    };
+    let token = api.tunnel_token(&cf.account_id, &tunnel.id).await?;
+    let old = format!("{}.cfargotunnel.com", cf.tunnel_id);
+    let new = format!("{}.cfargotunnel.com", tunnel.id);
+    for (key, value) in [
+        ("cf_tunnel_id", tunnel.id.as_str()),
+        ("cf_tunnel_name", name.as_str()),
+        ("cf_tunnel_token", token.as_str()),
+    ] {
+        state.db.set_setting(key, value)?;
+    }
+    state.tunnel.set_token(Some(token));
+    sync_ingress(state).await?;
+    let zones = api.zones(&cf.account_id).await?;
+    for host in our_hosts(state)? {
+        // The longest zone the address is in.
+        let Some(zone) = zones
+            .iter()
+            .filter(|z| host == z.name || host.ends_with(&format!(".{}", z.name)))
+            .max_by_key(|z| z.name.len())
+        else {
+            continue;
+        };
+        match api.find_dns(&zone.id, &host).await {
+            Ok(Some(record)) if record.kind == "CNAME" && record.content == old => {
+                if let Err(err) = api.repoint_dns(&zone.id, &record.id, &new).await {
+                    tracing::warn!("could not point {host} at tunnel {name}: {err:#}");
+                }
+            }
+            Ok(_) => {}
+            Err(err) => tracing::warn!("could not look up {host}: {err:#}"),
+        }
+    }
+    Ok(name)
+}
+
+/// Every address this install answers through its tunnel: its routes, mail's
+/// own addresses and its redirects.
+fn our_hosts(state: &AppState) -> Result<Vec<String>> {
+    let mut ours: Vec<String> = state
+        .db
+        .routes()?
+        .into_iter()
+        // A tunnel switched off leaves the tunnel's routing, as if it did not exist.
+        .filter(|r| r.enabled)
+        .map(|r| r.hostname)
+        .collect();
+    ours.extend(crate::mailserver::web::hosts());
+    for host in crate::redirect::hosts(&crate::redirect::load(&state.db)) {
+        if !ours.contains(&host) {
+            ours.push(host);
+        }
+    }
+    Ok(ours)
 }
 
 /// Notes which cloudflared this is, so the panel can say when it is getting old.
@@ -224,22 +334,7 @@ pub async fn sync_ingress(state: &AppState) -> Result<()> {
     let cf = state.cloudflare().map_err(|e| anyhow!(e.1))?;
     let api = Cloudflare::new(&state.http, &cf.token);
     let current = api.tunnel_config(&cf.account_id, &cf.tunnel_id).await?;
-    let mut ours: Vec<String> = state
-        .db
-        .routes()?
-        .into_iter()
-        // A tunnel switched off leaves the tunnel's routing, as if it did not exist.
-        .filter(|r| r.enabled)
-        .map(|r| r.hostname)
-        .collect();
-    // Mail's own addresses, which the gateway answers itself.
-    ours.extend(crate::mailserver::web::hosts());
-    // Redirects, which the gateway answers itself.
-    for host in crate::redirect::hosts(&crate::redirect::load(&state.db)) {
-        if !ours.contains(&host) {
-            ours.push(host);
-        }
-    }
+    let ours = our_hosts(state)?;
     let config = merge_ingress(current, &ours, &state.config.gate_service);
     api.put_config(&cf.account_id, &cf.tunnel_id, config).await
 }

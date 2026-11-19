@@ -221,7 +221,8 @@ function Cloudflare({ saved, routes, onSaved }: { saved: Saved; routes: Route[];
   const [token, setToken] = useState("");
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [account, setAccount] = useState(cf.account_id ?? "");
-  const [name, setName] = useState(cf.tunnel_name ?? "homelab");
+  // Empty names the tunnel for this machine, so no two machines share one.
+  const [name, setName] = useState(cf.tunnel_name ?? "");
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
   const locked = routes.length > 0;
@@ -286,11 +287,11 @@ function Cloudflare({ saved, routes, onSaved }: { saved: Saved; routes: Route[];
         <Row title="Account" sub={locked ? "Remove every tunnel before switching account." : undefined}>
           {locked ? <span>{cf.account_name}</span> : <Dropdown label="Account" value={account} options={options} onChange={setAccount} />}
         </Row>
-        <Row title="Tunnel name" sub={locked ? "Remove every tunnel before switching tunnel." : "Created in the account if it doesn't exist yet."}>
+        <Row title="Tunnel name" sub={locked ? "Remove every tunnel before switching tunnel." : "Empty for one named for this machine. Two machines must not share one."}>
           {locked ? <span>{cf.tunnel_name}</span> : <input className="input" aria-label="Tunnel name" value={name} style={{ width: 200 }} onChange={(e) => setName(e.target.value)} />}
         </Row>
         <div className="card-foot">
-          <button type="button" className="btn primary" disabled={busy || !account || !name.trim() || (!token.trim() && account === cf.account_id && name.trim() === cf.tunnel_name)} onClick={save}>
+          <button type="button" className="btn primary" disabled={busy || !account || (!token.trim() && account === cf.account_id && name.trim() === cf.tunnel_name)} onClick={save}>
             {busy && <span className="spinner small on-accent" />}Save connection
           </button>
         </div>
