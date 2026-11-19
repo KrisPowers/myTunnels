@@ -1,8 +1,9 @@
-//! `mytunnels grant <account> [hardware] [firewall] [docker] [tailscale]`,
+//! `mytunnels grant <account> [hardware] [firewall] [apps] [docker] [tailscale]`,
 //! which setup runs once with administrator rights, so what would ask for
 //! them later is in place from the start: `hardware` the sensor task behind
 //! the Dashboard's Advanced view, `firewall` the helper that opens router
-//! ports on this computer with no prompt, and `docker` and `tailscale` those
+//! ports on this computer with no prompt, `apps` the helper that installs
+//! Apps' catalog with no prompt, and `docker` and `tailscale` those
 //! apps, which Services and private routes run on. `<account>` is the SID of
 //! the account myTunnels runs as, the one the firewall helper takes asks from.
 //!
@@ -13,7 +14,8 @@
 
 use anyhow::{bail, Result};
 
-const USE: &str = "use: mytunnels grant <account SID> [hardware] [firewall] [docker] [tailscale]";
+const USE: &str =
+    "use: mytunnels grant <account SID> [hardware] [firewall] [apps] [docker] [tailscale]";
 
 pub async fn command(args: &[String]) -> Result<()> {
     let result = grant(args).await;
@@ -57,6 +59,10 @@ async fn grant(args: &[String]) -> Result<()> {
             "firewall" => crate::machine::grant_firewall(sid),
             #[cfg(not(windows))]
             "firewall" => Err(anyhow::anyhow!("only Windows needs this step")),
+            #[cfg(windows)]
+            "apps" => crate::apps::grant_helper(sid),
+            #[cfg(not(windows))]
+            "apps" => Err(anyhow::anyhow!("only Windows needs this step")),
             "docker" | "tailscale" => {
                 let id = want.clone();
                 tokio::task::spawn_blocking(move || crate::apps::install_now(&id))

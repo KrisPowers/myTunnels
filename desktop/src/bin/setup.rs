@@ -224,6 +224,7 @@ fn grant(program: &Path, wants: &[String], step: &dyn Fn(&str, u8)) -> Result<()
             let text = match what {
                 "hardware" => "Setting up the hardware sensors",
                 "firewall" => "Setting up the firewall",
+                "apps" => "Setting up app installs",
                 "docker" => "Installing Docker",
                 "tailscale" => "Installing Tailscale",
                 _ => "Setting up",

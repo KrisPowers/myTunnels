@@ -168,6 +168,22 @@
         $link.Save()
     }
 
+    # The one admin step, taken once while someone is here to say yes: the
+    # helpers that open firewall ports and install Apps' catalog later with no
+    # prompt, on a screen no one may be at. Setup and the panel's updates run
+    # this with MYTUNNELS_PROGRESS and never ask; setup takes it itself.
+    $helpers = Join-Path $env:ProgramFiles 'myTunnels'
+    $granted = (Test-Path (Join-Path $helpers 'firewall\program.txt')) -and (Test-Path (Join-Path $helpers 'apps\apps.ps1'))
+    if (-not $env:MYTUNNELS_PROGRESS -and -not $granted) {
+        Write-Host 'Windows asks once to let myTunnels open firewall ports and install apps with no prompt from then on.'
+        $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        try {
+            $grant = Start-Process $exe -ArgumentList 'grant', $sid, 'firewall', 'apps' -Verb RunAs -WindowStyle Hidden -Wait -PassThru
+            if ($grant.ExitCode -ne 0) { Write-Host 'That step did not finish. Running this again asks again.' }
+        }
+        catch { Write-Host 'Not allowed, so Windows Firewall ports and app installs wait until this runs again.' }
+    }
+
     if ($running) {
         # Started on its own, not through this script's output: what `start`
         # leaves running would hold that output open, and this script, its
