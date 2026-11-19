@@ -860,9 +860,15 @@ async fn run(mail: &Mail, s: &Settings) {
                     cloud::enable_routing(cf, &d.zone_id, &d.name)
                         .await
                         .map_err(|e| {
-                            anyhow!("{e:#} (remove MX records another mail provider left first)")
+                            lacks(e, "Zone Settings edit").unwrap_or_else(|e| {
+                                anyhow!(
+                                    "{e:#} (remove MX records another mail provider left first)"
+                                )
+                            })
                         })?;
-                    cloud::catch_all(cf, &d.zone_id, true).await?;
+                    cloud::catch_all(cf, &d.zone_id, true)
+                        .await
+                        .map_err(|e| lacks(e, "Email Routing Rules edit").unwrap_or_else(|e| e))?;
                     Ok(format!("all mail for @{} → this server", d.name))
                 });
             }
@@ -914,7 +920,16 @@ async fn run(mail: &Mail, s: &Settings) {
             step!(format!("Email Sending for {}", d.name), {
                 cloud::enable_sending(cf, &d.zone_id, &d.name)
                     .await
-                    .map_err(|e| anyhow!("{e:#} (Email Sending needs the Workers Paid plan)"))?;
+                    .map_err(|e| {
+                        if refused(&e) {
+                            anyhow!(
+                                "Cloudflare would not open Email Sending to this token. It lists no \
+                                 token permission for it yet, so send Direct or through a relay"
+                            )
+                        } else {
+                            e
+                        }
+                    })?;
                 Ok("mail leaves through Cloudflare".into())
             });
         }
@@ -923,6 +938,25 @@ async fn run(mail: &Mail, s: &Settings) {
         crate::tunnel::sync_ingress(&mail.state).await?;
         Ok("sent to Cloudflare".into())
     });
+}
+
+/// Whether Cloudflare turned the token away: code 10000, its answer to a
+/// token without the permission a call needs.
+fn refused(e: &anyhow::Error) -> bool {
+    format!("{e:#}").contains("(code 10000)")
+}
+
+/// Which permission the token lacks, for an error Cloudflare turned it away
+/// with; any other error comes back as it was.
+fn lacks(e: anyhow::Error, permission: &str) -> Result<anyhow::Error, anyhow::Error> {
+    if refused(&e) {
+        Ok(anyhow!(
+            "The Cloudflare token lacks {permission}. Make it again with Make a token on \
+             Cloudflare in Settings, Connections"
+        ))
+    } else {
+        Err(e)
+    }
 }
 
 // ---- the API ----
