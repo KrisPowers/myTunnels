@@ -159,7 +159,6 @@ export function ContainerList({ onChanged }: { onChanged: () => Promise<void> })
     const d = c.deploy ? byDeploy.get(c.deploy) : undefined;
     body.push(
       <Row key={c.id || c.name} c={c} inGroup={grouped} busy={busy === c.name}
-        icon={d ? (d.image ? "layers" : "git") : "deployed_code"}
         source={d ? `${sourceOf(d)}${d.branch ? `, ${d.branch}` : ""}` : c.image}
         ports={c.ports.filter((p) => p.public !== null).map((p) => p.public!)} stats={c.id ? stats.get(short(c.id)) : undefined} menu={menuOf(c)} />,
     );
@@ -220,8 +219,8 @@ export function ContainerList({ onChanged }: { onChanged: () => Promise<void> })
   );
 }
 
-function Row({ c, inGroup, busy, icon, source, ports, stats, menu }: {
-  c: Container; inGroup: boolean; busy: boolean; icon: IconName; source: string;
+function Row({ c, inGroup, busy, source, ports, stats, menu }: {
+  c: Container; inGroup: boolean; busy: boolean; source: string;
   ports: number[]; stats?: ContainerStats; menu: MenuAction[];
 }) {
   const [label, tone] = stateOf(c.state);
@@ -231,7 +230,6 @@ function Row({ c, inGroup, busy, icon, source, ports, stats, menu }: {
     <tr className={"svc-link" + (on ? "" : " svc-down")} onClick={() => go(href)}>
       <td>
         <span className={"svc-name" + (inGroup ? " in-group" : "")}>
-          <span className={"svc-icon " + tone}><Icon name={icon} size={18} /></span>
           <span className="svc-text"><b>{c.name}{c.own && <span className="chip plain small-chip">myTunnels</span>}</b><small>{source}</small></span>
         </span>
       </td>

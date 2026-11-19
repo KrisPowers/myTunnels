@@ -96,7 +96,6 @@ function AutomationList() {
             <div className="card-head"><div className="card-titles"><h2>Waiting for review</h2></div></div>
             {held.map(({ d, b }) => (
               <div key={d.id + b.number} className="review-row">
-                <span className="svc-icon warn"><Icon name="visibility" size={18} /></span>
                 <a className="review-text" href={`${base(d.id)}/runs/build/${b.number}`}>
                   <b>{d.name}, build {b.number}</b>
                   <small>{b.message || b.commit.slice(0, 7)}</small>
@@ -130,7 +129,6 @@ function AutomationList() {
                       <tr key={d.id} className="svc-link" onClick={() => go(base(d.id))}>
                         <td>
                           <span className="svc-name">
-                            <span className="svc-icon ok"><Icon name={d.image ? "layers" : "git"} size={18} /></span>
                             <span className="svc-text"><b>{d.name}</b><small>{sourceOf(d)}{d.branch ? `, ${d.branch}` : ""}</small></span>
                           </span>
                         </td>
@@ -226,7 +224,6 @@ function Automation({ id, tab, more }: { id: string; tab: string; more: string[]
       <div className="page-body stack" key={current}>
         {review && can("containers.deploy") && (
           <div className="review-row card">
-            <span className="svc-icon warn"><Icon name="visibility" size={18} /></span>
             <a className="review-text" href={`${at}/runs/build/${review.number}`}><b>Build {review.number} is waiting for review</b><small>{review.message || review.commit.slice(0, 7)}</small></a>
             <button type="button" className="btn small" onClick={() => decide(false)}>Turn down</button>
             <button type="button" className="btn small primary" onClick={() => decide(true)}>Approve</button>

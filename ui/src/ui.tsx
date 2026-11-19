@@ -504,7 +504,7 @@ export function MoreMenu({ label, actions, icon = "more_vert", text }: { label: 
                 pop.close();
                 a.onClick();
               }}>
-              {rich ? <span className="menu-tile"><Icon name={a.icon} size={20} /></span> : <Icon name={a.icon} size={20} />}
+              {!rich && <Icon name={a.icon} size={20} />}
               {rich ? (
                 <span className="menu-text"><span>{armed === a.label && a.confirm ? a.confirm : a.label}</span>{a.hint && <small>{a.hint}</small>}</span>
               ) : armed === a.label && a.confirm ? a.confirm : a.label}

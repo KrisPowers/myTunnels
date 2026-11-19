@@ -764,8 +764,6 @@ a.result:hover { background: var(--hover); }
 .menu-item.danger { color: var(--bad); }
 .menu.rich { padding: 6px; }
 .menu.rich .menu-item { height: auto; padding: 8px; border-radius: var(--radius); }
-.menu-tile { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; background: var(--accent-bg); color: var(--on-accent-bg); }
-.menu-tile .icon { color: inherit; }
 .menu-text { display: grid; gap: 1px; min-width: 0; }
 .menu-text > span { font-weight: 600; }
 .menu-text small { color: var(--text-2); font-size: 12px; line-height: 1.35; }
@@ -1583,10 +1581,8 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
 .alerts-list { max-height: min(480px, 70vh); margin: 0; padding: 4px 0; overflow-y: auto; list-style: none; }
 .alert { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; }
 .alert + .alert { border-top: 1px solid var(--line); }
-.alert-icon { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--card-2); color: var(--text-2); }
-.alert.warn .alert-icon { background: var(--warn-bg); color: var(--warn); }
-.alert.bad .alert-icon { background: var(--bad-bg); color: var(--bad); }
-.alert.info .alert-icon { background: var(--accent-bg); color: var(--accent); }
+/* On the title's line. */
+.alert-dot { margin-top: 6px; }
 .alert-text { display: grid; flex: 1; gap: 2px; min-width: 0; color: var(--text); text-decoration: none; }
 a.alert-text:hover b { color: var(--accent); }
 .alert-text b { font-size: 14px; font-weight: 500; line-height: 1.4; }
@@ -1628,10 +1624,6 @@ a.alert-text:hover b { color: var(--accent); }
 .table.svc tr.svc-down .svc-text b { color: var(--text-2); }
 .svc-name { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .svc-name.in-group { padding-left: 28px; }
-.svc-icon { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: var(--radius); background: var(--card-2); color: var(--text-3); }
-.svc-icon.ok { background: var(--accent-bg); color: var(--accent); }
-.svc-icon.warn { background: var(--warn-bg); color: var(--warn); }
-.svc-icon.bad { background: var(--bad-bg); color: var(--bad); }
 .svc-text { display: grid; gap: 2px; min-width: 0; }
 .svc-text b { overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .svc-text small { max-width: 420px; overflow: hidden; color: var(--text-3); font: 12px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
@@ -1663,7 +1655,6 @@ a.alert-text:hover b { color: var(--accent); }
 .mail-who { display: grid; flex: 1; gap: 2px; min-width: 0; }
 .mail-who b { overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .mail-who small { overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.mail-forward { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--card-2); color: var(--text-3); }
 .mail-size { flex-shrink: 0; min-width: 72px; color: var(--text-2); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
 .mail-menu { flex-shrink: 0; width: 34px; }
 .mail-none { padding: 24px; color: var(--text-3); text-align: center; }

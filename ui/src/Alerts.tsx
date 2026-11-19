@@ -107,7 +107,7 @@ export function Alerts({ alerts }: { alerts: Alert[] }) {
             <ul className="alerts-list">
               {alerts.map((a) => (
                 <li key={a.key} className={"alert " + a.tone}>
-                  <span className="alert-icon"><Icon name={a.icon} size={18} /></span>
+                  <span className={"dot alert-dot " + (a.tone === "info" ? "plain" : a.tone)} />
                   {a.href
                     ? <a className="alert-text" href={a.href} onClick={pop.close}><b>{a.title}</b>{a.sub && <small>{a.sub}</small>}</a>
                     : <span className="alert-text"><b>{a.title}</b>{a.sub && <small>{a.sub}</small>}</span>}

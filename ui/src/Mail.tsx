@@ -446,7 +446,6 @@ function ActivityDialog({ onClose }: { onClose: () => void }) {
         <ul className="mail-list">
           {log.map((e, i) => (
             <li key={i} className="mail-entry">
-              <span className="mail-forward"><Icon name={e.dir === "in" ? "download" : "upload"} size={18} /></span>
               <span className="mail-who">
                 <b>{e.dir === "in" ? e.from || "<>" : e.to}</b>
                 <small>{e.dir === "in" ? `to ${e.to}` : `from ${e.from}`}{e.detail ? ` · ${e.detail}` : ""}</small>

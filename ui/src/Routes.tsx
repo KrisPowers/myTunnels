@@ -16,7 +16,6 @@ interface Item {
   port: number;
   name: string;
   way: string;
-  icon: IconName;
   at: string;
   href?: string;
   traffic: string;
@@ -66,7 +65,7 @@ export function RoutesPage({ adding, port, routes, forwards, users, providers, o
 
   const items: Item[] = [
     ...(routes ?? []).map((r): Item => ({
-      key: "r" + r.id, port: r.target_port, name: r.target_scheme === "dashboard" ? "This dashboard" : r.target_host ? `on ${r.target_host}` : "", way: "Cloudflare Tunnel", icon: "public",
+      key: "r" + r.id, port: r.target_port, name: r.target_scheme === "dashboard" ? "This dashboard" : r.target_host ? `on ${r.target_host}` : "", way: "Cloudflare Tunnel",
       at: r.hostname, href: `https://${r.hostname}`, traffic: r.read_only ? "Read only" : "Read & write", who: whoOf(r),
       state: r.enabled ? ["Live", "ok"] : ["Off", ""], up: r.enabled, open: `#/tunnels/${r.id}`,
       menu: [
@@ -78,7 +77,7 @@ export function RoutesPage({ adding, port, routes, forwards, users, providers, o
       const tailscale = f.method === "tailscale";
       return {
         key: "f" + f.id, port: f.target_port, name: f.name, way: tailscale ? "Tailscale" : `Port forward, ${f.protocol === "both" ? "TCP & UDP" : f.protocol.toUpperCase()}`,
-        icon: tailscale ? "lan" : "router", at: f.address ?? `port ${f.public_port}`, href: f.address?.startsWith("https://") ? f.address : undefined,
+        at: f.address ?? `port ${f.public_port}`, href: f.address?.startsWith("https://") ? f.address : undefined,
         traffic: "Read & write", who: [tailscale ? (f.public ? "Anyone, by Funnel" : "Your tailnet") : f.router ? "Anyone" : "Your network"],
         state: !f.enabled ? ["Closed", ""] : f.problem ? ["Failed", "bad"] : ["Open", "ok"], up: f.enabled && !f.problem,
         menu: [
@@ -126,7 +125,6 @@ export function RoutesPage({ adding, port, routes, forwards, users, providers, o
                       <td><span className="rt-port mono">{i.port}</span></td>
                       <td>
                         <span className="svc-name">
-                          <span className={"svc-icon " + i.state[1]}><Icon name={i.icon} size={18} /></span>
                           <span className="svc-text">
                             <b>{i.href ? <a href={i.href} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{i.at}</a> : i.at}</b>
                             <small className="plain">{[i.way, i.name].filter(Boolean).join(" · ")}</small>
