@@ -561,7 +561,8 @@ export interface Apps {
 }
 
 // What features need where myTunnels runs, and whether it is there.
-export interface Needs { docker: boolean; git: boolean; cloudflared: boolean; tailscale: boolean }
+// `docker` is its engine answering; `docker_installed`, the program being there.
+export interface Needs { docker: boolean; docker_installed?: boolean; git: boolean; cloudflared: boolean; tailscale: boolean }
 
 // A port opened by the router or by Tailscale, beside the tunnels.
 export interface Forward {
@@ -742,6 +743,7 @@ export const api = {
   metrics: () => call<Metrics>("/metrics"),
   apps: () => call<Apps>("/apps"),
   // An install may name a version, in place of the latest.
+  startDocker: () => call("/containers/engine", "POST"),
   appAction: (id: string, action: AppAction, version?: string) => call(`/apps/${id}/${action}`, "POST", { version }),
   appVersions: (id: string) => call<string[]>(`/apps/${id}/versions`),
   needs: () => call<Needs>("/needs"),

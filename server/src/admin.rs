@@ -68,6 +68,7 @@ pub fn router(state: AppState) -> Router {
         .route("/hardware/dismiss", post(crate::hardware::dismiss))
         .route("/metrics", get(metrics))
         .route("/containers", get(list_containers))
+        .route("/containers/engine", post(crate::apps::start_docker))
         .route("/images", get(crate::images::list))
         .route(
             "/images/{id}",
