@@ -221,6 +221,11 @@ async fn serve(
     }
     // Share links open at the dashboard's address for anyone holding one, past
     // the tunnel's access rules; each link is its own key.
+    // Storage's locations open in File Explorer and Finder, which sign in with
+    // an account's own name and password at each request, past the tunnel's page.
+    if route.target_scheme == "dashboard" && crate::locations::is_dav(req.uri().path()) {
+        return dashboard(panel, ip, req).await;
+    }
     if route.target_scheme == "dashboard" && req.uri().path().starts_with("/share/") {
         let mut response = share::serve(state, ip, req).await;
         response.headers_mut().insert(

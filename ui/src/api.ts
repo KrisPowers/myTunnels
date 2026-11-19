@@ -416,8 +416,28 @@ export interface Listing {
   user: string | null;
 }
 
+// A folder on this computer kept as network storage: browsed on Storage and
+// opened in File Explorer or Finder at `url`, once the dashboard has a route.
+export interface StorageLocation {
+  id: string;
+  name: string;
+  path: string;
+  // Whether its folder is on this computer now, as a drive can be unplugged.
+  here: boolean;
+  space: { free: number; total: number } | null;
+  url: string | null;
+}
+export interface DriveRoot { path: string; space: { free: number; total: number } | null }
+
+// The location Storage's file browser is open on; "" for the account's own files.
+let place = "";
+export const openPlace = (id: string) => {
+  place = id;
+};
+const loc = (sep: "?" | "&") => (place ? `${sep}loc=${encodeURIComponent(place)}` : "");
+
 export const fileUrl = (path: string, inline: boolean) =>
-  `/api/drive/fs/file?path=${encodeURIComponent(path)}${inline ? "&inline=true" : ""}`;
+  `/api/drive/fs/file?path=${encodeURIComponent(path)}${inline ? "&inline=true" : ""}${loc("&")}`;
 
 // A copy of a file in Storage being made in another format or smaller,
 // saved beside the original. `size` is a photo's longest side or a video's
@@ -445,7 +465,7 @@ export interface ConvertState {
 }
 
 // A photo's or video's preview in Storage.
-export const thumbUrl = (path: string) => `/api/drive/fs/thumb?path=${encodeURIComponent(path)}`;
+export const thumbUrl = (path: string) => `/api/drive/fs/thumb?path=${encodeURIComponent(path)}${loc("&")}`;
 
 // A way to sign in at tunnels through another service, set up once and offered
 // by the tunnels that switch it on. The secret stays on the server;
@@ -824,13 +844,21 @@ export const api = {
 
 // The files in Storage.
 export const files = {
-  list: (path: string) => call<Listing>(`/drive/fs/list?path=${encodeURIComponent(path)}`),
-  folder: (path: string) => call<{ path: string }>("/drive/fs/folder", "POST", { path }),
-  rename: (path: string, name: string) => call<{ path: string }>("/drive/fs/rename", "POST", { path, name }),
-  move: (paths: string[], to: string, copy: boolean) => call<{ done: number }>("/drive/fs/move", "POST", { paths, to, copy }),
-  remove: (paths: string[]) => call<{ done: number }>("/drive/fs/delete", "POST", { paths }),
-  extract: (path: string) => call<{ path: string; skipped: number }>("/drive/fs/extract", "POST", { path }),
-  compress: (paths: string[]) => call<{ path: string }>("/drive/fs/compress", "POST", { paths }),
+  list: (path: string) => call<Listing>(`/drive/fs/list?path=${encodeURIComponent(path)}${loc("&")}`),
+  folder: (path: string) => call<{ path: string }>(`/drive/fs/folder${loc("?")}`, "POST", { path }),
+  rename: (path: string, name: string) => call<{ path: string }>(`/drive/fs/rename${loc("?")}`, "POST", { path, name }),
+  move: (paths: string[], to: string, copy: boolean) => call<{ done: number }>(`/drive/fs/move${loc("?")}`, "POST", { paths, to, copy }),
+  remove: (paths: string[]) => call<{ done: number }>(`/drive/fs/delete${loc("?")}`, "POST", { paths }),
+  extract: (path: string) => call<{ path: string; skipped: number }>(`/drive/fs/extract${loc("?")}`, "POST", { path }),
+  compress: (paths: string[]) => call<{ path: string }>(`/drive/fs/compress${loc("?")}`, "POST", { paths }),
+};
+
+// Storage's locations: folders on this computer kept as network storage.
+export const locations = {
+  list: () => call<{ locations: StorageLocation[]; address: string | null }>("/storage/locations"),
+  add: (name: string, path: string) => call<{ locations: StorageLocation[]; address: string | null }>("/storage/locations", "POST", { name, path }),
+  remove: (id: string) => call<{ locations: StorageLocation[]; address: string | null }>(`/storage/locations/${id}`, "DELETE"),
+  drives: () => call<DriveRoot[]>("/storage/drives"),
 };
 
 // Saves a preview made in the browser beside a photo or video in Storage.
@@ -872,7 +900,7 @@ export async function upload(file: File, path: string, replace: boolean, onProgr
     if (cancelled()) throw new Error("Cancelled");
     const end = Math.min(offset + PIECE, file.size);
     const date = keepDate && file.lastModified ? `&modified=${Math.floor(file.lastModified / 1000)}` : "";
-    const url = `/api/drive/fs/upload?path=${encodeURIComponent(path)}&id=${id}&offset=${offset}&total=${file.size}&replace=${replace}${date}`;
+    const url = `/api/drive/fs/upload?path=${encodeURIComponent(path)}&id=${id}&offset=${offset}&total=${file.size}&replace=${replace}${date}${loc("&")}`;
     const start = offset;
     const res = await put(url, file.slice(start, end), (sent) => onProgress(start + sent));
     if (res.status === 409 && typeof res.data.received === "number") {

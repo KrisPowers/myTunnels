@@ -135,14 +135,17 @@ const CONTENT: Record<string, ReactNode> = {
   ),
   storage: (
     <>
-      <Doc title="One place">
-        <p><b>Storage</b> keeps your files on this host, in myTunnels' own data folder rather than one you pick: documents, spreadsheets, presentations, PDFs, archives, photos and videos together, in folders of your own, each folder's files grouped by month, newest first. <b>Show</b> picks which kinds appear. Photos and videos are square pictures, like a photo library: open one to see it full size and step through with the arrow keys, or tick several to download, share, convert or delete them together. Shift and right-click any item to add it to the selection, again to take it out, and drag items onto a folder, or a folder in the path above, to move them there. PDFs and text files open in a new tab; the rest download, to open in the app that made them. Uploads keep the date each was last changed on the device they came from.</p>
+      <Doc title="Locations">
+        <p><b>Storage</b> is network storage, as a NAS keeps it. <b>Add location</b> makes a whole drive, or any folder on one, a location: browsed and changed here, and opened in File Explorer, Finder or any other WebDAV client at its <b>Network address</b>, once this dashboard has a route. In File Explorer, choose <b>Add a network location</b> under This PC and give it the address; in Finder, <b>Connect to Server</b>. Sign in with your myTunnels account: its Storage permissions say whether it may change what is there. Removing a location leaves its folder and files where they are.</p>
+      </Doc>
+      <Doc title="My files">
+        <p><b>My files</b> keeps your own files in myTunnels' data folder: documents, spreadsheets, presentations, PDFs, archives, photos and videos together, in folders of your own, each folder's files grouped by month, newest first. <b>Show</b> picks which kinds appear. Photos and videos are square pictures, like a photo library: open one to see it full size and step through with the arrow keys, or tick several to download, share, convert or delete them together. Shift and right-click any item to add it to the selection, again to take it out, and drag items onto a folder, or a folder in the path above, to move them there. PDFs and text files open in a new tab; the rest download, to open in the app that made them. Uploads keep the date each was last changed on the device they came from.</p>
       </Doc>
       <Doc title="Convert">
         <p><b>Convert</b>, in a file's menu, makes a copy in another format or smaller: photos as JPEG or WebP, videos as MP4 that every browser plays, PDFs compressed. The copy is saved beside the original with its date, and the original is never changed. Conversions run one at a time; a panel at the bottom right follows them.</p>
       </Doc>
       <Doc title="From anywhere">
-        <p>Storage is part of this dashboard. Point a tunnel at <b>This dashboard</b>, under <b>Change where it goes</b> in its menu, to reach it away from home.</p>
+        <p>Storage is part of this dashboard. Point a route at <b>This dashboard</b> to reach it away from home; its locations' network addresses are on that route.</p>
       </Doc>
     </>
   ),

@@ -18,6 +18,7 @@ mod guard;
 mod hardware;
 mod images;
 mod limits;
+mod locations;
 mod machine;
 mod mail;
 mod mailserver;
