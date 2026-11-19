@@ -279,6 +279,18 @@ impl<'a> Cloudflare<'a> {
         Ok(record)
     }
 
+    /// Points a record at `target` in place, keeping its ID.
+    pub async fn repoint_dns(&self, zone_id: &str, record_id: &str, target: &str) -> Result<()> {
+        let _: (Value, _) = self
+            .call(
+                Method::PATCH,
+                &format!("/zones/{zone_id}/dns_records/{record_id}"),
+                Some(json!({ "content": target })),
+            )
+            .await?;
+        Ok(())
+    }
+
     pub async fn delete_dns(&self, zone_id: &str, record_id: &str) -> Result<()> {
         let _: (Value, _) = self
             .call(

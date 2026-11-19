@@ -4,8 +4,6 @@ import { Dropdown } from "./Dropdown";
 import { Icon } from "./Icon";
 import { Callout, Dialog, TextField } from "./ui";
 
-const TUNNEL_NAME = "homelab";
-
 // Whether Cloudflare is connected, and the way to ask for it: `ask` opens the
 // connect dialog and runs `then` once it is connected.
 const CloudflareContext = createContext<{ ready: boolean; ask: (then?: () => void) => void }>({ ready: true, ask: () => {} });
@@ -64,7 +62,8 @@ export function CloudflareSetup({ onDone }: { onDone: () => Promise<void> }) {
     setPhase("connecting");
     setProblem("");
     try {
-      await api.connect(withToken, account.id, TUNNEL_NAME);
+      // No name: the server names the tunnel for this machine, one each.
+      await api.connect(withToken, account.id, "");
       setConnected(account);
       setPhase("connected");
       setTimeout(onDone, 1200);
@@ -115,7 +114,7 @@ export function CloudflareSetup({ onDone }: { onDone: () => Promise<void> }) {
   if (phase === "connected") {
     return (
       <Callout tone="ok" icon="check_circle">
-        Connected to <b>{connected?.name}</b>. Tunnel <b>{TUNNEL_NAME}</b> is ready.
+        Connected to <b>{connected?.name}</b>. This machine's tunnel is ready.
       </Callout>
     );
   }
