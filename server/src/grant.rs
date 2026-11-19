@@ -46,21 +46,29 @@ pub fn missing() -> bool {
     .all(|f| dir.join(f).is_file())
 }
 
-/// Takes the one admin step on this computer's screen, when the person
-/// running it asks from the dashboard: Windows asks once, and from then on
-/// router ports, app installs and drives never ask.
-pub fn ask_windows() -> Result<()> {
+/// Puts the helpers in place when they are not, then carries on: a drive, a
+/// port or an install that needs them takes Windows' one yes itself, the
+/// first time on this computer, and waits for it. Every time after, nothing
+/// asks. One at a time, so several at once take it once.
+pub async fn ensure() -> Result<()> {
+    if !missing() {
+        return Ok(());
+    }
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
+        static ONE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        let _one = ONE.lock().await;
+        if !missing() {
+            return Ok(());
+        }
         let exe =
             crate::config::program().ok_or_else(|| anyhow::anyhow!("cannot find this program"))?;
         let script = format!(
             "$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value; \
-             Start-Process -FilePath '{}' -ArgumentList 'grant',$sid,'firewall','apps','drives' -Verb RunAs -WindowStyle Hidden",
+             Start-Process -FilePath '{}' -ArgumentList 'grant',$sid,'firewall','apps','drives' -Verb RunAs -WindowStyle Hidden -Wait",
             exe.display().to_string().replace('\'', "''")
         );
-        std::process::Command::new("powershell")
+        let run = tokio::process::Command::new("powershell")
             .args([
                 "-NoProfile",
                 "-NonInteractive",
@@ -68,7 +76,12 @@ pub fn ask_windows() -> Result<()> {
                 &crate::util::powershell_encoded(&script),
             ])
             .creation_flags(0x0800_0000)
-            .spawn()?;
+            .kill_on_drop(true)
+            .output();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(30 * 60), run).await;
+        if missing() {
+            bail!("Windows was not given its yes on this computer");
+        }
         Ok(())
     }
     #[cfg(not(windows))]

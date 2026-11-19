@@ -341,15 +341,15 @@ mod firewall {
         Ok(out.parse().unwrap_or(0))
     }
 
-    /// Changing a rule needs the helper: myTunnels never asks for
-    /// administrator rights on a screen no one may be at.
-    const NO_HELPER: &str =
-        "Windows Firewall needs Windows' one yes first: Allow it from the bell, on this computer";
+    /// Changing a rule goes through the helper, put in place first if this
+    /// computer lacks it.
+    const NO_HELPER: &str = "The firewall helper did not answer";
 
     pub async fn open(f: &Forward) -> Result<()> {
         if present(f).await? == kinds(f).len() {
             return Ok(());
         }
+        crate::grant::ensure().await?;
         ask(f, true).await.unwrap_or_else(|| bail!(NO_HELPER))
     }
 
@@ -357,6 +357,7 @@ mod firewall {
         if present(f).await? == 0 {
             return Ok(());
         }
+        crate::grant::ensure().await?;
         ask(f, false).await.unwrap_or_else(|| bail!(NO_HELPER))
     }
 }
