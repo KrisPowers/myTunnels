@@ -1501,8 +1501,9 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
 /* On the page's ground, what the chart masks with the panel colour takes the page's. */
 .dash .chart-grid span { background: var(--bg); }
 .dash .chart-dot { box-shadow: 0 0 0 2px var(--bg); }
-.dash-sec .table th:first-child, .dash-sec .table td:first-child { padding-left: 0; }
-.dash-sec .table th:last-child, .dash-sec .table td:last-child { padding-right: 0; }
+/* On the page's ground, the edge columns keep room inside a row's hover band. */
+.dash-sec .table th:first-child, .dash-sec .table td:first-child { padding-left: 12px; }
+.dash-sec .table th:last-child, .dash-sec .table td:last-child { padding-right: 12px; }
 
 /* A minute's upright line, and its time under the chart. */
 .chart-vgrid { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--line); pointer-events: none; }
