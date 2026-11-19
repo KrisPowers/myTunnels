@@ -210,6 +210,22 @@ impl<'a> Cloudflare<'a> {
         Ok(tunnel)
     }
 
+    /// Whether a tunnel is there with a connector running: false for one
+    /// deleted, never connected, or down.
+    pub async fn tunnel_live(&self, account_id: &str, tunnel_id: &str) -> bool {
+        let found: Result<(Value, _)> = self
+            .call(
+                Method::GET,
+                &format!("/accounts/{account_id}/cfd_tunnel/{tunnel_id}"),
+                None,
+            )
+            .await;
+        found.is_ok_and(|(t, _)| {
+            t["deleted_at"].is_null()
+                && matches!(t["status"].as_str(), Some("healthy" | "degraded"))
+        })
+    }
+
     pub async fn tunnel_token(&self, account_id: &str, tunnel_id: &str) -> Result<String> {
         let (token, _) = self
             .call(
