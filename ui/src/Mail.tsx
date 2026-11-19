@@ -65,6 +65,7 @@ export function MailPage() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<"new" | "settings" | "activity" | null>(null);
   const [password, setPassword] = useState<string | null>(null);
+  const [appFor, setAppFor] = useState<string | null>(null);
   const act = useAct(setState);
 
   const running = !!state?.job.running;
@@ -153,7 +154,7 @@ export function MailPage() {
           <div className="card">
             <ul className="mail-list">
               {shown.map((e) => e.mailbox
-                ? <MailboxRow key={e.address} account={e.mailbox} runs={runs(e.address)} onState={setState} onPassword={() => setPassword(e.address)} />
+                ? <MailboxRow key={e.address} account={e.mailbox} runs={runs(e.address)} onState={setState} onPassword={() => setPassword(e.address)} onApp={() => setAppFor(e.address)} />
                 : <AliasRow key={e.address} address={e.address} to={e.to!} runs={runs(e.address)} onState={setState} />)}
               {shown.length === 0 && <li className="mail-none">Nothing matches.</li>}
             </ul>
@@ -165,15 +166,22 @@ export function MailPage() {
       {open === "settings" && <SettingsDialog state={state} onState={setState} onClose={() => setOpen(null)} />}
       {open === "activity" && <ActivityDialog onClose={() => setOpen(null)} />}
       {password && <PasswordDialog address={password} onState={setState} onClose={() => setPassword(null)} />}
+      {appFor && (
+        <Dialog title={`Mail app for ${appFor}`} wide onClose={() => setAppFor(null)}>
+          {state.servers ? <div className="stack"><MailApp servers={state.servers} address={appFor} /></div> : <Callout tone="warn" icon="warning">Waiting for Tailscale</Callout>}
+        </Dialog>
+      )}
     </>
   );
 }
 
 // ---- the list ----
 
-function MailboxRow({ account: a, runs, onState, onPassword }: { account: MailAccount; runs: boolean; onState: (s: MailState) => void; onPassword: () => void }) {
+function MailboxRow({ account: a, runs, onState, onPassword, onApp }: { account: MailAccount; runs: boolean; onState: (s: MailState) => void; onPassword: () => void; onApp: () => void }) {
   const act = useAct(onState);
-  const menu: MenuAction[] = [
+  const app: MenuAction = { label: "Set up a mail app", icon: "mail", hint: "What Outlook and other mail apps ask for", onClick: onApp };
+  const menu: MenuAction[] = !runs ? [app] : [
+    app,
     { label: "Change password", icon: "password", onClick: onPassword },
     a.apps
       ? { label: "Turn mail apps off", icon: "block", hint: "IMAP and SMTP refuse it; mail still arrives", onClick: () => act(() => api.editMailAccount(a.address, { apps: false }), "Mail apps are off for it") }
@@ -189,8 +197,34 @@ function MailboxRow({ account: a, runs, onState, onPassword }: { account: MailAc
       </span>
       {!a.apps && <span className="chip warn">Mail apps off</span>}
       <span className="mail-size">{bytes(a.size)}</span>
-      <span className="mail-menu">{runs && <MoreMenu label={`Actions for ${a.address}`} actions={menu} />}</span>
+      <span className="mail-menu"><MoreMenu label={`Actions for ${a.address}`} actions={menu} /></span>
     </li>
+  );
+}
+
+// MailApp is what a mail app such as Outlook asks for, each on a line of its
+// own: the incoming and outgoing servers, their ports and encryption, and the
+// sign-in. Both take TLS from the first byte, which mail apps call SSL/TLS.
+function MailApp({ servers, address }: { servers: NonNullable<MailState["servers"]>; address?: string }) {
+  const user = address ? <Copy text={address} /> : <span>The full address</span>;
+  const pass = <span>{address ? "This mailbox's password" : "The mailbox's password"}</span>;
+  return (
+    <>
+      <Card title="Incoming mail (IMAP)">
+        <Row title="Server"><Copy text={servers.imap_host} /></Row>
+        <Row title="Port"><Copy text={String(servers.imap_port)} /></Row>
+        <Row title="Encryption"><span>SSL/TLS</span></Row>
+        <Row title="Username">{user}</Row>
+        <Row title="Password">{pass}</Row>
+      </Card>
+      <Card title="Outgoing mail (SMTP)">
+        <Row title="Server"><Copy text={servers.smtp_host} /></Row>
+        <Row title="Port"><Copy text={String(servers.smtp_port)} /></Row>
+        <Row title="Encryption"><span>SSL/TLS</span></Row>
+        <Row title="Username">{user}</Row>
+        <Row title="Password">{pass}</Row>
+      </Card>
+    </>
   );
 }
 
@@ -397,14 +431,7 @@ function SettingsDialog({ state, onState, onClose }: { state: MailState; onState
             </div>
           )}
         </Card>
-        <Card title="Mail apps sign in" sub="With the full address and its password">
-          {state.servers ? (
-            <>
-              <Row title="IMAP"><Copy text={`${state.servers.imap_host}:${state.servers.imap_port}`} /></Row>
-              <Row title="SMTP"><Copy text={`${state.servers.smtp_host}:${state.servers.smtp_port}`} /></Row>
-            </>
-          ) : <Row title="Waiting for Tailscale" />}
-        </Card>
+        {state.servers ? <MailApp servers={state.servers} /> : <Card title="Mail apps"><Row title="Waiting for Tailscale" /></Card>}
         <Card title="Incoming mail">
           <Row title="Refuse spoofed mail" sub="Turn away what its sender's DMARC rejects, rather than file it in Junk">
             <Switch label="Refuse spoofed mail" on={s.reject_dmarc} onChange={(v) => act(() => api.mailOptions({ reject_dmarc: v }))} />
