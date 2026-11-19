@@ -1389,7 +1389,18 @@ fn check_not_self(state: &AppState, host: Option<&str>, port: u16) -> ApiResult<
 }
 
 async fn list_routes(State(state): State<AppState>) -> ApiResult<Json<Vec<Route>>> {
-    Ok(Json(state.db.routes()?))
+    // The dashboard's routes carry no port of their own; they list at the panel's.
+    let panel = state
+        .config
+        .admin_addr
+        .rsplit_once(':')
+        .and_then(|(_, p)| p.parse::<u16>().ok())
+        .unwrap_or_default();
+    let mut routes = state.db.routes()?;
+    for r in routes.iter_mut().filter(|r| served_here(&r.target_scheme)) {
+        r.target_port = panel;
+    }
+    Ok(Json(routes))
 }
 
 fn default_scheme() -> String {
