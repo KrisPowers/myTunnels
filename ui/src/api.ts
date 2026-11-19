@@ -418,16 +418,23 @@ export interface Listing {
   user: string | null;
 }
 
-// A folder on this computer kept as network storage: browsed on Storage and
-// opened in File Explorer or Finder at `url`, once the dashboard has a route.
+// A drive of its own, made from part of another drive's free room and given
+// its own letter: browsed on Storage and opened in File Explorer or Finder at
+// `url`, once the dashboard has a route.
 export interface StorageLocation {
   id: string;
   name: string;
+  // Its root, such as "A:\".
   path: string;
-  // Whether its folder is on this computer now, as a drive can be unplugged.
+  size: number;
+  // Whether it is attached and ready.
   here: boolean;
   space: { free: number; total: number } | null;
   url: string | null;
+  // How far along it is while it is being made.
+  making: number | null;
+  // Why it could not be made.
+  error: string | null;
 }
 export interface DriveRoot { path: string; space: { free: number; total: number } | null }
 
@@ -860,9 +867,10 @@ export const files = {
 // Storage's locations: folders on this computer kept as network storage.
 export const locations = {
   list: () => call<{ locations: StorageLocation[]; address: string | null }>("/storage/locations"),
-  add: (name: string, path: string) => call<{ locations: StorageLocation[]; address: string | null }>("/storage/locations", "POST", { name, path }),
+  add: (name: string, from: string, sizeGb: number, letter: string) =>
+    call<{ locations: StorageLocation[]; address: string | null }>("/storage/locations", "POST", { name, from, size_gb: sizeGb, letter }),
   remove: (id: string) => call<{ locations: StorageLocation[]; address: string | null }>(`/storage/locations/${id}`, "DELETE"),
-  drives: () => call<DriveRoot[]>("/storage/drives"),
+  drives: () => call<{ drives: DriveRoot[]; letters: string[] }>("/storage/drives"),
 };
 
 // Saves a preview made in the browser beside a photo or video in Storage.

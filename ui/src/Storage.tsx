@@ -52,8 +52,8 @@ export function StoragePage() {
 // ---- locations ----
 
 // Locations lists where Storage keeps files: the account's own, then each
-// drive or folder on this computer kept as network storage, with its room
-// and the address File Explorer and Finder open it at.
+// drive of its own, with its room and the address File Explorer and Finder
+// open it at, or how far along it is while it is made.
 function Locations({ onOpen }: { onOpen: (to: StorageLocation | "own") => void }) {
   const me = useMe();
   const notify = useNotify();
@@ -63,10 +63,17 @@ function Locations({ onOpen }: { onOpen: (to: StorageLocation | "own") => void }
   useEffect(() => {
     load();
   }, [load]);
+  // While a drive is being made, its progress is looked at again.
+  const making = (list ?? []).some((l) => l.making !== null);
+  useEffect(() => {
+    if (!making) return;
+    const t = setInterval(load, 2000);
+    return () => clearInterval(t);
+  }, [making, load]);
   const remove = async (l: StorageLocation) => {
     try {
       setList((await locations.remove(l.id)).locations);
-      notify(`Removed ${l.name}; its folder and files stay where they are`);
+      notify(`Removed ${l.name} and what was on it`);
     } catch (e) {
       notify(message(e), "bad");
     }
@@ -96,12 +103,17 @@ function Locations({ onOpen }: { onOpen: (to: StorageLocation | "own") => void }
                 {(list ?? []).map((l) => (
                   <tr key={l.id} className={"svc-link" + (l.here ? "" : " svc-down")} onClick={() => l.here && onOpen(l)}>
                     <td><span className="svc-name"><span className="svc-text"><b>{l.name}</b><small className="plain mono">{l.path}</small></span></span></td>
-                    <td className="loc-space">{l.space ? <Meter value={l.space.total - l.space.free} max={l.space.total} label={`${bytes(l.space.free)} free of ${bytes(l.space.total)}`} /> : <span className="chip">Not connected</span>}</td>
+                    <td className="loc-space">
+                      {l.making !== null ? <Meter value={l.making} max={100} tone="" label={`Making the drive · ${l.making}%`} />
+                        : l.error ? <span className="chip bad" title={l.error}>Not made: {l.error}</span>
+                        : l.space ? <Meter value={l.space.total - l.space.free} max={l.space.total} label={`${bytes(l.space.free)} free of ${bytes(l.space.total)}`} />
+                        : <span className="chip">Not attached</span>}
+                    </td>
                     <td onClick={(e) => e.stopPropagation()}>
                       {l.url ? <Copy text={l.url} /> : <a href="#/routes/new">Expose this dashboard to reach it</a>}
                     </td>
                     <td className="svc-menu" onClick={(e) => e.stopPropagation()}>
-                      {me.admin && <MoreMenu label={`Actions for ${l.name}`} actions={[{ label: "Remove", icon: "delete", danger: true, confirm: "Remove the location", onClick: () => remove(l) }]} />}
+                      {me.admin && l.making === null && <MoreMenu label={`Actions for ${l.name}`} actions={[{ label: "Remove", icon: "delete", danger: true, confirm: "Remove with everything on it", onClick: () => remove(l) }]} />}
                     </td>
                   </tr>
                 ))}
@@ -118,40 +130,41 @@ function Locations({ onOpen }: { onOpen: (to: StorageLocation | "own") => void }
   );
 }
 
-// A name for a location from its folder: its last part, or the drive's letter.
-const nameFor = (path: string) =>
-  (path.split(/[\\/]/).filter(Boolean).pop() ?? "").toLowerCase().replace(/:$/, "").replace(/[^a-z0-9_-]+/g, "-").replace(/^[^a-z0-9]+/, "").slice(0, 40);
+const GB = 1 << 30;
 
-// AddLocation makes a drive, or a folder on one, network storage: the drive,
-// the folder on it, and the name its address ends in.
+// AddLocation makes a drive of its own: the drive whose free room it takes,
+// how much, the letter it gets, and its name.
 function AddLocation({ onClose, onAdded }: { onClose: () => void; onAdded: (list: StorageLocation[]) => void }) {
   const notify = useNotify();
-  const [drives, setDrives] = useState<DriveRoot[]>([]);
-  const [drive, setDrive] = useState("");
-  const [path, setPath] = useState("");
+  const [drives, setDrives] = useState<DriveRoot[] | null>(null);
+  const [letters, setLetters] = useState<string[]>([]);
+  const [from, setFrom] = useState("");
+  const [size, setSize] = useState("");
+  const [letter, setLetter] = useState("");
   const [name, setName] = useState("");
-  const [named, setNamed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const pick = (to: string) => {
-    setPath(to);
-    if (!named) setName(nameFor(to));
-  };
   useEffect(() => {
     locations.drives().then((d) => {
-      setDrives(d);
-      if (d[0]) {
-        setDrive(d[0].path);
-        setPath(d[0].path);
-        setName(nameFor(d[0].path));
-      }
+      setDrives(d.drives);
+      setLetters(d.letters);
+      // The drive with the most room, and the first free letter.
+      const roomiest = [...d.drives].sort((a, b) => (b.space?.free ?? 0) - (a.space?.free ?? 0))[0];
+      if (roomiest) setFrom(roomiest.path);
+      if (d.letters[0]) setLetter(d.letters[0]);
     }).catch((e) => notify(message(e), "bad"));
   }, [notify]);
+  const source = drives?.find((d) => d.path === from);
+  // Room left over on the drive it comes from, so that drive never fills.
+  const most = Math.max(0, Math.floor((source?.space?.free ?? 0) / GB) - 1);
+  const gb = Number(size);
+  const ok = !!from && !!letter && !!name && gb >= 1 && gb <= most;
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!ok) return;
     setBusy(true);
     try {
-      onAdded((await locations.add(name, path)).locations);
-      notify(`Added ${name}`);
+      onAdded((await locations.add(name, from, gb, letter)).locations);
+      notify(`Making ${letter}: from ${from}`);
     } catch (err) {
       notify(message(err), "bad");
       setBusy(false);
@@ -160,26 +173,29 @@ function AddLocation({ onClose, onAdded }: { onClose: () => void; onAdded: (list
   return (
     <Dialog title="Add location" onClose={onClose}>
       <form onSubmit={submit}>
-        {drives.length > 0 && (
-          <div className="tf static">
-            <div className="tf-box">
-              <Dropdown label="Drive" value={drive} onChange={(d) => {
-                setDrive(d);
-                pick(d);
-              }} options={drives.map((d) => ({ value: d.path, label: d.path, hint: d.space ? `${bytes(d.space.free)} free of ${bytes(d.space.total)}` : undefined }))} />
-              <span className="tf-label">Drive</span>
-            </div>
+        {drives && drives.length === 0 && <p className="muted">There is no drive here to make one from.</p>}
+        <div className="tf static">
+          <div className="tf-box">
+            <Dropdown label="Take room from" value={from} onChange={setFrom}
+              options={(drives ?? []).map((d) => ({ value: d.path, label: d.path, hint: d.space ? `${bytes(d.space.free)} free of ${bytes(d.space.total)}` : undefined }))} />
+            <span className="tf-label">Take room from</span>
           </div>
-        )}
-        <TextField label="Folder" mono autoComplete="off" value={path} onChange={pick} hint="The whole drive, or a folder on it" />
+        </div>
+        <TextField label="Size in GB" mono inputMode="numeric" autoComplete="off" value={size}
+          onChange={(v) => setSize(v.replace(/\D/g, "").slice(0, 6))}
+          hint={source ? `Up to ${most} GB; it is all set aside on ${from} now` : undefined} />
+        <div className="tf static">
+          <div className="tf-box">
+            <Dropdown label="Letter" value={letter} onChange={setLetter} options={letters.map((l) => ({ value: l, label: `${l}:` }))} />
+            <span className="tf-label">Letter</span>
+          </div>
+        </div>
         <TextField label="Name" autoComplete="off" value={name}
-          onChange={(v) => {
-            setNamed(true);
-            setName(v.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40));
-          }} hint={name ? `Its address ends in /dav/${name}` : undefined} />
+          onChange={(v) => setName(v.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 32))}
+          hint={name ? `Its address ends in /dav/${name}` : undefined} />
         <div className="edit-actions">
           <button type="button" className="btn text" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={busy || !name || !path}>{busy && <span className="spinner small on-accent" />}Add location</button>
+          <button className="btn primary" disabled={busy || !ok}>{busy && <span className="spinner small on-accent" />}Make drive</button>
         </div>
       </form>
     </Dialog>

@@ -173,12 +173,12 @@
     # prompt, on a screen no one may be at. Setup and the panel's updates run
     # this with MYTUNNELS_PROGRESS and never ask; setup takes it itself.
     $helpers = Join-Path $env:ProgramFiles 'myTunnels'
-    $granted = (Test-Path (Join-Path $helpers 'firewall\program.txt')) -and (Test-Path (Join-Path $helpers 'apps\apps.ps1'))
+    $granted = (Test-Path (Join-Path $helpers 'firewall\program.txt')) -and (Test-Path (Join-Path $helpers 'apps\apps.ps1')) -and (Test-Path (Join-Path $helpers 'drives\drives.ps1'))
     if (-not $env:MYTUNNELS_PROGRESS -and -not $granted) {
-        Write-Host 'Windows asks once to let myTunnels open firewall ports and install apps with no prompt from then on.'
+        Write-Host 'Windows asks once to let myTunnels open firewall ports, install apps and make drives with no prompt from then on.'
         $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
         try {
-            $grant = Start-Process $exe -ArgumentList 'grant', $sid, 'firewall', 'apps' -Verb RunAs -WindowStyle Hidden -Wait -PassThru
+            $grant = Start-Process $exe -ArgumentList 'grant', $sid, 'firewall', 'apps', 'drives' -Verb RunAs -WindowStyle Hidden -Wait -PassThru
             if ($grant.ExitCode -ne 0) { Write-Host 'That step did not finish. Running this again asks again.' }
         }
         catch { Write-Host 'Not allowed, so Windows Firewall ports and app installs wait until this runs again.' }

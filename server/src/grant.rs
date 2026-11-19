@@ -1,9 +1,10 @@
-//! `mytunnels grant <account> [hardware] [firewall] [apps] [docker] [tailscale]`,
+//! `mytunnels grant <account> [hardware] [firewall] [apps] [drives] [docker] [tailscale]`,
 //! which setup runs once with administrator rights, so what would ask for
 //! them later is in place from the start: `hardware` the sensor task behind
 //! the Dashboard's Advanced view, `firewall` the helper that opens router
 //! ports on this computer with no prompt, `apps` the helper that installs
-//! Apps' catalog with no prompt, and `docker` and `tailscale` those
+//! Apps' catalog with no prompt, `drives` the helper that makes Storage's
+//! drives with no prompt, and `docker` and `tailscale` those
 //! apps, which Services and private routes run on. `<account>` is the SID of
 //! the account myTunnels runs as, the one the firewall helper takes asks from.
 //!
@@ -15,7 +16,7 @@
 use anyhow::{bail, Result};
 
 const USE: &str =
-    "use: mytunnels grant <account SID> [hardware] [firewall] [apps] [docker] [tailscale]";
+    "use: mytunnels grant <account SID> [hardware] [firewall] [apps] [drives] [docker] [tailscale]";
 
 pub async fn command(args: &[String]) -> Result<()> {
     let result = grant(args).await;
@@ -26,8 +27,8 @@ pub async fn command(args: &[String]) -> Result<()> {
     result
 }
 
-/// Whether this computer still needs the one admin step for router ports and
-/// app installs: on Windows, until both helpers are in place.
+/// Whether this computer still needs the one admin step for router ports,
+/// app installs and drives: on Windows, until every helper is in place.
 pub fn missing() -> bool {
     if !cfg!(windows) {
         return false;
@@ -36,12 +37,18 @@ pub fn missing() -> bool {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| r"C:\Program Files".into())
         .join("myTunnels");
-    !(dir.join(r"firewall\program.txt").is_file() && dir.join(r"apps\apps.ps1").is_file())
+    ![
+        r"firewall\program.txt",
+        r"apps\apps.ps1",
+        r"drives\drives.ps1",
+    ]
+    .iter()
+    .all(|f| dir.join(f).is_file())
 }
 
 /// Takes the one admin step on this computer's screen, when the person
 /// running it asks from the dashboard: Windows asks once, and from then on
-/// router ports and app installs never ask.
+/// router ports, app installs and drives never ask.
 pub fn ask_windows() -> Result<()> {
     #[cfg(windows)]
     {
@@ -50,7 +57,7 @@ pub fn ask_windows() -> Result<()> {
             crate::config::program().ok_or_else(|| anyhow::anyhow!("cannot find this program"))?;
         let script = format!(
             "$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value; \
-             Start-Process -FilePath '{}' -ArgumentList 'grant',$sid,'firewall','apps' -Verb RunAs -WindowStyle Hidden",
+             Start-Process -FilePath '{}' -ArgumentList 'grant',$sid,'firewall','apps','drives' -Verb RunAs -WindowStyle Hidden",
             exe.display().to_string().replace('\'', "''")
         );
         std::process::Command::new("powershell")
@@ -103,8 +110,10 @@ async fn grant(args: &[String]) -> Result<()> {
             "firewall" => Err(anyhow::anyhow!("only Windows needs this step")),
             #[cfg(windows)]
             "apps" => crate::apps::grant_helper(sid),
+            #[cfg(windows)]
+            "drives" => crate::locations::grant_helper(sid),
             #[cfg(not(windows))]
-            "apps" => Err(anyhow::anyhow!("only Windows needs this step")),
+            "apps" | "drives" => Err(anyhow::anyhow!("only Windows needs this step")),
             "docker" | "tailscale" => {
                 let id = want.clone();
                 tokio::task::spawn_blocking(move || crate::apps::install_now(&id))
