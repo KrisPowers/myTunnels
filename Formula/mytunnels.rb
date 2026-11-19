@@ -43,22 +43,22 @@ class Mytunnels < Formula
   on_macos do
     on_arm do
       url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.80/macos-arm64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "5813ec333c999484f4ae2108a5880e8c0adc92d3e288d3cbe5d2dd6545c7baf8"
+      sha256 "4ac76d6ebc772decad34990886b4a5b9d8174216c0ca5f883eb9ba9536d5b090"
     end
     on_intel do
       url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.80/macos-x64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "249e5f43dcc0227eec53183341c19a25f7e41352783f6f3f87f1847021768955"
+      sha256 "ac8ee330968192c5a2b1de8669c5ea961e3f07319dda5c82d90e4f13783cddbf"
     end
   end
 
   on_linux do
     on_arm do
       url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.80/linux-arm64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "a97f258179e661be4f64567669610b321c18b41043aa9a32d9e8b96fd9de1edd"
+      sha256 "1d216847b53a185cefb1510bc81ab7de6d36d5a42139e4d8af2e503952cb8b94"
     end
     on_intel do
       url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.80/linux-x64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "7e55915cd79208b507579b0b004932b085481a0da5df34d4bdd9b013aa61d8d3"
+      sha256 "1c10045ca62c7a53b4010e04aadb2598ea66a9fa37fab31c419420d5a12971e7"
     end
   end
 
