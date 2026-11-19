@@ -6,7 +6,6 @@ export const DOCS: [string, string, IconName][] = [
   ["start", "Getting started", "info"],
   ["dashboard", "Dashboard", "dashboard"],
   ["containers", "Containers", "deployed_code"],
-  ["automations", "Automations", "workflow"],
   ["forward", "Routes", "wifi_cog"],
   ["storage", "Storage", "cloud"],
   ["mail", "Mail", "mail"],
@@ -98,24 +97,10 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Containers</b> is every container Docker runs here, one table: what it is and where it comes from, its status, the ports it publishes, and its CPU and memory while it runs. Compose projects with more than one container fold under a row of their own. Search, or show all, running or stopped. A row's menu starts, restarts, stops, opens its logs or deletes it; the menu at the top deletes every image no container uses.</p>
       </Doc>
       <Doc title="Adding one">
-        <p><b>Add container</b> is one dialog: pick <b>Image</b> to run one such as <code>nginx:1.27</code>, <b>Folder</b> to build a folder on this computer with a Dockerfile into an image here and run it, as Docker Desktop does, or <b>GitHub</b> to build one from a repository and branch (a token for a private one). Name it and say how it updates; its first pull or build starts at once. How it keeps updating, and what each new build must pass, is its automation, on <b>Automations</b>.</p>
+        <p><b>Add container</b> is one dialog: pick <b>Image</b> to run one such as <code>nginx:1.27</code>, <b>Folder</b> to build a folder on this computer with a Dockerfile into an image here and run it, as Docker Desktop does, or <b>GitHub</b> to build one from a repository and branch (a token for a private one). Name it and say how it updates; its first pull or build starts at once. How it keeps updating is in its <b>Settings</b>.</p>
       </Doc>
       <Doc title="One container">
         <p>Its heading holds its state, health and source, the one button its state calls for (start, stop or resume) and a menu for the rest. Under it: <b>Overview</b> (its CPU, memory, network and disk while it runs, then what it runs, its state, ports, networks and mounts), <b>Images</b> (its builds or images, each one's log, and going back to one), <b>Logs</b>, <b>Resources</b> (CPU and memory limits, processes and <b>Auto-start</b>) and, when built from a repository, <b>Settings</b>. Exposing a container's port is a route, on <b>Routes</b>.</p>
-      </Doc>
-    </>
-  ),
-  automations: (
-    <>
-      <Doc title="What an automation is">
-        <p>Each container added from GitHub or an image has one: what starts a new build, the build, the steps it must pass, then going live. <b>Automations</b> lists them, with how each starts, what its flow does and how its last run went; builds waiting for review sit at the top, with <b>Approve</b> and <b>Turn down</b>.</p>
-      </Doc>
-      <Doc title="What starts it">
-        <p><b>On push</b> builds each new commit on the branch. <b>On release</b> builds each new GitHub release, at the commit its tag points to, looked for every five minutes. <b>On a timer</b> builds the latest commit, or pulls the image again, every so often. <b>By hand</b> waits for <b>Run now</b>.</p>
-      </Doc>
-      <Doc title="The flow">
-        <p>An automation's <b>Flow</b> tab draws it as it runs. Between the build and going live, add as many steps as you like, in any order: a <b>Test</b> is a command run in the new image with the container's environment, such as <code>npm test</code>, which must exit 0, its output kept in the run's log; a <b>Review</b> holds the build until someone approves it. A build that fails a test, or is turned down, never runs, and the container stays as it was. Going live makes the container again from the new image; one that will not start is undone and the one before comes back.</p>
-        <p><b>Runs</b> is every build with its reason, commit, status and log, and going back to an earlier one; <b>Settings</b> is the repository, branch, Dockerfile, port, environment and kept folders.</p>
       </Doc>
     </>
   ),

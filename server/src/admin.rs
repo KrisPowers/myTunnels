@@ -104,18 +104,6 @@ pub fn router(state: AppState) -> Router {
             "/deploys/{id}/builds/{number}/use",
             post(crate::deploy::use_build),
         )
-        .route(
-            "/deploys/{id}/builds/{number}/approve",
-            post(crate::deploy::approve),
-        )
-        .route(
-            "/deploys/{id}/builds/{number}/reject",
-            post(crate::deploy::reject),
-        )
-        .route(
-            "/deploys/{id}/flow",
-            get(crate::flow::get_steps).put(crate::flow::set_steps),
-        )
         .route("/routes", get(list_routes).post(create_route))
         .route("/routes/{id}", patch(update_route).delete(delete_route))
         .route("/routes/{id}/address", put(move_route))
