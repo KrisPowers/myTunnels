@@ -268,6 +268,15 @@ async fn harden(req: Request, next: Next) -> Response {
     let https = req.extensions().get::<crate::tls::Https>().is_some();
     let mut response = next.run(req).await;
     let headers = response.headers_mut();
+    // The page itself is asked for again each time, so the dashboard an update
+    // brings opens at once rather than one a browser kept from before.
+    let page = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|t| t.starts_with("text/html"));
+    if page && !headers.contains_key(header::CACHE_CONTROL) {
+        headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    }
     // Over HTTPS, the session cookie is never sent over plain HTTP.
     if https {
         let cookies: Vec<HeaderValue> = headers
