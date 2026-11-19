@@ -29,7 +29,7 @@ use crate::{oauth, proxy};
 /// Host-only cookies: the `__Host-` prefix makes browsers refuse them with a domain.
 pub const DEVICE_COOKIE: &str = "__Host-gate_device";
 const PASS_COOKIE: &str = "__gate_pass";
-const USER_COOKIE: &str = "__Host-gate_user";
+pub const USER_COOKIE: &str = "__Host-gate_user";
 /// The cookies earlier versions set for the whole domain. A device key found there
 /// is kept as this host's own, and all of them are cleared.
 const LEGACY_DEVICE_COOKIE: &str = "__gate_device";
@@ -311,6 +311,23 @@ async fn serve(
         log(state, &route, "visit", "opened", None, ip, req.headers());
     }
     let mut response = if verdict.allowed() && route.target_scheme == "dashboard" {
+        // Signed in here, so signed in to the dashboard: one sign-in, not two.
+        let minted = route
+            .require_login
+            .then(|| user_session(state, snap, req.headers(), &route))
+            .flatten()
+            .and_then(|subject| crate::admin::gate_session(state, req.headers(), &subject));
+        if let Some((now, keep)) = minted {
+            // First, so it is read before any ended session this browser still sends.
+            let headers = req.headers_mut();
+            let sent: Vec<HeaderValue> = headers.get_all(header::COOKIE).iter().cloned().collect();
+            headers.remove(header::COOKIE);
+            headers.append(header::COOKIE, now);
+            for value in sent {
+                headers.append(header::COOKIE, value);
+            }
+            new_cookies.push(keep);
+        }
         dashboard(panel, ip, req).await
     } else if verdict.allowed() {
         let mut response = proxy::forward(state, snap, &route, ip, req).await;

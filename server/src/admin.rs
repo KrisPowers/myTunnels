@@ -614,17 +614,58 @@ fn start_session(state: &AppState, subject: &str, tag: &str) -> ApiResult<Respon
         .into_response())
 }
 
+/// For a dashboard reached through a tunnel the account `subject` signed in
+/// at: a panel session of its own, so it signs in once. None when the request
+/// holds one already or the account may not use the dashboard. Gives the
+/// cookie for this request and the one that keeps it.
+pub fn gate_session(
+    state: &AppState,
+    headers: &HeaderMap,
+    subject: &str,
+) -> Option<(HeaderValue, HeaderValue)> {
+    if caller(state, headers).is_some() {
+        return None;
+    }
+    let user = state.snapshot().users.get(subject).cloned()?;
+    if !user.enabled || !user.holds("dashboard") {
+        return None;
+    }
+    let tag = secret::tag(&user.password_hash);
+    let sid = state.open_session(&state.admin_sessions, subject, &tag, "", ADMIN_TTL, false);
+    let now = HeaderValue::from_str(&format!("{ADMIN_COOKIE}={sid}")).ok()?;
+    let keep = HeaderValue::from_str(&format!(
+        "{ADMIN_COOKIE}={sid}; Path=/; Max-Age={ADMIN_TTL}; HttpOnly; Secure; SameSite=Strict"
+    ))
+    .ok()?;
+    Some((now, keep))
+}
+
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Some(session) =
         cookie(&headers, ADMIN_COOKIE).and_then(|v| state.session(&state.admin_sessions, v))
     {
         state.end_session(&state.admin_sessions, &session);
     }
+    // Through a tunnel, its sign-in goes too, or it would sign the dashboard in again.
+    if let Some(session) =
+        cookie(&headers, gate::USER_COOKIE).and_then(|v| state.session(&state.user_sessions, v))
+    {
+        state.end_session(&state.user_sessions, &session);
+    }
     (
-        [(
-            header::SET_COOKIE,
-            format!("{ADMIN_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"),
-        )],
+        [
+            (
+                header::SET_COOKIE,
+                format!("{ADMIN_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"),
+            ),
+            (
+                header::SET_COOKIE,
+                format!(
+                    "{}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
+                    gate::USER_COOKIE
+                ),
+            ),
+        ],
         Json(json!({ "ok": true })),
     )
         .into_response()
