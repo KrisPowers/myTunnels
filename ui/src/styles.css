@@ -1458,11 +1458,13 @@ main.page:has(> .dash) > .dash { flex: 1; min-height: 0; }
 
 /* A chip per part, as a console's drive bays. An empty slot is "vacant",
    never "empty", which is the page-wide padded empty state. */
-.bays { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.bays { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
 .bay {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; height: 34px; padding: 0 10px;
   border: 1px solid var(--line-strong); border-radius: var(--radius); font-size: 13px; font-weight: 500; white-space: nowrap;
 }
+.bay > .dot { flex-shrink: 0; }
+.bay-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .bay.vacant { border-style: dashed; color: var(--text-3); }
 .side-notes { display: grid; gap: 6px; }
 .side-notes p { margin: 0; font-size: 12.5px; line-height: 1.45; }

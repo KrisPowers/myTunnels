@@ -213,13 +213,14 @@ function Bays({ parts }: { parts: HwPart[] }) {
     const vacant = p.health === "empty";
     return (
       <span key={p.id} className={"bay" + (vacant ? " vacant" : "")} title={vacant ? "Empty slot" : [p.name, p.reason].filter(Boolean).join("\n")}>
-        <span className={vacant ? "dot" : dot(p.health)} />{label}
+        <span className={vacant ? "dot" : dot(p.health)} /><span className="bay-name">{label}</span>
       </span>
     );
   };
   return (
     <div className="bays">
-      {memory.map((p, i) => chip(p, !p.place && p.health !== "empty" ? "Memory" : "DIMM " + (p.place.replace(/^Channel([A-Z])-DIMM(\d+)$/, (_, c: string, d: string) => `${c}${Number(d) + 1}`) || i + 1)))}
+      {/* Slots by their order on the board, as each machine names them its own way. */}
+      {memory.map((p, i) => chip(p, memory.length > 1 ? `DIMM ${i + 1}` : "DIMM"))}
       {drives.map((d) => chip(d, numbered(kindOf(d), drives.filter((x) => kindOf(x) === kindOf(d)).length)))}
       {gpus.map((g) => chip(g, numbered("GPU", gpus.length)))}
     </div>
