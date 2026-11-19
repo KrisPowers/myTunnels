@@ -202,8 +202,6 @@ export interface Status {
   public_ips: string[];
   // The running cloudflared, such as "2026.10.7".
   version: string | null;
-  // Windows' one yes for router ports and app installs, not given yet.
-  windows_step?: boolean;
 }
 
 // What the Dashboard shows, sampled on the server every `every` seconds, the
@@ -763,8 +761,6 @@ export const api = {
 
   settings: () => call<Settings>("/settings"),
   status: () => call<Status>("/status"),
-  // Takes Windows' one yes on the host's own screen.
-  windowsStep: () => call("/settings/windows", "POST"),
   // Whether a newer release than the one installed is out, and installing it.
   update: () => call<{ available: boolean; current?: string; latest?: string; progress?: { step: string; percent: number | null; error?: string } | null }>("/update"),
   installUpdate: () => call("/update", "POST"),

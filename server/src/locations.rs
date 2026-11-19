@@ -165,11 +165,6 @@ pub async fn add(
     if !cfg!(windows) {
         return Err(ApiError::bad("Making a drive works on Windows for now"));
     }
-    if crate::grant::missing() {
-        return Err(ApiError::bad(
-            "Making a drive needs Windows' one yes first: Allow it from the bell, on this computer",
-        ));
-    }
     let name = body.name.trim().to_owned();
     if !valid_name(&name) {
         return Err(ApiError::bad(
@@ -236,7 +231,11 @@ pub async fn add(
     let worker = state.clone();
     tokio::spawn(async move {
         let progress = |p: u8| change(&worker, &id, |l| l.making = Some(p));
-        let done = helper::ask(&ask, Duration::from_secs(4 * 3600), progress).await;
+        // The drives helper put in place first if this computer lacks it.
+        let done = match crate::grant::ensure().await {
+            Ok(()) => helper::ask(&ask, Duration::from_secs(4 * 3600), progress).await,
+            Err(err) => Err(format!("{err:#}")),
+        };
         change(&worker, &id, |l| {
             l.making = None;
             l.error = done.err();
@@ -259,6 +258,9 @@ pub async fn remove(
     // The drive goes with what is on it.
     if !place.image.is_empty() && Path::new(&place.image).exists() {
         let ask = json!({ "action": "remove", "image": place.image });
+        crate::grant::ensure()
+            .await
+            .map_err(|e| ApiError::bad(format!("{e:#}")))?;
         helper::ask(&ask, Duration::from_secs(120), |_| {})
             .await
             .map_err(ApiError::bad)?;

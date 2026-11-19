@@ -50,7 +50,6 @@ pub fn router(state: AppState) -> Router {
         .route("/settings", get(settings))
         .route("/settings/cloudflare", put(save_cloudflare))
         .route("/settings/network", put(save_network))
-        .route("/settings/windows", post(windows_step))
         .route(
             "/settings/registrars/{host}",
             put(save_registrar).delete(remove_registrar),
@@ -1349,16 +1348,7 @@ async fn status(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         "logs": view.logs,
         "version": view.version,
         "public_ips": public_ips,
-        // Windows' one yes for router ports and app installs, not given yet.
-        "windows_step": crate::grant::missing(),
     })))
-}
-
-/// Takes the one admin step for router ports and app installs, on this
-/// computer's screen.
-async fn windows_step() -> ApiResult<Json<Value>> {
-    crate::grant::ask_windows().map_err(|e| ApiError::bad(format!("{e:#}")))?;
-    Ok(Json(json!({ "ok": true })))
 }
 
 async fn metrics() -> Json<Value> {
