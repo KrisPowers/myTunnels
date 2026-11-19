@@ -298,6 +298,15 @@ impl AppState {
             .is_some_and(|(count, since)| *count >= MAX_FAILURES && now - since < FAILURE_WINDOW)
     }
 
+    /// True once `key` has failed `max` times within `window` seconds, at most
+    /// the usual window.
+    pub fn failed_too_often(&self, key: &str, max: u32, window: i64) -> bool {
+        let now = now();
+        lock(&self.failures)
+            .get(key)
+            .is_some_and(|(count, since)| *count >= max && now - since < window.min(FAILURE_WINDOW))
+    }
+
     /// Wrong tries counted under `key` in the current window.
     pub fn failure_count(&self, key: &str) -> u32 {
         let now = now();

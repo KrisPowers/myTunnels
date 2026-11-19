@@ -381,8 +381,11 @@ impl Mail {
         ip: IpAddr,
     ) -> Result<String, Option<&'static str>> {
         let user = user.trim().to_ascii_lowercase();
-        let (by_ip, by_user) = (format!("mail-ip:{ip}"), format!("mail-user:{user}"));
-        if self.state.locked_out(&by_ip) || self.state.locked_out(&by_user) {
+        // Five wrong tries in 15 minutes hold back the address they came from,
+        // never the account: a mail app retrying an old password, or someone
+        // else guessing, never locks its owner out of the right one.
+        let by_ip = format!("mail-ip:{ip}");
+        if self.state.failed_too_often(&by_ip, 5, 15 * 60) {
             return Err(Some("too many failed sign-ins; try again later"));
         }
         let account = self.store.account(&user).ok().flatten().filter(|a| a.apps);
@@ -396,12 +399,10 @@ impl Mail {
         match account {
             Some(a) if good => {
                 self.state.clear_failures(&by_ip);
-                self.state.clear_failures(&by_user);
                 Ok(a.address)
             }
             Some(_) => {
                 self.state.record_failure(&by_ip);
-                self.state.record_failure(&by_user);
                 tracing::info!("a mail app failed to sign in to {user} from {ip}");
                 Err(None)
             }
