@@ -6,8 +6,8 @@
 //! in with a myTunnels account that may use Storage: reading with Storage's
 //! view permission, changing with its edit permission.
 //!
-//! On Windows the drive is a virtual disk, `<drive>:\drives\<name>.vhdx`, its
-//! whole size set aside when it is made, formatted NTFS. Making, attaching and
+//! On Windows the drive is a fixed virtual disk, `<drive>:\drives\<name>.vhd`,
+//! its whole size set aside at once when it is made, formatted NTFS. Making, attaching and
 //! removing one needs administrator rights, so the "myTunnels Drives" task does
 //! it as SYSTEM, put in place by the one admin step.
 
@@ -200,6 +200,9 @@ pub async fn add(
     if body.size_gb == 0 {
         return Err(ApiError::bad("Give it at least 1 GB"));
     }
+    if body.size_gb > MOST_GB {
+        return Err(ApiError::bad(format!("A drive can be up to {MOST_GB} GB")));
+    }
     let size = body.size_gb.saturating_mul(GB);
     let free = crate::storage::disk(&root(from)).map_or(0, |(free, _)| free);
     // Room left over on the drive it comes from, so that drive never fills.
@@ -209,7 +212,7 @@ pub async fn add(
             free.saturating_sub(GB) / GB
         )));
     }
-    let image = format!("{from}:\\drives\\{name}.vhdx");
+    let image = format!("{from}:\\drives\\{name}.vhd");
     if Path::new(&image).exists() {
         return Err(ApiError::conflict(format!("{image} is there already")));
     }
@@ -294,9 +297,31 @@ pub async fn drives(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     Ok(Json(json!({ "drives": drives, "letters": letters })))
 }
 
+/// The largest drive, the most a fixed VHD holds.
+const MOST_GB: u64 = 2040;
+
 /// Puts the drives helper in place: see `helper::grant`.
 #[cfg(windows)]
 pub use helper::grant as grant_helper;
+
+/// Brings the drives helper up to this release's copy when the one in place
+/// differs: it takes that copy from the release itself, with no prompt.
+#[cfg(windows)]
+pub fn refresh_helper() {
+    tokio::spawn(async {
+        let Some(tag) = crate::update::installed() else {
+            return;
+        };
+        if !helper::stale() {
+            return;
+        }
+        let ask = json!({ "action": "refresh", "tag": tag });
+        match helper::ask(&ask, Duration::from_secs(120), |_| {}).await {
+            Ok(()) => tracing::info!("the drives helper is now {tag}'s"),
+            Err(err) => tracing::warn!("the drives helper was not brought up to date: {err}"),
+        }
+    });
+}
 
 /// The "myTunnels Drives" task, which makes, attaches and removes drives as
 /// SYSTEM, and the asks myTunnels leaves it.
@@ -339,6 +364,14 @@ mod helper {
             &script,
             "Makes and attaches the drives Storage keeps, and attaches them again at boot.",
         )
+    }
+
+    /// Whether the helper in place is not this release's copy.
+    #[cfg(windows)]
+    pub fn stale() -> bool {
+        let placed = under("ProgramFiles", r"C:\Program Files").join("drives.ps1");
+        std::fs::read_to_string(placed)
+            .is_ok_and(|text| text.replace('\r', "") != SCRIPT.replace('\r', ""))
     }
 
     /// Leaves `ask` for the helper and waits up to `wait` for it, telling

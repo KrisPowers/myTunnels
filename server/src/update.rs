@@ -31,7 +31,7 @@ const FRESH: Duration = Duration::from_secs(60);
 static FOUND: Mutex<Option<(Instant, String)>> = Mutex::new(None);
 
 /// The release this program was installed from, when an install script put it here.
-fn installed() -> Option<String> {
+pub fn installed() -> Option<String> {
     let dir = config::program()?.parent()?.to_path_buf();
     let tag = std::fs::read_to_string(dir.join("release")).ok()?;
     Some(tag.trim().to_owned()).filter(|t| !t.is_empty())
