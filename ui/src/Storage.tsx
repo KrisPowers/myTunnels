@@ -110,7 +110,7 @@ function Locations({ onOpen }: { onOpen: (to: StorageLocation | "own") => void }
                         : <span className="chip">Not attached</span>}
                     </td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      {l.url ? <Copy text={l.url} /> : <a href="#/routes/new">Expose this dashboard to reach it</a>}
+                      {l.url ? <Copy text={mapCommand(l.url)} /> : <a href="#/routes/new">Expose this dashboard to reach it</a>}
                     </td>
                     <td className="svc-menu" onClick={(e) => e.stopPropagation()}>
                       {me.admin && l.making === null && <MoreMenu label={`Actions for ${l.name}`} actions={[{ label: "Remove", icon: "delete", danger: true, confirm: "Remove with everything on it", onClick: () => remove(l) }]} />}
@@ -131,6 +131,14 @@ function Locations({ onOpen }: { onOpen: (to: StorageLocation | "own") => void }
 }
 
 const GB = 1 << 30;
+
+// The command that maps a location as a drive with a letter of its own on
+// another Windows computer: File Explorer shows it under This PC with its size
+// and free room, rather than as a network folder.
+const mapCommand = (url: string) => {
+  const { host, pathname } = new URL(url);
+  return `net use * "\\\\${host}@SSL${pathname.replace(/\//g, "\\")}" /persistent:yes`;
+};
 
 // AddLocation makes a drive of its own: the drive whose free room it takes,
 // how much, the letter it gets, and its name.

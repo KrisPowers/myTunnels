@@ -168,7 +168,7 @@ export function MailPage() {
       {password && <PasswordDialog address={password} onState={setState} onClose={() => setPassword(null)} />}
       {appFor && (
         <Dialog title={`Mail app for ${appFor}`} wide onClose={() => setAppFor(null)}>
-          {state.servers ? <div className="stack"><MailApp servers={state.servers} address={appFor} /></div> : <Callout tone="warn" icon="warning">Waiting for Tailscale</Callout>}
+          {state.servers ? <div className="stack"><MailApp servers={state.servers} addresses={[appFor]} /></div> : <Callout tone="warn" icon="warning">Waiting for Tailscale</Callout>}
         </Dialog>
       )}
     </>
@@ -205,9 +205,9 @@ function MailboxRow({ account: a, runs, onState, onPassword, onApp }: { account:
 // MailApp is what a mail app such as Outlook asks for, each on a line of its
 // own: the incoming and outgoing servers, their ports and encryption, and the
 // sign-in. Both take TLS from the first byte, which mail apps call SSL/TLS.
-function MailApp({ servers, address }: { servers: NonNullable<MailState["servers"]>; address?: string }) {
-  const user = address ? <Copy text={address} /> : <span>The full address</span>;
-  const pass = <span>{address ? "This mailbox's password" : "The mailbox's password"}</span>;
+function MailApp({ servers, addresses }: { servers: NonNullable<MailState["servers"]>; addresses: string[] }) {
+  const user = <span className="mail-users">{addresses.map((a) => <Copy key={a} text={a} />)}</span>;
+  const pass = <span>{addresses.length === 1 ? "This mailbox's password" : "That mailbox's password"}</span>;
   return (
     <>
       <Card title="Incoming mail (IMAP)">
@@ -431,7 +431,7 @@ function SettingsDialog({ state, onState, onClose }: { state: MailState; onState
             </div>
           )}
         </Card>
-        {state.servers ? <MailApp servers={state.servers} /> : <Card title="Mail apps"><Row title="Waiting for Tailscale" /></Card>}
+        {state.servers ? <MailApp servers={state.servers} addresses={state.accounts.map((a) => a.address)} /> : <Card title="Mail apps"><Row title="Waiting for Tailscale" /></Card>}
         <Card title="Incoming mail">
           <Row title="Refuse spoofed mail" sub="Turn away what its sender's DMARC rejects, rather than file it in Junk">
             <Switch label="Refuse spoofed mail" on={s.reject_dmarc} onChange={(v) => act(() => api.mailOptions({ reject_dmarc: v }))} />

@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Path as UrlPath, Request, State};
@@ -23,6 +23,11 @@ use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use base64::Engine;
+use dav_server::davpath::DavPath;
+use dav_server::fs::{
+    DavDirEntry, DavFile, DavFileSystem, DavMetaData, FsError, FsFuture, FsStream, OpenOptions,
+    ReadDirMeta,
+};
 use dav_server::localfs::LocalFs;
 use dav_server::memls::MemLs;
 use dav_server::{DavConfig, DavHandler, DavMethodSet};
@@ -212,7 +217,9 @@ pub async fn add(
             free.saturating_sub(GB) / GB
         )));
     }
-    let image = format!("{from}:\\drives\\{name}.vhd");
+    // A helper from before 0.1.80 makes only .vhdx, until it is put in place again.
+    let kind = if helper::takes_vhd() { "vhd" } else { "vhdx" };
+    let image = format!("{from}:\\drives\\{name}.{kind}");
     if Path::new(&image).exists() {
         return Err(ApiError::conflict(format!("{image} is there already")));
     }
@@ -366,6 +373,12 @@ mod helper {
         )
     }
 
+    /// Whether the helper in place makes a drive as a .vhd, at once.
+    pub fn takes_vhd() -> bool {
+        std::fs::read_to_string(under("ProgramFiles", r"C:\Program Files").join("drives.ps1"))
+            .is_ok_and(|text| text.contains("vhdx?$"))
+    }
+
     /// Whether the helper in place is not this release's copy.
     #[cfg(windows)]
     pub fn stale() -> bool {
@@ -447,17 +460,70 @@ fn handler(l: &Location) -> DavHandler {
         .entry(key)
         .or_insert_with(|| {
             DavHandler::builder()
-                .filesystem(LocalFs::new(
-                    &l.path,
-                    false,
-                    cfg!(windows),
-                    cfg!(target_os = "macos"),
-                ))
+                .filesystem(Box::new(Volume {
+                    files: *LocalFs::new(&l.path, false, cfg!(windows), cfg!(target_os = "macos")),
+                    root: PathBuf::from(&l.path),
+                }))
                 .locksystem(MemLs::new())
                 .strip_prefix(format!("/dav/{}", l.name))
                 .build_handler()
         })
         .clone()
+}
+
+/// A location's files, with its drive's size and free room, so a mapped
+/// network drive shows them as File Explorer shows a local drive's.
+#[derive(Clone)]
+struct Volume {
+    files: LocalFs,
+    root: PathBuf,
+}
+
+impl DavFileSystem for Volume {
+    fn open<'a>(&'a self, path: &'a DavPath, options: OpenOptions) -> FsFuture<'a, Box<dyn DavFile>> {
+        self.files.open(path, options)
+    }
+    fn read_dir<'a>(
+        &'a self,
+        path: &'a DavPath,
+        meta: ReadDirMeta,
+    ) -> FsFuture<'a, FsStream<Box<dyn DavDirEntry>>> {
+        self.files.read_dir(path, meta)
+    }
+    fn metadata<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, Box<dyn DavMetaData>> {
+        self.files.metadata(path)
+    }
+    fn symlink_metadata<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, Box<dyn DavMetaData>> {
+        self.files.symlink_metadata(path)
+    }
+    fn create_dir<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
+        self.files.create_dir(path)
+    }
+    fn remove_dir<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
+        self.files.remove_dir(path)
+    }
+    fn remove_file<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
+        self.files.remove_file(path)
+    }
+    fn rename<'a>(&'a self, from: &'a DavPath, to: &'a DavPath) -> FsFuture<'a, ()> {
+        self.files.rename(from, to)
+    }
+    fn copy<'a>(&'a self, from: &'a DavPath, to: &'a DavPath) -> FsFuture<'a, ()> {
+        self.files.copy(from, to)
+    }
+    fn set_modified<'a>(&'a self, path: &'a DavPath, tm: SystemTime) -> FsFuture<'a, ()> {
+        self.files.set_modified(path, tm)
+    }
+    fn set_created<'a>(&'a self, path: &'a DavPath, tm: SystemTime) -> FsFuture<'a, ()> {
+        self.files.set_created(path, tm)
+    }
+    /// Bytes used, and the drive's size.
+    fn get_quota(&'_ self) -> FsFuture<'_, (u64, Option<u64>)> {
+        Box::pin(async move {
+            let (free, total) = crate::storage::disk(&self.root).ok_or(FsError::NotImplemented)?;
+            Ok((total.saturating_sub(free), Some(total)))
+        })
+    }
 }
 
 fn unauthorized() -> Response {
@@ -630,6 +696,28 @@ mod tests {
             std::fs::read_to_string(dir.join("new.txt")).unwrap(),
             "made over WebDAV"
         );
+
+        // A mapped drive's size and free room, as File Explorer asks for them.
+        let quota = axum::http::Request::builder()
+            .method("PROPFIND")
+            .uri("/dav/test/")
+            .header("Depth", "0")
+            .body(Body::from(
+                r#"<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:prop><D:quota-available-bytes/><D:quota-used-bytes/></D:prop></D:propfind>"#,
+            ))
+            .unwrap();
+        let answer = dav.handle(quota).await;
+        let body = http_body_util::BodyExt::collect(answer.into_body())
+            .await
+            .unwrap()
+            .to_bytes();
+        let text = String::from_utf8_lossy(&body);
+        let free = text
+            .split("quota-available-bytes>")
+            .nth(1)
+            .and_then(|s| s.split('<').next())
+            .and_then(|n| n.parse::<u64>().ok());
+        assert!(free.is_some_and(|n| n > 0), "{text}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
