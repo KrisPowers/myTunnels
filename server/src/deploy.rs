@@ -103,6 +103,15 @@ fn env_key(id: &str) -> String {
     format!("deploy_env:{id}")
 }
 
+/// A folder on this computer a container is built from, in place of a repository.
+fn path_key(id: &str) -> String {
+    format!("deploy_path:{id}")
+}
+
+fn path_of(state: &AppState, id: &str) -> Option<String> {
+    state.db.setting(&path_key(id)).ok().flatten()
+}
+
 fn token_of(state: &AppState, id: &str) -> Option<String> {
     state.db.setting(&token_key(id)).ok().flatten()
 }
@@ -607,6 +616,72 @@ async fn build_image(
     } else {
         format!("{}:{folder}", b.commit)
     };
+    let archive = || {
+        let mut cmd = tokio::process::Command::new("git");
+        cmd.arg("--git-dir")
+            .arg(dir)
+            .args(["archive", "--format=tar", &tree])
+            .envs(safe_env());
+        cmd
+    };
+    let heading = format!(
+        "Building {} at {}\n",
+        dockerfile,
+        &b.commit[..b.commit.len().min(12)]
+    );
+    build_from(
+        state,
+        b,
+        &archive,
+        file,
+        tag,
+        &heading,
+        "git could not read the commit",
+    )
+    .await
+}
+
+/// Builds the folder `dir` on this computer into an image named `tag`, with
+/// the Dockerfile at `dockerfile` in it, as Docker Desktop builds one.
+async fn build_folder(
+    state: &AppState,
+    b: &Build,
+    dir: &Path,
+    dockerfile: &str,
+    tag: &str,
+) -> Result<String, String> {
+    // The folder whole, less its git history, which no image needs.
+    let archive = || {
+        let mut cmd = tokio::process::Command::new("tar");
+        cmd.args(["-c", "-f", "-", "--exclude", ".git", "-C"])
+            .arg(dir)
+            .arg(".");
+        cmd
+    };
+    let heading = format!("Building {} in {}\n", dockerfile, dir.display());
+    build_from(
+        state,
+        b,
+        &archive,
+        dockerfile,
+        tag,
+        &heading,
+        "tar could not read the folder",
+    )
+    .await
+}
+
+/// Builds the tar `archive` prints into an image named `tag`, with BuildKit,
+/// or the classic builder where the engine has no BuildKit.
+async fn build_from(
+    state: &AppState,
+    b: &Build,
+    archive: &(dyn Fn() -> tokio::process::Command + Sync),
+    file: &str,
+    tag: &str,
+    heading: &str,
+    unread: &str,
+) -> Result<String, String> {
     let labels = json!({ "deploy.id": b.deploy_id, "deploy.build": b.number.to_string(), "deploy.commit": b.commit });
     let mut last = String::new();
     for version in ["2", "1"] {
@@ -619,24 +694,18 @@ async fn build_image(
             ("labels", &labels.to_string()),
         ])
         .map_err(|e| e.to_string())?;
-        let mut child = tokio::process::Command::new("git")
-            .arg("--git-dir")
-            .arg(dir)
-            .args(["archive", "--format=tar", &tree])
-            .envs(safe_env())
+        let mut cmd = archive();
+        let program = cmd.as_std().get_program().to_string_lossy().into_owned();
+        let mut child = cmd
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| format!("git is not installed: {e}"))?;
-        let stdout = child.stdout.take().ok_or("git did not start")?;
-        let mut stderr = child.stderr.take().ok_or("git did not start")?;
+            .map_err(|e| format!("{program} is not installed: {e}"))?;
+        let stdout = child.stdout.take().ok_or("The archive did not start")?;
+        let mut stderr = child.stderr.take().ok_or("The archive did not start")?;
         let mut progress = Progress::default();
-        progress.push(&format!(
-            "Building {} at {}\n",
-            dockerfile,
-            &b.commit[..b.commit.len().min(12)]
-        ));
+        progress.push(heading);
         let mut flushed = Instant::now();
         let result = docker::stream(
             &Endpoint::from_env(),
@@ -669,7 +738,7 @@ async fn build_image(
             Ok(()) => {}
         }
         if !archived {
-            return Err(format!("git could not read the commit: {}", why.trim()));
+            return Err(format!("{unread}: {}", why.trim()));
         }
         if let Some(error) = progress.error {
             return Err(error);
@@ -853,6 +922,9 @@ async fn build_and_run(state: &AppState, d: &Deploy, b: &mut Build) -> Result<()
     if !d.image.is_empty() {
         return pull_and_run(state, d, b).await;
     }
+    if let Some(path) = path_of(state, &d.id) {
+        return folder_and_run(state, d, b, Path::new(&path)).await;
+    }
     let dir = source(state, d).await?;
     let wanted = (!b.commit.is_empty())
         .then(|| format!("{}^{{commit}}", b.commit))
@@ -883,6 +955,55 @@ async fn build_and_run(state: &AppState, d: &Deploy, b: &mut Build) -> Result<()
         state,
         b,
         &dir,
+        &dockerfile,
+        &format!("{}:{}", d.name, b.number),
+    )
+    .await?;
+    b.image = Some(image.clone());
+    let _ = state.db.save_build(b);
+    if !pass_steps(state, d, b, &image, 0).await? {
+        return Err(HELD.into());
+    }
+    roll_out(state, d, &image, b.number)
+        .await
+        .map_err(|why| format!("Built, but it did not start: {why}"))?;
+    prune(state, &d.id).await;
+    Ok(())
+}
+
+/// The Dockerfile a folder builds with: the one named, else `Dockerfile` at its top.
+fn folder_dockerfile(dir: &Path, wanted: &str) -> Result<String, String> {
+    let file = if wanted.is_empty() {
+        "Dockerfile"
+    } else {
+        wanted
+    };
+    if !dir.join(file).is_file() {
+        return Err(format!("There is no {file} in {}", dir.display()));
+    }
+    Ok(file.to_owned())
+}
+
+/// Builds a container's folder as it is now, then runs it.
+async fn folder_and_run(
+    state: &AppState,
+    d: &Deploy,
+    b: &mut Build,
+    dir: &Path,
+) -> Result<(), String> {
+    if !dir.is_dir() {
+        return Err(format!(
+            "{} is not a folder on this computer",
+            dir.display()
+        ));
+    }
+    let dockerfile = folder_dockerfile(dir, &d.dockerfile)?;
+    b.message = dir.display().to_string();
+    let _ = state.db.save_build(b);
+    let image = build_folder(
+        state,
+        b,
+        dir,
         &dockerfile,
         &format!("{}:{}", d.name, b.number),
     )
@@ -1148,7 +1269,8 @@ async fn watch(state: AppState) {
             if !due || state.db.has_waiting_build(&d.id).unwrap_or(true) {
                 continue;
             }
-            if !d.image.is_empty() {
+            // An image or a folder has no commits to look at: a timer builds again.
+            if !d.image.is_empty() || path_of(&state, &d.id).is_some() {
                 let _ = state.db.set_checked(&d.id, now());
                 if d.updates == "timer" {
                     let _ = queue(&state, &d.id, "", "timer");
@@ -1205,6 +1327,7 @@ fn view(state: &AppState, d: &Deploy, caller: Option<&Caller>) -> ApiResult<Valu
         .cloned();
     let mut v = json!(d);
     v["token_set"] = json!(token_of(state, &d.id).is_some());
+    v["path"] = json!(path_of(state, &d.id).unwrap_or_default());
     v["latest"] = json!(builds.first());
     v["running"] = json!(running);
     if let Some(caller) = caller {
@@ -1285,6 +1408,9 @@ pub struct NewDeploy {
     url: String,
     #[serde(default)]
     image: String,
+    /// A folder on this computer with a Dockerfile, built here.
+    #[serde(default)]
+    path: String,
     token: Option<String>,
     branch: Option<String>,
     updates: Option<String>,
@@ -1330,7 +1456,17 @@ pub async fn create(
         body.image.trim().to_owned(),
     );
     let token = body.token.filter(|t| !t.trim().is_empty());
-    let branch = if !image.is_empty() {
+    let path = body.path.trim().trim_end_matches(['/', '\\']).to_owned();
+    let branch = if !path.is_empty() {
+        let dir = Path::new(&path);
+        if !dir.is_absolute() || !dir.is_dir() {
+            return Err(ApiError::bad(format!(
+                "{path} is not a folder on this computer"
+            )));
+        }
+        folder_dockerfile(dir, "").map_err(ApiError::bad)?;
+        String::new()
+    } else if !image.is_empty() {
         if !valid_image(&image) {
             return Err(ApiError::bad(
                 "That is not an image name, such as nginx:1.27",
@@ -1339,7 +1475,9 @@ pub async fn create(
         String::new()
     } else {
         if url.is_empty() {
-            return Err(ApiError::bad("Give a repository's address or an image"));
+            return Err(ApiError::bad(
+                "Give an image, a folder, or a repository's address",
+            ));
         }
         let (list, default) = branches(&state, &url, token.as_deref()).await?;
         let branch = body.branch.filter(|b| !b.is_empty()).unwrap_or(default);
@@ -1352,21 +1490,29 @@ pub async fn create(
         }
         branch
     };
+    // An image or a folder has no pushes or releases to follow.
+    let fixed = !image.is_empty() || !path.is_empty();
     let updates = body
         .updates
-        .unwrap_or_else(|| if image.is_empty() { "push" } else { "manual" }.into());
+        .unwrap_or_else(|| if fixed { "manual" } else { "push" }.into());
     let every = body.every.unwrap_or(86_400);
     check_updates(&updates, every)?;
-    if !image.is_empty() && updates == "push" {
-        return Err(ApiError::bad("An image updates on a timer or by hand"));
+    if fixed && matches!(updates.as_str(), "push" | "release") {
+        return Err(ApiError::bad(
+            "An image or a folder updates on a timer or by hand",
+        ));
     }
     let d = Deploy {
         id: random_hex(8),
         name,
         repo: String::new(),
-        url: if image.is_empty() { url } else { String::new() },
+        url: if fixed { String::new() } else { url },
         branch,
-        image,
+        image: if path.is_empty() {
+            image
+        } else {
+            String::new()
+        },
         dockerfile: String::new(),
         port: 0,
         keep: Vec::new(),
@@ -1377,6 +1523,9 @@ pub async fn create(
         created_at: now(),
     };
     state.db.insert_deploy(&d)?;
+    if !path.is_empty() {
+        state.db.set_setting(&path_key(&d.id), &path)?;
+    }
     if let Some(token) = token.filter(|_| !d.url.is_empty()) {
         state.db.set_setting(&token_key(&d.id), token.trim())?;
     }
@@ -1417,8 +1566,12 @@ pub async fn edit(
         }
         d.image = image;
     }
-    if !d.image.is_empty() && body.updates.as_deref() == Some("push") {
-        return Err(ApiError::bad("An image updates on a timer or by hand"));
+    if (!d.image.is_empty() || path_of(&state, &d.id).is_some())
+        && matches!(body.updates.as_deref(), Some("push" | "release"))
+    {
+        return Err(ApiError::bad(
+            "An image or a folder updates on a timer or by hand",
+        ));
     }
     if d.image.is_empty() && (body.url.is_some() || body.token.is_some() || body.branch.is_some()) {
         let url = body
@@ -1549,6 +1702,7 @@ pub async fn remove(
     state.db.delete_deploy(&d.id)?;
     state.db.delete_setting(&token_key(&d.id))?;
     state.db.delete_setting(&env_key(&d.id))?;
+    state.db.delete_setting(&path_key(&d.id))?;
     flow::forget(&state, &d.id);
     Ok(Json(json!({ "ok": true })))
 }

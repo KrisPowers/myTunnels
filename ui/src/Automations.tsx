@@ -281,7 +281,7 @@ function FlowEditor({ d, onChanged }: { d: Deploy; onChanged: () => Promise<void
       notify(message(e), "bad");
     }
   };
-  const triggers = updatesFor(!!d.image);
+  const triggers = updatesFor(!!d.image || !!d.path);
 
   return (
     <div className="flow">
@@ -297,7 +297,7 @@ function FlowEditor({ d, onChanged }: { d: Deploy; onChanged: () => Promise<void
       </div>
       <div className="flow-node">
         <span className="flow-dot"><Icon name={d.image ? "download" : "code"} size={18} /></span>
-        <div className="flow-body"><b>{d.image ? "Pull the image" : "Build"}</b><small>{d.image ? d.image : `The commit, from the Dockerfile${d.dockerfile ? ` at ${d.dockerfile}` : ""}`}</small></div>
+        <div className="flow-body"><b>{d.image ? "Pull the image" : "Build"}</b><small>{d.image ? d.image : `${d.path ? `The folder ${d.path}` : "The commit"}, from the Dockerfile${d.dockerfile ? ` at ${d.dockerfile}` : ""}`}</small></div>
       </div>
       {steps.map((s, i) => (
         <div key={i} className="flow-node">
