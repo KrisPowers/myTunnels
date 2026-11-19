@@ -76,7 +76,7 @@ impl Tunnel {
 /// Keeps cloudflared running for as long as a tunnel token is configured.
 pub fn spawn(state: AppState) {
     tokio::spawn(read_version(state.clone()));
-    tokio::spawn(move_off_shared(state.clone()));
+    tokio::spawn(own_addresses(state.clone()));
     tokio::spawn(supervise(state));
 }
 
@@ -107,26 +107,38 @@ pub fn machine_tunnel() -> String {
     }
 }
 
-/// Each machine on a tunnel shared with others takes it each request in
-/// turn, and each machine's addresses replace the others'; an install on
-/// the shared tunnel moves to one of its own, its addresses with it.
-async fn move_off_shared(state: AppState) {
-    if state.db.setting("cf_tunnel_name").ok().flatten().as_deref() != Some(SHARED) {
+/// At start, once the panel and the gateway are up: an install on the tunnel
+/// every machine once shared moves to one of its own, where each request is
+/// its own and no other machine replaces its addresses; then any of its
+/// addresses whose DNS record points at the shared tunnel, or at one that is
+/// gone or that no machine is connected to, is pointed at this machine's.
+async fn own_addresses(state: AppState) {
+    if state.cloudflare().is_err() {
         return;
     }
-    // Once the panel and the gateway are up.
     sleep(Duration::from_secs(10)).await;
-    match own_tunnel(&state).await {
-        Ok(name) => tracing::info!("moved off the shared tunnel to tunnel {name}"),
-        Err(err) => tracing::warn!("could not move off the shared tunnel: {err:#}"),
+    let mut shared = None;
+    if state.db.setting("cf_tunnel_name").ok().flatten().as_deref() == Some(SHARED) {
+        match own_tunnel(&state).await {
+            Ok((name, old)) => {
+                tracing::info!("moved off the shared tunnel to tunnel {name}");
+                shared = Some(old);
+            }
+            Err(err) => {
+                tracing::warn!("could not move off the shared tunnel: {err:#}");
+                return;
+            }
+        }
+    }
+    if let Err(err) = point_addresses(&state, shared.as_deref()).await {
+        tracing::warn!("could not check where this machine's addresses point: {err:#}");
     }
 }
 
-/// Moves this install to a tunnel named for this machine: made or found, its
-/// connector started, this install's addresses put on it, and their DNS
-/// records pointed at it. Records still pointing at the shared tunnel are the
-/// only ones changed.
-async fn own_tunnel(state: &AppState) -> Result<String> {
+/// Moves this install to a tunnel named for this machine, made or found, and
+/// starts its connector with this install's addresses on it. Gives its name
+/// and the shared tunnel's ID.
+async fn own_tunnel(state: &AppState) -> Result<(String, String)> {
     let cf = state.cloudflare().map_err(|e| anyhow!(e.1))?;
     let api = Cloudflare::new(&state.http, &cf.token);
     let name = machine_tunnel();
@@ -135,8 +147,6 @@ async fn own_tunnel(state: &AppState) -> Result<String> {
         None => api.create_tunnel(&cf.account_id, &name).await?,
     };
     let token = api.tunnel_token(&cf.account_id, &tunnel.id).await?;
-    let old = format!("{}.cfargotunnel.com", cf.tunnel_id);
-    let new = format!("{}.cfargotunnel.com", tunnel.id);
     for (key, value) in [
         ("cf_tunnel_id", tunnel.id.as_str()),
         ("cf_tunnel_name", name.as_str()),
@@ -146,6 +156,17 @@ async fn own_tunnel(state: &AppState) -> Result<String> {
     }
     state.tunnel.set_token(Some(token));
     sync_ingress(state).await?;
+    Ok((name, cf.tunnel_id))
+}
+
+/// Points each of this install's addresses at its tunnel where its record
+/// points at the shared tunnel `shared`, or at a tunnel that is gone or has
+/// no machine connected. One pointing at another machine's running tunnel
+/// is that machine's, and is left alone.
+async fn point_addresses(state: &AppState, shared: Option<&str>) -> Result<()> {
+    let cf = state.cloudflare().map_err(|e| anyhow!(e.1))?;
+    let api = Cloudflare::new(&state.http, &cf.token);
+    let ours = format!("{}.cfargotunnel.com", cf.tunnel_id);
     let zones = api.zones(&cf.account_id).await?;
     for host in our_hosts(state)? {
         // The longest zone the address is in.
@@ -156,17 +177,26 @@ async fn own_tunnel(state: &AppState) -> Result<String> {
         else {
             continue;
         };
-        match api.find_dns(&zone.id, &host).await {
-            Ok(Some(record)) if record.kind == "CNAME" && record.content == old => {
-                if let Err(err) = api.repoint_dns(&zone.id, &record.id, &new).await {
-                    tracing::warn!("could not point {host} at tunnel {name}: {err:#}");
-                }
+        let record = match api.find_dns(&zone.id, &host).await {
+            Ok(Some(r)) if r.kind == "CNAME" && r.content != ours => r,
+            Ok(_) => continue,
+            Err(err) => {
+                tracing::warn!("could not look up {host}: {err:#}");
+                continue;
             }
-            Ok(_) => {}
-            Err(err) => tracing::warn!("could not look up {host}: {err:#}"),
+        };
+        let Some(other) = record.content.strip_suffix(".cfargotunnel.com") else {
+            continue;
+        };
+        if shared != Some(other) && api.tunnel_live(&cf.account_id, other).await {
+            continue;
+        }
+        match api.repoint_dns(&zone.id, &record.id, &ours).await {
+            Ok(()) => tracing::info!("{host} now points at this machine's tunnel"),
+            Err(err) => tracing::warn!("could not point {host} at this machine's tunnel: {err:#}"),
         }
     }
-    Ok(name)
+    Ok(())
 }
 
 /// Every address this install answers through its tunnel: its routes, mail's
