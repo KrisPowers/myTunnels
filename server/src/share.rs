@@ -95,7 +95,7 @@ pub async fn create(
     }
     let Some(host) = address(&state) else {
         return Err(ApiError::bad(
-            "Publish the dashboard through a tunnel first, under Runs on; links open there",
+            "Add a route to this dashboard on Routes first; links open at its address",
         ));
     };
     if body.paths.is_empty() || body.paths.len() > 500 {
