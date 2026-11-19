@@ -65,8 +65,8 @@ export function RoutesPage({ adding, port, routes, forwards, users, providers, o
   };
 
   const items: Item[] = [
-    ...(routes ?? []).filter((r) => r.target_scheme !== "dashboard").map((r): Item => ({
-      key: "r" + r.id, port: r.target_port, name: r.target_host ? `on ${r.target_host}` : "", way: "Cloudflare Tunnel", icon: "public",
+    ...(routes ?? []).map((r): Item => ({
+      key: "r" + r.id, port: r.target_port, name: r.target_scheme === "dashboard" ? "This dashboard" : r.target_host ? `on ${r.target_host}` : "", way: "Cloudflare Tunnel", icon: "public",
       at: r.hostname, href: `https://${r.hostname}`, traffic: r.read_only ? "Read only" : "Read & write", who: whoOf(r),
       state: r.enabled ? ["Live", "ok"] : ["Off", ""], up: r.enabled, open: `#/tunnels/${r.id}`,
       menu: [
