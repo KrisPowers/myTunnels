@@ -1,6 +1,6 @@
 //! Zip and unzip in Files: open a ZIP, 7z or RAR archive into a folder beside
-//! it, or pack files and folders into a ZIP. Archives are read with `unar`,
-//! which the image includes, and written here.
+//! it, or pack files and folders into a ZIP. ZIPs are read and written here;
+//! 7z and RAR are read with `unar`, which the image includes.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -55,26 +55,57 @@ pub async fn extract(store: &Store, rel: &[String]) -> ApiResult<Value> {
     }
     let dir = archive.parent().ok_or_else(ApiError::not_found)?.to_owned();
 
+    // A ZIP is opened here, on every system; 7z and RAR need `unar`.
+    let native = ext_of(&name) == "zip";
+
     // How big it is once opened, before anything is written.
-    let listed = run(Command::new("lsar").arg("-j").arg(&archive), "lsar").await?;
-    let opened = opened_size(&listed);
+    let opened = if native {
+        let file = archive.clone();
+        tokio::task::spawn_blocking(move || zip_size(&file))
+            .await
+            .map_err(|e| ApiError::from(anyhow::anyhow!(e)))?
+            .map_err(|e| ApiError::bad(format!("Could not open it: {e}")))?
+    } else {
+        opened_size(&run(Command::new("lsar").arg("-j").arg(&archive), "lsar").await?)
+    };
     if opened > MAX_OPENED {
         return Err(ApiError::bad("That archive opens to more than 100 GB"));
     }
     store.room(opened)?;
 
     let stem = name.rsplit_once('.').map_or(name.as_str(), |(s, _)| s);
-    let folder = free(&dir, stem, "");
+    // A ZIP holding one folder opens as that folder, not inside another.
+    let only = if native {
+        let file = archive.clone();
+        tokio::task::spawn_blocking(move || only_folder(&file))
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    let folder = free(&dir, only.as_deref().unwrap_or(stem), "");
     let target = dir.join(&folder);
     tokio::fs::create_dir(&target).await.map_err(io_error)?;
-    let result = run(
-        Command::new("unar")
-            .args(["-q", "-f", "-D", "-o"])
-            .arg(&target)
-            .arg(&archive),
-        "unar",
-    )
-    .await;
+    let result = if native {
+        let (from, to) = (archive.clone(), target.clone());
+        let strip = only.clone();
+        tokio::task::spawn_blocking(move || unzip(&from, &to, strip.as_deref()))
+            .await
+            .map_err(|e| ApiError::from(anyhow::anyhow!(e)))
+            .and_then(|r| r.map_err(|e| ApiError::bad(format!("Could not open it: {e}"))))
+            .map(drop)
+    } else {
+        run(
+            Command::new("unar")
+                .args(["-q", "-f", "-D", "-o"])
+                .arg(&target)
+                .arg(&archive),
+            "unar",
+        )
+        .await
+        .map(drop)
+    };
     if let Err(err) = result {
         let _ = tokio::fs::remove_dir_all(&target).await;
         return Err(err);
@@ -86,6 +117,79 @@ pub async fn extract(store: &Store, rel: &[String]) -> ApiResult<Value> {
     let mut path = rel[..rel.len() - 1].to_vec();
     path.push(folder);
     Ok(json!({ "path": path.join("/"), "skipped": skipped }))
+}
+
+/// The total size a ZIP says it holds.
+fn zip_size(archive: &Path) -> anyhow::Result<u64> {
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(archive)?)?;
+    let mut total = 0u64;
+    for i in 0..zip.len() {
+        total = total.saturating_add(zip.by_index_raw(i)?.size());
+    }
+    Ok(total)
+}
+
+/// The one folder everything in a ZIP is in, when it has one.
+fn only_folder(archive: &Path) -> Option<String> {
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(archive).ok()?).ok()?;
+    let mut top: Option<String> = None;
+    for i in 0..zip.len() {
+        let entry = zip.by_index_raw(i).ok()?;
+        let path = entry.enclosed_name()?;
+        let mut parts = path.components();
+        let first = parts.next()?.as_os_str().to_string_lossy().into_owned();
+        // A file at the top means there is no one folder.
+        if parts.next().is_none() && !entry.is_dir() {
+            return None;
+        }
+        match &top {
+            Some(t) if *t != first => return None,
+            _ => top = Some(first),
+        }
+    }
+    top
+}
+
+/// Opens the ZIP `archive` into `target`, without the folder `strip` that
+/// everything in it is in, when given. Entries that would land outside it,
+/// and links, are left out; none writes more than it says it holds.
+fn unzip(archive: &Path, target: &Path, strip: Option<&str>) -> anyhow::Result<()> {
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(archive)?)?;
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i)?;
+        let Some(mut rel) = entry.enclosed_name() else {
+            continue;
+        };
+        if let Some(top) = strip {
+            rel = rel.strip_prefix(top).map(Path::to_path_buf).unwrap_or(rel);
+            if rel.as_os_str().is_empty() {
+                continue;
+            }
+        }
+        let link = entry
+            .unix_mode()
+            .is_some_and(|mode| mode & 0o170_000 == 0o120_000);
+        if link {
+            continue;
+        }
+        let out = target.join(rel);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&out)?;
+            continue;
+        }
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let said = entry.size();
+        let written = std::io::copy(
+            &mut std::io::Read::take(&mut entry, said.saturating_add(1)),
+            &mut std::fs::File::create(&out)?,
+        )?;
+        if written > said {
+            anyhow::bail!("it holds more than it says");
+        }
+    }
+    Ok(())
 }
 
 /// The total size of what `lsar -j` lists.
@@ -283,6 +387,24 @@ mod tests {
             ["docs/", "docs/a.txt", "docs/inner/", "docs/inner/b.txt"]
         );
         assert_eq!(free(&dir, "docs", ".zip"), "docs (2).zip");
+        // And opens again as it was, with nothing hidden.
+        assert_eq!(zip_size(&out).unwrap(), 10);
+        let back = dir.join("back");
+        std::fs::create_dir(&back).unwrap();
+        unzip(&out, &back, None).unwrap();
+        assert_eq!(std::fs::read(back.join("docs/a.txt")).unwrap(), b"hello");
+        assert_eq!(std::fs::read(back.join("docs/inner/b.txt")).unwrap(), b"world");
+        // Its one folder opens as itself, not docs/docs.
+        assert_eq!(only_folder(&out).as_deref(), Some("docs"));
+        let flat = dir.join("flat");
+        std::fs::create_dir(&flat).unwrap();
+        unzip(&out, &flat, Some("docs")).unwrap();
+        assert_eq!(std::fs::read(flat.join("a.txt")).unwrap(), b"hello");
+        assert_eq!(std::fs::read(flat.join("inner/b.txt")).unwrap(), b"world");
+        // Two things at the top have no one folder.
+        let two = dir.join("two.zip");
+        pack(&two, &[dir.join("docs/a.txt"), dir.join("docs/inner")]).unwrap();
+        assert_eq!(only_folder(&two), None);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
