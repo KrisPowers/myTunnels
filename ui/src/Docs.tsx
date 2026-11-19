@@ -53,7 +53,7 @@ const CONTENT: Record<string, ReactNode> = {
         <p><b>Mail</b> is every address in one list: <b>mailboxes</b>, which have a password and keep their mail here, and <b>forwards</b>, which send an address's mail to a mailbox. Each row says how much a mailbox holds; its menu changes its password, turns mail apps off for it while its mail still arrives, or removes it with its mail.</p>
       </Doc>
       <Doc title="A new address">
-        <p><b>New address</b> takes the address in full, on any domain the Cloudflare account holds, and whether it is a mailbox or a forward. Nothing else needs setting up: mail turns itself on for the domain the first time an address is made there, and its records are written to its DNS. Leave the part before the @ empty on a forward to catch everything at the domain.</p>
+        <p><b>New address</b> takes the address in full, on any domain the Cloudflare account holds, and whether it is a mailbox or an alias of one. The first address also asks how mail arrives, how mail apps connect and how mail leaves; after that, mail turns itself on for each new domain the first time an address is made there, and its records are written to its DNS. Leave the part before the @ empty on an alias to catch everything at the domain.</p>
       </Doc>
       <Doc title="How mail moves">
         <p>The dial opens <b>Mail settings</b>: how mail arrives (port 25 forwarded here, or Cloudflare Email Routing through the tunnel), how mail apps connect (IMAP 993 and SMTP 465 on your router, or Tailscale Funnel), how mail leaves (straight to each recipient, through a relay, or Cloudflare Email Sending), where mail apps sign in, and the switches for incoming mail. The clock opens <b>Activity</b>, what came in and went out.</p>

@@ -581,6 +581,9 @@ a.result:hover { background: var(--hover); }
 .nr-sub .tf-input { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .nr-zone { flex: 1; min-width: 0; margin-left: -1px; }
 .nr-zone .dropdown { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+/* The half with focus sits above the other, so its ring is never under it. */
+.nr-sub, .nr-zone { position: relative; }
+.nr-sub:focus-within, .nr-zone:focus-within { z-index: 1; }
 .nr-to { display: flex; align-items: center; height: 44px; flex-shrink: 0; color: var(--text-3); }
 .nr-fixed { display: flex; align-items: center; height: 44px; color: var(--text-2); font-size: 13.5px; }
 .nr .card { background: none; }
@@ -1664,6 +1667,12 @@ a.alert-text:hover b { color: var(--accent); }
 .mail-menu { flex-shrink: 0; width: 34px; }
 .mail-none { padding: 24px; color: var(--text-3); text-align: center; }
 .mail-kind, .add-kind { display: flex; margin-bottom: 20px; }
+/* The first address's choice of how mail moves. */
+.mail-ways { display: grid; gap: 14px; margin-bottom: 20px; }
+.mail-way { display: grid; gap: 6px; }
+.mail-way .mail-kind { margin-bottom: 0; }
+.mail-way-label { font-weight: 500; }
+.mail-way small { font-size: 12px; }
 .mail-kind button, .add-kind button { flex: 1; justify-content: center; }
 .mail-entry .chip { text-transform: none; }
 .svc-way { color: var(--text-2); font-size: 13px; white-space: nowrap; }

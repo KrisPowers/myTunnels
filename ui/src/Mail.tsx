@@ -11,8 +11,7 @@ import { useCan } from "./me";
 import { ArmedButton, Avatar, Callout, Card, Copy, Dialog, MoreMenu, Row, Switch, TextField, useNotify, type MenuAction } from "./ui";
 
 // Mail is your addresses, all of them in one list: mailboxes, which have a
-// password and keep mail here, and forwards, which send an address's mail to
-// a mailbox. A new address is typed in full, on any domain the Cloudflare
+// password and keep mail here, and aliases, other addresses for a mailbox. A new address is typed in full, on any domain the Cloudflare
 // account holds; mail turns itself on for that domain. How mail moves, and
 // what came in and went out, open from the heading.
 
@@ -52,7 +51,7 @@ function useAct(onState: (s: MailState) => void) {
   }, [onState, notify]);
 }
 
-// One row: a mailbox, or a forward.
+// One row: a mailbox, or an alias.
 type Entry = { address: string; mailbox?: MailAccount; to?: string };
 
 export function MailPage() {
@@ -112,7 +111,7 @@ export function MailPage() {
           {s.on && (
             <div className="page-sub">
               <span><b>{state.accounts.length}</b> {state.accounts.length === 1 ? "mailbox" : "mailboxes"}</span>
-              <span><b>{state.aliases.length}</b> {state.aliases.length === 1 ? "forward" : "forwards"}</span>
+              <span><b>{state.aliases.length}</b> {state.aliases.length === 1 ? "alias" : "aliases"}</span>
               <span><b>{bytes(used)}</b> stored</span>
               {state.queued > 0 && <span><b>{state.queued}</b> waiting to send</span>}
             </div>
@@ -155,7 +154,7 @@ export function MailPage() {
             <ul className="mail-list">
               {shown.map((e) => e.mailbox
                 ? <MailboxRow key={e.address} account={e.mailbox} runs={runs(e.address)} onState={setState} onPassword={() => setPassword(e.address)} />
-                : <ForwardRow key={e.address} address={e.address} to={e.to!} runs={runs(e.address)} onState={setState} />)}
+                : <AliasRow key={e.address} address={e.address} to={e.to!} runs={runs(e.address)} onState={setState} />)}
               {shown.length === 0 && <li className="mail-none">Nothing matches.</li>}
             </ul>
           </div>
@@ -195,15 +194,14 @@ function MailboxRow({ account: a, runs, onState, onPassword }: { account: MailAc
   );
 }
 
-function ForwardRow({ address, to, runs, onState }: { address: string; to: string; runs: boolean; onState: (s: MailState) => void }) {
+function AliasRow({ address, to, runs, onState }: { address: string; to: string; runs: boolean; onState: (s: MailState) => void }) {
   const act = useAct(onState);
   const all = address.startsWith("@");
   return (
     <li className="mail-entry">
-      <span className="mail-forward"><Icon name="call_split" size={18} /></span>
       <span className="mail-who">
         <b>{all ? `Anything @${address.slice(1)}` : address}</b>
-        <small>Forwards to {to}</small>
+        <small>Alias of {to}</small>
       </span>
       <span className="mail-size" />
       <span className="mail-menu">{runs && <MoreMenu label={`Actions for ${address}`} actions={[{ label: "Remove", icon: "delete", danger: true, onClick: () => act(() => api.removeMailAlias(address), `Removed ${address}`) }]} />}</span>
@@ -214,14 +212,21 @@ function ForwardRow({ address, to, runs, onState }: { address: string; to: strin
 // ---- a new address ----
 
 // NewAddress takes the address in full, the domain picked from the
-// Cloudflare account's, and whether it is a mailbox or forwards to one.
-// Mail turns itself on for the domain first when it is not on yet.
+// Cloudflare account's, and whether it is a mailbox or an alias of one.
+// Mail turns itself on for the domain first when it is not on yet; the very
+// first address also says how mail moves.
 function NewAddress({ state, zones, domains, onState, onClose }: {
   state: MailState; zones: Zone[]; domains: string[]; onState: (s: MailState) => void; onClose: () => void;
 }) {
   const notify = useNotify();
+  const needs = useContext(NeedsContext);
   const s = state.settings;
-  const [kind, setKind] = useState<"mailbox" | "forward">("mailbox");
+  const [kind, setKind] = useState<"mailbox" | "alias">("mailbox");
+  // How mail moves, chosen here with the first address, nothing picked for you.
+  const first = !s.on;
+  const [receive, setReceive] = useState<MailReceive | null>(null);
+  const [apps, setApps] = useState<MailApps | null>(null);
+  const [send, setSend] = useState<MailSend | null>(null);
   const [local, setLocal] = useState("");
   const [domain, setDomain] = useState(s.domains[0]?.name && domains.includes(s.domains[0].name) ? s.domains[0].name : domains[0] ?? "");
   const [name, setName] = useState("");
@@ -229,26 +234,27 @@ function NewAddress({ state, zones, domains, onState, onClose }: {
   const mailboxes = state.accounts.map((a) => a.address);
   const [to, setTo] = useState(mailboxes[0] ?? "");
   const [busy, setBusy] = useState(false);
-  const ok = !!domain && (kind === "mailbox" ? !!local.trim() && !!pass : !!to);
+  const ok = !!domain && (kind === "mailbox" ? !!local.trim() && !!pass : !!to)
+    && (!first || (!!receive && !!apps && !!send && send !== "relay"));
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!ok) return;
     setBusy(true);
     try {
-      // Mail on for this domain first, the plain ways for a first setup.
+      // Mail on for this domain first, the ways chosen above for a first setup.
       if (!s.domains.some((d) => d.name === domain)) {
         const zone = zones.find((z) => z.name.toLowerCase() === domain);
         if (!zone) throw new Error(`${domain} is not on the Cloudflare account`);
         onState(s.on
           ? await api.addMailDomain({ zone_id: zone.id })
-          : await api.setupMail({ zone_id: zone.id, domain: null, receive: "port", apps: "port", send: "direct", relay: null }));
+          : await api.setupMail({ zone_id: zone.id, domain: null, receive: receive!, apps: apps!, send: send!, relay: null }));
       }
       const address = `${local.trim()}@${domain}`;
       onState(kind === "mailbox"
         ? await api.addMailAccount({ address, name: name.trim(), password: pass })
         : await api.setMailAlias(address, to));
-      notify(kind === "mailbox" ? `Added ${address}` : `${address} forwards to ${to}`);
+      notify(kind === "mailbox" ? `Added ${address}` : `${address} is an alias of ${to}`);
       onClose();
     } catch (err) {
       notify(message(err), "bad");
@@ -261,16 +267,16 @@ function NewAddress({ state, zones, domains, onState, onClose }: {
       <form onSubmit={submit}>
         {mailboxes.length > 0 && (
           <div className="seg-tabs mail-kind" role="radiogroup" aria-label="Kind">
-            {(["mailbox", "forward"] as const).map((k) => (
+            {(["mailbox", "alias"] as const).map((k) => (
               <button key={k} type="button" role="radio" aria-checked={kind === k} className={kind === k ? "on" : undefined} onClick={() => setKind(k)}>
-                {k === "mailbox" ? "Mailbox" : "Forward"}
+                {k === "mailbox" ? "Mailbox" : "Alias"}
               </button>
             ))}
           </div>
         )}
         <div className="nr-address">
           <TextField className="nr-sub" label="Address" autoFocus autoComplete="off" value={local} onChange={(v) => setLocal(v.replace(/@.*$/, "").replace(/\s/g, ""))}
-            hint={kind === "forward" && !local ? "Empty for anything at the domain" : undefined} />
+            hint={kind === "alias" && !local ? "Empty for anything at the domain" : undefined} />
           <div className="tf static nr-zone">
             <div className="tf-box">
               <Dropdown label="Domain" value={domain} options={domains.map((d) => ({ value: d, label: "@" + d }))} onChange={setDomain} />
@@ -286,9 +292,18 @@ function NewAddress({ state, zones, domains, onState, onClose }: {
         ) : (
           <div className="tf static">
             <div className="tf-box">
-              <Dropdown label="Forwards to" value={to} onChange={setTo} options={mailboxes.map((a) => ({ value: a, label: a }))} />
-              <span className="tf-label">Forwards to</span>
+              <Dropdown label="Mailbox" value={to} onChange={setTo} options={mailboxes.map((a) => ({ value: a, label: a }))} />
+              <span className="tf-label">Mailbox</span>
             </div>
+          </div>
+        )}
+        {first && (
+          <div className="mail-ways">
+            <Ways label="Mail arrives" options={RECEIVE} value={receive} onChange={setReceive} />
+            <Ways label="Mail apps connect" value={apps} onChange={setApps}
+              options={APPS.map((o) => (o.value === "tailscale" && needs && !needs.tailscale ? { ...o, disabled: true } : o))} />
+            {/* A relay's server is set in Mail settings, once mail is on. */}
+            <Ways label="Mail leaves" options={SEND.filter((o) => o.value !== "relay")} value={send} onChange={setSend} />
           </div>
         )}
         <div className="edit-actions">
@@ -297,6 +312,24 @@ function NewAddress({ state, zones, domains, onState, onClose }: {
         </div>
       </form>
     </Dialog>
+  );
+}
+
+// Ways is one choice of how mail moves: a button per way, none picked until
+// one is pressed, and what the picked one does beneath.
+function Ways<T extends string>({ label, options, value, onChange }: { label: string; options: Option<T>[]; value: T | null; onChange: (v: T) => void }) {
+  const picked = options.find((o) => o.value === value);
+  return (
+    <div className="mail-way">
+      <span className="mail-way-label">{label}</span>
+      <div className="seg-tabs mail-kind" role="radiogroup" aria-label={label}>
+        {options.map((o) => (
+          <button key={o.value} type="button" role="radio" aria-checked={value === o.value} disabled={o.disabled}
+            className={value === o.value ? "on" : undefined} onClick={() => onChange(o.value)}>{o.label}</button>
+        ))}
+      </div>
+      {picked?.hint && <small className="muted">{picked.hint}</small>}
+    </div>
   );
 }
 
