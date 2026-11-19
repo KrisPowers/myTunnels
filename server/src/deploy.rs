@@ -740,6 +740,12 @@ async fn build_from(
             return Err(format!("{unread}: {}", why.trim()));
         }
         if let Some(error) = progress.error {
+            // BuildKit over the plain API has no session to fetch a base image
+            // with; the classic builder needs none.
+            if version == "2" && error.to_lowercase().contains("no active session") {
+                last = error;
+                continue;
+            }
             return Err(error);
         }
         return progress
