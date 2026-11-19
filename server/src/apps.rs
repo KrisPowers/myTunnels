@@ -1951,8 +1951,9 @@ pub async fn needs(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     .is_ok();
     let v = json!({
         "docker": docker,
-        // Installed, though its engine may not be running yet.
-        "docker_installed": docker || locate("docker").is_some(),
+        // Installed, though its engine may not be running yet: its program
+        // on the PATH, or Docker Desktop where it installs itself.
+        "docker_installed": docker || locate("docker").is_some() || docker_desktop().is_some(),
         "git": runs("git".into(), V).await,
         "cloudflared": runs(state.config.cloudflared_bin.clone(), V).await,
         "tailscale": match locate("tailscale") {
@@ -1964,17 +1965,34 @@ pub async fn needs(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     Ok(Json(v))
 }
 
+/// Docker Desktop's app, where it installs itself: for every account or this
+/// one on Windows, in Applications on macOS.
+fn docker_desktop() -> Option<PathBuf> {
+    let mut places = Vec::new();
+    if cfg!(windows) {
+        for (var, under) in [
+            ("ProgramFiles", r"Docker\Docker"),
+            ("LOCALAPPDATA", r"Programs\Docker\Docker"),
+        ] {
+            if let Some(base) = std::env::var_os(var) {
+                places.push(PathBuf::from(base).join(under).join("Docker Desktop.exe"));
+            }
+        }
+    } else if cfg!(target_os = "macos") {
+        places.push(PathBuf::from("/Applications/Docker.app"));
+    }
+    places.into_iter().find(|p| p.exists())
+}
+
 /// Starts Docker's engine on this computer, for one installed but not running:
 /// Docker Desktop on Windows and macOS, the system service elsewhere.
 pub async fn start_docker() -> ApiResult<Json<Value>> {
     let started = if cfg!(windows) {
-        let app = std::env::var_os("ProgramFiles")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(r"C:\Program Files"))
-            .join(r"Docker\Docker\Docker Desktop.exe");
-        if !app.is_file() {
-            return Err(ApiError::bad("Docker Desktop is not in Program Files"));
-        }
+        let Some(app) = docker_desktop() else {
+            return Err(ApiError::bad(
+                "Docker Desktop is not installed where it installs itself",
+            ));
+        };
         // Through Explorer, so it is not under myTunnels and outlives its restarts.
         Command::new("explorer.exe")
             .arg(app)
