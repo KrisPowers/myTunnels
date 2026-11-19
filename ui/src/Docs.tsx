@@ -50,7 +50,7 @@ const CONTENT: Record<string, ReactNode> = {
   mail: (
     <>
       <Doc title="Your addresses">
-        <p><b>Mail</b> is every address in one list: <b>mailboxes</b>, which have a password and keep their mail here, and <b>forwards</b>, which send an address's mail to a mailbox. Each row says how much a mailbox holds; its menu changes its password, turns mail apps off for it while its mail still arrives, or removes it with its mail.</p>
+        <p><b>Mail</b> is every address in one list: <b>mailboxes</b>, which have a password and keep their mail here, and <b>forwards</b>, which send an address's mail to a mailbox. Each row says how much a mailbox holds; its menu has <b>Set up a mail app</b>, every field Outlook and other mail apps ask for (the incoming IMAP and outgoing SMTP server, port and encryption, and the username), each to copy on its own line, and it changes its password, turns mail apps off for it while its mail still arrives, or removes it with its mail.</p>
       </Doc>
       <Doc title="A new address">
         <p><b>New address</b> takes the address in full, on any domain the Cloudflare account holds, and whether it is a mailbox or an alias of one. The first address also asks how mail arrives, how mail apps connect and how mail leaves; after that, mail turns itself on for each new domain the first time an address is made there, and its records are written to its DNS. Leave the part before the @ empty on an alias to catch everything at the domain.</p>
