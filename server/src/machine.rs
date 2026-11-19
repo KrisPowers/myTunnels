@@ -343,8 +343,8 @@ mod firewall {
 
     /// Changing a rule needs the helper: myTunnels never asks for
     /// administrator rights on a screen no one may be at.
-    const NO_HELPER: &str = "Windows Firewall needs myTunnels' one admin step, taken when it is \
-         installed. Run the install command on this computer once to take it.";
+    const NO_HELPER: &str =
+        "Windows Firewall needs Windows' one yes first: Allow it from the bell, on this computer";
 
     pub async fn open(f: &Forward) -> Result<()> {
         if present(f).await? == kinds(f).len() {

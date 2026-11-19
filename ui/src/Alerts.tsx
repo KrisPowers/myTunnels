@@ -65,6 +65,11 @@ export function useAlerts({ hw, flags, users, devices, status, routes, onChanged
       };
     }),
     ...(sensors ? [sensors] : []),
+    ...(status?.windows_step && admin ? [{
+      key: "windows", tone: "warn" as Health, icon: "shield" as IconName, title: "Windows needs one yes",
+      sub: "For router ports and app installs, so Windows never asks again. It asks once, on this computer's screen.",
+      action: { label: "Allow", run: () => api.windowsStep().then(onChanged) },
+    }] : []),
     ...flags.map((f): Alert => {
       const u = users.find((x) => x.id === f.user_id);
       const d = devices.find((x) => x.id === f.device_id);
