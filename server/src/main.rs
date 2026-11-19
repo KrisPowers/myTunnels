@@ -93,6 +93,8 @@ async fn main() -> Result<()> {
     tracing::info!("gateway on {}", state.config.gate_service);
 
     tunnel::spawn(state.clone());
+    #[cfg(windows)]
+    locations::refresh_helper();
     tokio::spawn(admin::remove_git_address(state.clone()));
     netinfo::spawn(state.clone());
     forward::spawn(state.clone());

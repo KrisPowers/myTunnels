@@ -155,7 +155,8 @@ function AddLocation({ onClose, onAdded }: { onClose: () => void; onAdded: (list
   }, [notify]);
   const source = drives?.find((d) => d.path === from);
   // Room left over on the drive it comes from, so that drive never fills.
-  const most = Math.max(0, Math.floor((source?.space?.free ?? 0) / GB) - 1);
+  // A drive holds 2040 GB at most.
+  const most = Math.min(2040, Math.max(0, Math.floor((source?.space?.free ?? 0) / GB) - 1));
   const gb = Number(size);
   const ok = !!from && !!letter && !!name && gb >= 1 && gb <= most;
   const submit = async (e: FormEvent) => {
