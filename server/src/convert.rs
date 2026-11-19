@@ -463,6 +463,10 @@ async fn run(state: AppState, work: Work) -> ApiResult<(String, u64)> {
     Ok((path.join("/"), size))
 }
 
+/// ImageMagick's program: `magick` on Windows, where `convert` is Windows'
+/// own disk tool, and `convert` elsewhere.
+const MAGICK: &str = if cfg!(windows) { "magick" } else { "convert" };
+
 /// A program at low priority, killed if the job is stopped.
 fn program(name: &str) -> Command {
     #[cfg(unix)]
@@ -560,7 +564,7 @@ async fn photo(source: &Path, out: &Path, dir: &Path, work: &Work) -> ApiResult<
     let (Some(from), Some(to)) = (coder(&ext_of(&input.to_string_lossy())), coder(work.to)) else {
         return Err(ApiError::bad("This kind of photo cannot be converted"));
     };
-    let mut cmd = program("convert");
+    let mut cmd = program(MAGICK);
     // Read with the decoder its ending names, and only the first frame of an
     // animation or a multi-page TIFF.
     let mut first = std::ffi::OsString::from(format!("{from}:"));
@@ -593,7 +597,7 @@ async fn cutout(input: &Path, out: &Path, dir: &Path, work: &Work, quality: &str
     }
     let mut source = std::ffi::OsString::from("png:");
     source.push(&cut);
-    let mut cmd = program("convert");
+    let mut cmd = program(MAGICK);
     cmd.arg(source);
     if work.size > 0 {
         cmd.arg("-resize").arg(format!("{0}x{0}>", work.size));

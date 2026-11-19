@@ -733,6 +733,25 @@ pub const CATALOG: &[App] = &[
     .brew("ffmpeg")
     .apt("ffmpeg")
     .version(&["-version"]),
+    // Storage converts photos with it.
+    app(
+        "imagemagick",
+        "ImageMagick",
+        "Files and media",
+        "Converts and resizes photos",
+        "imagemagick",
+        "https://imagemagick.org/script/download.php",
+        // Windows' own `convert` is a disk tool, not ImageMagick.
+        if cfg!(windows) {
+            &["magick"]
+        } else {
+            &["magick", "convert"]
+        },
+    )
+    .winget("ImageMagick.ImageMagick")
+    .brew("imagemagick")
+    .apt("imagemagick")
+    .version(&["-version"]),
     app(
         "neovim",
         "Neovim",
