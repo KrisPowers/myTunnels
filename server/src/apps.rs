@@ -1946,6 +1946,8 @@ pub async fn needs(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     .is_ok();
     let v = json!({
         "docker": docker,
+        // Installed, though its engine may not be running yet.
+        "docker_installed": docker || locate("docker").is_some(),
         "git": runs("git".into(), V).await,
         "cloudflared": runs(state.config.cloudflared_bin.clone(), V).await,
         "tailscale": match locate("tailscale") {
@@ -1955,6 +1957,42 @@ pub async fn needs(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     });
     *lock(&NEEDS) = Some((Instant::now(), v.clone()));
     Ok(Json(v))
+}
+
+/// Starts Docker's engine on this computer, for one installed but not running:
+/// Docker Desktop on Windows and macOS, the system service elsewhere.
+pub async fn start_docker() -> ApiResult<Json<Value>> {
+    let started = if cfg!(windows) {
+        let app = std::env::var_os("ProgramFiles")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\Program Files"))
+            .join(r"Docker\Docker\Docker Desktop.exe");
+        if !app.is_file() {
+            return Err(ApiError::bad("Docker Desktop is not in Program Files"));
+        }
+        // Through Explorer, so it is not under myTunnels and outlives its restarts.
+        Command::new("explorer.exe")
+            .arg(app)
+            .status()
+            .await
+            .map(drop)
+    } else if cfg!(target_os = "macos") {
+        Command::new("open")
+            .args(["-a", "Docker"])
+            .status()
+            .await
+            .map(drop)
+    } else {
+        Command::new("systemctl")
+            .args(["start", "docker"])
+            .status()
+            .await
+            .map(drop)
+    };
+    started.map_err(|e| ApiError::bad(format!("Docker did not start: {e}")))?;
+    // Asked again on the next look, as the engine takes a moment.
+    *lock(&NEEDS) = None;
+    Ok(Json(json!({ "ok": true })))
 }
 
 #[cfg(test)]

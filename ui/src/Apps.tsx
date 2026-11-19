@@ -10,13 +10,37 @@ import { Callout, MoreMenu, useNotify, usePopover, type MenuAction } from "./ui"
 // What features need where myTunnels runs, from the shell.
 export const NeedsContext = createContext<Needs | null>(null);
 
-const NEEDED: Record<keyof Needs, string> = { docker: "Docker", git: "Git", cloudflared: "cloudflared", tailscale: "Tailscale" };
+const NEEDED: Record<Exclude<keyof Needs, "docker_installed">, string> = { docker: "Docker", git: "Git", cloudflared: "cloudflared", tailscale: "Tailscale" };
 
 // NeedsApp says a feature cannot work until an app is installed, with the way
 // to install it. Nothing shows while the app is there.
-export function NeedsApp({ app, what }: { app: keyof Needs; what: string }) {
+export function NeedsApp({ app, what }: { app: Exclude<keyof Needs, "docker_installed">; what: string }) {
   const needs = useContext(NeedsContext);
+  const can = useCan();
+  const notify = useNotify();
+  const [starting, setStarting] = useState(false);
   if (!needs || needs[app]) return null;
+  // Docker installed with its engine stopped, as after an install or a restart.
+  if (app === "docker" && needs.docker_installed) {
+    const start = async () => {
+      setStarting(true);
+      try {
+        await api.startDocker();
+        notify("Starting Docker");
+      } catch (e) {
+        notify(message(e), "bad");
+        setStarting(false);
+      }
+    };
+    return (
+      <Callout tone="warn" icon="warning">
+        {what} needs Docker, which is installed but not running.
+        {can("containers.manage") && (
+          <button type="button" className="link-btn" disabled={starting} onClick={start}>{starting ? "Starting Docker" : "Start Docker"}</button>
+        )}
+      </Callout>
+    );
+  }
   return (
     <Callout tone="warn" icon="warning">
       {what} needs {NEEDED[app]}, which is not installed. <a href="#/apps">Install {NEEDED[app]}</a>
