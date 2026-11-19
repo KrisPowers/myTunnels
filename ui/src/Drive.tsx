@@ -61,7 +61,7 @@ function remembered(): "grid" | "list" {
 // folders, the files grouped by month. Photos and videos are square tiles that
 // open in a viewer and can be picked together; each other kind is a card in
 // its own colour.
-export function DrivePage({ convert, shares, tools, extra, onReload }: StorageProps) {
+export function DrivePage({ convert, shares, tools, extra, onReload, title, onBack, plain }: StorageProps) {
   const can = useCan();
   const [path, setPath] = useState("");
   const [listing, setListing] = useState<Listing | null>(null);
@@ -229,9 +229,9 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
   const items = (entry: FileEntry | null): MenuItem[] => entry ? [
     { label: "Open", icon: entry.dir ? "folder" : isMedia(entry.name) ? "image" : opens(entry.name) ? "open_in_new" : "download", run: () => open(entry) },
     { label: "Download", icon: "download", hidden: entry.dir, run: () => download(entry) },
-    { label: "Share link", icon: "link", run: () => shares.open([join(path, entry.name)]) },
-    { label: "Convert", icon: "swap_horiz", hidden: entry.dir || !convertKind(entry.name) || !can("drive.edit"), run: () => convert.open([join(path, entry.name)]) },
-    { label: "Remove background", icon: "content_cut", hidden: entry.dir || !isPhoto(entry.name) || !can("drive.edit"), run: () => convert.cutout([join(path, entry.name)]) },
+    { label: "Share link", icon: "link", hidden: plain, run: () => shares.open([join(path, entry.name)]) },
+    { label: "Convert", icon: "swap_horiz", hidden: plain || entry.dir || !convertKind(entry.name) || !can("drive.edit"), run: () => convert.open([join(path, entry.name)]) },
+    { label: "Remove background", icon: "content_cut", hidden: plain || entry.dir || !isPhoto(entry.name) || !can("drive.edit"), run: () => convert.cutout([join(path, entry.name)]) },
     { label: "Extract here", icon: "folder_zip", hidden: kindOf(entry.name) !== "archive" || !can("drive.edit"), run: () => extract(entry) },
     { label: "Compress to ZIP", icon: "folder_zip", hidden: !can("drive.edit"), run: () => run(() => files.compress([join(path, entry.name)]), `Packed ${entry.name}`) },
     { label: "Rename", icon: "edit", hidden: !can("drive.edit"), run: () => setAsking({ rename: entry }) },
@@ -259,8 +259,9 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
         start(await dropped(e.dataTransfer.items));
       }}>
       <div className="page-head">
+        {onBack && <button type="button" className="icon-btn" aria-label="Back to Storage" title="Storage" onClick={onBack}><Icon name="arrow_back" /></button>}
         <div className="page-head-main">
-          <h1>Storage</h1>
+          <h1>{title ?? "Storage"}</h1>
           {listing && (
             <div className="page-sub">
               <span><b>{docs.length}</b> file{docs.length === 1 ? "" : "s"} here</span>
@@ -273,8 +274,8 @@ export function DrivePage({ convert, shares, tools, extra, onReload }: StoragePr
             <>
               <span className="m-picked">{selected.size} selected</span>
               {chosen.some((e) => !e.dir) && <button type="button" className="icon-btn" aria-label="Download" title="Download" onClick={() => chosen.filter((e) => !e.dir).forEach(download)}><Icon name="download" /></button>}
-              <button type="button" className="icon-btn" aria-label="Share link" title="Share link" onClick={() => shares.open(picked)}><Icon name="link" /></button>
-              {can("drive.edit") && picked.every(convertKind) && <button type="button" className="icon-btn" aria-label="Convert" title="Convert" onClick={() => convert.open(picked)}><Icon name="swap_horiz" /></button>}
+              {!plain && <button type="button" className="icon-btn" aria-label="Share link" title="Share link" onClick={() => shares.open(picked)}><Icon name="link" /></button>}
+              {!plain && can("drive.edit") && picked.every(convertKind) && <button type="button" className="icon-btn" aria-label="Convert" title="Convert" onClick={() => convert.open(picked)}><Icon name="swap_horiz" /></button>}
               {can("drive.delete") && <button type="button" className="icon-btn danger" aria-label="Delete" title="Delete" onClick={() => setAsking({ remove: chosen })}><Icon name="delete" /></button>}
               <button type="button" className="icon-btn" aria-label="Clear selection" title="Clear selection" onClick={() => setSelected(new Set())}><Icon name="close" /></button>
             </>

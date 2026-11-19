@@ -301,6 +301,10 @@ pub fn needed(method: &Method, path: &str) -> Need {
         "users" => any(&["users.manage"]),
         "flags" if read => any(&["users.view"]),
         "flags" => any(&["users.manage"]),
+        // Seeing locations is Storage's; making one shares a folder on this
+        // computer, which is the host's and admins' alone.
+        "storage" if read => any(&["drive.view"]),
+        "storage" => any(&[]),
         "drive" if read => any(&["drive.view"]),
         "drive" if at(2) == "delete" => any(&["drive.delete"]),
         "drive" => any(&["drive.edit"]),

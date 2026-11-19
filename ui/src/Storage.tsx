@@ -1,20 +1,30 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ago, api, bytes, fileUrl, files, message, type ConvertJob, type ConvertKind, type ConvertState, type DuplicateCopy, type Quality, type Share } from "./api";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { ago, api, bytes, fileUrl, files, locations, message, openPlace, type ConvertJob, type ConvertKind, type ConvertState, type DriveRoot, type DuplicateCopy, type Quality, type Share, type StorageLocation } from "./api";
+import { Meter } from "./charts";
 import { DrivePage } from "./Drive";
 import { Dropdown, type Option } from "./Dropdown";
 import { convertKind } from "./Files";
 import { Icon } from "./Icon";
-import { useCan } from "./me";
-import { Copy, Dialog, TextField, useNotify } from "./ui";
+import { useCan, useMe } from "./me";
+import { Copy, Dialog, MoreMenu, TextField, useNotify } from "./ui";
 
-// StoragePage is the documents, photos and videos kept on this host, together
-// in folders. Converting is an action on what is picked there, with its
-// progress in a panel.
+// StoragePage is network storage, as a NAS keeps it: locations, each a drive
+// or a folder on this computer, browsed here and opened in File Explorer or
+// Finder; and the account's own files, kept by myTunnels. Converting and share
+// links are actions on the account's own files.
 export function StoragePage() {
   const reloads = useRef<() => unknown>(() => {});
   const convert = useConvert(() => reloads.current());
   const shares = useShares();
   const [finding, setFinding] = useState(false);
+  // The location open, "own" for the account's files, null for the list.
+  const [open, setOpen] = useState<StorageLocation | "own" | null>(null);
+  const show = (to: StorageLocation | "own" | null) => {
+    openPlace(to && to !== "own" ? to.id : "");
+    setOpen(to);
+  };
+  // Leaving Storage leaves the next visit on the account's own files.
+  useEffect(() => () => openPlace(""), []);
   const tools = (
     <>
       {shares.button}
@@ -31,7 +41,149 @@ export function StoragePage() {
   const onReload = useCallback((reload: () => unknown) => {
     reloads.current = reload;
   }, []);
-  return <DrivePage convert={convert} shares={shares} tools={tools} extra={extra} onReload={onReload} />;
+  if (!open) return <Locations onOpen={show} />;
+  const own = open === "own";
+  return (
+    <DrivePage key={own ? "own" : open.id} title={own ? "My files" : open.name} onBack={() => show(null)} plain={!own}
+      convert={convert} shares={shares} tools={own ? tools : null} extra={own ? extra : null} onReload={onReload} />
+  );
+}
+
+// ---- locations ----
+
+// Locations lists where Storage keeps files: the account's own, then each
+// drive or folder on this computer kept as network storage, with its room
+// and the address File Explorer and Finder open it at.
+function Locations({ onOpen }: { onOpen: (to: StorageLocation | "own") => void }) {
+  const me = useMe();
+  const notify = useNotify();
+  const [list, setList] = useState<StorageLocation[] | null>(null);
+  const [adding, setAdding] = useState(false);
+  const load = useCallback(() => locations.list().then((r) => setList(r.locations)).catch((e) => notify(message(e), "bad")), [notify]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const remove = async (l: StorageLocation) => {
+    try {
+      setList((await locations.remove(l.id)).locations);
+      notify(`Removed ${l.name}; its folder and files stay where they are`);
+    } catch (e) {
+      notify(message(e), "bad");
+    }
+  };
+
+  return (
+    <>
+      <div className="page-head">
+        <div className="page-head-main">
+          <h1>Storage</h1>
+          {list && <div className="page-sub"><span><b>{list.length}</b> {list.length === 1 ? "location" : "locations"}</span></div>}
+        </div>
+        <div className="page-actions">
+          {me.admin && <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="add" size={18} />Add location</button>}
+        </div>
+      </div>
+      <div className="page-body stack">
+        <div className="card svc-card">
+          <div className="table-wrap">
+            <table className="table svc">
+              <thead><tr><th className="grow">Location</th><th>Space</th><th>Network address</th><th /></tr></thead>
+              <tbody>
+                <tr className="svc-link" onClick={() => onOpen("own")}>
+                  <td><span className="svc-name"><span className="svc-text"><b>My files</b><small className="plain">Kept by myTunnels for your account</small></span></span></td>
+                  <td /><td /><td />
+                </tr>
+                {(list ?? []).map((l) => (
+                  <tr key={l.id} className={"svc-link" + (l.here ? "" : " svc-down")} onClick={() => l.here && onOpen(l)}>
+                    <td><span className="svc-name"><span className="svc-text"><b>{l.name}</b><small className="plain mono">{l.path}</small></span></span></td>
+                    <td className="loc-space">{l.space ? <Meter value={l.space.total - l.space.free} max={l.space.total} label={`${bytes(l.space.free)} free of ${bytes(l.space.total)}`} /> : <span className="chip">Not connected</span>}</td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      {l.url ? <Copy text={l.url} /> : <a href="#/routes/new">Expose this dashboard to reach it</a>}
+                    </td>
+                    <td className="svc-menu" onClick={(e) => e.stopPropagation()}>
+                      {me.admin && <MoreMenu label={`Actions for ${l.name}`} actions={[{ label: "Remove", icon: "delete", danger: true, confirm: "Remove the location", onClick: () => remove(l) }]} />}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      {adding && <AddLocation onClose={() => setAdding(false)} onAdded={(r) => {
+        setList(r);
+        setAdding(false);
+      }} />}
+    </>
+  );
+}
+
+// A name for a location from its folder: its last part, or the drive's letter.
+const nameFor = (path: string) =>
+  (path.split(/[\\/]/).filter(Boolean).pop() ?? "").toLowerCase().replace(/:$/, "").replace(/[^a-z0-9_-]+/g, "-").replace(/^[^a-z0-9]+/, "").slice(0, 40);
+
+// AddLocation makes a drive, or a folder on one, network storage: the drive,
+// the folder on it, and the name its address ends in.
+function AddLocation({ onClose, onAdded }: { onClose: () => void; onAdded: (list: StorageLocation[]) => void }) {
+  const notify = useNotify();
+  const [drives, setDrives] = useState<DriveRoot[]>([]);
+  const [drive, setDrive] = useState("");
+  const [path, setPath] = useState("");
+  const [name, setName] = useState("");
+  const [named, setNamed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const pick = (to: string) => {
+    setPath(to);
+    if (!named) setName(nameFor(to));
+  };
+  useEffect(() => {
+    locations.drives().then((d) => {
+      setDrives(d);
+      if (d[0]) {
+        setDrive(d[0].path);
+        setPath(d[0].path);
+        setName(nameFor(d[0].path));
+      }
+    }).catch((e) => notify(message(e), "bad"));
+  }, [notify]);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      onAdded((await locations.add(name, path)).locations);
+      notify(`Added ${name}`);
+    } catch (err) {
+      notify(message(err), "bad");
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog title="Add location" onClose={onClose}>
+      <form onSubmit={submit}>
+        {drives.length > 0 && (
+          <div className="tf static">
+            <div className="tf-box">
+              <Dropdown label="Drive" value={drive} onChange={(d) => {
+                setDrive(d);
+                pick(d);
+              }} options={drives.map((d) => ({ value: d.path, label: d.path, hint: d.space ? `${bytes(d.space.free)} free of ${bytes(d.space.total)}` : undefined }))} />
+              <span className="tf-label">Drive</span>
+            </div>
+          </div>
+        )}
+        <TextField label="Folder" mono autoComplete="off" value={path} onChange={pick} hint="The whole drive, or a folder on it" />
+        <TextField label="Name" autoComplete="off" value={name}
+          onChange={(v) => {
+            setNamed(true);
+            setName(v.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40));
+          }} hint={name ? `Its address ends in /dav/${name}` : undefined} />
+        <div className="edit-actions">
+          <button type="button" className="btn text" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={busy || !name || !path}>{busy && <span className="spinner small on-accent" />}Add location</button>
+        </div>
+      </form>
+    </Dialog>
+  );
 }
 
 // What the file browser is given: the converter, share links, and a way to say
@@ -43,6 +195,12 @@ export interface StorageProps {
   tools: ReactNode;
   extra: ReactNode;
   onReload: (reload: () => unknown) => void;
+  // The heading, and the way back to the list of locations.
+  title?: string;
+  onBack?: () => void;
+  // A location on this computer: no share links or converting, which are the
+  // account's own files'.
+  plain?: boolean;
 }
 
 // ---- the duplicate finder ----

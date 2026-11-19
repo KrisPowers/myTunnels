@@ -99,6 +99,10 @@ pub struct Store {
     /// The most the account's photos and files together may take up, and the
     /// folder holding them all; for accounts that have a limit.
     limit: Option<(u64, PathBuf)>,
+    /// Where previews of photos and videos are kept.
+    thumbs: PathBuf,
+    /// A location on this computer, which keeps files of every kind.
+    any: bool,
 }
 
 impl Store {
@@ -115,7 +119,42 @@ impl Store {
             .map(|u| u.storage_limit)
             .filter(|&l| l > 0 && owner != HOST_ID)
             .and_then(|l| Some((l, base.parent()?.to_owned())));
-        Ok(Self { base, limit })
+        let thumbs = base.join(".thumbs");
+        Ok(Self {
+            base,
+            limit,
+            thumbs,
+            any: false,
+        })
+    }
+
+    /// The location `id`, a folder on this computer, which keeps files of
+    /// every kind; its previews are kept in the data folder, not in it.
+    pub fn location(state: &AppState, id: &str) -> ApiResult<Self> {
+        let place = crate::locations::find(state, id).ok_or_else(ApiError::not_found)?;
+        let base = PathBuf::from(&place.path);
+        if !base.is_dir() {
+            return Err(ApiError::bad(format!(
+                "{} is not on this computer now",
+                place.path
+            )));
+        }
+        let thumbs = state.config.data_dir.join("thumbs").join(&place.id);
+        Ok(Self {
+            base,
+            limit: None,
+            thumbs,
+            any: true,
+        })
+    }
+
+    /// Refuses a file of a kind this store does not keep.
+    fn takes(&self, name: &str) -> ApiResult<()> {
+        if self.any {
+            Ok(())
+        } else {
+            takes(name)
+        }
     }
 
     /// The bytes the account's limit leaves free, when it has one.
@@ -152,7 +191,7 @@ impl Store {
     /// Where the previews of what is in a folder are kept.
     fn thumbs_in(&self, rel: &[String]) -> PathBuf {
         rel.iter()
-            .fold(self.base.join(".thumbs"), |path, seg| path.join(seg))
+            .fold(self.thumbs.clone(), |path, seg| path.join(seg))
     }
 
     /// Moves the previews of what was at `from` to go with it to `to`: a
@@ -291,7 +330,16 @@ fn free_name(dir: &Path, name: &str) -> String {
 /// One file operation, `op`, in the files of the account `owner`.
 pub async fn fs(state: &AppState, owner: &str, op: &str, req: Request) -> Response {
     let result = async {
-        let store = Store::open(state, owner)?;
+        // A location on this computer, by `loc`, or the account's own files.
+        let loc = req
+            .uri()
+            .query()
+            .and_then(|q| q.split('&').find_map(|p| p.strip_prefix("loc=")))
+            .map(str::to_owned);
+        let store = match loc {
+            Some(id) => Store::location(state, &id)?,
+            None => Store::open(state, owner)?,
+        };
         let method = req.method().clone();
         match (method, op) {
             (Method::GET, "list") => list(&store, query(&req)?).await,
@@ -451,7 +499,7 @@ fn virtual_disk() -> bool {
 #[cfg(unix)]
 // The fields are 64 bits on Linux but not on every system.
 #[allow(clippy::unnecessary_cast)]
-fn disk(path: &Path) -> Option<(u64, u64)> {
+pub fn disk(path: &Path) -> Option<(u64, u64)> {
     use std::os::unix::ffi::OsStrExt;
     let path = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
     let mut stat = std::mem::MaybeUninit::<libc::statvfs>::uninit();
@@ -467,7 +515,7 @@ fn disk(path: &Path) -> Option<(u64, u64)> {
 
 /// The bytes free to use and in all on the disk a path is on.
 #[cfg(not(unix))]
-fn disk(path: &Path) -> Option<(u64, u64)> {
+pub fn disk(path: &Path) -> Option<(u64, u64)> {
     let path = std::fs::canonicalize(path).ok()?;
     let disks = sysinfo::Disks::new_with_refreshed_list();
     disks
@@ -606,7 +654,7 @@ async fn rename(store: &Store, body: Rename) -> ApiResult<Response> {
     target.push(new[0].clone());
     let to = store.item(&target)?;
     if !from.is_dir() {
-        takes(name)?;
+        store.takes(name)?;
     }
     // Only the case changing is the same file on Windows and macOS.
     let same = rel.last().is_some_and(|old| old.eq_ignore_ascii_case(name));
@@ -756,7 +804,7 @@ async fn upload(store: &Store, req: Request) -> ApiResult<Response> {
     if rel.is_empty() {
         return Err(ApiError::bad("Name the file"));
     }
-    takes(&rel[rel.len() - 1])?;
+    store.takes(&rel[rel.len() - 1])?;
     let target = store.item(&rel)?;
     let dir = target.parent().ok_or_else(ApiError::not_found)?.to_owned();
     let temp = dir.join(format!(".{}{PART}", piece.id));

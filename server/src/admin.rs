@@ -182,6 +182,12 @@ pub fn router(state: AppState) -> Router {
         .route("/flags/{id}", delete(clear_flag))
         .route("/devices/{id}/activity", get(device_activity))
         .route("/drive/fs/{op}", any(drive_fs))
+        .route(
+            "/storage/locations",
+            get(crate::locations::list).post(crate::locations::add),
+        )
+        .route("/storage/locations/{id}", delete(crate::locations::remove))
+        .route("/storage/drives", get(crate::locations::drives))
         .route("/convert", get(convert::list).post(convert::start))
         .route("/convert/{id}", delete(convert::remove))
         .route("/apps", get(crate::apps::list))
@@ -207,6 +213,8 @@ pub fn router(state: AppState) -> Router {
     let spa = ServeDir::new(ui).fallback(ServeFile::new(ui.join("index.html")));
     Router::new()
         .nest("/api", api)
+        // Storage's locations for File Explorer and Finder, with their own sign-in.
+        .route("/dav/{*rest}", any(crate::locations::dav))
         .fallback_service(spa)
         .layer(middleware::from_fn(harden))
         .with_state(state)

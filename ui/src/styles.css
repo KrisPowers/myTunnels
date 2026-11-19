@@ -1659,6 +1659,8 @@ a.alert-text:hover b { color: var(--accent); }
 .mail-menu { flex-shrink: 0; width: 34px; }
 .mail-none { padding: 24px; color: var(--text-3); text-align: center; }
 .mail-kind, .add-kind { display: flex; margin-bottom: 20px; }
+/* A location's room, wide enough for its meter and what it says. */
+.table.svc td.loc-space { min-width: 200px; }
 /* The first address's choice of how mail moves. */
 .mail-ways { display: grid; gap: 14px; margin-bottom: 20px; }
 .mail-way { display: grid; gap: 6px; }
