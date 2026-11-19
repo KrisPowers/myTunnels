@@ -37,28 +37,28 @@ end
 class Mytunnels < Formula
   desc "Publish apps at home through Cloudflare Tunnel, with an access gateway"
   homepage "https://github.com/KrisPowers/myTunnels"
-  version "0.1.74"
+  version "0.1.75"
   license "Apache-2.0"
 
   on_macos do
     on_arm do
-      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.74/macos-arm64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "3fc22082d1a592298fbb16c657f556b5b050422751619739883c945ea55f0501"
+      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.75/macos-arm64.tar.gz", using: GitHubReleaseDownloadStrategy
+      sha256 "edb54c3ba0cadbff6068bb5bfa51cb1b0e83c9f43d836640c7c5b10ac45edaf1"
     end
     on_intel do
-      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.74/macos-x64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "da5242bef224622cbe5d312975fbc31791a5c5111e586765004c65c55c3a8674"
+      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.75/macos-x64.tar.gz", using: GitHubReleaseDownloadStrategy
+      sha256 "13434ddb048563350fe5762af6789a5540bb157fcc3b193fdd9da66dc6b7501e"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.74/linux-arm64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "e79457baf793273239790b620a3b263c3eea25b1a5708879c69fcb454fd6ae7b"
+      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.75/linux-arm64.tar.gz", using: GitHubReleaseDownloadStrategy
+      sha256 "d78094f6aeca75e8c93221a39338e7eb53fa4c0253fc627ba4df81348671e6f4"
     end
     on_intel do
-      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.74/linux-x64.tar.gz", using: GitHubReleaseDownloadStrategy
-      sha256 "aedf57ec0560c425f408c17870e7f1286084d56804e08a6f5d2e33d0a5abc4c6"
+      url "https://github.com/KrisPowers/myTunnels/releases/download/v0.1.75/linux-x64.tar.gz", using: GitHubReleaseDownloadStrategy
+      sha256 "97264448025b5b7f557522a169209ecf7196524687386cd070173ba092efbfc9"
     end
   end
 
