@@ -311,21 +311,31 @@ const MOST_GB: u64 = 2040;
 #[cfg(windows)]
 pub use helper::grant as grant_helper;
 
-/// Brings the drives helper up to this release's copy when the one in place
-/// differs: it takes that copy from the release itself, with no prompt.
+/// Brings the drives helper, then the apps helper, up to this release's copy
+/// when the one in place differs: the drives helper takes each copy from the
+/// release itself, with no prompt.
 #[cfg(windows)]
 pub fn refresh_helper() {
     tokio::spawn(async {
         let Some(tag) = crate::update::installed() else {
             return;
         };
-        if !helper::stale() {
-            return;
+        if helper::stale() {
+            let ask = json!({ "action": "refresh", "tag": tag });
+            match helper::ask(&ask, Duration::from_secs(120), |_| {}).await {
+                Ok(()) => tracing::info!("the drives helper is now {tag}'s"),
+                Err(err) => {
+                    tracing::warn!("the drives helper was not brought up to date: {err}");
+                    return;
+                }
+            }
         }
-        let ask = json!({ "action": "refresh", "tag": tag });
-        match helper::ask(&ask, Duration::from_secs(120), |_| {}).await {
-            Ok(()) => tracing::info!("the drives helper is now {tag}'s"),
-            Err(err) => tracing::warn!("the drives helper was not brought up to date: {err}"),
+        if crate::apps::helper_stale() {
+            let ask = json!({ "action": "apps", "tag": tag });
+            match helper::ask(&ask, Duration::from_secs(120), |_| {}).await {
+                Ok(()) => tracing::info!("the apps helper is now {tag}'s"),
+                Err(err) => tracing::warn!("the apps helper was not brought up to date: {err}"),
+            }
         }
     });
 }
