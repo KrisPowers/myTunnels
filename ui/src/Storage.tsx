@@ -67,7 +67,7 @@ function Locations({ onOpen }: { onOpen: (to: StorageLocation | "own") => void }
   const making = (list ?? []).some((l) => l.making !== null);
   useEffect(() => {
     if (!making) return;
-    const t = setInterval(load, 2000);
+    const t = setInterval(load, 200);
     return () => clearInterval(t);
   }, [making, load]);
   const remove = async (l: StorageLocation) => {
