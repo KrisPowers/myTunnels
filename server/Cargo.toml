@@ -34,7 +34,7 @@ serde_json = "1"
 serde_urlencoded = "0.7"
 sha1 = "0.11"
 sha2 = "0.11"
-sysinfo = { version = "0.37", default-features = false, features = ["component", "disk", "network", "system"] }
+sysinfo = { version = "0.40", default-features = false, features = ["component", "disk", "network", "system"] }
 tokio = { version = "1", features = ["full"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "ring", "tls12"] }
 tokio-util = { version = "0.7", features = ["io"] }
