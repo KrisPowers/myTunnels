@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/root/.npm npm install --no-audit --no-fund
 COPY ui/ ./
 RUN npm run build
 
-FROM rust:1-bookworm@sha256:7085845219c18e7c5b1f34ed9ce89b84f822f2e3d54a02774cedc996ac0f304f AS server
+FROM rust:1-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea AS server
 WORKDIR /server
 COPY server/ ./
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
