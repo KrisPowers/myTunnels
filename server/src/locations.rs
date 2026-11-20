@@ -446,7 +446,7 @@ mod helper {
                 clean();
                 return Err("The drive took too long".into());
             }
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
 }

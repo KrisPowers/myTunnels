@@ -61,14 +61,16 @@ function Get-Geometry([int64]$size) {
     return , ([byte[]]@((($cyl -shr 8) -band 255), ($cyl -band 255), [int]$heads, [int]$spt))
 }
 
-# The 512 bytes after a fixed VHD's data, which make it a disk Windows attaches.
+# The 512 bytes that make a dynamic VHD a disk Windows attaches; the file
+# starts and ends with them.
 function New-Footer([int64]$size) {
     [byte[]]$f = New-Object byte[] 512
     $epoch = [DateTime]::new(2000, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
     Set-Bytes $f 0 ([Text.Encoding]::ASCII.GetBytes('conectix'))
     Set-Bytes $f 8 (Get-Big 2 4)
     Set-Bytes $f 12 (Get-Big 65536 4)
-    Set-Bytes $f 16 (Get-Big ([uint64]::MaxValue) 8)
+    # Where the dynamic header is: right after the first copy of this footer.
+    Set-Bytes $f 16 (Get-Big 512 8)
     Set-Bytes $f 24 (Get-Big ([uint64]([DateTime]::UtcNow - $epoch).TotalSeconds) 4)
     Set-Bytes $f 28 ([Text.Encoding]::ASCII.GetBytes('mytn'))
     Set-Bytes $f 32 (Get-Big 65536 4)
@@ -76,12 +78,32 @@ function New-Footer([int64]$size) {
     Set-Bytes $f 40 (Get-Big $size 8)
     Set-Bytes $f 48 (Get-Big $size 8)
     Set-Bytes $f 56 (Get-Geometry $size)
-    Set-Bytes $f 60 (Get-Big 2 4)
+    # 3: dynamic, which takes room on the drive it is kept on only as it fills.
+    Set-Bytes $f 60 (Get-Big 3 4)
     Set-Bytes $f 68 ([guid]::NewGuid().ToByteArray())
     $sum = [int64]0
     foreach ($b in $f) { $sum += $b }
     Set-Bytes $f 64 (Get-Big ([uint64](4294967295 - ($sum % 4294967296))) 4)
     return , $f
+}
+
+# A dynamic VHD's blocks, 2 MB each, which take room only once written to.
+$block = 2MB
+
+# The 1024-byte header after a dynamic VHD's first footer: where its block
+# table is, which comes right after it, and how many blocks the disk has.
+function New-Header([int64]$size) {
+    [byte[]]$h = New-Object byte[] 1024
+    Set-Bytes $h 0 ([Text.Encoding]::ASCII.GetBytes('cxsparse'))
+    Set-Bytes $h 8 (Get-Big ([uint64]::MaxValue) 8)
+    Set-Bytes $h 16 (Get-Big 1536 8)
+    Set-Bytes $h 24 (Get-Big 65536 4)
+    Set-Bytes $h 28 (Get-Big ([uint64][math]::Ceiling($size / $block)) 4)
+    Set-Bytes $h 32 (Get-Big $block 4)
+    $sum = [int64]0
+    foreach ($b in $h) { $sum += $b }
+    Set-Bytes $h 36 (Get-Big ([uint64](4294967295 - ($sum % 4294967296))) 4)
+    return , $h
 }
 
 # This release's copy of this helper, from myTunnels' repository alone, so
@@ -125,34 +147,34 @@ function New-Drive($a, [string]$progress) {
     if (Test-Path -LiteralPath $a.image) { throw "$($a.image) is there already" }
     $dir = Split-Path -Parent $a.image
     New-Item -ItemType Directory -Force $dir | Out-Null
-    # Only SYSTEM and administrators may read or change the disks: the room
-    # they take is not written over first.
+    # Only SYSTEM and administrators may read or change the disks.
     & icacls $dir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
-    # Its whole size set aside at once, as a drive of its own is, with no time
-    # spent writing zeros over it: a fixed VHD is the disk's bytes, then a footer.
+    # A dynamic VHD: a footer, its header, a table with no block written yet,
+    # and the footer again. A few hundred KB whatever its size, so it is made
+    # at once on any drive; it takes room as files go on it.
     $size = [int64]$a.size_mb * 1MB
     try {
+        $footer = New-Footer $size
+        $entries = [int64][math]::Ceiling($size / $block)
+        $table = [int64][math]::Ceiling($entries * 4 / 512) * 512
+        [byte[]]$unused = , 255 * 65536
         $s = [IO.File]::Open($a.image, 'CreateNew', 'ReadWrite', 'None')
-        try { $s.SetLength($size + 512) } finally { $s.Dispose() }
-        & fsutil file setvaliddata $a.image ($size + 512) | Out-Null
-        $s = [IO.File]::Open($a.image, 'Open', 'ReadWrite', 'None')
         try {
-            # Its first and last MB cleared, so no old disk's table is found there.
-            $zero = New-Object byte[] 1MB
-            $s.Write($zero, 0, $zero.Length)
-            $s.Seek($size - 1MB, 'Begin') | Out-Null
-            $s.Write($zero, 0, $zero.Length)
-            $s.Write((New-Footer $size), 0, 512)
+            $s.Write($footer, 0, 512)
+            $s.Write((New-Header $size), 0, 1024)
+            for ($left = $table; $left -gt 0; $left -= $unused.Length) {
+                $s.Write($unused, 0, [int][math]::Min($left, $unused.Length))
+            }
+            $s.Write($footer, 0, 512)
         }
         finally { $s.Dispose() }
     }
     catch {
         Remove-Item -LiteralPath $a.image -Force -ErrorAction SilentlyContinue
-        throw "Windows could not set the room aside: $($_.Exception.Message)"
+        throw "Windows could not make the disk: $($_.Exception.Message)"
     }
     [IO.File]::WriteAllText($progress, '50')
-    Mount-DiskImage -ImagePath $a.image -NoDriveLetter | Out-Null
-    $disk = Get-DiskImage -ImagePath $a.image | Get-Disk
+    $disk = Mount-DiskImage -ImagePath $a.image -NoDriveLetter -PassThru | Get-Disk
     Initialize-Disk -Number $disk.Number -PartitionStyle GPT
     New-Partition -DiskNumber $disk.Number -UseMaximumSize -DriveLetter $a.letter |
         Format-Volume -FileSystem NTFS -NewFileSystemLabel $a.label -Confirm:$false | Out-Null
@@ -169,6 +191,10 @@ function Remove-Drive($a) {
 foreach ($d in Read-Drives) {
     try { Mount-Drive $d } catch { }
 }
+
+# Windows' storage provider takes seconds to answer its first call; it is
+# asked once now, so the first drive asked for is made at once.
+try { $null = Get-Disk } catch { }
 
 New-Item -ItemType Directory -Force $asks | Out-Null
 $watch = New-Object IO.FileSystemWatcher $asks, '*.json'
