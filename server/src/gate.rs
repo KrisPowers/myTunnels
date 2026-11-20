@@ -194,11 +194,15 @@ async fn serve(
     // Limits count per address and, once a browser has one, per device ID, so
     // neither changing networks nor sharing one escapes them.
     let device = device_key(req.headers());
+    // Someone signed in is never rate limited.
+    let exempt = crate::admin::signed_in(state, req.headers())
+        || user_session(state, snap, req.headers(), &route).is_some();
     let within = |name: &str, max: u32| {
-        state.allow(&format!("{name}:{from}"), max, 60)
-            && device
-                .as_ref()
-                .is_none_or(|d| state.allow(&format!("{name}-device:{d}"), max, 60))
+        exempt
+            || (state.allow(&format!("{name}:{from}"), max, 60)
+                && device
+                    .as_ref()
+                    .is_none_or(|d| state.allow(&format!("{name}-device:{d}"), max, 60)))
     };
     if !within("gate", REQUESTS_PER_MINUTE) {
         return too_many();

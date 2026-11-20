@@ -226,8 +226,10 @@ async fn guard_api(State(state): State<AppState>, mut req: Request, next: Next) 
     req.extensions_mut().insert(Peer(ip));
     let changes = !matches!(*req.method(), Method::GET | Method::HEAD);
     let auth = changes && req.uri().path().starts_with("/auth/");
-    if !state.allow(&format!("api:{ip}"), API_PER_MINUTE, 60)
-        || (auth && !state.allow(&format!("api-auth:{ip}"), AUTH_PER_MINUTE, 60))
+    // Someone signed in is never rate limited.
+    if !signed_in(&state, req.headers())
+        && (!state.allow(&format!("api:{ip}"), API_PER_MINUTE, 60)
+            || (auth && !state.allow(&format!("api-auth:{ip}"), AUTH_PER_MINUTE, 60)))
     {
         return ApiError(
             StatusCode::TOO_MANY_REQUESTS,
@@ -315,6 +317,11 @@ fn caller(state: &AppState, headers: &HeaderMap) -> Option<Caller> {
     let may =
         user.enabled && user.holds("dashboard") && secret::tag(&user.password_hash) == session.tag;
     may.then_some(Caller::Account(Box::new(user)))
+}
+
+/// True when the request carries a live panel session.
+pub fn signed_in(state: &AppState, headers: &HeaderMap) -> bool {
+    caller(state, headers).is_some()
 }
 
 /// Lets a call through for someone signed in whose permissions allow it.
