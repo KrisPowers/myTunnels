@@ -37,7 +37,10 @@ foreach ($file in Get-ChildItem $asks -Filter '*.json' -File) {
     $log = Join-Path $asks "$job.log"
     $code = 1
     try {
-        $words = @(Get-Content $file.FullName -Raw | ConvertFrom-Json)
+        # Windows PowerShell hands a JSON array on as one item, so it is held
+        # first and spread after; read straight into @() every ask is one word.
+        $parsed = Get-Content $file.FullName -Raw | ConvertFrom-Json
+        $words = @($parsed)
         Remove-Item -LiteralPath $file.FullName -Force
         if (-not (Test-Ask $words)) { throw 'That is not an ask myTunnels makes' }
         # A line at a time as winget says it, in UTF-8, for the panel to follow.

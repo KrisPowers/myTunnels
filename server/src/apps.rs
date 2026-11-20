@@ -1215,9 +1215,26 @@ async fn run_installer(id: &str, program: &FsPath, args: &[String]) -> (bool, St
     };
     let ended = tokio::time::timeout(Duration::from_secs(30 * 60), read).await;
     match ended {
-        Ok(Ok(status)) => (status.success(), tail.join("\n")),
+        Ok(Ok(status)) if status.success() => (true, tail.join("\n")),
+        Ok(Ok(status)) => (false, failure(&tail, status.code())),
         Ok(Err(err)) => (false, format!("The installer stopped: {err}")),
         Err(_) => (false, "The installer took over half an hour".into()),
+    }
+}
+
+/// Why an install failed: the installer's last lines and its exit code, so a
+/// failure always says something even when the installer printed nothing.
+fn failure(tail: &[String], code: Option<i32>) -> String {
+    let code = match code {
+        // winget's codes are HRESULTs, which read as hex.
+        Some(c) if !(0..=0xFFFF).contains(&c) => format!("exit code 0x{:08X}", c as u32),
+        Some(c) => format!("exit code {c}"),
+        None => "no exit code".to_owned(),
+    };
+    if tail.is_empty() {
+        format!("The installer printed nothing ({code})")
+    } else {
+        format!("{} ({code})", tail.join("\n"))
     }
 }
 
@@ -1242,6 +1259,11 @@ fn heard(id: &str, line: &str, tail: &mut Vec<String>) {
 /// Grants the helper below: see `helper::grant`.
 #[cfg(windows)]
 pub use helper::grant as grant_helper;
+
+/// Whether the apps helper in place is not this release's copy: see
+/// `helper::stale`.
+#[cfg(windows)]
+pub use helper::stale as helper_stale;
 
 /// On Windows, winget run by the "myTunnels Apps" task: as the signed-in
 /// account with its administrator rights, so installers never stop for the
@@ -1315,6 +1337,14 @@ mod helper {
             );
         }
         Ok(())
+    }
+
+    /// Whether the helper in place differs from this release's copy. It runs
+    /// as the signed-in account and cannot replace itself; the drives helper
+    /// brings it up to date (see `locations::refresh_helper`).
+    pub fn stale() -> bool {
+        std::fs::read_to_string(helper_dir().join("apps.ps1"))
+            .is_ok_and(|text| text.replace('\r', "") != SCRIPT.replace('\r', ""))
     }
 
     /// Started on asking alone, as `sid` with its highest rights, which `sid`
@@ -1416,7 +1446,11 @@ mod helper {
         follow(&mut tail);
         let code = std::fs::read_to_string(&exit).unwrap_or_default();
         clean();
-        Some((code.trim() == "0", tail.join("\n")))
+        let code = code.trim();
+        if code == "0" {
+            return Some((true, tail.join("\n")));
+        }
+        Some((false, super::failure(&tail, code.parse().ok())))
     }
 }
 
@@ -2091,6 +2125,22 @@ mod tests {
         assert!(job.stage == Stage::Installing);
         assert_eq!(job.log, "==> Downloading https://example.test/again");
         assert_eq!(progress("Successfully installed"), None);
+    }
+
+    #[test]
+    fn a_failed_install_always_says_why() {
+        assert_eq!(
+            failure(&[], Some(-1978335189)),
+            "The installer printed nothing (exit code 0x8A15002B)"
+        );
+        assert_eq!(
+            failure(&["No package found".into()], Some(1)),
+            "No package found (exit code 1)"
+        );
+        assert_eq!(
+            failure(&[], None),
+            "The installer printed nothing (no exit code)"
+        );
     }
 
     #[test]

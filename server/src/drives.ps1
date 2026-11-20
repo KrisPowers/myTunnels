@@ -9,7 +9,9 @@
 # in a top-level `drives` folder, a letter and a size are taken. How far a
 # drive being made is goes to <job>.progress, then <job>.done or <job>.error.
 # A refresh ask names a release, and this helper takes that release's copy of
-# itself from myTunnels' repository, so updates reach it with no prompt.
+# itself from myTunnels' repository, so updates reach it with no prompt. An
+# apps ask does the same for the apps helper, which runs as the signed-in
+# account and cannot replace itself.
 $ErrorActionPreference = 'Stop'
 $self = $MyInvocation.MyCommand.Path
 $here = Split-Path -Parent $self
@@ -93,6 +95,19 @@ function Update-Helper([string]$tag) {
     [IO.File]::WriteAllText($self, $new)
 }
 
+# This release's copy of the apps helper, from myTunnels' repository alone, in
+# place of the one an older release put there.
+function Update-AppsHelper([string]$tag) {
+    if ($tag -notmatch '^v\d{1,4}\.\d{1,5}\.\d{1,6}$') { throw "$tag is not a release" }
+    $placed = Join-Path $env:ProgramFiles 'myTunnels\apps\apps.ps1'
+    if (-not (Test-Path -LiteralPath $placed)) { throw 'The apps helper is not set up' }
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $new = [string](Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/KrisPowers/myTunnels/$tag/server/src/apps.ps1").Content
+    if (-not $new.StartsWith('# Run by the "myTunnels Apps" task')) { throw 'That is not the apps helper' }
+    $null = [scriptblock]::Create($new)
+    [IO.File]::WriteAllText($placed, $new)
+}
+
 # Attaches a drive's disk, when it is not, and gives it its letter.
 function Mount-Drive($d) {
     if (-not (Test-Path -LiteralPath $d.image)) { return }
@@ -174,6 +189,11 @@ while ($true) {
                 $watch.Dispose()
                 & $self
                 exit
+            }
+            if ($a.action -eq 'apps') {
+                Update-AppsHelper ([string]$a.tag)
+                [IO.File]::WriteAllText((Join-Path $asks "$job.done"), 'ok')
+                continue
             }
             if (-not (Test-Image ([string]$a.image))) { throw "$($a.image) is not a drive myTunnels makes" }
             $drives = @(Read-Drives | Where-Object { $_.image -ne $a.image })
