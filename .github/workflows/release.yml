@@ -70,7 +70,7 @@ jobs:
       - if: runner.os == 'Windows'
         working-directory: desktop
         run: cargo build --release --locked --target ${{ matrix.target }} --bin desktop
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ui
           path: stage/ui
@@ -115,7 +115,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           pattern: "*-*"
